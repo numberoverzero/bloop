@@ -32,11 +32,16 @@ class ColumnType(declare.TypeDefinition):
         '''
         take a {type: value} dictionary from dynamo and return a python value
         '''
-        backing_type, value = next(value.iteritems())
-        if backing_type != self.backing_type:
-            raise TypeError(
-                "Column {} can't load value '{}'".format(self, value))
+        _, value = next(value.iteritems())
         return self.dynamo_load(value)
+
+    def can_load(self, value):
+        '''
+        whether this type can load the given
+        {type: value} dictionary from dynamo
+        '''
+        backing_type, _ = next(value.iteritems())
+        return backing_type == self.backing_type
 
     def dump(self, value):
         '''
@@ -180,9 +185,8 @@ TYPES.extend([
 
 def load(value):
     ''' value is a dictionary {dynamo_type: value} '''
-    backing_type, value = next(value.iteritems())
     for type_class in TYPES:
-        if type_class.backing_type == backing_type:
+        if type_class.can_load(value):
             return type_class.load(value)
     raise TypeError("Don't know how to load " + str(value))
 

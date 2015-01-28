@@ -185,6 +185,7 @@ TYPES.extend([
 
 def load(value):
     ''' value is a dictionary {dynamo_type: value} '''
+    # TODO: Improve on O(n) search
     for type_class in TYPES:
         if type_class.can_load(value):
             return type_class.load(value)
@@ -192,6 +193,7 @@ def load(value):
 
 
 def dump(value):
+    # TODO: Improve on O(n) search
     for type_class in TYPES:
         if type_class.can_dump(value):
             return type_class.dump(value)

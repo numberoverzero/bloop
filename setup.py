@@ -22,7 +22,7 @@ TEST_REQUIREMENTS = [
 if __name__ == "__main__":
     setup(
         name='bloop',
-        version='0.1.0',
+        version='0.1.1',
         description="ORM for DynamoDB",
         long_description=README,
         classifiers=[

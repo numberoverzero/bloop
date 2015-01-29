@@ -33,12 +33,12 @@ class Engine(object):
         self.models = []
         self.model = _unique_base(self)
 
-
     def register(self, model):
         self.models.append(model)
 
 
 if __name__ == "__main__":
     e = Engine()
+
     class Person(e.model):
         pass

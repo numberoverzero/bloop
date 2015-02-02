@@ -28,11 +28,11 @@ DYNAMODB_CONTEXT = decimal.Context(
 
 
 class ColumnType(declare.TypeDefinition):
-    def load(self, value):
+    def __load__(self, value):
         '''
         take a {type: value} dictionary from dynamo and return a python value
         '''
-        _, value = next(value.iteritems())
+        value = next(iter(value.values()))
         return self.dynamo_load(value)
 
     def can_load(self, value):
@@ -40,10 +40,10 @@ class ColumnType(declare.TypeDefinition):
         whether this type can load the given
         {type: value} dictionary from dynamo
         '''
-        backing_type, _ = next(value.iteritems())
+        backing_type, _ = next(iter(value.keys()))
         return backing_type == self.backing_type
 
-    def dump(self, value):
+    def __dump__(self, value):
         '''
         dump a python value to a {type: value} dictionary for dynamo storage
         '''
@@ -54,7 +54,7 @@ class ColumnType(declare.TypeDefinition):
         return isinstance(value, self.python_type)
 
     def __repr__(self, *a, **kw):
-        return "Column({}, {})".format(self.python_type, self.backing_type)
+        return "ColumnType({}, {})".format(self.python_type, self.backing_type)
     __str__ = __repr__
 
 

@@ -47,7 +47,7 @@ class ColumnType(declare.TypeDefinition):
         '''
         dump a python value to a {type: value} dictionary for dynamo storage
         '''
-        return {self.dynamo_type: self.dynamo_dump(value)}
+        return {self.backing_type: self.dynamo_dump(value)}
 
     def can_dump(self, value):
         ''' whether this type can dump the given value to dynamo '''

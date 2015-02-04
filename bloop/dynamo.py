@@ -7,7 +7,7 @@ def attribute_definitions(model):
 
 
 def attribute_definition(column):
-    attr_name = column.model_name
+    attr_name = column.dynamo_name
     attr_type = column.typedef.backing_type
     return {
         'AttributeType': attr_type,
@@ -21,12 +21,12 @@ def key_schema(model):
     for column in columns:
         if column.is_hash:
             schema.append({
-                'AttributeName': column.model_name,
+                'AttributeName': column.dynamo_name,
                 'KeyType': 'HASH'
             })
         elif column.is_range:
             schema.append({
-                'AttributeName': column.model_name,
+                'AttributeName': column.dynamo_name,
                 'KeyType': 'RANGE'
             })
     if len(schema) > 2:
@@ -96,6 +96,6 @@ def secondary_index(model, index):
     return {
         'Projection': projection,
         'ProvisionedThroughput': provisioned_throughput,
-        'IndexName': index.model_name,
+        'IndexName': index.dynamo_name,
         'KeySchema': key_schema
     }

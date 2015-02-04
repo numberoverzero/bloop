@@ -71,10 +71,7 @@ def BaseModel(engine):
                 if column.hash_key:
                     meta['dynamo.table.hash_key'] = column
                     break
-            else:
-                raise AttributeError(
-                    "Must define a hash key for model {}".format(
-                        model.__name__))
+
             for column in columns:
                 if column.range_key:
                     meta['dynamo.table.range_key'] = column

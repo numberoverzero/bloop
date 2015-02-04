@@ -1,7 +1,8 @@
+import bloop.index
 
 
 def attribute_definitions(model):
-    columns = model.__meta__["columns"]
+    columns = model.__meta__["dynamo.columns"]
     return [attribute_definition(column) for column in columns]
 
 
@@ -15,7 +16,7 @@ def attribute_definition(column):
 
 
 def key_schema(model):
-    columns = model.__meta__["columns"]
+    columns = model.__meta__["dynamo.columns"]
     schema = []
     for column in columns:
         if column.is_hash:
@@ -48,7 +49,8 @@ def table_name(model):
 
 
 def global_secondary_indexes(model):
-    gsis = model.__meta__["columns_by_model_name"]
+    is_gsi = lambda index: isinstance(index, bloop.index.GlobalSecondaryIndex)
+    gsis = filter(is_gsi, model.__meta__["dynamo.indexes"])
     return {
         'GlobalSecondaryIndexes': [
             global_secondary_index(model, gsi) for gsi in gsis
@@ -61,7 +63,7 @@ def global_secondary_index(model, gsi):
     model is required since gsi hash/range/keys will use model column names,
     and need to be translated to the appropriate dynamo_name for aliases.
     '''
-    columns = model.__meta__["columns_by_model_name"]
+    columns = model.__meta__["dynamo.columns.by.model_name"]
     provisioned_throughput = {
         'WriteCapacityUnits': gsi.write_units,
         'ReadCapacityUnits': gsi.read_units

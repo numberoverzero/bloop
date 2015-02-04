@@ -53,31 +53,41 @@ def global_secondary_indexes(model):
     gsis = filter(is_gsi, model.__meta__["dynamo.indexes"])
     return {
         'GlobalSecondaryIndexes': [
-            global_secondary_index(model, gsi) for gsi in gsis
+            secondary_index(model, gsi) for gsi in gsis
         ]
     }
 
 
-def global_secondary_index(model, gsi):
+def local_secondary_indexes(model):
+    is_lsi = lambda index: isinstance(index, bloop.index.LocalSecondaryIndex)
+    lsis = filter(is_lsi, model.__meta__["dynamo.indexes"])
+    return {
+        'LocalSecondaryIndexes': [
+            secondary_index(model, lsi) for lsi in lsis
+        ]
+    }
+
+
+def secondary_index(model, index):
     '''
     model is required since gsi hash/range/keys will use model column names,
     and need to be translated to the appropriate dynamo_name for aliases.
     '''
     columns = model.__meta__["dynamo.columns.by.model_name"]
     provisioned_throughput = {
-        'WriteCapacityUnits': gsi.write_units,
-        'ReadCapacityUnits': gsi.read_units
+        'WriteCapacityUnits': index.write_units,
+        'ReadCapacityUnits': index.read_units
     }
 
     key_schema = [
         {
-            'AttributeName': columns[gsi.hash_key].dynamo_name,
+            'AttributeName': columns[index.hash_key].dynamo_name,
             'KeyType': 'HASH'
         }
     ]
-    if gsi.range_key:
+    if index.range_key:
         key_schema.append({
-            'AttributeName': columns[gsi.range_key].dynamo_name,
+            'AttributeName': columns[index.range_key].dynamo_name,
             'KeyType': 'RANGE'
         })
     # TODO
@@ -86,6 +96,6 @@ def global_secondary_index(model, gsi):
     return {
         'Projection': projection,
         'ProvisionedThroughput': provisioned_throughput,
-        'IndexName': gsi.model_name,
+        'IndexName': index.model_name,
         'KeySchema': key_schema
     }

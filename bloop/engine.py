@@ -15,7 +15,7 @@ class Engine(object):
     def register(self, model):
         self.models.append(model)
         self.type_engine.register(model)
-        columns = model.__meta__['columns']
+        columns = model.__meta__['dynamo.columns']
         for column in columns:
             self.type_engine.register(column.typedef)
         self.type_engine.bind()

@@ -1,17 +1,38 @@
-import bloop.index
+import bloop.column
+
+is_lsi = lambda index: isinstance(index, bloop.column.LocalSecondaryIndex)
+is_gsi = lambda index: isinstance(index, bloop.column.GlobalSecondaryIndex)
 
 
 def attribute_definitions(model):
+    ''' Only include table and index hash/range keys '''
     columns = model.__meta__["dynamo.columns"]
-    return [attribute_definition(column) for column in columns]
+    indexed_columns = model.__meta__["dynamo.columns.by.model_name"]
+    indexes = model.__meta__["dynamo.indexes"]
+    has_key = lambda c: c.hash_key or c.range_key
+    attrs = []
+    attr_columns = set()
+    for column in filter(has_key, columns):
+        attr_columns.add(column)
+        attrs.append(attribute_def(column))
+    for index in filter(has_key, indexes):
+        if index.hash_key:
+            column = indexed_columns[index.hash_key]
+            if column not in attr_columns:
+                attr_columns.add(column)
+                attrs.append(attribute_def(column))
+        if index.range_key:
+            column = indexed_columns[index.range_key]
+            if column not in attr_columns:
+                attr_columns.add(column)
+                attrs.append(attribute_def(column))
+    return attrs
 
 
-def attribute_definition(column):
-    attr_name = column.dynamo_name
-    attr_type = column.typedef.backing_type
+def attribute_def(column):
     return {
-        'AttributeType': attr_type,
-        'AttributeName': attr_name
+        'AttributeType': column.typedef.backing_type,
+        'AttributeName': column.dynamo_name
     }
 
 
@@ -19,12 +40,15 @@ def key_schema(model):
     columns = model.__meta__["dynamo.columns"]
     schema = []
     for column in columns:
-        if column.is_hash:
+        if column.hash_key and column.range_key:
+            raise AttributeError(
+                "Column {} can't be both a hash and range key".format(column))
+        elif column.hash_key:
             schema.append({
                 'AttributeName': column.dynamo_name,
                 'KeyType': 'HASH'
             })
-        elif column.is_range:
+        elif column.range_key:
             schema.append({
                 'AttributeName': column.dynamo_name,
                 'KeyType': 'RANGE'
@@ -39,63 +63,92 @@ def key_schema(model):
 
 def provisioned_throughput(model):
     return {
-        'WriteCapacityUnits': model.__meta__["write_units"],
-        'ReadCapacityUnits': model.__meta__["read_units"]
+        'WriteCapacityUnits': model.__meta__["dynamo.table.write_units"],
+        'ReadCapacityUnits': model.__meta__["dynamo.table.read_units"]
     }
 
 
 def table_name(model):
-    return model.__meta__["table_name"]
+    return model.__meta__["dynamo.table.name"]
 
 
 def global_secondary_indexes(model):
-    is_gsi = lambda index: isinstance(index, bloop.index.GlobalSecondaryIndex)
-    gsis = filter(is_gsi, model.__meta__["dynamo.indexes"])
-    return {
-        'GlobalSecondaryIndexes': [
-            secondary_index(model, gsi) for gsi in gsis
-        ]
-    }
+    columns = model.__meta__["dynamo.columns.by.model_name"]
+    gsis = []
+    for index in filter(is_gsi, model.__meta__["dynamo.indexes"]):
+        provisioned_throughput = {
+            'WriteCapacityUnits': index.write_units,
+            'ReadCapacityUnits': index.read_units
+        }
+        key_schema = [{
+            'AttributeName': columns[index.hash_key].dynamo_name,
+            'KeyType': 'HASH'
+        }]
+        if index.range_key:
+            key_schema.append({
+                'AttributeName': columns[index.range_key].dynamo_name,
+                'KeyType': 'RANGE'
+            })
+        # TODO - handle projections other than 'ALL' and 'KEYS_ONLY'
+        projection = {
+            'ProjectionType': index.projection,
+            # 'NonKeyAttributes': [
+            #     # TODO
+            # ]
+        }
+
+        gsis.append({
+            'ProvisionedThroughput': provisioned_throughput,
+            'Projection': projection,
+            'IndexName': index.dynamo_name,
+            'KeySchema': key_schema
+        })
+
+    return gsis
 
 
 def local_secondary_indexes(model):
-    is_lsi = lambda index: isinstance(index, bloop.index.LocalSecondaryIndex)
-    lsis = filter(is_lsi, model.__meta__["dynamo.indexes"])
-    return {
-        'LocalSecondaryIndexes': [
-            secondary_index(model, lsi) for lsi in lsis
-        ]
-    }
-
-
-def secondary_index(model, index):
-    '''
-    model is required since gsi hash/range/keys will use model column names,
-    and need to be translated to the appropriate dynamo_name for aliases.
-    '''
     columns = model.__meta__["dynamo.columns.by.model_name"]
-    provisioned_throughput = {
-        'WriteCapacityUnits': index.write_units,
-        'ReadCapacityUnits': index.read_units
-    }
-
-    key_schema = [
-        {
-            'AttributeName': columns[index.hash_key].dynamo_name,
-            'KeyType': 'HASH'
+    lsis = []
+    for index in filter(is_lsi, model.__meta__["dynamo.indexes"]):
+        key_schema = [
+            {
+                'AttributeName': columns[index.hash_key].dynamo_name,
+                'KeyType': 'HASH'
+            },
+            {
+                'AttributeName': columns[index.range_key].dynamo_name,
+                'KeyType': 'RANGE'
+            }
+        ]
+        # TODO - handle projections other than 'ALL' and 'KEYS_ONLY'
+        projection = {
+            'ProjectionType': index.projection,
+            # 'NonKeyAttributes': [
+            #     # TODO
+            # ]
         }
-    ]
-    if index.range_key:
-        key_schema.append({
-            'AttributeName': columns[index.range_key].dynamo_name,
-            'KeyType': 'RANGE'
-        })
-    # TODO
-    projection = {}
 
-    return {
-        'Projection': projection,
-        'ProvisionedThroughput': provisioned_throughput,
-        'IndexName': index.dynamo_name,
-        'KeySchema': key_schema
+        lsis.append({
+            'Projection': projection,
+            'IndexName': index.dynamo_name,
+            'KeySchema': key_schema
+        })
+
+    return lsis
+
+
+def describe_model(model):
+    description = {
+        "TableName": table_name(model),
+        "ProvisionedThroughput": provisioned_throughput(model),
+        "KeySchema": key_schema(model),
+        "AttributeDefinitions": attribute_definitions(model),
+        "GlobalSecondaryIndexes": global_secondary_indexes(model),
+        "LocalSecondaryIndexes": local_secondary_indexes(model)
     }
+    if not description['GlobalSecondaryIndexes']:
+        description.pop('GlobalSecondaryIndexes')
+    if not description['LocalSecondaryIndexes']:
+        description.pop('LocalSecondaryIndexes')
+    return description

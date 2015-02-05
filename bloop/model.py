@@ -1,4 +1,3 @@
-import bloop.index
 import bloop.column
 import bloop.dynamo
 import declare
@@ -57,10 +56,19 @@ def BaseModel(engine):
             model = super().__new__(metaclass, name, bases, attrs)
             meta = model.__meta__
 
-            # Load columns, hash_key, range_key
+            # Load columns, indexes, hash_key, range_key
             # ----------------------------------------------------------
             is_column = lambda field: isinstance(field, bloop.column.Column)
+            is_index = lambda field: isinstance(field, bloop.column.Index)
             columns = list(filter(is_column, model.__meta__['fields']))
+            indexes = list(filter(is_index, columns))
+
+            # Remove indexes from columns since they're treated differently
+            for index in indexes:
+                index.model = model
+                columns.remove(index)
+
+            meta['dynamo.indexes'] = indexes
             meta['dynamo.columns'] = columns
             meta['dynamo.columns.by.model_name'] = declare.index(
                 columns, 'model_name')
@@ -76,16 +84,6 @@ def BaseModel(engine):
                 if column.range_key:
                     meta['dynamo.table.range_key'] = column
                     break
-
-            # Load indexes
-            # ----------------------------------------------------------
-            indexes = []
-            for key, value in attrs.items():
-                if isinstance(value, bloop.index.Index):
-                    value.model_name = key
-                    value.model = model
-                    indexes.append(value)
-            meta['dynamo.indexes'] = indexes
 
             # Entry point for model population.  By default this is the
             # model class.  Custom subclasses of the engine's

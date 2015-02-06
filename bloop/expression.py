@@ -4,11 +4,11 @@
 # TODO:
 # BETWEEN
 # IN
-# NOT condition
 # functions
 #   begins_with
 #   contains
 import operator
+import collections
 missing = object()
 
 
@@ -16,8 +16,9 @@ class ConditionRenderer(object):
     def __init__(self, engine, model):
         self.engine = engine
         self.model = model
-        self.expression_attribute_values = {}
-        self.expression_attribute_names = {}
+        # Slight performance loss for vastly improved readability
+        self.expression_attribute_values = collections.OrderedDict()
+        self.expression_attribute_names = collections.OrderedDict()
         self.__ref_index = 0
 
     def value_ref(self, column, value=missing):
@@ -52,6 +53,10 @@ class Condition(object):
     def __or__(self, other):
         return OrCondition(self, other)
 
+    def __invert__(self):
+        return NotCondition(self)
+    __neg__ = __invert__
+
 
 class AndCondition(Condition):
     def __init__(self, *conditions):
@@ -81,6 +86,17 @@ class OrCondition(Condition):
             return self.conditions[0].render(renderer)
         rendered_conditions = (c.render(renderer) for c in self.conditions)
         return "(" + " OR ".join(rendered_conditions) + ")"
+
+
+class NotCondition(Condition):
+    def __init__(self, condition):
+        self.condition = condition
+
+    def __str__(self):
+        return "Not({})".format(self.condition)
+
+    def render(self, renderer):
+        return "( NOT {})".format(self.condition.render(renderer))
 
 
 class Comparison(Condition):

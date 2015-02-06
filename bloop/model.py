@@ -6,7 +6,7 @@ missing = object()
 
 class __BaseModel(object):
     '''
-    do not subclass directly.  use `base_model` which sets
+    do not subclass directly.  use `BaseModel` which sets
     up the correct metaclass.
     '''
     def __init__(self, **attrs):
@@ -44,6 +44,13 @@ class __BaseModel(object):
             if value is not missing:
                 attrs[column.dynamo_name] = engine.dump(column.typedef, value)
         return attrs
+
+    def __str__(self):
+        cls_name = self.__class__.__name__
+        columns = self.__class__.__meta__["dynamo.columns"]
+        attr_str = lambda attr: "{}={}".format(attr, getattr(self, attr, None))
+        attrs = ", ".join(attr_str(c.model_name) for c in columns)
+        return "{}({})".format(cls_name, attrs)
 
 
 def BaseModel(engine):

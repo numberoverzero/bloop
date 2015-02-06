@@ -37,27 +37,22 @@ def attribute_def(column):
 
 
 def key_schema(model):
-    columns = model.__meta__["dynamo.columns"]
+    meta = model.__meta__
     schema = []
-    for column in columns:
-        if column.hash_key and column.range_key:
-            raise AttributeError(
-                "Column {} can't be both a hash and range key".format(column))
-        elif column.hash_key:
-            schema.append({
-                'AttributeName': column.dynamo_name,
-                'KeyType': 'HASH'
-            })
-        elif column.range_key:
-            schema.append({
-                'AttributeName': column.dynamo_name,
-                'KeyType': 'RANGE'
-            })
-    if len(schema) > 2:
-        raise AttributeError("Overdefined schema: {}".format(schema))
-    elif len(schema) == 0:
-        msg = "Underdefined schema, must provide at least 1 hash key"
-        raise AttributeError(msg)
+    hash_key = meta['dynamo.table.hash_key']
+    range_key = meta['dynamo.table.range_key']
+
+    schema.append({
+        'AttributeName': hash_key.dynamo_name,
+        'KeyType': 'HASH'
+    })
+
+    if range_key:
+        schema.append({
+            'AttributeName': range_key.dynamo_name,
+            'KeyType': 'RANGE'
+        })
+
     return schema
 
 

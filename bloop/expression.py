@@ -2,7 +2,6 @@
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 
 # TODO:
-# IN
 # functions
 #   begins_with
 #   contains
@@ -159,6 +158,22 @@ class Between(Condition):
         return "({} BETWEEN {} AND {})".format(nref, vref_lower, vref_upper)
 
 
+class In(Condition):
+    def __init__(self, column, values):
+        self.column = column
+        self.values = values
+
+    def __str__(self):
+        values = ", ".join(str(c) for c in self.values)
+        return "In({}, [{}])".format(self.column, values)
+
+    def render(self, renderer):
+        values = (renderer.value_ref(self.column, v) for v in self.values)
+        values = ", ".join(values)
+        nref = renderer.name_ref(self.column)
+        return "({} IN ({}))".format(nref, values)
+
+
 class ComparisonMixin(object):
     def __hash__(self):
         # With single inheritance this looks stupid, but as a Mixin this
@@ -207,3 +222,7 @@ class ComparisonMixin(object):
     def between(self, lower, upper):
         ''' lower <= column.value <= upper '''
         return Between(self, lower, upper)
+
+    def in_(self, *values):
+        ''' column.value in [3, 4, 5] '''
+        return In(self, values)

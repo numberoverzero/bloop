@@ -2,9 +2,15 @@ from bloop.engine import Engine
 from bloop.column import Column
 from bloop.expression import ConditionRenderer
 from bloop.types import StringType, NumberType, BooleanType
+import botocore
+import boto3
+
+# patch session to use a specific profile
+session = botocore.session.get_session()
+session.profile = 'test-user-bloop'
+boto3.setup_default_session(botocore_session=session)
 
 engine = Engine()
-
 
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
 class GameScores(engine.model):

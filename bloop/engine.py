@@ -4,6 +4,22 @@ import bloop.expression
 import declare
 import botocore
 import boto3
+missing = object()
+
+
+def dump_key(engine, column, key):
+    '''
+    key is a {model_name: value} dict
+
+    returns {dynamo_name: {type: value}} or {}
+    '''
+    if not column:
+        return {}
+
+    typedef = column.typedef
+    key_value = key[column.model_name]
+    dynamo_value = engine.type_engine.dump(typedef, key_value)
+    return {column.dynamo_name: dynamo_value}
 
 
 class Engine(object):
@@ -42,3 +58,42 @@ class Engine(object):
                 error_code = error.response['Error']['Code']
                 if error_code != 'ResourceInUseException':
                     raise error
+
+    def get(self, model, consistent_read=False, **key):
+        '''
+        Return a single instance of the model, or raise KeyError
+
+        key must specify values for the hash key and,
+        if the model has one, the range key.
+
+        Example
+        -------
+        engine = Engine()
+
+        class HashOnly(engine.model):
+            user_id = Column(NumberType, hash_key=True)
+
+        class HashAndRange(engine.model):
+            user_id = Column(NumberType, hash_key=True)
+            game_title = Column(StringType, range_key=True)
+
+        engine.get(HashOnly, user_id=101)
+        engine.get(HashOnly, user_id=101, game='Starship X')
+        '''
+        meta = model.__meta__
+        table_name = meta['dynamo.table.name']
+
+        hash_key = meta['dynamo.table.hash_key']
+        range_key = meta['dynamo.table.range_key']
+
+        dynamo_key = {}
+        dynamo_key.update(dump_key(self, hash_key, key))
+        dynamo_key.update(dump_key(self, range_key, key))
+
+        dynamo_item = self.dynamodb_client.get_item(
+            TableName=table_name, Key=dynamo_key,
+            ConsistentRead=consistent_read).get("Item", missing)
+
+        if dynamo_item is missing:
+            raise KeyError("No item found for {}".format(key))
+        return self.__load__(model, dynamo_item)

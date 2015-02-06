@@ -1,10 +1,11 @@
+import bloop.expression
 import declare
 import uuid
 missing = object()
 _meta_key = "__column_meta_{}".format(uuid.uuid4().hex)
 
 
-class Column(declare.Field):
+class Column(declare.Field, bloop.expression.ComparisonMixin):
     def __init__(self, *args, hash_key=None, range_key=None,
                  name=missing, **kwargs):
         self._hash_key = hash_key
@@ -14,6 +15,12 @@ class Column(declare.Field):
         self.column_key = "__{}_{}".format(
             self.__class__.__name__, uuid.uuid4().hex)
         super().__init__(*args, **kwargs)
+
+    def __str__(self):
+        attrs = ["model_name", "dynamo_name", "hash_key", "range_key"]
+        attr_str = lambda attr: "{}={}".format(attr, getattr(self, attr))
+        attrs = ", ".join(attr_str(attr) for attr in attrs)
+        return "Column({})".format(attrs)
 
     @property
     def hash_key(self):

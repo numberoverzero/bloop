@@ -1,22 +1,34 @@
 from bloop.engine import Engine
-from bloop.column import DirtyColumn
+from bloop.column import Column
+from bloop.expression import ConditionRenderer
 from bloop.types import StringType, NumberType, BooleanType
 
 engine = Engine()
 
-class Person(engine.model):
-    first = DirtyColumn(StringType)
-    last = DirtyColumn(StringType)
-    age = DirtyColumn(NumberType)
-    alive = DirtyColumn(BooleanType)
 
-    def __str__(self):
-        fmt = "Person(first={}, last={}, age={}, alive={})"
-        return fmt.format(self.first, self.last, self.age, self.alive)
+# http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
+class GameScores(engine.model):
+    user_id = Column(NumberType, hash_key=True)
+    game_title = Column(StringType, range_key=True)
+    top_score = Column(NumberType)
+    top_score_date = Column(StringType)
+    wins = Column(NumberType)
+    losses = Column(NumberType)
+
+engine.bind()
 
 
-person = Person(first="John", last="Smith", age=25, alive=True)
-wire = engine.dump(Person, person)
-same_person = engine.load(Person, wire)
+renderer = ConditionRenderer(engine, GameScores)
 
-print("\nDynamo wire: {}\nPython model: {}\n".format(wire, same_person))
+condition = (
+    ((GameScores.user_id > 102) & (GameScores.top_score.is_not(None)))
+  | (GameScores.game_title == "Space Sim")
+  | ~(GameScores.wins == 300)
+)
+renderer.render(condition)
+
+print("{}\n{}\n{}".format(
+    renderer.condition_expression,
+    renderer.expression_attribute_names
+    ,renderer.expression_attribute_values
+))

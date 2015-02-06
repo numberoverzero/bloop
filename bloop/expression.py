@@ -2,7 +2,6 @@
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 
 # TODO:
-# BETWEEN
 # IN
 # functions
 #   begins_with
@@ -49,9 +48,11 @@ class ConditionRenderer(object):
 class Condition(object):
     def __and__(self, other):
         return AndCondition(self, other)
+    __iand__ = __and__
 
     def __or__(self, other):
         return OrCondition(self, other)
+    __ior__ = __or__
 
     def __invert__(self):
         return NotCondition(self)
@@ -141,6 +142,23 @@ class AttributeExists(Condition):
         return "({}({}))".format(name, nref)
 
 
+class Between(Condition):
+    def __init__(self, column, lower, upper):
+        self.column = column
+        self.lower = lower
+        self.upper = upper
+
+    def __str__(self):
+        return "Between({}, {}, {})".format(
+            self.column, self.lower, self.upper)
+
+    def render(self, renderer):
+        nref = renderer.name_ref(self.column)
+        vref_lower = renderer.value_ref(self.column, self.lower)
+        vref_upper = renderer.value_ref(self.column, self.upper)
+        return "({} BETWEEN {} AND {})".format(nref, vref_lower, vref_upper)
+
+
 class ComparisonMixin(object):
     def __hash__(self):
         # With single inheritance this looks stupid, but as a Mixin this
@@ -185,3 +203,7 @@ class ComparisonMixin(object):
     def is_not(self, value):
         ''' alias for != '''
         return self != value
+
+    def between(self, lower, upper):
+        ''' lower <= column.value <= upper '''
+        return Between(self, lower, upper)

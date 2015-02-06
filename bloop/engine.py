@@ -116,7 +116,7 @@ class Engine(object):
 
             condition = hash_key.is_(None)
             if range_key:
-                condition = condition & range_key.is_(None)
+                condition &= range_key.is_(None)
 
             r = ConditionRenderer(self, model)
             r.render(condition)

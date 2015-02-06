@@ -1,10 +1,5 @@
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
-
-# TODO:
-# functions
-#   begins_with
-#   contains
 import operator
 import collections
 missing = object()
@@ -141,6 +136,34 @@ class AttributeExists(Condition):
         return "({}({}))".format(name, nref)
 
 
+class BeginsWith(Condition):
+    def __init__(self, column, value):
+        self.column = column
+        self.value = value
+
+    def __str__(self):
+        return "BeginsWith({}, {})".format(self.column, self.value)
+
+    def render(self, renderer):
+        nref = renderer.name_ref(self.column)
+        vref = renderer.value_ref(self.column, self.value)
+        return "(begins_with({}, {}))".format(nref, vref)
+
+
+class Contains(Condition):
+    def __init__(self, column, value):
+        self.column = column
+        self.value = value
+
+    def __str__(self):
+        return "Contains({}, {})".format(self.column, self.value)
+
+    def render(self, renderer):
+        nref = renderer.name_ref(self.column)
+        vref = renderer.value_ref(self.column, self.value)
+        return "(contains({}, {}))".format(nref, vref)
+
+
 class Between(Condition):
     def __init__(self, column, lower, upper):
         self.column = column
@@ -226,3 +249,9 @@ class ComparisonMixin(object):
     def in_(self, *values):
         ''' column.value in [3, 4, 5] '''
         return In(self, values)
+
+    def begins_with(self, value):
+        return BeginsWith(self, value)
+
+    def contains(self, value):
+        return Contains(self, value)

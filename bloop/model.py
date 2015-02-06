@@ -79,11 +79,15 @@ def BaseModel(engine):
                 if column.hash_key:
                     meta['dynamo.table.hash_key'] = column
                     break
+            else:
+                meta['dynamo.table.hash_key'] = None
 
             for column in columns:
                 if column.range_key:
                     meta['dynamo.table.range_key'] = column
                     break
+            else:
+                meta['dynamo.table.range_key'] = None
 
             # Entry point for model population.  By default this is the
             # model class.  Custom subclasses of the engine's

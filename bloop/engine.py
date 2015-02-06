@@ -1,6 +1,6 @@
 import bloop.model
 import bloop.dynamo
-import bloop.expression
+from bloop.expression import ConditionRenderer
 import declare
 import botocore
 import boto3
@@ -97,3 +97,31 @@ class Engine(object):
         if dynamo_item is missing:
             raise KeyError("No item found for {}".format(key))
         return self.__load__(model, dynamo_item)
+
+    def save(self, item, overwrite=False):
+        model = item.__class__
+        meta = model.__meta__
+        table_name = meta['dynamo.table.name']
+        dynamo_item = self.__dump__(model, item)
+
+        # Blow away any existing item
+        if overwrite:
+            self.dynamodb_client.put_item(
+                TableName=table_name, Item=dynamo_item)
+
+        # Assert that the hash (and range, if there is one) keys are None
+        else:
+            hash_key = meta['dynamo.table.hash_key']
+            range_key = meta['dynamo.table.range_key']
+
+            condition = hash_key.is_(None)
+            if range_key:
+                condition = condition & range_key.is_(None)
+
+            r = ConditionRenderer(self, model)
+            r.render(condition)
+
+            self.dynamodb_client.put_item(
+                TableName=table_name, Item=dynamo_item,
+                ConditionExpression=r.condition_expression,
+                ExpressionAttributeNames=r.expression_attribute_names)

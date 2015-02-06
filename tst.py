@@ -1,6 +1,5 @@
 from bloop.engine import Engine
 from bloop.column import Column
-from bloop.expression import ConditionRenderer
 from bloop.types import StringType, NumberType, BooleanType
 import botocore
 import boto3
@@ -23,18 +22,8 @@ class GameScores(engine.model):
 
 engine.bind()
 
-
-renderer = ConditionRenderer(engine, GameScores)
-
-condition = (
-    ((GameScores.user_id > 102) & (GameScores.top_score.is_not(None)))
-  | (GameScores.game_title == "Space Sim")
-  | ~(GameScores.wins == 300)
-)
-renderer.render(condition)
-
-print("{}\n{}\n{}".format(
-    renderer.condition_expression,
-    renderer.expression_attribute_names
-    ,renderer.expression_attribute_values
-))
+gs = engine.get(GameScores, user_id=101, game_title="Space Sim")
+print(gs)
+gs.losses += 1
+engine.save(gs, overwrite=True)
+print(gs)

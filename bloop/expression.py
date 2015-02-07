@@ -6,6 +6,7 @@ EXPRESSION = "ConditionExpression"
 ATTR_NAMES = "ExpressionAttributeNames"
 ATTR_VALUES = "ExpressionAttributeValues"
 
+
 def render(engine, model, condition):
     renderer = ConditionRenderer(engine, model)
     condition_expression = condition.render(renderer)

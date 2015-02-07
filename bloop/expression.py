@@ -1,17 +1,30 @@
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import operator
-import collections
 missing = object()
+EXPRESSION = "ConditionExpression"
+ATTR_NAMES = "ExpressionAttributeNames"
+ATTR_VALUES = "ExpressionAttributeValues"
+
+def render(engine, model, condition):
+    renderer = ConditionRenderer(engine, model)
+    condition_expression = condition.render(renderer)
+
+    # An expression contains the compressed string, and any name/value refs
+    expression = {EXPRESSION: condition_expression}
+    if renderer.attr_names:
+        expression[ATTR_NAMES] = renderer.attr_names
+    if renderer.attr_values:
+        expression[ATTR_VALUES] = renderer.attr_values
+    return expression
 
 
 class ConditionRenderer(object):
     def __init__(self, engine, model):
         self.engine = engine
         self.model = model
-        # Slight performance loss for vastly improved readability
-        self.expression_attribute_values = collections.OrderedDict()
-        self.expression_attribute_names = collections.OrderedDict()
+        self.attr_values = {}
+        self.attr_names = {}
         self.__ref_index = 0
 
     def value_ref(self, column, value=missing):
@@ -26,17 +39,14 @@ class ConditionRenderer(object):
             value = getattr(self.model, column.model_name)
         dynamo_value = type_engine.dump(column.typedef, value)
 
-        self.expression_attribute_values[ref] = dynamo_value
+        self.attr_values[ref] = dynamo_value
         return ref
 
     def name_ref(self, column):
         ref = "#nref{}".format(self.__ref_index)
         self.__ref_index += 1
-        self.expression_attribute_names[ref] = column.dynamo_name
+        self.attr_names[ref] = column.dynamo_name
         return ref
-
-    def render(self, condition):
-        self.condition_expression = condition.render(self)
 
 
 class Condition(object):

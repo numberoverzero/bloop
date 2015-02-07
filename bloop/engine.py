@@ -1,6 +1,6 @@
 import bloop.model
 import bloop.dynamo
-from bloop.expression import ConditionRenderer
+from bloop.expression import render
 import declare
 import botocore
 import boto3
@@ -117,11 +117,7 @@ class Engine(object):
             condition = hash_key.is_(None)
             if range_key:
                 condition &= range_key.is_(None)
-
-            r = ConditionRenderer(self, model)
-            r.render(condition)
+            expression = render(self, model, condition)
 
             self.dynamodb_client.put_item(
-                TableName=table_name, Item=dynamo_item,
-                ConditionExpression=r.condition_expression,
-                ExpressionAttributeNames=r.expression_attribute_names)
+                TableName=table_name, Item=dynamo_item, **expression)

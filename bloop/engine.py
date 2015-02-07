@@ -98,26 +98,10 @@ class Engine(object):
             raise KeyError("No item found for {}".format(key))
         return self.__load__(model, dynamo_item)
 
-    def save(self, item, overwrite=False):
+    def put(self, item, condition=None):
         model = item.__class__
-        meta = model.__meta__
-        table_name = meta['dynamo.table.name']
+        table_name = model.__meta__['dynamo.table.name']
         dynamo_item = self.__dump__(model, item)
-
-        # Blow away any existing item
-        if overwrite:
-            self.dynamodb_client.put_item(
-                TableName=table_name, Item=dynamo_item)
-
-        # Assert that the hash (and range, if there is one) keys are None
-        else:
-            hash_key = meta['dynamo.table.hash_key']
-            range_key = meta['dynamo.table.range_key']
-
-            condition = hash_key.is_(None)
-            if range_key:
-                condition &= range_key.is_(None)
-            expression = render(self, model, condition)
-
-            self.dynamodb_client.put_item(
-                TableName=table_name, Item=dynamo_item, **expression)
+        expression = render(self, model, condition)
+        self.dynamodb_client.put_item(
+            TableName=table_name, Item=dynamo_item, **expression)

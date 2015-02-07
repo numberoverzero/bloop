@@ -8,6 +8,8 @@ ATTR_VALUES = "ExpressionAttributeValues"
 
 
 def render(engine, model, condition):
+    if not condition:
+        return {}
     renderer = ConditionRenderer(engine, model)
     condition_expression = condition.render(renderer)
 

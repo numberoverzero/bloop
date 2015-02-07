@@ -29,7 +29,7 @@ class ConditionRenderer(object):
         self.__ref_index = 0
 
     def value_ref(self, column, value=missing):
-        ref = ":vref{}".format(self.__ref_index)
+        ref = ":v{}".format(self.__ref_index)
         self.__ref_index += 1
 
         # Dump the value (default to current) through the column's
@@ -44,7 +44,7 @@ class ConditionRenderer(object):
         return ref
 
     def name_ref(self, column):
-        ref = "#nref{}".format(self.__ref_index)
+        ref = "#n{}".format(self.__ref_index)
         self.__ref_index += 1
         self.attr_names[ref] = column.dynamo_name
         return ref
@@ -202,9 +202,9 @@ class In(Condition):
         return "In({}, [{}])".format(self.column, values)
 
     def render(self, renderer):
+        nref = renderer.name_ref(self.column)
         values = (renderer.value_ref(self.column, v) for v in self.values)
         values = ", ".join(values)
-        nref = renderer.name_ref(self.column)
         return "({} IN ({}))".format(nref, values)
 
 

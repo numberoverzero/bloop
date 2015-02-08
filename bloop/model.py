@@ -4,6 +4,14 @@ import declare
 missing = object()
 
 
+def is_column(field):
+    return isinstance(field, bloop.column.Column)
+
+
+def is_index(field):
+    return isinstance(field, bloop.column.Index)
+
+
 class __BaseModel(object):
     '''
     do not subclass directly.  use `BaseModel` which sets
@@ -48,8 +56,10 @@ class __BaseModel(object):
     def __str__(self):
         cls_name = self.__class__.__name__
         columns = self.__class__.__meta__["dynamo.columns"]
-        attr_str = lambda attr: "{}={}".format(attr, getattr(self, attr, None))
-        attrs = ", ".join(attr_str(c.model_name) for c in columns)
+
+        def _attr(attr):
+            return "{}={}".format(attr, getattr(self, attr, None))
+        attrs = ", ".join(_attr(c.model_name) for c in columns)
         return "{}({})".format(cls_name, attrs)
 
 
@@ -65,8 +75,6 @@ def BaseModel(engine):
 
             # Load columns, indexes, hash_key, range_key
             # ----------------------------------------------------------
-            is_column = lambda field: isinstance(field, bloop.column.Column)
-            is_index = lambda field: isinstance(field, bloop.column.Index)
             columns = list(filter(is_column, model.__meta__['fields']))
             indexes = list(filter(is_index, columns))
 

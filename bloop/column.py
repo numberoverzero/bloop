@@ -18,8 +18,10 @@ class Column(declare.Field, bloop.expression.ComparisonMixin):
 
     def __str__(self):
         attrs = ["model_name", "dynamo_name", "hash_key", "range_key"]
-        attr_str = lambda attr: "{}={}".format(attr, getattr(self, attr))
-        attrs = ", ".join(attr_str(attr) for attr in attrs)
+
+        def _attr(attr):
+            return "{}={}".format(attr, getattr(self, attr))
+        attrs = ", ".join(_attr(attr) for attr in attrs)
         return "Column({})".format(attrs)
 
     @property

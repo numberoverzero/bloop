@@ -1,7 +1,16 @@
 import bloop.column
 
-is_lsi = lambda index: isinstance(index, bloop.column.LocalSecondaryIndex)
-is_gsi = lambda index: isinstance(index, bloop.column.GlobalSecondaryIndex)
+
+def is_lsi(index):
+    return isinstance(index, bloop.column.LocalSecondaryIndex)
+
+
+def is_gsi(index):
+    return isinstance(index, bloop.column.GlobalSecondaryIndex)
+
+
+def has_key(column):
+    return column.hash_key or column.range_key
 
 
 def attribute_definitions(model):
@@ -9,7 +18,6 @@ def attribute_definitions(model):
     columns = model.__meta__["dynamo.columns"]
     indexed_columns = model.__meta__["dynamo.columns.by.model_name"]
     indexes = model.__meta__["dynamo.indexes"]
-    has_key = lambda c: c.hash_key or c.range_key
     attrs = []
     attr_columns = set()
     for column in filter(has_key, columns):

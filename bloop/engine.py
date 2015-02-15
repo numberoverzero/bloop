@@ -4,6 +4,7 @@ from bloop.expression import render
 from bloop.dynamo_client import DynamoClient
 import declare
 import collections
+import collections.abc
 missing = object()
 
 
@@ -14,13 +15,20 @@ class ObjectsNotFound(Exception):
         self.missing = list(objs)
 
 
+def list_of(objs):
+    ''' wrap single elements in a list '''
+    if (isinstance(objs, collections.abc.Iterable)
+       and not isinstance(objs, str)):
+        return objs
+    return [objs]
+
+
 def value_of(column):
     '''
     Return the value in a key definition
 
     Example
     -------
-
     column_value({'S': 'Space Invaders'}) -> 'Space Invaders'
     '''
     return next(iter(column.values()))
@@ -110,7 +118,7 @@ class Engine(object):
             table = bloop.dynamo.describe_model(model)
             self.dynamodb_client.create_table(**table)
 
-    def load(self, *objs, consistent_read=False):
+    def load(self, objs, *, consistent_read=False):
         '''
         Populate objects from dynamodb, optionally using consistent reads.
 
@@ -137,6 +145,8 @@ class Engine(object):
         # Load multiple instances
         engine.load(hash_only, hash_and_range)
         '''
+        objs = list_of(objs)
+
         # The RequestItems dictionary of table:Key(list) that will be
         # passed to dynamodb_client
         request_items = {}
@@ -152,13 +162,13 @@ class Engine(object):
 
         # Use set here to properly de-dupe list (don't load same obj twice)
         for obj in set(objs):
-            model = obj.__class__
-            meta = model.__meta__
+            meta = obj.__meta__
             table_name = meta['dynamo.table.name']
             if table_name not in request_items:
-                request_items[table_name] = {}
-                request_items[table_name]["Keys"] = []
-                request_items[table_name]["ConsistentRead"] = consistent_read
+                request_items[table_name] = {
+                    "Keys": [],
+                    "ConsistentRead": consistent_read
+                }
             key = dump_key(self, obj)
             # Add the key to the request
             request_items[table_name]["Keys"].append(key)
@@ -204,10 +214,56 @@ class Engine(object):
             raise ObjectsNotFound("Failed to load some objects",
                                   objs_by_key.values())
 
-    def put(self, item, condition=None):
-        model = item.__class__
-        table_name = model.__meta__['dynamo.table.name']
-        dynamo_item = self.__dump__(model, item)
-        expression = render(self, model, condition)
-        self.dynamodb_client.put_item(
-            TableName=table_name, Item=dynamo_item, **expression)
+    def save(self, objs, *, condition=None):
+        objs = list_of(objs)
+        if len(objs) > 1 and condition:
+            raise ValueError("condition is only usable with a single object")
+
+        elif len(objs) == 1 and condition:
+            obj = objs[0]
+            model = obj.__class__
+            table_name = model.__meta__['dynamo.table.name']
+            item = self.__dump__(model, obj)
+            expression = render(self, model, condition)
+            self.dynamodb_client.put_item(table_name, item, expression)
+
+        else:
+            request_items = collections.defaultdict(list)
+            # Use set here to properly de-dupe list (don't save same obj twice)
+            for obj in set(objs):
+                put_item = {
+                    "PutRequest": {
+                        "Item": self.__dump__(obj.__class__, obj)
+                    }
+                }
+                table_name = obj.__meta__['dynamo.table.name']
+                request_items[table_name].append(put_item)
+
+            self.dynamodb_client.batch_write_items(request_items)
+
+    def delete(self, objs, *, condition=None):
+        objs = list_of(objs)
+        if len(objs) > 1 and condition:
+            raise ValueError("condition is only usable with a single object")
+
+        elif len(objs) == 1 and condition:
+            obj = objs[0]
+            model = obj.__class__
+            table_name = model.__meta__['dynamo.table.name']
+            key = dump_key(self, obj)
+            expression = render(self, model, condition)
+            self.dynamodb_client.delete_item(table_name, key, expression)
+
+        else:
+            request_items = collections.defaultdict(list)
+            # Use set here to properly de-dupe list (don't save same obj twice)
+            for obj in set(objs):
+                del_item = {
+                    "DeleteRequest": {
+                        "Key": dump_key(self, obj)
+                    }
+                }
+                table_name = obj.__meta__['dynamo.table.name']
+                request_items[table_name].append(del_item)
+
+            self.dynamodb_client.batch_write_items(request_items)

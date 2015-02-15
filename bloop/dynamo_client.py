@@ -1,6 +1,8 @@
 import boto3
 import botocore
+import collections
 import time
+
 
 MAX_BATCH_SIZE = 25
 RETRYABLE_ERRORS = [
@@ -35,6 +37,31 @@ def partition_batch_get_input(request_items):
                     "Keys": []}
             # Dump the key into the chunk table's `Keys` list
             table["Keys"].append(key)
+            items += 1
+        # Last chunk, less than MAX_BATCH_SIZE items
+        if chunk:
+            yield chunk
+
+    return iterate_chunks()
+
+
+def partition_batch_write_input(request_items):
+    ''' Takes a batch_write input and partitions into 25 object chunks '''
+
+    def iterate_items():
+        for table_name, items in request_items.items():
+            for item in items:
+                yield (table_name, item)
+
+    def iterate_chunks():
+        chunk = collections.defaultdict(list)
+        items = 0
+        for table_name, item in iterate_items():
+            if items == MAX_BATCH_SIZE:
+                yield chunk
+                items = 0
+                chunk = {}
+            chunk[table_name].append(item)
             items += 1
         # Last chunk, less than MAX_BATCH_SIZE items
         if chunk:
@@ -137,6 +164,73 @@ class DynamoClient(object):
 
         return response
 
+    def batch_write_items(self, request):
+        '''
+        Takes the "RequestItems" dict documented here:
+            http://docs.aws.amazon.com/amazondynamodb/latest/ \
+                APIReference/API_BatchWriteItem.html
+
+        Handles batching and throttling/retry with backoff
+
+        Example
+        ------
+        From the same document above, the example input would be:
+
+        {
+            "RequestItems": {
+                "Forum": [
+                    {
+                        "PutRequest": {
+                            "Item": {
+                                "Name": {"S": "Amazon DynamoDB"},
+                                "Category": {"S": "Amazon Web Services"}
+                            }
+                        }
+                    },
+                    {
+                        "PutRequest": {
+                            "Item": {
+                                "Name": {"S": "Amazon RDS"},
+                                "Category": {"S": "Amazon Web Services"}
+                            }
+                        }
+                    },
+                    {
+                        "DeleteRequest": {
+                            "Key": {
+                                "Name": {"S": "Amazon Redshift"}
+                            }
+                        }
+                    },
+                    {
+                        "PutRequest": {
+                            "Item": {
+                                "Name": {"S": "Amazon ElastiCache"},
+                                "Category": {"S": "Amazon Web Services"}
+                            }
+                        }
+                    }
+                ]
+            }
+        }
+        '''
+        request_batches = partition_batch_write_input(request)
+
+        # Bound ref to batch_write for retries
+        func = self.client.batch_write_item
+
+        for request_batch in request_batches:
+            # After the first call, request_batch is the
+            # UnprocessedKeys from the first call
+            while request_batch:
+                batch_response = self.call_with_retries(
+                    func, RequestItems=request_batch)
+
+                # If there are no unprocessed items, this will be an empty
+                # list which will break the while loop, moving to the next
+                # batch of items
+                request_batch = batch_response["UnprocessedItems"]
+
     def call_with_retries(self, func, *args, **kwargs):
         ''' Exponential backoff helper, does not partition or map results '''
         attempts = 0
@@ -166,3 +260,11 @@ class DynamoClient(object):
             error_code = error.response['Error']['Code']
             if error_code != 'ResourceInUseException':
                 raise error
+
+    def delete_item(self, table, key, expression):
+        self.call_with_retries(self.client.delete_item,
+                               TableName=table, Key=key, **expression)
+
+    def put_item(self, table, item, expression):
+        self.call_with_retries(self.client.put_item,
+                               TableName=table, Item=item, **expression)

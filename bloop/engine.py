@@ -1,25 +1,58 @@
 import bloop.model
 import bloop.dynamo
 from bloop.expression import render
+from bloop.dynamo_client import DynamoClient
 import declare
-import botocore
-import boto3
+import collections
 missing = object()
 
 
-def dump_key(engine, column, key):
-    '''
-    key is a {model_name: value} dict
+class ObjectsNotFound(Exception):
+    ''' Thrown when batch_get fails to find some objects '''
+    def __init__(self, message, objs):
+        super().__init__(message)
+        self.missing = list(objs)
 
-    returns {dynamo_name: {type: value}} or {}
-    '''
-    if not column:
-        return {}
 
+def value_of(column):
+    '''
+    Return the value in a key definition
+
+    Example
+    -------
+
+    column_value({'S': 'Space Invaders'}) -> 'Space Invaders'
+    '''
+    return next(iter(column.values()))
+
+
+def dump_column(engine, column, value):
+    ''' dump a single column into the appropriate dynamo format '''
     typedef = column.typedef
-    key_value = key[column.model_name]
-    dynamo_value = engine.type_engine.dump(typedef, key_value)
+    dynamo_value = engine.type_engine.dump(typedef, value)
     return {column.dynamo_name: dynamo_value}
+
+
+def dump_key(engine, obj):
+    '''
+    dump the hash (and range, if there is one) key(s) of an object into
+    a dynamo-friendly format.
+
+    returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
+    '''
+    meta = obj.__meta__
+    dynamo_key = {}
+
+    hash_key = meta['dynamo.table.hash_key']
+    hash_value = getattr(obj, hash_key.model_name)
+    dynamo_key.update(dump_column(engine, hash_key, hash_value))
+
+    range_key = meta['dynamo.table.range_key']
+    if range_key:
+        range_value = getattr(obj, range_key.model_name)
+        dynamo_key.update(dump_column(engine, range_key, range_value))
+
+    return dynamo_key
 
 
 class Engine(object):
@@ -28,8 +61,9 @@ class Engine(object):
     def __init__(self, namespace=None):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
-        self.dynamodb_client = boto3.client("dynamodb")
+        self.dynamodb_client = DynamoClient()
         self.type_engine = declare.TypeEngine.unique()
+        self.plugins = collections.defaultdict(list)
         self.model = bloop.model.BaseModel(self)
         self.models = []
 
@@ -41,6 +75,29 @@ class Engine(object):
             self.type_engine.register(column.typedef)
         self.type_engine.bind()
 
+    def on(self, event):
+        '''
+        Decorate a function to be invoked when the given `event` occurs.
+
+        Valid events are:
+            - before_load
+            - before_dump
+            - after_load
+            - after_dump
+
+        function signature should match:
+            (event name, model instance, *args, **kwargs)
+        '''
+        def wrap_function(func):
+            self.plugins[event].append(func)
+            return func
+        return wrap_function
+
+    def __trigger__(self, event, model, *args, **kwargs):
+        plugins = self.plugins[event]
+        for plugin in plugins:
+            plugin(event, model, *args, **kwargs)
+
     def __load__(self, model, value):
         return self.type_engine.load(model, value)
 
@@ -50,21 +107,15 @@ class Engine(object):
     def bind(self):
         ''' Create tables for all models that have been registered '''
         for model in self.models:
-            try:
-                table = bloop.dynamo.describe_model(model)
-                self.dynamodb_client.create_table(**table)
-            except botocore.exceptions.ClientError as error:
-                # Raise unless the table already exists
-                error_code = error.response['Error']['Code']
-                if error_code != 'ResourceInUseException':
-                    raise error
+            table = bloop.dynamo.describe_model(model)
+            self.dynamodb_client.create_table(**table)
 
-    def get(self, model, consistent_read=False, **key):
+    def load(self, *objs, consistent_read=False):
         '''
-        Return a single instance of the model, or raise KeyError
+        Populate objects from dynamodb, optionally using consistent reads.
 
-        key must specify values for the hash key and,
-        if the model has one, the range key.
+        If any objects are not found, throws ObjectsNotFound with the attribute
+        `missing` containing a list of the objects that were not loaded.
 
         Example
         -------
@@ -77,26 +128,81 @@ class Engine(object):
             user_id = Column(NumberType, hash_key=True)
             game_title = Column(StringType, range_key=True)
 
-        engine.get(HashOnly, user_id=101)
-        engine.get(HashOnly, user_id=101, game='Starship X')
+        hash_only = HashOnly(user_id=101)
+        hash_and_range = HashAndRange(user_id=101, game_title='Starship X')
+
+        # Load only one instance, with consistent reads
+        engine.load(hash_only, consistent_read=True)
+
+        # Load multiple instances
+        engine.load(hash_only, hash_and_range)
         '''
-        meta = model.__meta__
-        table_name = meta['dynamo.table.name']
+        # The RequestItems dictionary of table:Key(list) that will be
+        # passed to dynamodb_client
+        request_items = {}
 
-        hash_key = meta['dynamo.table.hash_key']
-        range_key = meta['dynamo.table.range_key']
+        # table_name:dynamodb_name(list) of table keys (hash and opt range)
+        # that is used to pull the correct attributes from result items
+        # when mapping fields back to the input models
+        table_key_shapes = {}
 
-        dynamo_key = {}
-        dynamo_key.update(dump_key(self, hash_key, key))
-        dynamo_key.update(dump_key(self, range_key, key))
+        # Index objects by the (table_name, dump_key) tuple that
+        # can be used to find their attributes in the results map
+        objs_by_key = {}
 
-        dynamo_item = self.dynamodb_client.get_item(
-            TableName=table_name, Key=dynamo_key,
-            ConsistentRead=consistent_read).get("Item", missing)
+        # Use set here to properly de-dupe list (don't load same obj twice)
+        for obj in set(objs):
+            model = obj.__class__
+            meta = model.__meta__
+            table_name = meta['dynamo.table.name']
+            if table_name not in request_items:
+                request_items[table_name] = {}
+                request_items[table_name]["Keys"] = []
+                request_items[table_name]["ConsistentRead"] = consistent_read
+            key = dump_key(self, obj)
+            # Add the key to the request
+            request_items[table_name]["Keys"].append(key)
+            # Make sure we can find the key shape for this table
+            key_shape = table_key_shapes[table_name] = list(key)
+            # Index the object by its table name and key
+            # values for quickly loading from results
+            index = (
+                table_name,
+                tuple(value_of(key[n]) for n in key_shape)
+            )
+            objs_by_key[index] = obj
 
-        if dynamo_item is missing:
-            raise KeyError("No item found for {}".format(key))
-        return self.__load__(model, dynamo_item)
+        results = self.dynamodb_client.batch_get_items(request_items)
+
+        for table_name, items in results.items():
+            # The attributes that make up the key
+            key_shape = table_key_shapes[table_name]
+            for item in items:
+                # Build the index so we can find the object to load in O(1)
+                index = (
+                    table_name,
+                    tuple(value_of(item[n]) for n in key_shape)
+                )
+                obj = objs_by_key.pop(index)
+
+                # Let plugins know we're going to load the object
+                self.__trigger__('before_load', obj)
+
+                columns = obj.__meta__["dynamo.columns"]
+                for column in columns:
+                    value = item.get(column.dynamo_name, missing)
+                    # Missing expected column
+                    if value is not missing:
+                        value = self.type_engine.load(column.typedef, value)
+                        setattr(obj, column.model_name, value)
+
+                # Let plugins clean up or validate the object after loading
+                self.__trigger__('after_load', obj)
+
+        # If there are still objects, they weren't found
+        if objs_by_key:
+            raise ObjectsNotFound("Failed to load some objects",
+                                  objs_by_key.values())
 
     def put(self, item, condition=None):
         model = item.__class__

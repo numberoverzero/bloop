@@ -29,7 +29,6 @@ class __BaseModel(object):
         ''' dict -> obj '''
         meta = cls.__meta__
         columns = meta["dynamo.columns"]
-        init = meta["bloop.init"]
         engine = meta["bloop.engine"].type_engine
         attrs = {}
         for column in columns:
@@ -37,7 +36,7 @@ class __BaseModel(object):
             # Missing expected column
             if value is not missing:
                 attrs[column.model_name] = engine.load(column.typedef, value)
-        return init(**attrs)
+        return cls(**attrs)
 
     @classmethod
     def __dump__(cls, obj):
@@ -58,9 +57,10 @@ class __BaseModel(object):
         columns = self.__class__.__meta__["dynamo.columns"]
 
         def _attr(attr):
-            return "{}={}".format(attr, getattr(self, attr, None))
+            return "{}={}".format(attr, repr(getattr(self, attr, None)))
         attrs = ", ".join(_attr(c.model_name) for c in columns)
         return "{}({})".format(cls_name, attrs)
+    __repr__ = __str__
 
 
 def BaseModel(engine):
@@ -104,13 +104,6 @@ def BaseModel(engine):
             else:
                 meta['dynamo.table.range_key'] = None
 
-            # Entry point for model population.  By default this is the
-            # model class.  Custom subclasses of the engine's
-            # base model should specify the meta property "bloop.init",
-            # which should be a function taking a **kwarg of name:value
-            # pairs corresponding to modeled columns.
-
-            meta["bloop.init"] = meta.get("bloop.init", model)
             meta["bloop.engine"] = engine
 
             meta["dynamo.table.name"] = meta.get(

@@ -17,10 +17,13 @@ class ObjectsNotFound(Exception):
 
 def list_of(objs):
     ''' wrap single elements in a list '''
-    if (isinstance(objs, collections.abc.Iterable)
-       and not isinstance(objs, str)):
+    # String check first since it is also an Iterable
+    if isinstance(objs, str):
+        return [objs]
+    elif isinstance(objs, collections.abc.Iterable):
         return objs
-    return [objs]
+    else:
+        return [objs]
 
 
 def value_of(column):

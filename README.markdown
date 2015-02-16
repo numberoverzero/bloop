@@ -19,9 +19,13 @@ ORM for DynamoDB
 # Getting Started
 
 ```python
-import bloop
+from bloop import (
+    Engine, Column,
+    NumberType, StringType,
+    ObjectsNotFound, ConstraintViolation
+)
 
-engine = bloop.Engine()
+engine = Engine()
 
 class GameScores(engine.model):
     user_id = Column(NumberType, hash_key=True)
@@ -40,7 +44,7 @@ scores = [pong_score, doom_score]
 
 try:
     engine.load(scores, consistent_read=True)
-except bloop.ObjectsNotFound as e:
+except ObjectsNotFound as e:
     print("Failed to load")
     for obj in e.missing:
         print(obj)
@@ -57,7 +61,7 @@ print("Saved")
 
 try:
     engine.delete(doom_score, condition=GameScores.losses > 3)
-except bloop.ConstraintViolation as e:
+except ConstraintViolation as e:
     print("Failed to delete")
 else:
     print("Deleted")

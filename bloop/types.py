@@ -84,8 +84,8 @@ class NumberType(ColumnType):
 
     def can_dump(self, value):
         ''' explicitly disallow bool and subclasses '''
-        return (isinstance(value, self.backing_type)
-                and not isinstance(value, bool))
+        return (isinstance(value, self.backing_type) and not
+                isinstance(value, bool))
 
 
 class BinaryType(ColumnType):
@@ -116,8 +116,8 @@ class SetType(ColumnType):
         return [self.typedef.dump(v) for v in value]
 
     def can_dump(self, value):
-        return (super().can_dump(value)
-                and all(map(self.typedef.can_dump, value)))
+        return (super().can_dump(value) and
+                all(map(self.typedef.can_dump, value)))
 
 
 StringSetType = SetType(StringType, STRING_SET)

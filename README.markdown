@@ -1,4 +1,4 @@
-# bloop 0.1.0
+# bloop 0.2.0
 
 [![Build Status]
 (https://travis-ci.org/numberoverzero/bloop.svg?branch=master)]
@@ -18,7 +18,51 @@ ORM for DynamoDB
 
 # Getting Started
 
-Oh god how did this get in here I am not good with computers
+```python
+import bloop
+
+engine = bloop.Engine()
+
+class GameScores(engine.model):
+    user_id = Column(NumberType, hash_key=True)
+    game_title = Column(StringType, range_key=True)
+    top_score = Column(NumberType)
+    top_score_date = Column(StringType)
+    wins = Column(NumberType)
+    losses = Column(NumberType)
+
+
+engine.bind()
+
+pong_score = GameScores(user_id=101, game_title="Pong")
+doom_score = GameScores(user_id=102, game_title="Doom")
+scores = [pong_score, doom_score]
+
+try:
+    engine.load(scores, consistent_read=True)
+except bloop.ObjectsNotFound as e:
+    print("Failed to load")
+    for obj in e.missing:
+        print(obj)
+    pong_score.wins = 0
+    doom_score.losses = 0
+else:
+    print("Loaded")
+
+pong_score.wins += 1
+doom_score.losses += 1
+
+engine.save(scores)
+print("Saved")
+
+try:
+    engine.delete(doom_score, condition=GameScores.losses > 3)
+except bloop.ConstraintViolation as e:
+    print("Failed to delete")
+else:
+    print("Deleted")
+
+```
 
 # Versioning
 
@@ -43,7 +87,7 @@ tox
 
 ### TODO
 
-* Engine
-* Table
-* Column
-* Type
+* Tests?!?
+* Query
+* Scan
+* Docs

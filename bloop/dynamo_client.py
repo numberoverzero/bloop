@@ -4,12 +4,20 @@ import collections
 import time
 
 
+DEFAULT_BACKOFF_COEFF = 50.0
+DEFAULT_MAX_ATTEMPTS = 4
 MAX_BATCH_SIZE = 25
 RETRYABLE_ERRORS = [
     "InternalServerError",
     "ProvisionedThroughputExceededException"
 ]
-BACKOFF_COEFF = 50.0
+
+
+def default_backoff_func(operation, attempts):
+    ''' attempts is the number of calls so far that have failed '''
+    if attempts == DEFAULT_MAX_ATTEMPTS:
+        raise RuntimeError("Failed after {} attempts".format(attempts))
+    return (DEFAULT_BACKOFF_COEFF * (2 ** attempts)) / 1000.0
 
 
 def partition_batch_get_input(request_items):
@@ -71,9 +79,16 @@ def partition_batch_write_input(request_items):
 
 
 class DynamoClient(object):
-    def __init__(self):
+    def __init__(self, backoff_func=None):
+        '''
+
+        backoff_func is an optional function with signature
+        (dynamo operation name, attempts so far) that should either:
+            - return the number of seconds to sleep
+            - raise to stop
+        '''
         self.client = boto3.client("dynamodb")
-        self.max_attempts = 4  # 1 call + 3 retries
+        self.backoff_func = backoff_func or default_backoff_func
 
     def batch_get_items(self, request):
         '''
@@ -233,23 +248,24 @@ class DynamoClient(object):
 
     def call_with_retries(self, func, *args, **kwargs):
         ''' Exponential backoff helper, does not partition or map results '''
-        attempts = 0
-        while attempts < self.max_attempts:
+        operation = func.__name__
+        attempts = 1
+        while True:
             try:
                 output = func(*args, **kwargs)
             except botocore.exceptions.ClientError as error:
                 error_code = error.response['Error']['Code']
-                if error_code in RETRYABLE_ERRORS:
-                    attempts += 1
-                else:
+                if error_code not in RETRYABLE_ERRORS:
                     raise error
             else:
                 # No exception, success!
                 return output
+
             # Backoff in milliseconds
-            delay = (BACKOFF_COEFF * (2 ** attempts)) / 1000.0
+            # backoff_func will return a number of seconds to wait, or raise
+            delay = self.backoff_func(operation, attempts)
             time.sleep(delay)
-        raise RuntimeError("Failed after {} attempts".format(self.attempts))
+            attempts += 1
 
     def create_table(self, *args, **kwargs):
         ''' Suppress ResourceInUseException (table already exists) '''

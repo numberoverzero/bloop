@@ -268,3 +268,11 @@ class ComparisonMixin(object):
 
     def contains(self, value):
         return Contains(self, value)
+
+
+class Filter(object):
+    ''' Base class for scans and queries '''
+    def __init__(self, mode, model, index=None):
+        self.mode = mode
+        self.model = model
+        self.index = index

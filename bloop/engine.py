@@ -1,6 +1,6 @@
 import bloop.model
 import bloop.dynamo
-from bloop.expression import render
+from bloop.expression import render, Filter
 from bloop.dynamo_client import DynamoClient
 import declare
 import collections
@@ -277,3 +277,9 @@ class Engine(object):
                 request_items[table_name].append(del_item)
 
             self.dynamodb_client.batch_write_items(request_items)
+
+    def query(self, model, index=None):
+        return Filter(mode='query', model=model, index=index)
+
+    def scan(self, model, index=None):
+        return Filter(mode='scan', model=model, index=index)

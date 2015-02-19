@@ -281,6 +281,38 @@ class DynamoClient(object):
         self.call_with_retries(self.client.delete_item,
                                TableName=table, Key=key, **expression)
 
+    def query(self, **request):
+        # Bound ref to batch_get for retries
+        func = self.client.query
+        empty = []
+
+        results = {
+            "Count": 0,
+            "ScannedCount": 0,
+            "Items": []
+        }
+
+        while True:
+            response = self.call_with_retries(func, **request)
+
+            # When updating count, ScannedCount is omitted unless it differs
+            # from Count; thus we need to default to assume that the
+            # ScannedCount is equal to the Count
+            count = response.get("Count", 0)
+            results["Count"] += count
+            results["ScannedCount"] += response.get("ScannedCount", count)
+
+            results["Items"].extend(response.get("Items", empty))
+
+            # Done processing when LastEvaluatedKey is empty
+            last_key = response.get("LastEvaluatedKey", None)
+            if not last_key:
+                break
+            # Otherwise, update the request key and go again
+            request["ExclusiveStartKey"] = last_key
+
+        return results
+
     def put_item(self, table, item, expression):
         self.call_with_retries(self.client.put_item,
                                TableName=table, Item=item, **expression)

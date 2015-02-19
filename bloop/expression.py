@@ -1,5 +1,6 @@
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
+import bloop.column
 import operator
 missing = object()
 
@@ -16,6 +17,10 @@ SELECT_MODES = {
     "count": "COUNT",
     "specific": "SPECIFIC_ATTRIBUTES"
 }
+
+
+def is_gsi(index):
+    return isinstance(index, bloop.column.GlobalSecondaryIndex)
 
 
 def render(engine, model, condition, mode="condition"):
@@ -297,7 +302,7 @@ class Filter(object):
         self._forward = True
         self._consistent = False
 
-    def where(self, condition):
+    def filter(self, condition):
         self.condition = condition
         return self
 
@@ -362,6 +367,9 @@ class Filter(object):
         }
         if self.index:
             kwargs['IndexName'] = self.index.dynamo_name
+            if self._consistent and is_gsi(self.index):
+                raise ValueError(
+                    "Cannot use ConsistentRead with a GlobalSecondaryIndex")
 
         if self._select == "specific":
             if not self.attrs_to_get:

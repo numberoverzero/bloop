@@ -44,35 +44,6 @@ def value_of(column):
     return next(iter(column.values()))
 
 
-def dump_column(engine, column, value):
-    ''' dump a single column into the appropriate dynamo format '''
-    typedef = column.typedef
-    dynamo_value = engine.type_engine.dump(typedef, value)
-    return {column.dynamo_name: dynamo_value}
-
-
-def dump_key(engine, obj):
-    '''
-    dump the hash (and range, if there is one) key(s) of an object into
-    a dynamo-friendly format.
-
-    returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
-    '''
-    meta = obj.__meta__
-    dynamo_key = {}
-
-    hash_key = meta['dynamo.table.hash_key']
-    hash_value = getattr(obj, hash_key.model_name)
-    dynamo_key.update(dump_column(engine, hash_key, hash_value))
-
-    range_key = meta['dynamo.table.range_key']
-    if range_key:
-        range_value = getattr(obj, range_key.model_name)
-        dynamo_key.update(dump_column(engine, range_key, range_value))
-
-    return dynamo_key
-
-
 class Engine(object):
     model = None
 
@@ -128,6 +99,33 @@ class Engine(object):
             table = bloop.dynamo.describe_model(model)
             self.dynamodb_client.create_table(**table)
 
+    def dump_column(self, column, value):
+        ''' dump a single column into the appropriate dynamo format '''
+        typedef = column.typedef
+        dynamo_value = self.type_engine.dump(typedef, value)
+        return {column.dynamo_name: dynamo_value}
+
+    def dump_key(self, obj):
+        '''
+        dump the hash (and range, if there is one) key(s) of an object into
+        a dynamo-friendly format.
+
+        returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
+        '''
+        meta = obj.__meta__
+        dynamo_key = {}
+
+        hash_key = meta['dynamo.table.hash_key']
+        hash_value = getattr(obj, hash_key.model_name)
+        dynamo_key.update(self.dump_column(hash_key, hash_value))
+
+        range_key = meta['dynamo.table.range_key']
+        if range_key:
+            range_value = getattr(obj, range_key.model_name)
+            dynamo_key.update(self.dump_column(range_key, range_value))
+
+        return dynamo_key
+
     def load(self, objs, *, consistent_read=False):
         '''
         Populate objects from dynamodb, optionally using consistent reads.
@@ -179,7 +177,7 @@ class Engine(object):
                     "Keys": [],
                     "ConsistentRead": consistent_read
                 }
-            key = dump_key(self, obj)
+            key = self.dump_key(obj)
             # Add the key to the request
             request_items[table_name]["Keys"].append(key)
             # Make sure we can find the key shape for this table
@@ -260,7 +258,7 @@ class Engine(object):
             obj = objs[0]
             model = obj.__class__
             table_name = model.__meta__['dynamo.table.name']
-            key = dump_key(self, obj)
+            key = self.dump_key(obj)
             expression = render(self, model, condition)
             self.dynamodb_client.delete_item(table_name, key, expression)
 
@@ -270,7 +268,7 @@ class Engine(object):
             for obj in set(objs):
                 del_item = {
                     "DeleteRequest": {
-                        "Key": dump_key(self, obj)
+                        "Key": self.dump_key(obj)
                     }
                 }
                 table_name = obj.__meta__['dynamo.table.name']
@@ -279,7 +277,7 @@ class Engine(object):
             self.dynamodb_client.batch_write_items(request_items)
 
     def query(self, model, index=None):
-        return Filter(mode='query', model=model, index=index)
+        return Filter(engine=self, mode='query', model=model, index=index)
 
     def scan(self, model, index=None):
-        return Filter(mode='scan', model=model, index=index)
+        return Filter(engine=self, mode='scan', model=model, index=index)

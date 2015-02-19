@@ -2,19 +2,31 @@
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import operator
 missing = object()
-EXPRESSION = "ConditionExpression"
+
+
+EXPRESSION_KEYS = {
+    "condition": "ConditionExpression",
+    "filter": "FilterExpression"
+}
 ATTR_NAMES = "ExpressionAttributeNames"
 ATTR_VALUES = "ExpressionAttributeValues"
+SELECT_MODES = {
+    "all": "ALL_ATTRIBUTES",
+    "projected": "ALL_PROJECTED_ATTRIBUTES",
+    "count": "COUNT",
+    "specific": "SPECIFIC_ATTRIBUTES"
+}
 
 
-def render(engine, model, condition):
+def render(engine, model, condition, mode="condition"):
     if not condition:
         return {}
     renderer = ConditionRenderer(engine, model)
-    condition_expression = condition.render(renderer)
+    rendered_expression = condition.render(renderer)
 
-    # An expression contains the compressed string, and any name/value refs
-    expression = {EXPRESSION: condition_expression}
+    # An expression contains the compressed string, and any name/value ref
+    key = EXPRESSION_KEYS[mode]
+    expression = {key: rendered_expression}
     if renderer.attr_names:
         expression[ATTR_NAMES] = renderer.attr_names
     if renderer.attr_values:
@@ -54,19 +66,19 @@ class ConditionRenderer(object):
 
 class Condition(object):
     def __and__(self, other):
-        return AndCondition(self, other)
+        return And(self, other)
     __iand__ = __and__
 
     def __or__(self, other):
-        return OrCondition(self, other)
+        return Or(self, other)
     __ior__ = __or__
 
     def __invert__(self):
-        return NotCondition(self)
+        return Not(self)
     __neg__ = __invert__
 
 
-class AndCondition(Condition):
+class And(Condition):
     def __init__(self, *conditions):
         self.conditions = conditions
 
@@ -81,7 +93,7 @@ class AndCondition(Condition):
         return "(" + " AND ".join(rendered_conditions) + ")"
 
 
-class OrCondition(Condition):
+class Or(Condition):
     def __init__(self, *conditions):
         self.conditions = conditions
 
@@ -96,7 +108,7 @@ class OrCondition(Condition):
         return "(" + " OR ".join(rendered_conditions) + ")"
 
 
-class NotCondition(Condition):
+class Not(Condition):
     def __init__(self, condition):
         self.condition = condition
 
@@ -272,7 +284,99 @@ class ComparisonMixin(object):
 
 class Filter(object):
     ''' Base class for scans and queries '''
-    def __init__(self, mode, model, index=None):
+    def __init__(self, engine, mode, model, index=None):
+        self.engine = engine
         self.mode = mode
         self.model = model
         self.index = index
+        self.condition = None
+
+        self.attrs_to_get = []
+        self._select = "all"
+
+        self._forward = True
+        self._consistent = False
+
+    def where(self, condition):
+        self.condition = condition
+        return self
+
+    def select(self, mode, attrs=None):
+        '''
+        attrs is REQUIRED when mode is 'specific', and attrs must be a list
+        '''
+        if mode not in SELECT_MODES:
+            msg = "Unknown select mode '{}'.  Must be one of {}"
+            raise ValueError(msg.format(mode, list(SELECT_MODES.keys())))
+        if mode == "specific" and not attrs:
+            raise ValueError("Must provide attrs to get with 'specific' mode")
+        if mode == "count":
+            self.attrs_to_get.clear()
+        if mode == "specific":
+            self.attrs_to_get.extend(attrs)
+
+        self._select = mode
+        return self
+
+    def count(self):
+        self.select("count")
+        result = self.__gen__()
+        return [result["Count"], result["ScannedCount"]]
+
+    def __iter__(self):
+        if self._select == "count":
+            raise AttributeError("Cannot iterate COUNT query")
+        result = self.__gen__()
+
+        meta = self.model.__meta__
+        columns = meta["dynamo.columns"]
+        init = meta["bloop.init"]
+
+        for item in result["Items"]:
+            attrs = {}
+            for column in columns:
+                value = item.get(column.dynamo_name, missing)
+                if value is not missing:
+                    attrs[column.model_name] = value
+            yield init(**attrs)
+
+    def __getattr__(self, name):
+        if name == "ascending":
+            self._forward = True
+            return self
+        if name == "descending":
+            self._forward = False
+            return self
+        if name == "consistent":
+            self._consistent = True
+            return self
+        return super().__getattr__(name)
+
+    def __gen__(self):
+        meta = self.model.__meta__
+        kwargs = {
+            'TableName': meta['dynamo.table.name'],
+            'Select': SELECT_MODES[self.select_mode],
+            'ScanIndexForward': self._forward,
+            'ConsistentRead': self._consistent
+        }
+        if self.index:
+            kwargs['IndexName'] = self.index.dynamo_name
+
+        if self._select == "specific":
+            if not self.attrs_to_get:
+                raise ValueError(
+                    "Must provide attrs to get with 'specific' mode")
+            columns = meta['dynamo.columns.by.model_name']
+            attrs = [columns[attr].dynamo_name for attr in self.attrs_to_get]
+            kwargs['AttributesToGet'] = attrs
+
+        if self.condition:
+            condition = render(self.engine, self.model,
+                               self.condition, mode="filter")
+            kwargs.update(condition)
+
+        # TODO:
+        #  KeyConditions
+
+        return self.engine.dynamodb_client.query(**kwargs)

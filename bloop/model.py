@@ -104,6 +104,12 @@ def BaseModel(engine):
             else:
                 meta['dynamo.table.range_key'] = None
 
+            # Entry point for model population. By default this is the
+            # model class. Custom subclasses of the engine's
+            # base model should specify the meta property "bloop.init",
+            # which should be a function taking a **kwarg of name:value
+            # pairs corresponding to modeled columns.
+            meta["bloop.init"] = meta.get("bloop.init", model)
             meta["bloop.engine"] = engine
 
             meta["dynamo.table.name"] = meta.get(

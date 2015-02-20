@@ -350,7 +350,20 @@ class ComparisonMixin(object):
         return Contains(self, value)
 
 
+def validate_key_condition(condition):
+    if isinstance(condition, BeginsWith):
+        return True
+    elif isinstance(condition, Between):
+        return True
+    elif isinstance(condition, Comparison):
+        # Valid comparators are EG | LE | LT | GE | GT -- not NE
+        return condition.comparator is not operator.ne
+    raise ValueError("Invalid KeyCondition {}".format(condition))
+
+
 class Filter(object):
+    valid_range_key_conditions = [Comparison, BeginsWith, Between]
+
     ''' Base class for scans and queries '''
     def __init__(self, engine, mode, model, index=None):
         self.engine = engine
@@ -364,6 +377,73 @@ class Filter(object):
 
         self._forward = True
         self._consistent = False
+        self._key_conditions = {}
+
+    def key(self, *conditions):
+        # a hash condition is always required; a range condition
+        # is allowed if the table/index has a range
+        meta = self.model.__meta__
+        if self.index:
+            # TODO: this meta inspection should be refactored into
+            # a transformation library that can inspect model/index
+            # pairs generally, instead of relying on something like
+            # expression.Filter.key to know how the fields in
+            # model.ModelMetaclass.__meta__ are structured
+            columns = meta["dynamo.columns.by.model_name"]
+            hash_column = columns[self.index.hash_key]
+            if self.index.range_key:
+                range_column = columns[self.index.range_key]
+            else:
+                range_column = None
+        else:
+            hash_column = meta["dynamo.table.hash_key"]
+            range_column = meta["dynamo.table.range_key"]
+
+        max_conditions = 1
+        if range_column:
+            max_conditions += 1
+
+        if not conditions:
+            raise ValueError("At least one key condition (hash) is required")
+        if len(conditions) > max_conditions:
+            msg = "At most {} key conditions can be specified; got {} instead."
+            raise ValueError(msg.format(max_conditions, len(conditions)))
+
+        hash_condition = None
+        range_condition = None
+
+        # KeyConditions can only use the ComparisonOperators
+        # EQ | LE | LT | GE | GT | BEGINS_WITH | BETWEEN
+        for condition in conditions:
+            validate_key_condition(condition)
+            column = condition.column
+            if column is hash_column:
+                if hash_condition:
+                    raise ValueError("HashKey over-specified")
+                else:
+                    hash_condition = render(self.engine,
+                                            self.model, condition,
+                                            legacy=True)
+            elif column is range_column:
+                if range_condition:
+                    raise ValueError("RangeKey over-specified")
+                else:
+                    range_condition = render(self.engine,
+                                             self.model, condition,
+                                             legacy=True)
+            else:
+                msg = "Column {} is not a hash or range key".format(column)
+                if self.index:
+                    msg += " for the index {}".format(self.index.model_name)
+                raise ValueError(msg)
+        if not hash_condition:
+            raise ValueError("Must specify a hash key")
+
+        self._key_conditions = {}
+        self._key_conditions.update(hash_condition)
+        if range_condition:
+            self._key_conditions.update(range_condition)
+        return self
 
     def filter(self, condition):
         self.condition = condition
@@ -388,13 +468,13 @@ class Filter(object):
 
     def count(self):
         self.select("count")
-        result = self.__gen__()
+        result = self.gen()
         return [result["Count"], result["ScannedCount"]]
 
     def __iter__(self):
         if self._select == "count":
             raise AttributeError("Cannot iterate COUNT query")
-        result = self.__gen__()
+        result = self.gen()
 
         meta = self.model.__meta__
         columns = meta["dynamo.columns"]
@@ -420,14 +500,18 @@ class Filter(object):
             return self
         return super().__getattr__(name)
 
-    def __gen__(self):
+    def gen(self):
         meta = self.model.__meta__
         kwargs = {
             'TableName': meta['dynamo.table.name'],
-            'Select': SELECT_MODES[self.select_mode],
+            'Select': SELECT_MODES[self._select],
             'ScanIndexForward': self._forward,
-            'ConsistentRead': self._consistent
+            'ConsistentRead': self._consistent,
+            'KeyConditions': self._key_conditions
         }
+
+        if not self._key_conditions:
+            raise ValueError("Must specify at least a hash key condition")
         if self.index:
             kwargs['IndexName'] = self.index.dynamo_name
             if self._consistent and is_gsi(self.index):
@@ -446,8 +530,5 @@ class Filter(object):
             condition = render(self.engine, self.model,
                                self.condition, mode="filter")
             kwargs.update(condition)
-
-        # TODO:
-        #  KeyConditions
 
         return self.engine.dynamodb_client.query(**kwargs)

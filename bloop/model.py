@@ -75,8 +75,11 @@ def BaseModel(engine):
 
             # Load columns, indexes, hash_key, range_key
             # ----------------------------------------------------------
-            columns = list(filter(is_column, model.__meta__['fields']))
-            indexes = list(filter(is_index, columns))
+            # These are sets instead of lists, because set uses __hash__
+            # while some list operations uses __eq__ which will break
+            # with the ComparisonMixin
+            columns = set(filter(is_column, model.__meta__['fields']))
+            indexes = set(filter(is_index, columns))
 
             # Remove indexes from columns since they're treated differently
             for index in indexes:

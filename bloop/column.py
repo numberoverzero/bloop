@@ -88,8 +88,5 @@ class GlobalSecondaryIndex(Index):
 
 
 class LocalSecondaryIndex(Index):
-    ''' when constructing a model, you MUST set this index's model attr. '''
-    @property
-    def hash_key(self):
-        hash_column = self.model.__meta__['dynamo.table.hash_key']
-        return hash_column.dynamo_name
+    ''' LSIs don't have individual read/write units '''
+    pass

@@ -389,12 +389,8 @@ class Filter(object):
             # pairs generally, instead of relying on something like
             # expression.Filter.key to know how the fields in
             # model.ModelMetaclass.__meta__ are structured
-            columns = meta["dynamo.columns.by.model_name"]
-            hash_column = columns[self.index.hash_key]
-            if self.index.range_key:
-                range_column = columns[self.index.range_key]
-            else:
-                range_column = None
+            hash_column = self.index.hash_key
+            range_column = self.index.range_key
         else:
             hash_column = meta["dynamo.table.hash_key"]
             range_column = meta["dynamo.table.range_key"]

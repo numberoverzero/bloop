@@ -16,7 +16,6 @@ def has_key(column):
 def attribute_definitions(model):
     ''' Only include table and index hash/range keys '''
     columns = model.__meta__["dynamo.columns"]
-    indexed_columns = model.__meta__["dynamo.columns.by.model_name"]
     indexes = model.__meta__["dynamo.indexes"]
     attrs = []
     attr_columns = set()
@@ -24,16 +23,14 @@ def attribute_definitions(model):
         attr_columns.add(column)
         attrs.append(attribute_def(column))
     for index in filter(has_key, indexes):
-        if index.hash_key:
-            column = indexed_columns[index.hash_key]
-            if column not in attr_columns:
-                attr_columns.add(column)
-                attrs.append(attribute_def(column))
-        if index.range_key:
-            column = indexed_columns[index.range_key]
-            if column not in attr_columns:
-                attr_columns.add(column)
-                attrs.append(attribute_def(column))
+        hash_column = index.hash_key
+        if hash_column and hash_column not in attr_columns:
+            attr_columns.add(hash_column)
+            attrs.append(attribute_def(hash_column))
+        range_column = index.range_key
+        if range_column and range_column not in attr_columns:
+            attr_columns.add(range_column)
+            attrs.append(attribute_def(range_column))
     return attrs
 
 
@@ -76,7 +73,6 @@ def table_name(model):
 
 
 def global_secondary_indexes(model):
-    columns = model.__meta__["dynamo.columns.by.model_name"]
     gsis = []
     for index in filter(is_gsi, model.__meta__["dynamo.indexes"]):
         provisioned_throughput = {
@@ -84,12 +80,12 @@ def global_secondary_indexes(model):
             'ReadCapacityUnits': index.read_units
         }
         key_schema = [{
-            'AttributeName': columns[index.hash_key].dynamo_name,
+            'AttributeName': index.hash_key.dynamo_name,
             'KeyType': 'HASH'
         }]
         if index.range_key:
             key_schema.append({
-                'AttributeName': columns[index.range_key].dynamo_name,
+                'AttributeName': index.range_key.dynamo_name,
                 'KeyType': 'RANGE'
             })
         # TODO - handle projections other than 'ALL' and 'KEYS_ONLY'
@@ -111,16 +107,15 @@ def global_secondary_indexes(model):
 
 
 def local_secondary_indexes(model):
-    columns = model.__meta__["dynamo.columns.by.model_name"]
     lsis = []
     for index in filter(is_lsi, model.__meta__["dynamo.indexes"]):
         key_schema = [
             {
-                'AttributeName': columns[index.hash_key].dynamo_name,
+                'AttributeName': index.hash_key.dynamo_name,
                 'KeyType': 'HASH'
             },
             {
-                'AttributeName': columns[index.range_key].dynamo_name,
+                'AttributeName': index.range_key.dynamo_name,
                 'KeyType': 'RANGE'
             }
         ]

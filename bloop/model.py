@@ -12,6 +12,14 @@ def is_index(field):
     return isinstance(field, bloop.column.Index)
 
 
+def is_local_index(index):
+    return isinstance(index, bloop.column.LocalSecondaryIndex)
+
+
+def is_global_index(index):
+    return isinstance(index, bloop.column.GlobalSecondaryIndex)
+
+
 class __BaseModel(object):
     '''
     do not subclass directly.  use `BaseModel` which sets
@@ -82,6 +90,7 @@ def BaseModel(engine):
             indexes = set(filter(is_index, columns))
 
             # Remove indexes from columns since they're treated differently
+            # Resolve hash and range keys for indexes
             for index in indexes:
                 index.model = model
                 columns.remove(index)
@@ -106,6 +115,23 @@ def BaseModel(engine):
                     break
             else:
                 meta['dynamo.table.range_key'] = None
+
+            # Can't do this as part of the above loop since we index after
+            # mutating the columns set.  Look up the current hash key (string)
+            # in indexed columns and relate proper Column object
+            cols = meta['dynamo.columns.by.dynamo_name']
+            table_range = meta['dynamo.table.range_key']
+            for index in indexes:
+                if is_global_index(index):
+                    index._hash_key = cols[index.hash_key]
+                elif is_local_index(index):
+                    if not table_range:
+                        raise ValueError(
+                            "Cannot specify a LocalSecondaryIndex " +
+                            "without a table range key")
+                    index._hash_key = table_range
+                if index.range_key:
+                    index._range_key = cols[index.range_key]
 
             # Entry point for model population. By default this is the
             # model class. Custom subclasses of the engine's

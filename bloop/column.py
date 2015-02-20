@@ -75,6 +75,7 @@ class Column(declare.Field, bloop.expression.ComparisonMixin):
 
 class Index(Column):
     def __init__(self, *args, projection='KEYS_ONLY', **kwargs):
+        # TODO: Handle all projection types
         super().__init__(*args, **kwargs)
         self.projection = projection
 

@@ -42,19 +42,14 @@ def attribute_def(column):
 
 
 def key_schema(model):
-    meta = model.__meta__
-    schema = []
-    hash_key = meta['dynamo.table.hash_key']
-    range_key = meta['dynamo.table.range_key']
-
-    schema.append({
-        'AttributeName': hash_key.dynamo_name,
+    schema = [{
+        'AttributeName': model.hash_key.dynamo_name,
         'KeyType': 'HASH'
-    })
+    }]
 
-    if range_key:
+    if model.range_key:
         schema.append({
-            'AttributeName': range_key.dynamo_name,
+            'AttributeName': model.range_key.dynamo_name,
             'KeyType': 'RANGE'
         })
 

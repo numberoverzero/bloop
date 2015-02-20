@@ -112,17 +112,15 @@ class Engine(object):
 
         returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
         '''
-        meta = obj.__meta__
+        model = obj.__class__
         dynamo_key = {}
 
-        hash_key = meta['dynamo.table.hash_key']
-        hash_value = getattr(obj, hash_key.model_name)
-        dynamo_key.update(self.dump_column(hash_key, hash_value))
+        hash_value = getattr(obj, model.hash_key.model_name)
+        dynamo_key.update(self.dump_column(model.hash_key, hash_value))
 
-        range_key = meta['dynamo.table.range_key']
-        if range_key:
-            range_value = getattr(obj, range_key.model_name)
-            dynamo_key.update(self.dump_column(range_key, range_value))
+        if model.range_key:
+            range_value = getattr(obj, model.range_key.model_name)
+            dynamo_key.update(self.dump_column(model.range_key, range_value))
 
         return dynamo_key
 

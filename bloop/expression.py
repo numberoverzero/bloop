@@ -382,7 +382,6 @@ class Filter(object):
     def key(self, *conditions):
         # a hash condition is always required; a range condition
         # is allowed if the table/index has a range
-        meta = self.model.__meta__
         if self.index:
             # TODO: this meta inspection should be refactored into
             # a transformation library that can inspect model/index
@@ -392,8 +391,8 @@ class Filter(object):
             hash_column = self.index.hash_key
             range_column = self.index.range_key
         else:
-            hash_column = meta["dynamo.table.hash_key"]
-            range_column = meta["dynamo.table.range_key"]
+            hash_column = self.model.hash_key
+            range_column = self.model.range_key
 
         max_conditions = 1
         if range_column:

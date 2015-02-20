@@ -102,34 +102,27 @@ def BaseModel(engine):
             meta['dynamo.columns.by.dynamo_name'] = declare.index(
                 columns, 'dynamo_name')
 
+            model.hash_key = None
+            model.range_key = None
             for column in columns:
                 if column.hash_key:
-                    meta['dynamo.table.hash_key'] = column
-                    break
-            else:
-                meta['dynamo.table.hash_key'] = None
-
-            for column in columns:
-                if column.range_key:
-                    meta['dynamo.table.range_key'] = column
-                    break
-            else:
-                meta['dynamo.table.range_key'] = None
+                    model.hash_key = column
+                elif column.range_key:
+                    model.range_key = column
 
             # Can't do this as part of the above loop since we index after
             # mutating the columns set.  Look up the current hash key (string)
             # in indexed columns and relate proper Column object
             cols = meta['dynamo.columns.by.dynamo_name']
-            table_range = meta['dynamo.table.range_key']
             for index in indexes:
                 if is_global_index(index):
                     index._hash_key = cols[index.hash_key]
                 elif is_local_index(index):
-                    if not table_range:
+                    if not model.range_key:
                         raise ValueError(
                             "Cannot specify a LocalSecondaryIndex " +
                             "without a table range key")
-                    index._hash_key = table_range
+                    index._hash_key = model.range_key
                 if index.range_key:
                     index._range_key = cols[index.range_key]
 

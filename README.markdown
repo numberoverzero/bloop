@@ -66,6 +66,12 @@ except ConstraintViolation as e:
 else:
     print("Deleted")
 
+query = engine.query(GameScores).key(GameScores.user_id == 101).filter(GameScores.losses < 10)
+
+print("Query not executed until iteration")
+for result in query:
+    print(result)
+
 ```
 
 # Versioning

@@ -23,11 +23,22 @@ def is_gsi(index):
     return isinstance(index, bloop.column.GlobalSecondaryIndex)
 
 
-def render(engine, model, condition, mode="condition"):
+def render(engine, model, condition, mode="condition", legacy=False):
     if not condition:
         return {}
-    renderer = ConditionRenderer(engine, model)
+    renderer = ConditionRenderer(engine, model, legacy=legacy)
     rendered_expression = condition.render(renderer)
+    # Legacy expressions are of the form:
+    # { "dynamo_name":
+    #      { "ComparisonOperator": "OPERATOR",
+    #        "AttributeValueList": [
+    #          {
+    #               "S": "20130101",
+    #          }, ...]
+    #      }
+    # }
+    if legacy:
+        return rendered_expression
 
     # An expression contains the compressed string, and any name/value ref
     key = EXPRESSION_KEYS[mode]
@@ -40,9 +51,10 @@ def render(engine, model, condition, mode="condition"):
 
 
 class ConditionRenderer(object):
-    def __init__(self, engine, model):
+    def __init__(self, engine, model, legacy=False):
         self.engine = engine
         self.model = model
+        self.legacy = legacy
         self.attr_values = {}
         self.attr_names = {}
         self.__ref_index = 0
@@ -60,7 +72,13 @@ class ConditionRenderer(object):
         dynamo_value = type_engine.dump(column.typedef, value)
 
         self.attr_values[ref] = dynamo_value
-        return ref
+
+        # Legacy renderers don't use ExpressionAttributeValues
+        # just return the column dump of the given value
+        if self.legacy:
+            return dynamo_value
+        else:
+            return ref
 
     def name_ref(self, column):
         ref = "#n{}".format(self.__ref_index)
@@ -92,6 +110,8 @@ class And(Condition):
         return "And({})".format(conditions)
 
     def render(self, renderer):
+        if renderer.legacy:
+            raise ValueError("Don't know how to render legacy AND")
         if len(self.conditions) == 1:
             return self.conditions[0].render(renderer)
         rendered_conditions = (c.render(renderer) for c in self.conditions)
@@ -107,6 +127,8 @@ class Or(Condition):
         return "Or({})".format(conditions)
 
     def render(self, renderer):
+        if renderer.legacy:
+            raise ValueError("Don't know how to render legacy OR")
         if len(self.conditions) == 1:
             return self.conditions[0].render(renderer)
         rendered_conditions = (c.render(renderer) for c in self.conditions)
@@ -121,6 +143,8 @@ class Not(Condition):
         return "Not({})".format(self.condition)
 
     def render(self, renderer):
+        if renderer.legacy:
+            raise ValueError("Don't know how to render legacy NOT")
         return "( NOT {})".format(self.condition.render(renderer))
 
 
@@ -133,8 +157,18 @@ class Comparison(Condition):
         operator.le: "<=",
         operator.ge: ">=",
     }
+    legacy_strings = {
+        operator.eq: "EQ",
+        operator.ne: "NE",
+        operator.lt: "LT",
+        operator.gt: "GT",
+        operator.le: "LE",
+        operator.ge: "GE",
+    }
 
     def __init__(self, column, comparator, value):
+        if comparator not in self.comparator_strings:
+            raise ValueError("Unknown comparator '{}'".format(comparator))
         self.column = column
         self.comparator = comparator
         self.value = value
@@ -145,10 +179,17 @@ class Comparison(Condition):
             self.column, self.value)
 
     def render(self, renderer):
-        nref = renderer.name_ref(self.column)
-        vref = renderer.value_ref(self.column, self.value)
-        comparator = self.comparator_strings[self.comparator]
-        return "({} {} {})".format(nref, comparator, vref)
+        if renderer.legacy:
+            return {self.column.dynamo_name: {
+                    "ComparisonOperator": self.legacy_strings[self.comparator],
+                    "AttributeValueList": [
+                        renderer.value_ref(self.column, self.value)
+                    ]}}
+        else:
+            nref = renderer.name_ref(self.column)
+            vref = renderer.value_ref(self.column, self.value)
+            comparator = self.comparator_strings[self.comparator]
+            return "({} {} {})".format(nref, comparator, vref)
 
 
 class AttributeExists(Condition):
@@ -161,6 +202,8 @@ class AttributeExists(Condition):
         return "{}({})".format(name, self.column)
 
     def render(self, renderer):
+        if renderer.legacy:
+            raise ValueError("Don't know how to render legacy AttributeExists")
         name = "attribute_not_exists" if self.negate else "attribute_exists"
         nref = renderer.name_ref(self.column)
         return "({}({}))".format(name, nref)
@@ -175,9 +218,16 @@ class BeginsWith(Condition):
         return "BeginsWith({}, {})".format(self.column, self.value)
 
     def render(self, renderer):
-        nref = renderer.name_ref(self.column)
-        vref = renderer.value_ref(self.column, self.value)
-        return "(begins_with({}, {}))".format(nref, vref)
+        if renderer.legacy:
+            return {self.column.dynamo_name: {
+                    "ComparisonOperator": "BEGINS_WITH",
+                    "AttributeValueList": [
+                        renderer.value_ref(self.column, self.value)
+                    ]}}
+        else:
+            nref = renderer.name_ref(self.column)
+            vref = renderer.value_ref(self.column, self.value)
+            return "(begins_with({}, {}))".format(nref, vref)
 
 
 class Contains(Condition):
@@ -189,6 +239,8 @@ class Contains(Condition):
         return "Contains({}, {})".format(self.column, self.value)
 
     def render(self, renderer):
+        if renderer.legacy:
+            raise ValueError("Don't know how to render legacy Contains")
         nref = renderer.name_ref(self.column)
         vref = renderer.value_ref(self.column, self.value)
         return "(contains({}, {}))".format(nref, vref)
@@ -205,10 +257,19 @@ class Between(Condition):
             self.column, self.lower, self.upper)
 
     def render(self, renderer):
-        nref = renderer.name_ref(self.column)
-        vref_lower = renderer.value_ref(self.column, self.lower)
-        vref_upper = renderer.value_ref(self.column, self.upper)
-        return "({} BETWEEN {} AND {})".format(nref, vref_lower, vref_upper)
+        if renderer.legacy:
+            return {self.column.dynamo_name: {
+                    "ComparisonOperator": "BETWEEN",
+                    "AttributeValueList": [
+                        renderer.value_ref(self.column, self.lower),
+                        renderer.value_ref(self.column, self.upper)
+                    ]}}
+        else:
+            nref = renderer.name_ref(self.column)
+            vref_lower = renderer.value_ref(self.column, self.lower)
+            vref_upper = renderer.value_ref(self.column, self.upper)
+            return "({} BETWEEN {} AND {})".format(
+                nref, vref_lower, vref_upper)
 
 
 class In(Condition):
@@ -221,6 +282,8 @@ class In(Condition):
         return "In({}, [{}])".format(self.column, values)
 
     def render(self, renderer):
+        if renderer.legacy:
+            raise ValueError("Don't know how to render legacy IN")
         nref = renderer.name_ref(self.column)
         values = (renderer.value_ref(self.column, v) for v in self.values)
         values = ", ".join(values)

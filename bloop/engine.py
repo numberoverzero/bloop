@@ -99,8 +99,7 @@ class Engine(object):
 
     def dump_column(self, column, value):
         ''' dump a single column into the appropriate dynamo format '''
-        typedef = column.typedef
-        dynamo_value = self.type_engine.dump(typedef, value)
+        dynamo_value = self.__dump__(column.typedef, value)
         return {column.dynamo_name: dynamo_value}
 
     def dump_key(self, obj):
@@ -207,7 +206,7 @@ class Engine(object):
                     value = item.get(column.dynamo_name, missing)
                     # Missing expected column
                     if value is not missing:
-                        value = self.type_engine.load(column.typedef, value)
+                        value = self.__load__(column.typedef, value)
                         setattr(obj, column.model_name, value)
 
                 # Let plugins clean up or validate the object after loading

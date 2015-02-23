@@ -90,3 +90,19 @@ class GlobalSecondaryIndex(Index):
 class LocalSecondaryIndex(Index):
     ''' LSIs don't have individual read/write units '''
     pass
+
+
+def is_column(field):
+    return isinstance(field, Column)
+
+
+def is_index(field):
+    return isinstance(field, Index)
+
+
+def is_local_index(index):
+    return isinstance(index, LocalSecondaryIndex)
+
+
+def is_global_index(index):
+    return isinstance(index, GlobalSecondaryIndex)

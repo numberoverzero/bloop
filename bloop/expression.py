@@ -19,10 +19,6 @@ SELECT_MODES = {
 }
 
 
-def is_gsi(index):
-    return isinstance(index, bloop.column.GlobalSecondaryIndex)
-
-
 def render(engine, model, condition, mode="condition", legacy=False):
     if not condition:
         return {}
@@ -517,7 +513,7 @@ class Filter(object):
             raise ValueError("Must specify at least a hash key condition")
         if self.index:
             kwargs['IndexName'] = self.index.dynamo_name
-            if self._consistent and is_gsi(self.index):
+            if self._consistent and bloop.column.is_global_index(self.index):
                 raise ValueError(
                     "Cannot use ConsistentRead with a GlobalSecondaryIndex")
 

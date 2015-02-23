@@ -327,14 +327,6 @@ class DynamoClient(object):
 
 # Helpers TODO: Refactor
 
-def is_lsi(index):
-    return isinstance(index, bloop.column.LocalSecondaryIndex)
-
-
-def is_gsi(index):
-    return isinstance(index, bloop.column.GlobalSecondaryIndex)
-
-
 def has_key(column):
     return column.hash_key or column.range_key
 
@@ -395,7 +387,8 @@ def table_name(model):
 
 def global_secondary_indexes(model):
     gsis = []
-    for index in filter(is_gsi, model.__meta__["dynamo.indexes"]):
+    for index in filter(bloop.column.is_global_index,
+                        model.__meta__["dynamo.indexes"]):
         provisioned_throughput = {
             'WriteCapacityUnits': index.write_units,
             'ReadCapacityUnits': index.read_units
@@ -429,7 +422,8 @@ def global_secondary_indexes(model):
 
 def local_secondary_indexes(model):
     lsis = []
-    for index in filter(is_lsi, model.__meta__["dynamo.indexes"]):
+    for index in filter(bloop.column.is_local_index,
+                        model.__meta__["dynamo.indexes"]):
         key_schema = [
             {
                 'AttributeName': index.hash_key.dynamo_name,

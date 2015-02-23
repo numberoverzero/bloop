@@ -3,22 +3,6 @@ import declare
 missing = object()
 
 
-def is_column(field):
-    return isinstance(field, bloop.column.Column)
-
-
-def is_index(field):
-    return isinstance(field, bloop.column.Index)
-
-
-def is_local_index(index):
-    return isinstance(index, bloop.column.LocalSecondaryIndex)
-
-
-def is_global_index(index):
-    return isinstance(index, bloop.column.GlobalSecondaryIndex)
-
-
 class __BaseModel(object):
     '''
     do not subclass directly.  use `BaseModel` which sets
@@ -88,8 +72,9 @@ def BaseModel(engine):
             # These are sets instead of lists, because set uses __hash__
             # while some list operations uses __eq__ which will break
             # with the ComparisonMixin
-            columns = set(filter(is_column, model.__meta__['fields']))
-            indexes = set(filter(is_index, columns))
+            columns = set(filter(bloop.column.is_column,
+                                 model.__meta__['fields']))
+            indexes = set(filter(bloop.column.is_index, columns))
 
             # Remove indexes from columns since they're treated differently
             # Resolve hash and range keys for indexes
@@ -117,9 +102,9 @@ def BaseModel(engine):
             # in indexed columns and relate proper Column object
             cols = meta['dynamo.columns.by.dynamo_name']
             for index in indexes:
-                if is_global_index(index):
+                if bloop.column.is_global_index(index):
                     index._hash_key = cols[index.hash_key]
-                elif is_local_index(index):
+                elif bloop.column.is_local_index(index):
                     if not model.range_key:
                         raise ValueError(
                             "Cannot specify a LocalSecondaryIndex " +

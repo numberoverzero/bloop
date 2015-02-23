@@ -1,5 +1,4 @@
 import bloop.column
-import bloop.dynamo
 import declare
 missing = object()
 

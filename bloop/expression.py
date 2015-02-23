@@ -81,6 +81,8 @@ class ConditionRenderer(object):
             return ref
 
     def name_ref(self, column):
+        if self.legacy:
+            raise ValueError("Legacy rendering shouldn't need name refs!")
         ref = "#n{}".format(self.__ref_index)
         self.__ref_index += 1
         self.attr_names[ref] = column.dynamo_name
@@ -362,6 +364,12 @@ def validate_key_condition(condition):
 
 
 class Filter(object):
+    '''
+    TODO: make thread safe.  The functions key, filter, select,
+    ascending, descending, and consistent all return references to the same
+    Filter object.  For thread safety, they should return a copy with the
+    updated values.
+    '''
     valid_range_key_conditions = [Comparison, BeginsWith, Between]
 
     ''' Base class for scans and queries '''

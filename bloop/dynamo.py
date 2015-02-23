@@ -58,8 +58,8 @@ def key_schema(model):
 
 def provisioned_throughput(model):
     return {
-        'WriteCapacityUnits': model.__meta__["dynamo.table.write_units"],
-        'ReadCapacityUnits': model.__meta__["dynamo.table.read_units"]
+        'WriteCapacityUnits': model.write_units,
+        'ReadCapacityUnits': model.read_units
     }
 
 

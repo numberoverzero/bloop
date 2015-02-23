@@ -39,7 +39,7 @@ def value_of(column):
 
     Example
     -------
-    column_value({'S': 'Space Invaders'}) -> 'Space Invaders'
+    value_of({'S': 'Space Invaders'}) -> 'Space Invaders'
     '''
     return next(iter(column.values()))
 

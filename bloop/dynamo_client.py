@@ -2,6 +2,7 @@ import boto3
 import botocore
 import collections
 import time
+import functools
 
 
 DEFAULT_BACKOFF_COEFF = 50.0
@@ -158,14 +159,14 @@ class DynamoClient(object):
                     yield (table_name, item)
 
         # Bound ref to batch_get for retries
-        func = self.client.batch_get_item
+        get_batch = functools.partial(self.client.call_with_retries,
+                                      self.client.batch_get_item)
 
         for request_batch in request_batches:
             # After the first call, request_batch is the
             # UnprocessedKeys from the first call
             while request_batch:
-                batch_response = self.call_with_retries(
-                    func, RequestItems=request_batch)
+                batch_response = get_batch(RequestItems=request_batch)
                 # Add batch results to the full results table
                 for table_name, item in iterate_response(batch_response):
                     if table_name not in response:
@@ -232,14 +233,14 @@ class DynamoClient(object):
         request_batches = partition_batch_write_input(request)
 
         # Bound ref to batch_write for retries
-        func = self.client.batch_write_item
+        write_batch = functools.partial(self.client.call_with_retries,
+                                        self.client.batch_write_item)
 
         for request_batch in request_batches:
             # After the first call, request_batch is the
             # UnprocessedKeys from the first call
             while request_batch:
-                batch_response = self.call_with_retries(
-                    func, RequestItems=request_batch)
+                batch_response = write_batch(RequestItems=request_batch)
 
                 # If there are no unprocessed items, this will be an empty
                 # list which will break the while loop, moving to the next
@@ -282,8 +283,8 @@ class DynamoClient(object):
                                TableName=table, Key=key, **expression)
 
     def query(self, **request):
-        # Bound ref to batch_get for retries
-        func = self.client.query
+        # Bound ref to query for retries
+        query = functools.partial(self.call_with_retries, self.client.query)
         empty = []
 
         results = {
@@ -293,7 +294,7 @@ class DynamoClient(object):
         }
 
         while True:
-            response = self.call_with_retries(func, **request)
+            response = query(**request)
 
             # When updating count, ScannedCount is omitted unless it differs
             # from Count; thus we need to default to assume that the

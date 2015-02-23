@@ -78,6 +78,9 @@ def BaseModel(engine):
     '''
     class ModelMetaclass(declare.ModelMetaclass):
         def __new__(metaclass, name, bases, attrs):
+
+            attrs["write_units"] = attrs.get("write_units", 1)
+            attrs["read_units"] = attrs.get("read_units", 1)
             model = super().__new__(metaclass, name, bases, attrs)
             meta = model.__meta__
 
@@ -136,10 +139,6 @@ def BaseModel(engine):
 
             meta["dynamo.table.name"] = meta.get(
                 "dynamo.table.name", model.__name__)
-            meta["dynamo.table.write_units"] = meta.get(
-                "dynamo.table.write_units", 1)
-            meta["dynamo.table.read_units"] = meta.get(
-                "dynamo.table.read_units", 1)
 
             # If the engine already has a base, register this model.
             # Otherwise, this probably IS the engine's base model

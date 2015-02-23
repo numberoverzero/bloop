@@ -273,7 +273,8 @@ class DynamoClient(object):
         ''' Suppress ResourceInUseException (table already exists) '''
         table = bloop.dynamo.describe_model(model)
         # Bound ref to create w/retries
-        create = functools.partial(self.call_with_retries, self.client.create_table)
+        create = functools.partial(self.call_with_retries,
+                                   self.client.create_table)
 
         try:
             create(**table)

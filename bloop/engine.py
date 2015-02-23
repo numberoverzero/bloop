@@ -1,5 +1,4 @@
 import bloop.model
-import bloop.dynamo
 from bloop.expression import render, Filter
 from bloop.dynamo_client import DynamoClient
 import declare
@@ -96,8 +95,7 @@ class Engine(object):
     def bind(self):
         ''' Create tables for all models that have been registered '''
         for model in self.models:
-            table = bloop.dynamo.describe_model(model)
-            self.dynamodb_client.create_table(**table)
+            self.dynamodb_client.create_table(model)
 
     def dump_column(self, column, value):
         ''' dump a single column into the appropriate dynamo format '''

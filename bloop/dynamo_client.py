@@ -3,6 +3,7 @@ import botocore
 import collections
 import time
 import functools
+import bloop.dynamo
 
 
 DEFAULT_BACKOFF_COEFF = 50.0
@@ -268,10 +269,14 @@ class DynamoClient(object):
             time.sleep(delay)
             attempts += 1
 
-    def create_table(self, *args, **kwargs):
+    def create_table(self, model):
         ''' Suppress ResourceInUseException (table already exists) '''
+        table = bloop.dynamo.describe_model(model)
+        # Bound ref to create w/retries
+        create = functools.partial(self.call_with_retries, self.client.create_table)
+
         try:
-            self.client.create_table(*args, **kwargs)
+            create(**table)
         except botocore.exceptions.ClientError as error:
             # Raise unless the table already exists
             error_code = error.response['Error']['Code']

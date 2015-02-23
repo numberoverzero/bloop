@@ -177,7 +177,7 @@ class DynamoClient(object):
                 # If there are no unprocessed keys, this will be an empty
                 # list which will break the while loop, moving to the next
                 # batch of items
-                request_batch = batch_response["UnprocessedKeys"]
+                request_batch = batch_response.get("UnprocessedKeys",  None)
 
         return response
 

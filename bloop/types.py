@@ -27,7 +27,7 @@ DYNAMODB_CONTEXT = decimal.Context(
 )
 
 
-class ColumnType(declare.TypeDefinition):
+class Type(declare.TypeDefinition):
     def __load__(self, value):
         '''
         take a {type: value} dictionary from dynamo and return a python value
@@ -54,11 +54,11 @@ class ColumnType(declare.TypeDefinition):
         return isinstance(value, self.python_type)
 
     def __repr__(self, *a, **kw):
-        return "ColumnType({}, {})".format(self.python_type, self.backing_type)
+        return "Type({}, {})".format(self.python_type, self.backing_type)
     __str__ = __repr__
 
 
-class StringType(ColumnType):
+class String(Type):
     python_type = str
     backing_type = STRING
 
@@ -69,7 +69,7 @@ class StringType(ColumnType):
         return value
 
 
-class NumberType(ColumnType):
+class Float(Type):
     python_type = numbers.Number
     backing_type = NUMBER
 
@@ -88,7 +88,19 @@ class NumberType(ColumnType):
                 isinstance(value, bool))
 
 
-class BinaryType(ColumnType):
+class Integer(Float):
+    python_type = int
+
+    def dynamo_load(self, value):
+        number = super().dynamo_load(value)
+        return int(number)
+
+    def dynamo_dump(self, value):
+        value = int(value)
+        return super().dynamo_dump(value)
+
+
+class Binary(Type):
     python_type = bytes
     backing_type = BINARY
 
@@ -99,7 +111,7 @@ class BinaryType(ColumnType):
         return base64.b64encode(value).decode('utf-8')
 
 
-class SetType(ColumnType):
+class Set(Type):
     ''' Adapter for sets of objects '''
     python_type = collections.abc.Set
     backing_type = None
@@ -120,12 +132,13 @@ class SetType(ColumnType):
                 all(map(self.typedef.can_dump, value)))
 
 
-StringSetType = SetType(StringType, STRING_SET)
-NumberSetType = SetType(NumberType, NUMBER_SET)
-BinarySetType = SetType(BinaryType, BINARY_SET)
+StringSet = Set(String, STRING_SET)
+FloatSet = Set(Float, NUMBER_SET)
+IntegerSet = Set(Integer, NUMBER_SET)
+BinarySet = Set(Binary, BINARY_SET)
 
 
-class NullType(ColumnType):
+class Null(Type):
     python_type = type(None)
     backing_type = NULL
 
@@ -136,7 +149,7 @@ class NullType(ColumnType):
         return True
 
 
-class BooleanType(ColumnType):
+class Boolean(Type):
     python_type = bool
     backing_type = BOOLEAN
 
@@ -147,7 +160,7 @@ class BooleanType(ColumnType):
         return value
 
 
-class MapType(ColumnType):
+class Map(Type):
     python_type = collections.abc.Mapping
     backing_type = MAP
 
@@ -158,7 +171,7 @@ class MapType(ColumnType):
         return {k: dump(v) for (k, v) in value.items()}
 
 
-class ListType(ColumnType):
+class List(Type):
     python_type = collections.abc.Iterable
     backing_type = LIST
 
@@ -170,16 +183,18 @@ class ListType(ColumnType):
 
 
 TYPES.extend([
-    StringType,
-    NumberType,
-    BinaryType,
-    StringSetType,
-    NumberSetType,
-    BinarySetType,
-    NullType,
-    BooleanType,
-    MapType,
-    ListType
+    String,
+    Float,
+    Integer,
+    Binary,
+    StringSet,
+    FloatSet,
+    IntegerSet,
+    BinarySet,
+    Null,
+    Boolean,
+    Map,
+    List
 ])
 
 

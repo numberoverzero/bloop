@@ -484,6 +484,7 @@ class Filter(object):
             for column in columns:
                 value = item.get(column.dynamo_name, missing)
                 if value is not missing:
+                    value = self.engine.__load__(column.typedef, value)
                     attrs[column.model_name] = value
             yield init(**attrs)
 

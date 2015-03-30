@@ -42,7 +42,6 @@ if __name__ == "__main__":
         keywords='aws dynamo dynamodb orm',
         platforms='any',
         include_package_data=True,
-        py_modules=['bloop'],
         packages=find_packages(exclude=('tests',)),
         install_requires=REQUIREMENTS,
         tests_require=REQUIREMENTS + TEST_REQUIREMENTS,

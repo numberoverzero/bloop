@@ -160,7 +160,7 @@ class DynamoClient(object):
                     yield (table_name, item)
 
         # Bound ref to batch_get for retries
-        get_batch = functools.partial(self.client.call_with_retries,
+        get_batch = functools.partial(self.call_with_retries,
                                       self.client.batch_get_item)
 
         for request_batch in request_batches:
@@ -234,7 +234,7 @@ class DynamoClient(object):
         request_batches = partition_batch_write_input(request)
 
         # Bound ref to batch_write for retries
-        write_batch = functools.partial(self.client.call_with_retries,
+        write_batch = functools.partial(self.call_with_retries,
                                         self.client.batch_write_item)
 
         for request_batch in request_batches:

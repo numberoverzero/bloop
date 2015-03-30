@@ -3,6 +3,7 @@ import collections.abc
 import decimal
 import declare
 import numbers
+import uuid
 
 TYPES = []
 ENCODING = 'utf-8'
@@ -72,10 +73,10 @@ class String(Type):
 class UUID(Type):
     python_type = uuid.UUID
     backing_type = STRING
-    
+
     def dynamo_load(self, value):
         return uuid.UUID(value)
-    
+
     def dynamo_dump(self, value):
         return str(value)
 

@@ -69,6 +69,17 @@ class String(Type):
         return value
 
 
+class UUID(Type):
+    python_type = uuid.UUID
+    backing_type = STRING
+    
+    def dynamo_load(self, value):
+        return uuid.UUID(value)
+    
+    def dynamo_dump(self, value):
+        return str(value)
+
+
 class Float(Type):
     python_type = numbers.Number
     backing_type = NUMBER

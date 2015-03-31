@@ -288,66 +288,6 @@ class In(Condition):
         return "({} IN ({}))".format(nref, values)
 
 
-class ComparisonMixin(object):
-    def __hash__(self):
-        # With single inheritance this looks stupid, but as a Mixin this
-        # ensures we kick hashing back to the other base class so things
-        # don't get fucked up, like `set()`.
-        return super().__hash__()
-
-    def __eq__(self, value):
-        # Special case - None should use function attribute_not_exists
-        if value is None:
-            return AttributeExists(self, negate=True)
-        comparator = operator.eq
-        return Comparison(self, comparator, value)
-
-    def __ne__(self, value):
-        # Special case - None should use function attribute_exists
-        if value is None:
-            return AttributeExists(self, negate=False)
-        comparator = operator.ne
-        return Comparison(self, comparator, value)
-
-    def __lt__(self, value):
-        comparator = operator.lt
-        return Comparison(self, comparator, value)
-
-    def __gt__(self, value):
-        comparator = operator.gt
-        return Comparison(self, comparator, value)
-
-    def __le__(self, value):
-        comparator = operator.le
-        return Comparison(self, comparator, value)
-
-    def __ge__(self, value):
-        comparator = operator.ge
-        return Comparison(self, comparator, value)
-
-    def is_(self, value):
-        ''' alias for == '''
-        return self == value
-
-    def is_not(self, value):
-        ''' alias for != '''
-        return self != value
-
-    def between(self, lower, upper):
-        ''' lower <= column.value <= upper '''
-        return Between(self, lower, upper)
-
-    def in_(self, *values):
-        ''' column.value in [3, 4, 5] '''
-        return In(self, values)
-
-    def begins_with(self, value):
-        return BeginsWith(self, value)
-
-    def contains(self, value):
-        return Contains(self, value)
-
-
 def validate_key_condition(condition):
     if isinstance(condition, BeginsWith):
         return True
@@ -467,13 +407,13 @@ class Filter(object):
 
     def count(self):
         self.select("count")
-        result = self.gen()
+        result = self.__gen__()
         return [result["Count"], result["ScannedCount"]]
 
     def __iter__(self):
         if self._select == "count":
             raise AttributeError("Cannot iterate COUNT query")
-        result = self.gen()
+        result = self.__gen__()
 
         meta = self.model.__meta__
         columns = meta["dynamo.columns"]
@@ -500,7 +440,7 @@ class Filter(object):
             return self
         return super().__getattr__(name)
 
-    def gen(self):
+    def __gen__(self):
         meta = self.model.__meta__
         kwargs = {
             'TableName': meta['dynamo.table.name'],

@@ -1,4 +1,4 @@
-# bloop 0.2.2
+# bloop 0.2.3
 
 [![Build Status]
 (https://travis-ci.org/numberoverzero/bloop.svg?branch=master)]

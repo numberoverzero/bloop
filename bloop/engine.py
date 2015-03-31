@@ -1,6 +1,6 @@
 import bloop.model
 from bloop.expression import render, Filter
-from bloop.dynamo_client import DynamoClient
+from bloop.dynamo_client import DynamoClient, dump_key
 import declare
 import collections
 import collections.abc
@@ -97,30 +97,6 @@ class Engine(object):
         for model in self.models:
             self.dynamodb_client.create_table(model)
 
-    def dump_column(self, column, value):
-        ''' dump a single column into the appropriate dynamo format '''
-        dynamo_value = self.__dump__(column.typedef, value)
-        return {column.dynamo_name: dynamo_value}
-
-    def dump_key(self, obj):
-        '''
-        dump the hash (and range, if there is one) key(s) of an object into
-        a dynamo-friendly format.
-
-        returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
-        '''
-        model = obj.__class__
-        dynamo_key = {}
-
-        hash_value = getattr(obj, model.hash_key.model_name)
-        dynamo_key.update(self.dump_column(model.hash_key, hash_value))
-
-        if model.range_key:
-            range_value = getattr(obj, model.range_key.model_name)
-            dynamo_key.update(self.dump_column(model.range_key, range_value))
-
-        return dynamo_key
-
     def load(self, objs, *, consistent_read=False):
         '''
         Populate objects from dynamodb, optionally using consistent reads.
@@ -172,7 +148,7 @@ class Engine(object):
                     "Keys": [],
                     "ConsistentRead": consistent_read
                 }
-            key = self.dump_key(obj)
+            key = dump_key(self, obj)
             # Add the key to the request
             request_items[table_name]["Keys"].append(key)
             # Make sure we can find the key shape for this table
@@ -253,7 +229,7 @@ class Engine(object):
             obj = objs[0]
             model = obj.__class__
             table_name = model.__meta__['dynamo.table.name']
-            key = self.dump_key(obj)
+            key = dump_key(self, obj)
             expression = render(self, model, condition)
             self.dynamodb_client.delete_item(table_name, key, expression)
 
@@ -263,7 +239,7 @@ class Engine(object):
             for obj in set(objs):
                 del_item = {
                     "DeleteRequest": {
-                        "Key": self.dump_key(obj)
+                        "Key": dump_key(self, obj)
                     }
                 }
                 table_name = obj.__meta__['dynamo.table.name']

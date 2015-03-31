@@ -31,28 +31,25 @@ def partition_batch_get_input(request_items):
             for key in table_attrs["Keys"]:
                 yield (table_name, key, consistent_read)
 
-    def iterate_chunks():
-        chunk = {}
-        items = 0
-        for table_name, key, consistent_read in iterate_items():
-            if items == MAX_BATCH_SIZE:
-                yield chunk
-                items = 0
-                chunk = {}
-            table = chunk.get(table_name, None)
-            # First occurance of the table in this chunk
-            if table is None:
-                table = chunk[table_name] = {
-                    "ConsistentRead": consistent_read,
-                    "Keys": []}
-            # Dump the key into the chunk table's `Keys` list
-            table["Keys"].append(key)
-            items += 1
-        # Last chunk, less than MAX_BATCH_SIZE items
-        if chunk:
+    chunk = {}
+    items = 0
+    for table_name, key, consistent_read in iterate_items():
+        if items == MAX_BATCH_SIZE:
             yield chunk
-
-    return iterate_chunks()
+            items = 0
+            chunk = {}
+        table = chunk.get(table_name, None)
+        # First occurance of the table in this chunk
+        if table is None:
+            table = chunk[table_name] = {
+                "ConsistentRead": consistent_read,
+                "Keys": []}
+        # Dump the key into the chunk table's `Keys` list
+        table["Keys"].append(key)
+        items += 1
+    # Last chunk, less than MAX_BATCH_SIZE items
+    if chunk:
+        yield chunk
 
 
 def partition_batch_write_input(request_items):
@@ -63,21 +60,18 @@ def partition_batch_write_input(request_items):
             for item in items:
                 yield (table_name, item)
 
-    def iterate_chunks():
-        chunk = collections.defaultdict(list)
-        items = 0
-        for table_name, item in iterate_items():
-            if items == MAX_BATCH_SIZE:
-                yield chunk
-                items = 0
-                chunk = {}
-            chunk[table_name].append(item)
-            items += 1
-        # Last chunk, less than MAX_BATCH_SIZE items
-        if chunk:
+    chunk = collections.defaultdict(list)
+    items = 0
+    for table_name, item in iterate_items():
+        if items == MAX_BATCH_SIZE:
             yield chunk
-
-    return iterate_chunks()
+            items = 0
+            chunk = {}
+        chunk[table_name].append(item)
+        items += 1
+    # Last chunk, less than MAX_BATCH_SIZE items
+    if chunk:
+        yield chunk
 
 
 class DynamoClient(object):
@@ -151,7 +145,6 @@ class DynamoClient(object):
             ]
         }
         '''
-        request_batches = partition_batch_get_input(request)
         response = {}
 
         def iterate_response(batch):
@@ -163,7 +156,7 @@ class DynamoClient(object):
         get_batch = functools.partial(self.call_with_retries,
                                       self.client.batch_get_item)
 
-        for request_batch in request_batches:
+        for request_batch in partition_batch_get_input(request):
             # After the first call, request_batch is the
             # UnprocessedKeys from the first call
             while request_batch:
@@ -231,13 +224,11 @@ class DynamoClient(object):
             }
         }
         '''
-        request_batches = partition_batch_write_input(request)
-
         # Bound ref to batch_write for retries
         write_batch = functools.partial(self.call_with_retries,
                                         self.client.batch_write_item)
 
-        for request_batch in request_batches:
+        for request_batch in partition_batch_write_input(request):
             # After the first call, request_batch is the
             # UnprocessedKeys from the first call
             while request_batch:
@@ -271,7 +262,22 @@ class DynamoClient(object):
 
     def create_table(self, model):
         ''' Suppress ResourceInUseException (table already exists) '''
-        table = describe_model(model)
+        table = {
+            "TableName": model.__meta__["dynamo.table.name"],
+            "ProvisionedThroughput": {
+                'WriteCapacityUnits': model.write_units,
+                'ReadCapacityUnits': model.read_units
+            },
+            "KeySchema": key_schema(model),
+            "AttributeDefinitions": attribute_definitions(model),
+            "GlobalSecondaryIndexes": global_secondary_indexes(model),
+            "LocalSecondaryIndexes": local_secondary_indexes(model)
+        }
+        if not table['GlobalSecondaryIndexes']:
+            table.pop('GlobalSecondaryIndexes')
+        if not table['LocalSecondaryIndexes']:
+            table.pop('LocalSecondaryIndexes')
+
         # Bound ref to create w/retries
         create = functools.partial(self.call_with_retries,
                                    self.client.create_table)
@@ -325,40 +331,34 @@ class DynamoClient(object):
                                TableName=table, Item=item, **expression)
 
 
+# Column/model helpers
+def dump_column(engine, column, value):
+    ''' dump a single column into the appropriate dynamo format '''
+    dynamo_value = engine.__dump__(column.typedef, value)
+    return {column.dynamo_name: dynamo_value}
+
+
+def dump_key(engine, obj):
+    '''
+    dump the hash (and range, if there is one) key(s) of an object into
+    a dynamo-friendly format.
+
+    returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
+    '''
+    model = obj.__class__
+    dynamo_key = {}
+
+    hash_value = getattr(obj, model.hash_key.model_name)
+    dynamo_key.update(dump_column(engine, model.hash_key, hash_value))
+
+    if model.range_key:
+        range_value = getattr(obj, model.range_key.model_name)
+        dynamo_key.update(dump_column(engine, model.range_key, range_value))
+
+    return dynamo_key
+
+
 # Helpers TODO: Refactor
-
-def has_key(column):
-    return column.hash_key or column.range_key
-
-
-def attribute_definitions(model):
-    ''' Only include table and index hash/range keys '''
-    columns = model.__meta__["dynamo.columns"]
-    indexes = model.__meta__["dynamo.indexes"]
-    attrs = []
-    attr_columns = set()
-    for column in filter(has_key, columns):
-        attr_columns.add(column)
-        attrs.append(attribute_def(column))
-    for index in filter(has_key, indexes):
-        hash_column = index.hash_key
-        if hash_column and hash_column not in attr_columns:
-            attr_columns.add(hash_column)
-            attrs.append(attribute_def(hash_column))
-        range_column = index.range_key
-        if range_column and range_column not in attr_columns:
-            attr_columns.add(range_column)
-            attrs.append(attribute_def(range_column))
-    return attrs
-
-
-def attribute_def(column):
-    return {
-        'AttributeType': column.typedef.backing_type,
-        'AttributeName': column.dynamo_name
-    }
-
-
 def key_schema(model):
     schema = [{
         'AttributeName': model.hash_key.dynamo_name,
@@ -374,15 +374,35 @@ def key_schema(model):
     return schema
 
 
-def provisioned_throughput(model):
-    return {
-        'WriteCapacityUnits': model.write_units,
-        'ReadCapacityUnits': model.read_units
-    }
+def attribute_definitions(model):
+    ''' Only include table and index hash/range keys '''
+    columns = model.__meta__["dynamo.columns"]
+    indexes = model.__meta__["dynamo.indexes"]
+    dedupe_attrs = set()
+    attrs = []
 
+    def has_key(column):
+        return column.hash_key or column.range_key
 
-def table_name(model):
-    return model.__meta__["dynamo.table.name"]
+    def attribute_def(column):
+        return {
+            'AttributeType': column.typedef.backing_type,
+            'AttributeName': column.dynamo_name
+        }
+
+    for column in filter(has_key, columns):
+        dedupe_attrs.add(column)
+        attrs.append(attribute_def(column))
+    for index in filter(has_key, indexes):
+        hash_column = index.hash_key
+        if hash_column and hash_column not in dedupe_attrs:
+            dedupe_attrs.add(hash_column)
+            attrs.append(attribute_def(hash_column))
+        range_column = index.range_key
+        if range_column and range_column not in dedupe_attrs:
+            dedupe_attrs.add(range_column)
+            attrs.append(attribute_def(range_column))
+    return attrs
 
 
 def global_secondary_indexes(model):
@@ -449,19 +469,3 @@ def local_secondary_indexes(model):
         })
 
     return lsis
-
-
-def describe_model(model):
-    description = {
-        "TableName": table_name(model),
-        "ProvisionedThroughput": provisioned_throughput(model),
-        "KeySchema": key_schema(model),
-        "AttributeDefinitions": attribute_definitions(model),
-        "GlobalSecondaryIndexes": global_secondary_indexes(model),
-        "LocalSecondaryIndexes": local_secondary_indexes(model)
-    }
-    if not description['GlobalSecondaryIndexes']:
-        description.pop('GlobalSecondaryIndexes')
-    if not description['LocalSecondaryIndexes']:
-        description.pop('LocalSecondaryIndexes')
-    return description

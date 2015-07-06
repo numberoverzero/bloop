@@ -4,8 +4,6 @@ import collections
 import time
 import functools
 import bloop.column
-import logging
-logger = logging.getLogger(__name__)
 
 
 DEFAULT_BACKOFF_COEFF = 50.0
@@ -162,9 +160,7 @@ class DynamoClient(object):
             # After the first call, request_batch is the
             # UnprocessedKeys from the first call
             while request_batch:
-                logger.debug("[BATCH_GET] >>> %s", request_batch)
                 batch_response = get_batch(RequestItems=request_batch)
-                logger.debug("[BATCH_GET] <<< %s", batch_response)
 
                 # Add batch results to the full results table
                 for table_name, item in iterate_response(batch_response):
@@ -237,9 +233,7 @@ class DynamoClient(object):
             # After the first call, request_batch is the
             # UnprocessedKeys from the first call
             while request_batch:
-                logger.debug("[BATCH_WRITE] >>> %s", request_batch)
                 batch_response = write_batch(RequestItems=request_batch)
-                logger.debug("[BATCH_WRITE] <<< %s", batch_response)
 
                 # If there are no unprocessed items, this will be an empty
                 # list which will break the while loop, moving to the next
@@ -290,7 +284,6 @@ class DynamoClient(object):
                                    self.client.create_table)
 
         try:
-            logger.debug("[CREATE_TABLE] >>> %s", table)
             create(**table)
         except botocore.exceptions.ClientError as error:
             # Raise unless the table already exists
@@ -314,9 +307,7 @@ class DynamoClient(object):
         }
 
         while True:
-            logger.debug("[QUERY] >>> %s", request)
             response = query(**request)
-            logger.debug("[QUERY] <<< %s", response)
 
             # When updating count, ScannedCount is omitted unless it differs
             # from Count; thus we need to default to assume that the
@@ -337,14 +328,8 @@ class DynamoClient(object):
         return results
 
     def put_item(self, table, item, expression):
-        put = functools.partial(self.call_with_retries, self.client.put_item)
-        request = {
-            "TableName": table,
-            "Item": item,
-        }
-        request.update(expression)
-        logger.debug("[PUT_ITEM] >>> %s", request)
-        put(**request)
+        self.call_with_retries(self.client.put_item,
+                               TableName=table, Item=item, **expression)
 
 
 # Column/model helpers

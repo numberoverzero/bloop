@@ -3,7 +3,14 @@
 import bloop.column
 import bloop.condition
 import operator
+
 missing = object()
+SELECT_MODES = {
+    "all": "ALL_ATTRIBUTES",
+    "projected": "ALL_PROJECTED_ATTRIBUTES",
+    "count": "COUNT",
+    "specific": "SPECIFIC_ATTRIBUTES"
+}
 
 
 def validate_key_condition(condition):
@@ -51,7 +58,7 @@ class Filter(object):
         self._forward = True
         self._consistent = False
 
-        self._attrs_to_get = []
+        self._select_columns = []
 
     def copy(self):
         other = Filter(engine=self.engine, mode=self.mode,
@@ -61,7 +68,7 @@ class Filter(object):
                      "_select", "_forward", "_consistent"]:
             setattr(other, attr, getattr(self, attr))
 
-        other._attrs_to_get = list(self._attrs_to_get)
+        other._select_columns = list(self._select_columns)
         other._key_condition = self._key_condition
 
         return other
@@ -128,28 +135,25 @@ class Filter(object):
         other._filter_condition = condition
         return other
 
-    def select(self, mode, attrs=None):
+    def select(self, columns):
         '''
-        attrs is REQUIRED when mode is 'specific', and attrs must be a list
+        columns is REQUIRED when mode is 'specific', and columns must be a list
         '''
-        if mode not in bloop.condition.SELECT_MODES:
-            msg = "Unknown select mode '{}'.  Must be one of {}"
-            raise ValueError(msg.format(mode, list(
-                bloop.condition.SELECT_MODES.keys())))
-        if mode == "specific" and not attrs:
-            raise ValueError("Must provide attrs to get with 'specific' mode")
-        if mode == "count":
-            other = self.copy()
-            other._attrs_to_get.clear()
-        if mode == "specific":
-            other = self.copy()
-            other._attrs_to_get.extend(attrs)
-
-        other._select = mode
+        # Can't just copy and extend in case this is an
+        # empty select() to explicitly select all columns
+        other = self.copy()
+        if not columns:
+            other._select_columns.clear()
+            other._select = "all"
+        else:
+            other._select_columns.extend(columns)
+            other._select = "specific"
         return other
 
     def count(self):
-        other = self.select("count")
+        other = self.copy()
+        other._select = "count"
+        other._select_columns.clear()
         result = other.__gen__()
         return [result["Count"], result["ScannedCount"]]
 
@@ -190,7 +194,7 @@ class Filter(object):
         meta = self.model.__meta__
         kwargs = {
             'TableName': meta['dynamo.table.name'],
-            'Select': bloop.condition.SELECT_MODES[self._select],
+            'Select': SELECT_MODES[self._select],
             'ScanIndexForward': self._forward,
             'ConsistentRead': self._consistent
         }
@@ -204,14 +208,6 @@ class Filter(object):
                 raise ValueError(
                     "Cannot use ConsistentRead with a GlobalSecondaryIndex")
 
-        if self._select == "specific":
-            if not self._attrs_to_get:
-                raise ValueError(
-                    "Must provide attrs to get with 'specific' mode")
-            columns = meta['dynamo.columns.by.model_name']
-            attrs = [columns[attr].dynamo_name for attr in self._attrs_to_get]
-            kwargs['AttributesToGet'] = attrs
-
         # Render key and filter conditions
         renderer = bloop.condition.ConditionRenderer(
             self.engine, self.model, legacy=False)
@@ -220,5 +216,12 @@ class Filter(object):
         if self._filter_condition:
             kwargs.update(renderer.render(self._filter_condition,
                                           mode="filter"))
+
+        if self._select == "specific":
+            if not self._select_columns:
+                raise ValueError(
+                    "Must provide attrs to get with 'specific' mode")
+            names = map(renderer.name_ref, self._select_columns)
+            kwargs['ProjectionExpression'] = ", ".join(names)
 
         return self.engine.dynamodb_client.query(**kwargs)

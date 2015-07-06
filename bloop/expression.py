@@ -118,44 +118,35 @@ class Condition(object):
         return 1
 
 
-class And(Condition):
+class MultiCondition(object):
     def __init__(self, *conditions):
         self.conditions = conditions
 
     def __str__(self):
         conditions = ", ".join(str(c) for c in self.conditions)
-        return "And({})".format(conditions)
+        return self.name + "({})".format(conditions)
 
     def __len__(self):
         return sum(map(len, self.conditions))
 
     def render(self, renderer):
         if renderer.legacy:
-            raise ValueError("Don't know how to render legacy AND")
+            raise ValueError("Don't know how to render legacy " + self.uname)
         if len(self.conditions) == 1:
             return self.conditions[0].render(renderer)
         rendered_conditions = (c.render(renderer) for c in self.conditions)
-        return "(" + " AND ".join(rendered_conditions) + ")"
+        conjunction = " {} ".format(self.uname)
+        return "(" + conjunction.join(rendered_conditions) + ")"
 
 
-class Or(Condition):
-    def __init__(self, *conditions):
-        self.conditions = conditions
+class And(MultiCondition):
+    name = "And"
+    uname = "AND"
 
-    def __str__(self):
-        conditions = ", ".join(str(c) for c in self.conditions)
-        return "Or({})".format(conditions)
 
-    def __len__(self):
-        return sum(map(len, self.conditions))
-
-    def render(self, renderer):
-        if renderer.legacy:
-            raise ValueError("Don't know how to render legacy OR")
-        if len(self.conditions) == 1:
-            return self.conditions[0].render(renderer)
-        rendered_conditions = (c.render(renderer) for c in self.conditions)
-        return "(" + " OR ".join(rendered_conditions) + ")"
+class Or(MultiCondition):
+    name = "Or"
+    uname = "OR"
 
 
 class Not(Condition):
@@ -376,7 +367,11 @@ class Filter(object):
 
         return other
 
-    def key(self, *conditions):
+    def key(self, condition):
+        # AND multiple conditions
+        if self._key_condition:
+            condition &= self._key_condition
+
         # a hash condition is always required; a range condition
         # is allowed if the table/index has a range
         if self.index:
@@ -390,42 +385,40 @@ class Filter(object):
         if range_column:
             max_conditions += 1
 
-        if not conditions:
+        if not condition:
             raise ValueError("At least one key condition (hash) is required")
-        if len(conditions) > max_conditions:
-            msg = "At most {} key conditions can be specified; got {} instead."
-            raise ValueError(msg.format(max_conditions, len(conditions)))
 
-        hash_condition = None
-        range_condition = None
-
-        # KeyConditions can only use the ComparisonOperators
-        # EQ | LE | LT | GE | GT | BEGINS_WITH | BETWEEN
-        for condition in conditions:
-            validate_key_condition(condition)
-            column = condition.column
-            if column is hash_column:
-                if hash_condition:
-                    raise ValueError("HashKey over-specified")
-                else:
-                    hash_condition = condition
-            elif column is range_column:
-                if range_condition:
-                    raise ValueError("RangeKey over-specified")
-                else:
-                    range_condition = condition
-            else:
-                msg = "Column {} is not a hash or range key".format(column)
-                if self.index:
-                    msg += " for the index {}".format(self.index.model_name)
+        # AND is allowed so long as the index we're using allows hash + range
+        if isinstance(condition, And):
+            if max_conditions < len(condition):
+                msg = ("Model or Index only allows {} condition(s) but"
+                       " an AND of {} condition(s) was supplied.").format(
+                            max_conditions, len(condition))
                 raise ValueError(msg)
-        if not hash_condition:
-            raise ValueError("Must specify a hash key")
-        if range_condition:
-            hash_condition &= range_condition
+            # KeyConditions can only use the following:
+            # EQ | LE | LT | GE | GT | BEGINS_WITH | BETWEEN
+            for subcond in condition.conditions:
+                validate_key_condition(subcond)
+
+            columns = set(subcond.column for subcond in condition.conditions)
+            # Duplicate column in AND
+            if len(columns) < len(condition):
+                raise ValueError("Cannot use a hash/range column more"
+                                 " than once when specifying KeyConditions")
+
+            if hash_column not in columns:
+                raise ValueError("Must specify a hash key")
+
+            # At this point we've got the same number of columns and
+            # conditions, and that's less than or equal to the number of
+            # allowed conditions for this model/index.
+
+        # Simply validate all other conditions
+        else:
+            validate_key_condition(condition)
 
         other = self.copy()
-        other._key_condition = hash_condition
+        other._key_condition = condition
         return other
 
     def filter(self, condition):

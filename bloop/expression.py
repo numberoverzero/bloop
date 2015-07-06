@@ -26,14 +26,14 @@ def validate_key_condition(condition):
 
 class Filter(object):
     '''
-    Base class for scans and queries.
+    Base class for Scan and Query.
 
     Thread safe.  The functions key, filter, select, ascending, descending,
-    and consistent all return copies of the filter object with the expected
-    modifications.
+    and consistent all return copies of the Filter object with the
+    expected modifications.
 
     Example:
-        f = Filter(engine, mode, model)
+        f = Filter(engine, model)
         f2 = f.descending
         f3 = f.consistent
 
@@ -46,9 +46,8 @@ class Filter(object):
         assert f3._forward
 
     '''
-    def __init__(self, engine, mode, model, index=None):
+    def __init__(self, engine, model, index=None):
         self.engine = engine
-        self.mode = mode
         self.model = model
         self.index = index
 
@@ -61,8 +60,8 @@ class Filter(object):
         self._select_columns = []
 
     def copy(self):
-        other = Filter(engine=self.engine, mode=self.mode,
-                       model=self.model, index=self.index)
+        cls = self.__class__
+        other = cls(engine=self.engine, model=self.model, index=self.index)
 
         for attr in ["_filter_condition", "_key_condition",
                      "_select", "_forward", "_consistent"]:
@@ -175,21 +174,26 @@ class Filter(object):
                     attrs[column.model_name] = value
             yield init(**attrs)
 
-    def __getattr__(self, name):
-        if name == "ascending":
-            other = self.copy()
-            other._forward = True
-            return other
-        if name == "descending":
-            other = self.copy()
-            other._forward = False
-            return other
-        if name == "consistent":
-            other = self.copy()
-            other._consistent = True
-            return other
-        return super().__getattr__(name)
+    @property
+    def ascending(self):
+        other = self.copy()
+        other._forward = True
+        return other
 
+    @property
+    def descending(self):
+        other = self.copy()
+        other._forward = False
+        return other
+
+    @property
+    def consistent(self):
+        other = self.copy()
+        other._consistent = True
+        return other
+
+
+class Query(Filter):
     def __gen__(self):
         meta = self.model.__meta__
         kwargs = {
@@ -220,8 +224,37 @@ class Filter(object):
         if self._select == "specific":
             if not self._select_columns:
                 raise ValueError(
-                    "Must provide attrs to get with 'specific' mode")
+                    "Must provide columns to get with 'specific' mode")
             names = map(renderer.name_ref, self._select_columns)
             kwargs['ProjectionExpression'] = ", ".join(names)
 
         return self.engine.dynamodb_client.query(**kwargs)
+
+
+class Scan(Filter):
+    def __gen__(self):
+        meta = self.model.__meta__
+        kwargs = {
+            'TableName': meta['dynamo.table.name'],
+            'Select': SELECT_MODES[self._select]
+        }
+
+        if self.index:
+            kwargs['IndexName'] = self.index.dynamo_name
+
+        # Render key and filter conditions
+        renderer = bloop.condition.ConditionRenderer(
+            self.engine, self.model, legacy=False)
+
+        if self._filter_condition:
+            kwargs.update(renderer.render(self._filter_condition,
+                                          mode="filter"))
+
+        if self._select == "specific":
+            if not self._select_columns:
+                raise ValueError(
+                    "Must provide columns to get with 'specific' mode")
+            names = map(renderer.name_ref, self._select_columns)
+            kwargs['ProjectionExpression'] = ", ".join(names)
+
+        return self.engine.dynamodb_client.scan(**kwargs)

@@ -295,9 +295,9 @@ class DynamoClient(object):
         self.call_with_retries(self.client.delete_item,
                                TableName=table, Key=key, **expression)
 
-    def query(self, **request):
-        # Bound ref to query for retries
-        query = functools.partial(self.call_with_retries, self.client.query)
+    def _filter(self, client_func, **request):
+        # Wrap client function in retries
+        call = functools.partial(self.call_with_retries, client_func)
         empty = []
 
         results = {
@@ -307,7 +307,7 @@ class DynamoClient(object):
         }
 
         while True:
-            response = query(**request)
+            response = call(**request)
 
             # When updating count, ScannedCount is omitted unless it differs
             # from Count; thus we need to default to assume that the
@@ -327,9 +327,15 @@ class DynamoClient(object):
 
         return results
 
+    def query(self, **request):
+        return self._filter(self.client.query, **request)
+
     def put_item(self, table, item, expression):
         self.call_with_retries(self.client.put_item,
                                TableName=table, Item=item, **expression)
+
+    def scan(self, **request):
+        return self._filter(self.client.scan, **request)
 
 
 # Column/model helpers

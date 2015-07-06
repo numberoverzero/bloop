@@ -118,7 +118,7 @@ class Condition(object):
         return 1
 
 
-class MultiCondition(object):
+class MultiCondition(Condition):
     def __init__(self, *conditions):
         self.conditions = conditions
 

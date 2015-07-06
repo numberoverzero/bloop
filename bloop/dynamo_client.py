@@ -359,19 +359,16 @@ def dump_key(engine, obj):
     return dynamo_key
 
 
-# Helpers TODO: Refactor
 def key_schema(model):
     schema = [{
         'AttributeName': model.hash_key.dynamo_name,
         'KeyType': 'HASH'
     }]
-
     if model.range_key:
         schema.append({
             'AttributeName': model.range_key.dynamo_name,
             'KeyType': 'RANGE'
         })
-
     return schema
 
 
@@ -410,19 +407,12 @@ def global_secondary_indexes(model):
     gsis = []
     for index in filter(bloop.column.is_global_index,
                         model.__meta__["dynamo.indexes"]):
+        gsi_key_schema = key_schema(index)
         provisioned_throughput = {
             'WriteCapacityUnits': index.write_units,
             'ReadCapacityUnits': index.read_units
         }
-        key_schema = [{
-            'AttributeName': index.hash_key.dynamo_name,
-            'KeyType': 'HASH'
-        }]
-        if index.range_key:
-            key_schema.append({
-                'AttributeName': index.range_key.dynamo_name,
-                'KeyType': 'RANGE'
-            })
+
         # TODO - handle projections other than 'ALL' and 'KEYS_ONLY'
         projection = {
             'ProjectionType': index.projection,
@@ -435,9 +425,8 @@ def global_secondary_indexes(model):
             'ProvisionedThroughput': provisioned_throughput,
             'Projection': projection,
             'IndexName': index.dynamo_name,
-            'KeySchema': key_schema
+            'KeySchema': gsi_key_schema
         })
-
     return gsis
 
 
@@ -445,16 +434,8 @@ def local_secondary_indexes(model):
     lsis = []
     for index in filter(bloop.column.is_local_index,
                         model.__meta__["dynamo.indexes"]):
-        key_schema = [
-            {
-                'AttributeName': index.hash_key.dynamo_name,
-                'KeyType': 'HASH'
-            },
-            {
-                'AttributeName': index.range_key.dynamo_name,
-                'KeyType': 'RANGE'
-            }
-        ]
+        lsi_key_schema = key_schema(index)
+
         # TODO - handle projections other than 'ALL' and 'KEYS_ONLY'
         projection = {
             'ProjectionType': index.projection,
@@ -466,7 +447,6 @@ def local_secondary_indexes(model):
         lsis.append({
             'Projection': projection,
             'IndexName': index.dynamo_name,
-            'KeySchema': key_schema
+            'KeySchema': lsi_key_schema
         })
-
     return lsis

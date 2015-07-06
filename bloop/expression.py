@@ -7,7 +7,8 @@ missing = object()
 
 EXPRESSION_KEYS = {
     "condition": "ConditionExpression",
-    "filter": "FilterExpression"
+    "filter": "FilterExpression",
+    "key": "KeyConditionExpression"
 }
 ATTR_NAMES = "ExpressionAttributeNames"
 ATTR_VALUES = "ExpressionAttributeValues"
@@ -19,31 +20,9 @@ SELECT_MODES = {
 }
 
 
-def render(engine, model, condition, mode="condition", legacy=False):
-    if not condition:
-        return {}
+def render(engine, model, condition, mode, legacy=False):
     renderer = ConditionRenderer(engine, model, legacy=legacy)
-    rendered_expression = condition.render(renderer)
-    # Legacy expressions are of the form:
-    # { "dynamo_name":
-    #      { "ComparisonOperator": "OPERATOR",
-    #        "AttributeValueList": [
-    #          {
-    #               "S": "20130101",
-    #          }, ...]
-    #      }
-    # }
-    if legacy:
-        return rendered_expression
-
-    # An expression contains the compressed string, and any name/value ref
-    key = EXPRESSION_KEYS[mode]
-    expression = {key: rendered_expression}
-    if renderer.attr_names:
-        expression[ATTR_NAMES] = renderer.attr_names
-    if renderer.attr_values:
-        expression[ATTR_VALUES] = renderer.attr_values
-    return expression
+    return renderer.render(condition, mode=mode)
 
 
 class ConditionRenderer(object):
@@ -53,6 +32,11 @@ class ConditionRenderer(object):
         self.legacy = legacy
         self.attr_values = {}
         self.attr_names = {}
+        # Reverse index names so we can re-use ExpressionAttributeNames.
+        # We don't do the same for ExpressionAttributeValues since they are
+        # dicts of {"TYPE": "VALUE"} and would take more space and time to use
+        # as keys, as well as less frequently being re-used than names.
+        self.name_attr_index = {}
         self.__ref_index = 0
 
     def value_ref(self, column, value=missing):
@@ -77,12 +61,44 @@ class ConditionRenderer(object):
             return ref
 
     def name_ref(self, column):
+        # Small optimization to request size for duplicate name refs
+        existing_ref = self.name_attr_index.get(column.dynamo_name, None)
+        if existing_ref:
+            return existing_ref
+
         if self.legacy:
             raise ValueError("Legacy rendering shouldn't need name refs!")
+
         ref = "#n{}".format(self.__ref_index)
         self.__ref_index += 1
         self.attr_names[ref] = column.dynamo_name
+        self.name_attr_index[column.dynamo_name] = ref
         return ref
+
+    def render(self, condition, mode):
+        if not condition:
+            return {}
+        rendered_expression = condition.render(self)
+        # Legacy expressions are of the form:
+        # { "dynamo_name":
+        #      { "ComparisonOperator": "OPERATOR",
+        #        "AttributeValueList": [
+        #          {
+        #               "S": "20130101",
+        #          }, ...]
+        #      }
+        # }
+        if self.legacy:
+            return rendered_expression
+
+        # An expression contains the compressed string, and any name/value ref
+        key = EXPRESSION_KEYS[mode]
+        expression = {key: rendered_expression}
+        if self.attr_names:
+            expression[ATTR_NAMES] = self.attr_names
+        if self.attr_values:
+            expression[ATTR_VALUES] = self.attr_values
+        return expression
 
 
 class Condition(object):
@@ -98,6 +114,9 @@ class Condition(object):
         return Not(self)
     __neg__ = __invert__
 
+    def __len__(self):
+        return 1
+
 
 class And(Condition):
     def __init__(self, *conditions):
@@ -106,6 +125,9 @@ class And(Condition):
     def __str__(self):
         conditions = ", ".join(str(c) for c in self.conditions)
         return "And({})".format(conditions)
+
+    def __len__(self):
+        return sum(map(len, self.conditions))
 
     def render(self, renderer):
         if renderer.legacy:
@@ -124,6 +146,9 @@ class Or(Condition):
         conditions = ", ".join(str(c) for c in self.conditions)
         return "Or({})".format(conditions)
 
+    def __len__(self):
+        return sum(map(len, self.conditions))
+
     def render(self, renderer):
         if renderer.legacy:
             raise ValueError("Don't know how to render legacy OR")
@@ -139,6 +164,9 @@ class Not(Condition):
 
     def __str__(self):
         return "Not({})".format(self.condition)
+
+    def __len__(self):
+        return len(self.condition)
 
     def render(self, renderer):
         if renderer.legacy:
@@ -301,6 +329,8 @@ def validate_key_condition(condition):
 
 class Filter(object):
     '''
+    Base class for scans and queries.
+
     Thread safe.  The functions key, filter, select, ascending, descending,
     and consistent all return copies of the filter object with the expected
     modifications.
@@ -319,32 +349,30 @@ class Filter(object):
         assert f3._forward
 
     '''
-    valid_range_key_conditions = [Comparison, BeginsWith, Between]
-
-    ''' Base class for scans and queries '''
     def __init__(self, engine, mode, model, index=None):
         self.engine = engine
         self.mode = mode
         self.model = model
         self.index = index
 
-        self._condition = None
+        self._key_condition = None
+        self._filter_condition = None
         self._select = "all"
         self._forward = True
         self._consistent = False
 
         self._attrs_to_get = []
-        self._key_conditions = {}
 
     def copy(self):
         other = Filter(engine=self.engine, mode=self.mode,
                        model=self.model, index=self.index)
 
-        for attr in ["_condition", "_select", "_forward", "_consistent"]:
+        for attr in ["_filter_condition", "_key_condition",
+                     "_select", "_forward", "_consistent"]:
             setattr(other, attr, getattr(self, attr))
 
         other._attrs_to_get = list(self._attrs_to_get)
-        other._key_conditions = dict(self._key_conditions)
+        other._key_condition = self._key_condition
 
         return other
 
@@ -352,11 +380,6 @@ class Filter(object):
         # a hash condition is always required; a range condition
         # is allowed if the table/index has a range
         if self.index:
-            # TODO: this meta inspection should be refactored into
-            # a transformation library that can inspect model/index
-            # pairs generally, instead of relying on something like
-            # expression.Filter.key to know how the fields in
-            # model.ModelMetaclass.__meta__ are structured
             hash_column = self.index.hash_key
             range_column = self.index.range_key
         else:
@@ -385,16 +408,12 @@ class Filter(object):
                 if hash_condition:
                     raise ValueError("HashKey over-specified")
                 else:
-                    hash_condition = render(self.engine,
-                                            self.model, condition,
-                                            legacy=True)
+                    hash_condition = condition
             elif column is range_column:
                 if range_condition:
                     raise ValueError("RangeKey over-specified")
                 else:
-                    range_condition = render(self.engine,
-                                             self.model, condition,
-                                             legacy=True)
+                    range_condition = condition
             else:
                 msg = "Column {} is not a hash or range key".format(column)
                 if self.index:
@@ -402,17 +421,19 @@ class Filter(object):
                 raise ValueError(msg)
         if not hash_condition:
             raise ValueError("Must specify a hash key")
+        if range_condition:
+            hash_condition &= range_condition
 
         other = self.copy()
-        other._key_conditions = {}
-        other._key_conditions.update(hash_condition)
-        if range_condition:
-            other._key_conditions.update(range_condition)
+        other._key_condition = hash_condition
         return other
 
     def filter(self, condition):
         other = self.copy()
-        other._condition = condition
+        # AND multiple filters
+        if other._filter_condition:
+            condition &= other._filter_condition
+        other._filter_condition = condition
         return other
 
     def select(self, mode, attrs=None):
@@ -478,12 +499,12 @@ class Filter(object):
             'TableName': meta['dynamo.table.name'],
             'Select': SELECT_MODES[self._select],
             'ScanIndexForward': self._forward,
-            'ConsistentRead': self._consistent,
-            'KeyConditions': self._key_conditions
+            'ConsistentRead': self._consistent
         }
 
-        if not self._key_conditions:
+        if not self._key_condition:
             raise ValueError("Must specify at least a hash key condition")
+
         if self.index:
             kwargs['IndexName'] = self.index.dynamo_name
             if self._consistent and bloop.column.is_global_index(self.index):
@@ -498,9 +519,12 @@ class Filter(object):
             attrs = [columns[attr].dynamo_name for attr in self._attrs_to_get]
             kwargs['AttributesToGet'] = attrs
 
-        if self._condition:
-            condition = render(self.engine, self.model,
-                               self.condition, mode="filter")
-            kwargs.update(condition)
+        # Render key and filter conditions
+        renderer = ConditionRenderer(self.engine, self.model, legacy=False)
+
+        kwargs.update(renderer.render(self._key_condition, mode="key"))
+        if self._filter_condition:
+            kwargs.update(renderer.render(self._filter_condition,
+                                          mode="filter"))
 
         return self.engine.dynamodb_client.query(**kwargs)

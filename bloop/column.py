@@ -1,4 +1,4 @@
-from bloop.expression import (
+from bloop.condition import (
     AttributeExists,
     BeginsWith,
     Comparison,

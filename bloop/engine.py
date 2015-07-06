@@ -1,5 +1,6 @@
 import bloop.model
-from bloop.expression import render, Filter
+from bloop.expression import Filter
+from bloop.condition import render
 from bloop.dynamo_client import DynamoClient, dump_key
 import declare
 import collections

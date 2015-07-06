@@ -99,7 +99,7 @@ class Filter(object):
             if max_conditions < len(condition):
                 msg = ("Model or Index only allows {} condition(s) but"
                        " an AND of {} condition(s) was supplied.").format(
-                            max_conditions, len(condition))
+                           max_conditions, len(condition))
                 raise ValueError(msg)
             # KeyConditions can only use the following:
             # EQ | LE | LT | GE | GT | BEGINS_WITH | BETWEEN

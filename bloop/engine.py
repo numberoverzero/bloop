@@ -98,7 +98,7 @@ class Engine(object):
         for model in self.models:
             self.dynamodb_client.create_table(model)
 
-    def load(self, objs, *, consistent_read=False):
+    def load(self, objs, *, consistent=False):
         '''
         Populate objects from dynamodb, optionally using consistent reads.
 
@@ -120,7 +120,7 @@ class Engine(object):
         hash_and_range = HashAndRange(user_id=101, game_title='Starship X')
 
         # Load only one instance, with consistent reads
-        engine.load(hash_only, consistent_read=True)
+        engine.load(hash_only, consistent=True)
 
         # Load multiple instances
         engine.load(hash_only, hash_and_range)
@@ -147,7 +147,7 @@ class Engine(object):
             if table_name not in request_items:
                 request_items[table_name] = {
                     "Keys": [],
-                    "ConsistentRead": consistent_read
+                    "ConsistentRead": consistent
                 }
             key = dump_key(self, obj)
             # Add the key to the request

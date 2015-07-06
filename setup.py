@@ -6,6 +6,13 @@ HERE = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(HERE, 'README.markdown')) as f:
     README = f.read()
 
+
+def get_version():
+    with open('bloop/__init__.py') as f:
+        for line in f:
+            if line.startswith('__version__'):
+                return eval(line.split('=')[-1])
+
 REQUIREMENTS = [
     'boto3',
     'declare'
@@ -22,7 +29,7 @@ TEST_REQUIREMENTS = [
 if __name__ == "__main__":
     setup(
         name='bloop',
-        version='0.2.3',
+        version=get_version(),
         description="ORM for DynamoDB",
         long_description=README,
         classifiers=[

@@ -1,4 +1,4 @@
-# bloop 0.2.3
+# bloop 0.3.0
 
 [![Build Status]
 (https://travis-ci.org/numberoverzero/bloop.svg?branch=master)]
@@ -75,6 +75,89 @@ for result in query:
 
 ```
 
+# API
+
+### [Amazon DynamoDB Actions](actions)
+
+Let's work backwards - where is each Dynamo call used?
+
+* [BatchGetItem](batch-get) - `engine.load(items)`
+* [BatchWriteItem](batch-write) - `engine.save(items)` and `engine.delete(items)`
+* [CreateTable](create-table) - Internal during `engine.bind()`
+* [DeleteItem](delete-item) - `engine.delete(item)` (Singular delete with optional conditions)
+* [DeleteTable](delete-table) - Unused
+* [DescribeTable](describe-table) - Internal during `engine.bind()` (if table mutations are enabled)
+* [GetItem](get-item) - Unused
+* [ListTables](list-tables) - Unused
+* [PutItem](put-item) - `engine.save(item)` (Singular save with optional conditions)
+* [Query](query) - `engine.query(Model)`
+* [Scan](scan) - `engine.scan(Model)`
+* [UpdateItem](update-item) - Unused (no partial writes)
+* [UpdateTable](update-table) - Internal during `engine.bind()` (if table mutations are enabled)
+
+## Common Actions
+
+### `engine.load`
+
+Pass `consistent=True` for [Consistent Reads](consistent-reads).
+
+```python
+now = time.time  # TODO: UTC!
+item = Visitor(email='joe.mcross@gmail.com', visit_date=now)
+engine.load(item, consistent=True)
+
+another_item = User(email='joe.mcross@gmail.com')
+items = [item, another_item]
+engine.load(items)
+```
+
+### `engine.save` & `engine.delete`
+
+Both save and delete expose the same interface (these both map to [PutItem](put-item)).
+
+```python
+item = Visitor(email='joe.mcross@gmail.com', visit_date=now)
+engine.load(item)
+item.visits += 1
+
+# Save with condition - bail if the visit count isn't what we saw during load
+engine.save(item, Visitor.visits == item.visits-1)
+
+another_item = User(email='joe.mcross@gmail.com')
+items = [item, another_item]
+engine.save(items)
+```
+
+### `engine.query` & `engine.scan`
+
+Both query and scan expose the same interface.  Constraints that are semantically useless for the operation (such as KeyConditions for a scan) will be ignored when constructing the request.  If minimum constraints have not been met to form a valid request (such as omission of KeyConditions for a query) an exception will be raised.
+
+Constraints can be added and modified through chaining.  Both queries and scans are immutable,
+and each constraint specification will return a new query/scan object.  This allows the creation of base queries that can be re-used.
+
+```python
+base_query = engine.query(Model).filter(Model.visits > 50)
+
+# All visits for joe.mcross@gmail.com with over 50 visits
+visits = base_query.key(Model.email=="joe.mcross@gmail.com")
+
+# Queries and scans are executed when iterated
+for visit in visits:
+    print(visit)
+
+# Another visitor, again with over 50 visits
+other_visits = base_query.key(Model.email=="foo@bar.com")
+```
+
+An index ([Local](lsi) or [Global](gsi)) can be specified only when constructing the base query, and cannot be changed through chaining.
+
+```python
+base_query = engine.query(Model, index=Model.visit_date)
+
+# All the same options apply here
+visits = base_query.key(...).consistent.filter(...)
+```
+
 # Versioning
 
 * bloop follows semver for its **public** API.
@@ -99,6 +182,25 @@ tox
 ### TODO
 
 * Tests?!?
-* Query
-* Scan
 * Docs
+* All projection types
+* CreateTable -> DescribeTable -> UpdateTable
+
+[actions]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Operations.html
+[consistent-reads]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/APISummary.html
+[lsi]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
+[gsi]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
+
+[batch-get]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchGetItem.html
+[batch-write]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html
+[create-table]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html
+[delete-item]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html
+[delete-table]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteTable.html
+[describe-table]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DescribeTable.html
+[get-item]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GetItem.html
+[list-tables]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_ListTables.html
+[put-item]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html
+[query]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html
+[scan]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html
+[update-item]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
+[update-table]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateTable.html

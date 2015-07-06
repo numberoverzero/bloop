@@ -16,9 +16,14 @@ RETRYABLE_ERRORS = [
 
 
 def default_backoff_func(operation, attempts):
-    ''' attempts is the number of calls so far that have failed '''
+    '''
+    Exponential backoff helper.
+
+    attempts is the number of calls so far that have failed
+    '''
     if attempts == DEFAULT_MAX_ATTEMPTS:
-        raise RuntimeError("Failed after {} attempts".format(attempts))
+        raise RuntimeError("Failed {} after {} attempts".format(
+            operation, attempts))
     return (DEFAULT_BACKOFF_COEFF * (2 ** attempts)) / 1000.0
 
 
@@ -241,7 +246,11 @@ class DynamoClient(object):
                 request_batch = batch_response["UnprocessedItems"]
 
     def call_with_retries(self, func, *args, **kwargs):
-        ''' Exponential backoff helper, does not partition or map results '''
+        '''
+        Uses `self.backoff_func` to handle retries.
+
+        Does not partition or map results
+        '''
         operation = func.__name__
         attempts = 1
         while True:

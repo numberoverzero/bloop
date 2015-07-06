@@ -8,12 +8,6 @@ EXPRESSION_KEYS = {
 }
 ATTR_NAMES = "ExpressionAttributeNames"
 ATTR_VALUES = "ExpressionAttributeValues"
-SELECT_MODES = {
-    "all": "ALL_ATTRIBUTES",
-    "projected": "ALL_PROJECTED_ATTRIBUTES",
-    "count": "COUNT",
-    "specific": "SPECIFIC_ATTRIBUTES"
-}
 
 
 def render(engine, model, condition, mode, legacy=False):

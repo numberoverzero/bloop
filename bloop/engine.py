@@ -203,7 +203,7 @@ class Engine(object):
             model = obj.__class__
             table_name = model.__meta__['dynamo.table.name']
             item = self.__dump__(model, obj)
-            expression = render(self, model, condition)
+            expression = render(self, model, condition, mode="condition")
             self.dynamodb_client.put_item(table_name, item, expression)
 
         else:
@@ -230,7 +230,7 @@ class Engine(object):
             model = obj.__class__
             table_name = model.__meta__['dynamo.table.name']
             key = dump_key(self, obj)
-            expression = render(self, model, condition)
+            expression = render(self, model, condition, mode="condition")
             self.dynamodb_client.delete_item(table_name, key, expression)
 
         else:

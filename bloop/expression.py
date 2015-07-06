@@ -301,10 +301,23 @@ def validate_key_condition(condition):
 
 class Filter(object):
     '''
-    TODO: make thread safe.  The functions key, filter, select,
-    ascending, descending, and consistent all return references to the same
-    Filter object.  For thread safety, they should return a copy with the
-    updated values.
+    Thread safe.  The functions key, filter, select, ascending, descending,
+    and consistent all return copies of the filter object with the expected
+    modifications.
+
+    Example:
+        f = Filter(engine, mode, model)
+        f2 = f.descending
+        f3 = f.consistent
+
+        assert not f._consistent
+        assert not f2._consistent
+        assert f3._consistent
+
+        assert f._forward
+        assert not f2._forward
+        assert f3._forward
+
     '''
     valid_range_key_conditions = [Comparison, BeginsWith, Between]
 
@@ -314,14 +327,26 @@ class Filter(object):
         self.mode = mode
         self.model = model
         self.index = index
-        self.condition = None
 
-        self.attrs_to_get = []
+        self._condition = None
         self._select = "all"
-
         self._forward = True
         self._consistent = False
+
+        self._attrs_to_get = []
         self._key_conditions = {}
+
+    def copy(self):
+        other = Filter(engine=self.engine, mode=self.mode,
+                       model=self.model, index=self.index)
+
+        for attr in ["_condition", "_select", "_forward", "_consistent"]:
+            setattr(other, attr, getattr(self, attr))
+
+        other._attrs_to_get = list(self._attrs_to_get)
+        other._key_conditions = dict(self._key_conditions)
+
+        return other
 
     def key(self, *conditions):
         # a hash condition is always required; a range condition
@@ -378,15 +403,17 @@ class Filter(object):
         if not hash_condition:
             raise ValueError("Must specify a hash key")
 
-        self._key_conditions = {}
-        self._key_conditions.update(hash_condition)
+        other = self.copy()
+        other._key_conditions = {}
+        other._key_conditions.update(hash_condition)
         if range_condition:
-            self._key_conditions.update(range_condition)
-        return self
+            other._key_conditions.update(range_condition)
+        return other
 
     def filter(self, condition):
-        self.condition = condition
-        return self
+        other = self.copy()
+        other._condition = condition
+        return other
 
     def select(self, mode, attrs=None):
         '''
@@ -398,16 +425,18 @@ class Filter(object):
         if mode == "specific" and not attrs:
             raise ValueError("Must provide attrs to get with 'specific' mode")
         if mode == "count":
-            self.attrs_to_get.clear()
+            other = self.copy()
+            other._attrs_to_get.clear()
         if mode == "specific":
-            self.attrs_to_get.extend(attrs)
+            other = self.copy()
+            other._attrs_to_get.extend(attrs)
 
-        self._select = mode
-        return self
+        other._select = mode
+        return other
 
     def count(self):
-        self.select("count")
-        result = self.__gen__()
+        other = self.select("count")
+        result = other.__gen__()
         return [result["Count"], result["ScannedCount"]]
 
     def __iter__(self):
@@ -430,14 +459,17 @@ class Filter(object):
 
     def __getattr__(self, name):
         if name == "ascending":
-            self._forward = True
-            return self
+            other = self.copy()
+            other._forward = True
+            return other
         if name == "descending":
-            self._forward = False
-            return self
+            other = self.copy()
+            other._forward = False
+            return other
         if name == "consistent":
-            self._consistent = True
-            return self
+            other = self.copy()
+            other._consistent = True
+            return other
         return super().__getattr__(name)
 
     def __gen__(self):
@@ -459,14 +491,14 @@ class Filter(object):
                     "Cannot use ConsistentRead with a GlobalSecondaryIndex")
 
         if self._select == "specific":
-            if not self.attrs_to_get:
+            if not self._attrs_to_get:
                 raise ValueError(
                     "Must provide attrs to get with 'specific' mode")
             columns = meta['dynamo.columns.by.model_name']
-            attrs = [columns[attr].dynamo_name for attr in self.attrs_to_get]
+            attrs = [columns[attr].dynamo_name for attr in self._attrs_to_get]
             kwargs['AttributesToGet'] = attrs
 
-        if self.condition:
+        if self._condition:
             condition = render(self.engine, self.model,
                                self.condition, mode="filter")
             kwargs.update(condition)

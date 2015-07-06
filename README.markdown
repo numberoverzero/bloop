@@ -20,20 +20,19 @@ ORM for DynamoDB
 
 ```python
 from bloop import (
-    Engine, Column,
-    NumberType, StringType,
+    Engine, Column, Integer, Float, String,
     ObjectsNotFound, ConstraintViolation
 )
 
 engine = Engine()
 
 class GameScores(engine.model):
-    user_id = Column(NumberType, hash_key=True)
-    game_title = Column(StringType, range_key=True)
-    top_score = Column(NumberType)
-    top_score_date = Column(StringType)
-    wins = Column(NumberType)
-    losses = Column(NumberType)
+    user_id = Column(Integer, hash_key=True)
+    game_title = Column(String, range_key=True)
+    top_score = Column(Float)
+    top_score_date = Column(String)
+    wins = Column(Integer)
+    losses = Column(Integer)
 
 
 engine.bind()

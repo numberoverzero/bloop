@@ -1,11 +1,4 @@
-from bloop.condition import (
-    AttributeExists,
-    BeginsWith,
-    Comparison,
-    Contains,
-    Between,
-    In
-)
+import bloop.condition
 import operator
 import declare
 import uuid
@@ -23,32 +16,32 @@ class ComparisonMixin(object):
     def __eq__(self, value):
         # Special case - None should use function attribute_not_exists
         if value is None:
-            return AttributeExists(self, negate=True)
+            return bloop.condition.AttributeExists(self, negate=True)
         comparator = operator.eq
-        return Comparison(self, comparator, value)
+        return bloop.condition.Comparison(self, comparator, value)
 
     def __ne__(self, value):
         # Special case - None should use function attribute_exists
         if value is None:
-            return AttributeExists(self, negate=False)
+            return bloop.condition.AttributeExists(self, negate=False)
         comparator = operator.ne
-        return Comparison(self, comparator, value)
+        return bloop.condition.Comparison(self, comparator, value)
 
     def __lt__(self, value):
         comparator = operator.lt
-        return Comparison(self, comparator, value)
+        return bloop.condition.Comparison(self, comparator, value)
 
     def __gt__(self, value):
         comparator = operator.gt
-        return Comparison(self, comparator, value)
+        return bloop.condition.Comparison(self, comparator, value)
 
     def __le__(self, value):
         comparator = operator.le
-        return Comparison(self, comparator, value)
+        return bloop.condition.Comparison(self, comparator, value)
 
     def __ge__(self, value):
         comparator = operator.ge
-        return Comparison(self, comparator, value)
+        return bloop.condition.Comparison(self, comparator, value)
 
     def is_(self, value):
         ''' alias for == '''
@@ -60,17 +53,17 @@ class ComparisonMixin(object):
 
     def between(self, lower, upper):
         ''' lower <= column.value <= upper '''
-        return Between(self, lower, upper)
+        return bloop.condition.Between(self, lower, upper)
 
     def in_(self, *values):
         ''' column.value in [3, 4, 5] '''
-        return In(self, values)
+        return bloop.condition.In(self, values)
 
     def begins_with(self, value):
-        return BeginsWith(self, value)
+        return bloop.condition.BeginsWith(self, value)
 
     def contains(self, value):
-        return Contains(self, value)
+        return bloop.condition.Contains(self, value)
 
 
 class Column(declare.Field, ComparisonMixin):

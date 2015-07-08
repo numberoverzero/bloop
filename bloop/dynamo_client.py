@@ -274,7 +274,21 @@ class DynamoClient(object):
 
     def create_table(self, model):
         ''' Suppress ResourceInUseException (table already exists) '''
-        table = expected_table_for_model(model)
+        table = {
+            "TableName": model.__meta__["dynamo.table.name"],
+            "ProvisionedThroughput": {
+                'WriteCapacityUnits': model.write_units,
+                'ReadCapacityUnits': model.read_units
+            },
+            "KeySchema": key_schema(model),
+            "AttributeDefinitions": attribute_definitions(model),
+            "GlobalSecondaryIndexes": global_secondary_indexes(model),
+            "LocalSecondaryIndexes": local_secondary_indexes(model)
+        }
+        if not table['GlobalSecondaryIndexes']:
+            table.pop('GlobalSecondaryIndexes')
+        if not table['LocalSecondaryIndexes']:
+            table.pop('LocalSecondaryIndexes')
 
         # Bound ref to create w/retries
         create = functools.partial(self.call_with_retries,
@@ -493,25 +507,6 @@ def local_secondary_indexes(model):
             'KeySchema': lsi_key_schema
         })
     return lsis
-
-
-def expected_table_for_model(model):
-    table = {
-        "TableName": model.__meta__["dynamo.table.name"],
-        "ProvisionedThroughput": {
-            'WriteCapacityUnits': model.write_units,
-            'ReadCapacityUnits': model.read_units
-        },
-        "KeySchema": key_schema(model),
-        "AttributeDefinitions": attribute_definitions(model),
-        "GlobalSecondaryIndexes": global_secondary_indexes(model),
-        "LocalSecondaryIndexes": local_secondary_indexes(model)
-    }
-    if not table['GlobalSecondaryIndexes']:
-        table.pop('GlobalSecondaryIndexes')
-    if not table['LocalSecondaryIndexes']:
-        table.pop('LocalSecondaryIndexes')
-    return table
 
 
 def ordered(obj):

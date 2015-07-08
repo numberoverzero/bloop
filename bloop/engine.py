@@ -54,15 +54,12 @@ class Engine(object):
         self.type_engine = declare.TypeEngine.unique()
         self.plugins = collections.defaultdict(list)
         self.model = bloop.model.BaseModel(self)
+        self.unbound_models = set()
         self.models = []
 
     def register(self, model):
-        self.models.append(model)
-        self.type_engine.register(model)
-        columns = model.__meta__['dynamo.columns']
-        for column in columns:
-            self.type_engine.register(column.typedef)
-        self.type_engine.bind()
+        if model not in self.models:
+            self.unbound_models.add(model)
 
     def on(self, event):
         '''
@@ -95,8 +92,21 @@ class Engine(object):
 
     def bind(self):
         ''' Create tables for all models that have been registered '''
-        for model in self.models:
-            self.dynamodb_client.create_table(model)
+        # If any model's table fails to create, we want to push it back into
+        # the unbound_models set so any error can be handled and retried.
+        while self.unbound_models:
+            model = self.unbound_models.pop()
+            try:
+                self.dynamodb_client.create_table(model)
+            except Exception as exception:
+                self.unbound_models.add(model)
+                raise exception
+            else:
+                self.type_engine.register(model)
+                columns = model.__meta__['dynamo.columns']
+                for column in columns:
+                    self.type_engine.register(column.typedef)
+                self.type_engine.bind()
 
     def load(self, objs, *, consistent=False):
         '''

@@ -1,3 +1,4 @@
+import arrow
 import base64
 import collections.abc
 import decimal
@@ -79,6 +80,47 @@ class UUID(Type):
 
     def dynamo_dump(self, value):
         return str(value)
+
+
+class DateTime(String):
+    '''
+    DateTimes are ALWAYS stored in UTC, but can be handled transparently as any
+    timezone, by specifying one when (optionally) initializing the type.
+
+    For example, comparisons can be done in any timezone since they
+    will all be converted to UTC on request and from UTC on response:
+
+        class Model(engine.model):
+            id = Column(Integer, hash_key=True)
+            date = Column(DateTime(timezone='US/Pacific'))
+        engine.bind()
+
+        obj = Model(id=1, date=arrow.now().to('US/Pacific'))
+        engine.save(obj)
+
+        paris_one_day_ago = arrow.now().to('Europe/Paris').replace(days=-1)
+
+        query = (engine.query(Model)
+                       .key(Model.id==1)
+                       .filter(Model.date >= paris_one_day_ago))
+
+        results = list(query)
+        print(results[0].date)
+    '''
+    python_type = arrow.Arrow
+    timezone = 'UTC'
+
+    def __init__(self, timezone=None):
+        self.timezone = timezone or DateTime.timezone
+
+    def dynamo_load(self, value):
+        iso8601_string = super().dynamo_load(value)
+        return arrow.get(iso8601_string).to(self.timezone)
+
+    def dynamo_dump(self, value):
+        # ALWAYS store in UTC - we can manipulate the timezone on load
+        iso8601_string = value.to('utc').isoformat()
+        return super().dynamo_dump(iso8601_string)
 
 
 class Float(Type):

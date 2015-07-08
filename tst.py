@@ -1,7 +1,8 @@
 from bloop import (
-    Engine, Column, String, Integer,
+    Engine, Column, String, Integer, DateTime,
     GlobalSecondaryIndex, ObjectsNotFound
 )
+import arrow
 import boto3
 import logging
 logging.basicConfig(level=logging.DEBUG)
@@ -17,7 +18,7 @@ class GameScores(engine.model):
     user_id = Column(Integer, hash_key=True)
     game_title = Column(String, range_key=True)
     top_score = Column(Integer)
-    top_score_date = Column(String)
+    top_score_date = Column(DateTime(timezone='local'))
     wins = Column(Integer)
     losses = Column(Integer)
     game_title_index = GlobalSecondaryIndex(hash_key='game_title',
@@ -34,7 +35,7 @@ try:
     engine.load(space_sim)
 except ObjectsNotFound:
     space_sim.losses = 0
-    space_sim.top_score_date = "Today"
+    space_sim.top_score_date = arrow.now()
     space_sim.wins = 42
     engine.save(space_sim)
 
@@ -46,9 +47,9 @@ query = engine.query(GameScores)\
                       GameScores.game_title, GameScores.user_id])
 
 for result in query:
-    previous_losses = GameScores.losses == result.losses
     # Full load since we selected a few columns above
     engine.load(result)
-    result.losses += 1
-    engine.save(result, condition=previous_losses)
-    print(result)
+    previous_date = GameScores.top_score_date == result.top_score_date
+    print(result.top_score_date)
+    result.top_score_date = arrow.now().to('local')
+    engine.save(result, condition=previous_date)

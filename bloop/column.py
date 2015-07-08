@@ -2,6 +2,7 @@ import bloop.condition
 import operator
 import declare
 import uuid
+import collections.abc
 missing = object()
 _meta_key = "__column_meta_{}".format(uuid.uuid4().hex)
 
@@ -142,11 +143,30 @@ class Column(declare.Field, ComparisonMixin):
         return value
 
 
+def validate_projection(projection):
+    invalid = ValueError("Index projections must be either 'KEYS_ONLY', 'ALL',"
+                         " or an iterable of model attributes to include.")
+    # String check first since it is also an Iterable
+    if isinstance(projection, str):
+        projection = projection.upper()
+        if projection not in ["KEYS_ONLY", "ALL"]:
+            raise invalid
+    elif isinstance(projection, collections.abc.Iterable):
+        projection = list(projection)
+        for attribute in projection:
+            if not isinstance(attribute, str):
+                raise invalid
+    else:
+        raise invalid
+    return projection
+
+
 class Index(Column):
     def __init__(self, *args, projection='KEYS_ONLY', **kwargs):
-        # TODO: Handle all projection types
         super().__init__(*args, **kwargs)
-        self.projection = projection
+
+        # projection_attributes will be set up by `bloop.model.ModelMetaclass`
+        self.projection = validate_projection(projection)
 
 
 class GlobalSecondaryIndex(Index):

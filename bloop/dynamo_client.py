@@ -428,13 +428,14 @@ def global_secondary_indexes(model):
             'ReadCapacityUnits': index.read_units
         }
 
-        # TODO - handle projections other than 'ALL' and 'KEYS_ONLY'
         projection = {
             'ProjectionType': index.projection,
-            # 'NonKeyAttributes': [
-            #     # TODO
-            # ]
+            'NonKeyAttributes': [
+                column.dynamo_name for column in index.projection_attributes
+            ]
         }
+        if not projection['NonKeyAttributes']:
+            projection.pop('NonKeyAttributes')
 
         gsis.append({
             'ProvisionedThroughput': provisioned_throughput,
@@ -451,13 +452,14 @@ def local_secondary_indexes(model):
                         model.__meta__["dynamo.indexes"]):
         lsi_key_schema = key_schema(index)
 
-        # TODO - handle projections other than 'ALL' and 'KEYS_ONLY'
         projection = {
             'ProjectionType': index.projection,
-            # 'NonKeyAttributes': [
-            #     # TODO
-            # ]
+            'NonKeyAttributes': [
+                column.dynamo_name for column in index.projection_attributes
+            ]
         }
+        if not projection['NonKeyAttributes']:
+            projection.pop('NonKeyAttributes')
 
         lsis.append({
             'Projection': projection,

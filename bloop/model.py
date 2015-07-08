@@ -21,6 +21,8 @@ class __BaseModel(object):
     '''
     def __init__(self, **attrs):
         columns = self.__meta__["dynamo.columns"]
+        # Only set values from **attrs if there's a
+        # corresponding `model_name` for a column in the model
         for column in columns:
             value = attrs.get(column.model_name, missing)
             if value is not missing:
@@ -88,6 +90,8 @@ def BaseModel(engine):
             model = super().__new__(metaclass, name, bases, attrs)
             meta = model.__meta__
 
+            # column.model_name is set by the declare.ModelMetaclass
+
             # Load columns, indexes, hash_key, range_key
             # ----------------------------------------------------------
             # These are sets instead of lists, because set uses __hash__
@@ -119,9 +123,10 @@ def BaseModel(engine):
                     model.range_key = column
 
             # Can't do this as part of the above loop since we index after
-            # mutating the columns set.  Look up the current hash key (string)
-            # in indexed columns and relate proper Column object
-            cols = meta['dynamo.columns.by.dynamo_name']
+            # mutating the columns set.  Look up the current hash key
+            # -- which is specified by model_name, not dynamo_name --
+            # in indexed columns and the relate proper `bloop.Column` object
+            cols = meta['dynamo.columns.by.model_name']
             for index in indexes:
                 if bloop.column.is_global_index(index):
                     index._hash_key = cols[index.hash_key]
@@ -131,8 +136,19 @@ def BaseModel(engine):
                             "Cannot specify a LocalSecondaryIndex " +
                             "without a table range key")
                     index._hash_key = model.range_key
+
                 if index.range_key:
                     index._range_key = cols[index.range_key]
+
+                if index.projection in ["KEYS_ONLY", "ALL"]:
+                    index.projection_attributes = []
+                else:
+                    # Store the `bloop.Column` objects instead of the
+                    # given `Column.model_name`s
+                    attributes = index.projection
+                    non_key_attributes = [cols[attr] for attr in attributes]
+                    index.projection = "INCLUDE"
+                    index.projection_attributes = non_key_attributes
 
             # Entry point for model population. By default this is the
             # model class. Custom subclasses of the engine's

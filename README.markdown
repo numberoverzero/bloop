@@ -42,7 +42,7 @@ doom_score = GameScores(user_id=102, game_title="Doom")
 scores = [pong_score, doom_score]
 
 try:
-    engine.load(scores, consistent_read=True)
+    engine.load(scores, consistent=True)
 except ObjectsNotFound as e:
     print("Failed to load")
     for obj in e.missing:

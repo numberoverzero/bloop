@@ -13,6 +13,8 @@ RETRYABLE_ERRORS = [
     "InternalServerError",
     "ProvisionedThroughputExceededException"
 ]
+TABLE_MISMATCH = ("Existing table does not match expected fields."
+                  "  EXPECTED: {} ACTUAL: {}")
 
 
 def default_backoff_func(operation, attempts):
@@ -272,7 +274,7 @@ class DynamoClient(object):
 
     def create_table(self, model):
         ''' Suppress ResourceInUseException (table already exists) '''
-        table = table_for_model(model)
+        table = expected_table_for_model(model)
 
         # Bound ref to create w/retries
         create = functools.partial(self.call_with_retries,
@@ -285,15 +287,48 @@ class DynamoClient(object):
             error_code = error.response['Error']['Code']
             if error_code != 'ResourceInUseException':
                 raise error
+            # Table already exists, let's make sure it matches what we expect
+            else:
+                actual_table = self.describe_table(model)
+                if ordered(actual_table) != ordered(table):
+                    raise ValueError(
+                        TABLE_MISMATCH.format(actual_table, table))
 
     def delete_item(self, table, key, expression):
         self.call_with_retries(self.client.delete_item,
                                TableName=table, Key=key, **expression)
 
     def describe_table(self, model):
-        return self.call_with_retries(
+        description = self.call_with_retries(
             self.client.describe_table,
             TableName=model.__meta__["dynamo.table.name"])
+        table = description["Table"]
+
+        # We don't care about a bunch of the returned attributes, and want to
+        # massage the returned value to match `table_for_model` that's passed
+        # to `DynamoClient.create_table` so we can compare them with `ordered`
+        table_fields = ["TableName", "ProvisionedThroughput", "KeySchema",
+                        "AttributeDefinitions", "GlobalSecondaryIndexes",
+                        "LocalSecondaryIndexes"]
+        table = {field: table.get(field, []) for field in table_fields}
+        table["ProvisionedThroughput"].pop("NumberOfDecreasesToday")
+
+        junk_index_fields = ["IndexStatus", "ItemCount", "IndexSizeBytes"]
+
+        for index in table['GlobalSecondaryIndexes']:
+            for field in junk_index_fields:
+                index.pop(field)
+            index["ProvisionedThroughput"].pop("NumberOfDecreasesToday")
+        if not table['GlobalSecondaryIndexes']:
+            table.pop('GlobalSecondaryIndexes')
+
+        for index in table['LocalSecondaryIndexes']:
+            for field in junk_index_fields:
+                index.pop(field)
+        if not table['LocalSecondaryIndexes']:
+            table.pop('LocalSecondaryIndexes')
+
+        return table
 
     def _filter(self, client_func, **request):
         # Wrap client function in retries
@@ -460,7 +495,7 @@ def local_secondary_indexes(model):
     return lsis
 
 
-def table_for_model(model):
+def expected_table_for_model(model):
     table = {
         "TableName": model.__meta__["dynamo.table.name"],
         "ProvisionedThroughput": {
@@ -477,3 +512,17 @@ def table_for_model(model):
     if not table['LocalSecondaryIndexes']:
         table.pop('LocalSecondaryIndexes')
     return table
+
+
+def ordered(obj):
+    '''
+    Return sorted version of nested dicts/lists for comparing.
+
+    http://stackoverflow.com/a/25851972
+    '''
+    if isinstance(obj, dict):
+        return sorted((k, ordered(v)) for k, v in obj.items())
+    if isinstance(obj, list):
+        return sorted(ordered(x) for x in obj)
+    else:
+        return obj

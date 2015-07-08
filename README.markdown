@@ -1,4 +1,4 @@
-# bloop 0.3.0
+# bloop 0.4.0
 
 [![Build Status]
 (https://travis-ci.org/numberoverzero/bloop.svg?branch=master)]
@@ -93,7 +93,7 @@ Let's work backwards - where is each Dynamo call used?
 * [Query](query) - `engine.query(Model)`
 * [Scan](scan) - `engine.scan(Model)`
 * [UpdateItem](update-item) - Unused (no partial writes)
-* [UpdateTable](update-table) - Internal during `engine.bind()` (if table mutations are enabled)
+* [UpdateTable](update-table) - Unused (refuse to modify existing tables)
 
 ## Common Actions
 

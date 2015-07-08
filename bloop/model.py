@@ -5,8 +5,19 @@ missing = object()
 
 class __BaseModel(object):
     '''
-    do not subclass directly.  use `BaseModel` which sets
-    up the correct metaclass.
+    DO NOT SUBCLASS DIRECTLY.
+
+    Instead, subclass the `model` attribute of an engine.  This ensures the
+    proper metaclass setup has been performed, so that `engine.bind` will
+    work.
+
+    Example:
+
+        engine = bloop.Engine()
+        BaseModel = engine.model
+
+        class CustomBaseModel(BaseModel):
+            # ... cross-model code goes here
     '''
     def __init__(self, **attrs):
         columns = self.__meta__["dynamo.columns"]
@@ -56,8 +67,18 @@ class __BaseModel(object):
 
 def BaseModel(engine):
     '''
-    A metaclass per engine is necessary so that subclasses of __BaseModel
-    are correctly registered with the engine
+    Although this returns a class, you should NOT call this function to create
+    a base model class.  Instead, subclass the `model` attribute of an engine.
+    Doing this ensures the proper metaclass setup has been performed,
+    so that `engine.bind` will work.
+
+    Example:
+
+        engine = bloop.Engine()
+        BaseModel = engine.model
+
+        class CustomBaseModel(BaseModel):
+            # ... cross-model code goes here
     '''
     class ModelMetaclass(declare.ModelMetaclass):
         def __new__(metaclass, name, bases, attrs):

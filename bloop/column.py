@@ -87,10 +87,18 @@ class Column(declare.Field, ComparisonMixin):
 
     @property
     def hash_key(self):
+        '''
+        - Non-index columns return True/False.
+        - Indexes return the `bloop.Column` that is their hash_key.
+        '''
         return self._hash_key
 
     @property
     def range_key(self):
+        '''
+        - Non-index columns return True/False.
+        - Indexes return the `bloop.Column` that is their range_key (or None).
+        '''
         return self._range_key
 
     @property

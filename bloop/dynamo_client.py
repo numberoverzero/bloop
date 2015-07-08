@@ -272,21 +272,7 @@ class DynamoClient(object):
 
     def create_table(self, model):
         ''' Suppress ResourceInUseException (table already exists) '''
-        table = {
-            "TableName": model.__meta__["dynamo.table.name"],
-            "ProvisionedThroughput": {
-                'WriteCapacityUnits': model.write_units,
-                'ReadCapacityUnits': model.read_units
-            },
-            "KeySchema": key_schema(model),
-            "AttributeDefinitions": attribute_definitions(model),
-            "GlobalSecondaryIndexes": global_secondary_indexes(model),
-            "LocalSecondaryIndexes": local_secondary_indexes(model)
-        }
-        if not table['GlobalSecondaryIndexes']:
-            table.pop('GlobalSecondaryIndexes')
-        if not table['LocalSecondaryIndexes']:
-            table.pop('LocalSecondaryIndexes')
+        table = table_for_model(model)
 
         # Bound ref to create w/retries
         create = functools.partial(self.call_with_retries,
@@ -303,6 +289,11 @@ class DynamoClient(object):
     def delete_item(self, table, key, expression):
         self.call_with_retries(self.client.delete_item,
                                TableName=table, Key=key, **expression)
+
+    def describe_table(self, model):
+        return self.call_with_retries(
+            self.client.describe_table,
+            TableName=model.__meta__["dynamo.table.name"])
 
     def _filter(self, client_func, **request):
         # Wrap client function in retries
@@ -467,3 +458,22 @@ def local_secondary_indexes(model):
             'KeySchema': lsi_key_schema
         })
     return lsis
+
+
+def table_for_model(model):
+    table = {
+        "TableName": model.__meta__["dynamo.table.name"],
+        "ProvisionedThroughput": {
+            'WriteCapacityUnits': model.write_units,
+            'ReadCapacityUnits': model.read_units
+        },
+        "KeySchema": key_schema(model),
+        "AttributeDefinitions": attribute_definitions(model),
+        "GlobalSecondaryIndexes": global_secondary_indexes(model),
+        "LocalSecondaryIndexes": local_secondary_indexes(model)
+    }
+    if not table['GlobalSecondaryIndexes']:
+        table.pop('GlobalSecondaryIndexes')
+    if not table['LocalSecondaryIndexes']:
+        table.pop('LocalSecondaryIndexes')
+    return table

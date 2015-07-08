@@ -90,7 +90,7 @@ def BaseModel(engine):
             model = super().__new__(metaclass, name, bases, attrs)
             meta = model.__meta__
 
-            # column.model_name is set by the declare.ModelMetaclass
+            # column.model_name is set by `declare.ModelMetaclass.__new__`
 
             # Load columns, indexes, hash_key, range_key
             # ----------------------------------------------------------

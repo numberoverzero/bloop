@@ -181,10 +181,8 @@ tox
 
 ### TODO
 
-* Tests?!?
+* Tests
 * Docs
-* All projection types
-* CreateTable -> DescribeTable -> UpdateTable
 
 [actions]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Operations.html
 [consistent-reads]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/APISummary.html

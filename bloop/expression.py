@@ -13,6 +13,11 @@ SELECT_MODES = {
 }
 
 
+def consume(iter):
+    for _ in iter:
+        pass
+
+
 def validate_key_condition(condition):
     if isinstance(condition, bloop.condition.BeginsWith):
         return True
@@ -28,7 +33,7 @@ class Filter(object):
     '''
     Base class for Scan and Query.
 
-    Thread safe.  The functions key, filter, select, ascending, descending,
+    The functions key, filter, select, ascending, descending,
     and consistent all return copies of the Filter object with the
     expected modifications.
 
@@ -46,6 +51,9 @@ class Filter(object):
         assert f3._forward
 
     '''
+    # Scan -> 'scan, Query -> 'query'
+    filter_type = "filter"
+
     def __init__(self, engine, model, index=None):
         self.engine = engine
         self.model = model
@@ -153,26 +161,46 @@ class Filter(object):
         other = self.copy()
         other._select = "count"
         other._select_columns.clear()
-        result = other.__gen__()
-        return [result["Count"], result["ScannedCount"]]
+        # Force fetch all
+        result = other.all(prefetch=-1)
+        return {
+            "count": result.count,
+            "scanned_count": result.scanned_count
+        }
+
+    def all(self, prefetch=None):
+        '''
+        Unless prefetch is < 0, simply creates the FilterResult that will
+        lazy load the results of the scan/query.  Unlike `iter(self)` this
+        returns the FilterResult object, which allows inspection of the
+        `count` and `scanned_count` attributes.  Iterating over the result
+        object will not trigger a new scan/query, while iterating over a
+        scan/query will ALWAYS result in a new scan/query being executed.
+
+        Usage:
+
+        base_query = engine.query(Model).key(id='foo')
+        query = base_query.consistent.ascending
+
+        # Iterate results directly, discarding query metadata
+        for result in query:
+            ...
+
+        # Save reference to FilterResult instance
+        results = query.all()
+        for result in results:
+            ...
+        print(results.count, results.scanned_count)
+        '''
+        if prefetch is None:
+            prefetch = self.engine.prefetch[self.filter_type]
+        # dynamo.client.query or dynamo.client.scan
+        call = getattr(self.engine.dynamo_client, self.filter_type)
+        request = self.generate_request()
+        return FilterResult(prefetch, call, request, self.engine, self.model)
 
     def __iter__(self):
-        if self._select == "count":
-            raise AttributeError("Cannot iterate COUNT query")
-        result = self.__gen__()
-
-        meta = self.model.__meta__
-        columns = meta["dynamo.columns"]
-        init = meta["bloop.init"]
-
-        for item in result["Items"]:
-            attrs = {}
-            for column in columns:
-                value = item.get(column.dynamo_name, missing)
-                if value is not missing:
-                    value = self.engine.__load__(column.typedef, value)
-                    attrs[column.model_name] = value
-            yield init(**attrs)
+        return iter(self.all())
 
     @property
     def ascending(self):
@@ -194,9 +222,11 @@ class Filter(object):
 
 
 class Query(Filter):
-    def __gen__(self):
+    filter_type = "query"
+
+    def generate_request(self):
         meta = self.model.__meta__
-        kwargs = {
+        request = {
             'TableName': meta['dynamo.table.name'],
             'Select': SELECT_MODES[self._select],
             'ScanIndexForward': self._forward,
@@ -207,7 +237,7 @@ class Query(Filter):
             raise ValueError("Must specify at least a hash key condition")
 
         if self.index:
-            kwargs['IndexName'] = self.index.dynamo_name
+            request['IndexName'] = self.index.dynamo_name
             if self._consistent and bloop.column.is_global_index(self.index):
                 raise ValueError(
                     "Cannot use ConsistentRead with a GlobalSecondaryIndex")
@@ -216,45 +246,140 @@ class Query(Filter):
         renderer = bloop.condition.ConditionRenderer(
             self.engine, self.model, legacy=False)
 
-        kwargs.update(renderer.render(self._key_condition, mode="key"))
+        request.update(renderer.render(self._key_condition, mode="key"))
         if self._filter_condition:
-            kwargs.update(renderer.render(self._filter_condition,
-                                          mode="filter"))
+            request.update(renderer.render(self._filter_condition,
+                                           mode="filter"))
 
         if self._select == "specific":
             if not self._select_columns:
                 raise ValueError(
                     "Must provide columns to get with 'specific' mode")
             names = map(renderer.name_ref, self._select_columns)
-            kwargs['ProjectionExpression'] = ", ".join(names)
+            request['ProjectionExpression'] = ", ".join(names)
 
-        return self.engine.dynamodb_client.query(**kwargs)
+        return request
 
 
 class Scan(Filter):
-    def __gen__(self):
+    filter_type = "scan"
+
+    def generate_request(self):
         meta = self.model.__meta__
-        kwargs = {
+        request = {
             'TableName': meta['dynamo.table.name'],
             'Select': SELECT_MODES[self._select]
         }
 
         if self.index:
-            kwargs['IndexName'] = self.index.dynamo_name
+            request['IndexName'] = self.index.dynamo_name
 
         # Render key and filter conditions
         renderer = bloop.condition.ConditionRenderer(
             self.engine, self.model, legacy=False)
 
         if self._filter_condition:
-            kwargs.update(renderer.render(self._filter_condition,
-                                          mode="filter"))
+            request.update(renderer.render(self._filter_condition,
+                                           mode="filter"))
 
         if self._select == "specific":
             if not self._select_columns:
                 raise ValueError(
                     "Must provide columns to get with 'specific' mode")
             names = map(renderer.name_ref, self._select_columns)
-            kwargs['ProjectionExpression'] = ", ".join(names)
+            request['ProjectionExpression'] = ", ".join(names)
 
-        return self.engine.dynamodb_client.scan(**kwargs)
+        return request
+
+
+class FilterResult(object):
+    '''
+    Result from a scan or query.  Usually lazy loaded, iterate to execute.
+
+    Uses engine.prefetch to control call batching
+    '''
+    def __init__(self, prefetch, call, request, engine, model):
+        self._call = call
+        self._prefetch = prefetch
+        self._request = request
+        self.engine = engine
+        self.model = model
+
+        # We'll need to access these to load each result
+        meta = model.__meta__
+        self._columns = meta["dynamo.columns"]
+        self._init = meta["bloop.init"]
+
+        self.count = 0
+        self.scanned_count = 0
+        self._results = []
+
+        self._continue = None
+        self._complete = False
+
+        # Kick off the full execution
+        if prefetch < 0:
+            consume(self)
+
+    @property
+    def results(self):
+        if not self.complete:
+            raise RuntimeError("Can't access results until request exhausted")
+        return self._results
+
+    @property
+    def complete(self):
+        return self._complete
+
+    def __iter__(self):
+        # Already finished, iterate existing list
+        if self.complete:
+            return iter(self.results)
+        # Fully exhaust the filter before returning an iterator
+        elif self._prefetch < 0:
+            # Give self._continue a chance to be not None
+            consume(self._step())
+            while self._continue:
+                consume(self._step())
+            self._complete = True
+            return iter(self.results)
+        # Lazy load, prefetching as necessary
+        else:
+            return self.__prefetch_iter__
+
+    def __prefetch_iter__(self):
+        '''
+        Separate function because the `yield` statement would turn __iter__
+        into a generator when we want to return existing iterators in some
+        cases.
+        '''
+        while not self.complete:
+            prefetch = self._prefetch
+
+            objs = list(self._step())
+            while self._continue and prefetch:
+                prefetch -= 1
+                objs.extend(self._step())
+            for obj in objs:
+                    yield obj
+
+            # Don't set complete until we've
+            # yielded all objects from this step
+            if not self._continue:
+                self._complete = True
+
+    def _step(self):
+        ''' Single call, advancing ExclusiveStartKey if necessary. '''
+        if self._continue:
+            self.request["ExclusiveStartKey"] = self._continue
+        response = self._call(**self._request)
+        self._continue = response.get("LastEvaluatedKey", None)
+
+        self.count += response["Count"]
+        self.scanned_count += response["ScannedCount"]
+
+        results = response.get("Items", [])
+        for result in results:
+            obj = self.engine.__load__(self.model, result)
+            self._results.append(obj)
+            yield obj

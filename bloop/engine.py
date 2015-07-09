@@ -47,15 +47,24 @@ def value_of(column):
 class Engine(object):
     model = None
 
-    def __init__(self, namespace=None):
+    def __init__(self):
+        self.dynamo_client = DynamoClient()
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
-        self.dynamodb_client = DynamoClient()
         self.type_engine = declare.TypeEngine.unique()
         self.plugins = collections.defaultdict(list)
         self.model = bloop.model.BaseModel(self)
         self.unbound_models = set()
         self.models = []
+
+        # Control how many pages are loaded at once during scans/queries.
+        #   < 0: the full query will be executed at once.
+        #   = 0: Pages will be loaded on demand.
+        #   > 0: that number of pages will be fetched at a time.
+        self.prefetch = {
+            "query": 0,
+            "scan": 0
+        }
 
     def register(self, model):
         if model not in self.models:
@@ -97,7 +106,7 @@ class Engine(object):
         while self.unbound_models:
             model = self.unbound_models.pop()
             try:
-                self.dynamodb_client.create_table(model)
+                self.dynamo_client.create_table(model)
             except Exception as exception:
                 self.unbound_models.add(model)
                 raise exception
@@ -138,7 +147,7 @@ class Engine(object):
         objs = list_of(objs)
 
         # The RequestItems dictionary of table:Key(list) that will be
-        # passed to dynamodb_client
+        # passed to dynamo_client
         request_items = {}
 
         # table_name:dynamodb_name(list) of table keys (hash and opt range)
@@ -172,7 +181,7 @@ class Engine(object):
             )
             objs_by_key[index] = obj
 
-        results = self.dynamodb_client.batch_get_items(request_items)
+        results = self.dynamo_client.batch_get_items(request_items)
 
         for table_name, items in results.items():
             # The attributes that make up the key
@@ -188,6 +197,9 @@ class Engine(object):
                 # Let plugins know we're going to load the object
                 self.__trigger__('before_load', obj)
 
+                # Not using self.__load__(obj, item) because we don't want to
+                # go through meta['bloop.init'] - we want to populate the
+                # existing model instance
                 columns = obj.__meta__["dynamo.columns"]
                 for column in columns:
                     value = item.get(column.dynamo_name, missing)
@@ -215,7 +227,7 @@ class Engine(object):
             table_name = model.__meta__['dynamo.table.name']
             item = self.__dump__(model, obj)
             expression = render(self, model, condition, mode="condition")
-            self.dynamodb_client.put_item(table_name, item, expression)
+            self.dynamo_client.put_item(table_name, item, expression)
 
         else:
             request_items = collections.defaultdict(list)
@@ -229,7 +241,7 @@ class Engine(object):
                 table_name = obj.__meta__['dynamo.table.name']
                 request_items[table_name].append(put_item)
 
-            self.dynamodb_client.batch_write_items(request_items)
+            self.dynamo_client.batch_write_items(request_items)
 
     def delete(self, objs, *, condition=None):
         objs = list_of(objs)
@@ -242,7 +254,7 @@ class Engine(object):
             table_name = model.__meta__['dynamo.table.name']
             key = dump_key(self, obj)
             expression = render(self, model, condition, mode="condition")
-            self.dynamodb_client.delete_item(table_name, key, expression)
+            self.dynamo_client.delete_item(table_name, key, expression)
 
         else:
             request_items = collections.defaultdict(list)
@@ -256,7 +268,7 @@ class Engine(object):
                 table_name = obj.__meta__['dynamo.table.name']
                 request_items[table_name].append(del_item)
 
-            self.dynamodb_client.batch_write_items(request_items)
+            self.dynamo_client.batch_write_items(request_items)
 
     def query(self, model, index=None):
         return Query(engine=self, model=model, index=index)

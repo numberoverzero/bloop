@@ -39,12 +39,12 @@ except ObjectsNotFound:
     space_sim.wins = 42
     engine.save(space_sim)
 
-query = engine.query(GameScores)\
-              .key((GameScores.user_id == 101) &
-                   GameScores.game_title.between("Random", "Treasure"))\
-              .filter((GameScores.wins > 100) | (GameScores.wins < 50))\
-              .select([GameScores.wins, GameScores.losses,
-                      GameScores.game_title, GameScores.user_id])
+query = (engine.query(GameScores)
+               .key((GameScores.user_id == 101) &
+                    GameScores.game_title.between("Random", "Treasure"))
+               .filter((GameScores.wins > 100) | (GameScores.wins < 50))
+               .select([GameScores.wins, GameScores.losses,
+                       GameScores.game_title, GameScores.user_id]))
 
 for result in query:
     # Full load since we selected a few columns above

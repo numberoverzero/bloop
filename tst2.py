@@ -21,5 +21,6 @@ query = (engine.query(Model)
                .key(Model.id == 1)
                .filter(Model.date >= paris_one_day_ago))
 
-results = list(query)
-print(results[0].date)
+# Equivalent for prefetch >= 0
+print(query.first().date)
+print(query.all().first.date)

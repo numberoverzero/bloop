@@ -199,6 +199,21 @@ class Filter(object):
         request = self.generate_request()
         return FilterResult(prefetch, call, request, self.engine, self.model)
 
+    def first(self):
+        '''
+        Returns the first result that matches the filter.
+
+        Forces prefetch=0 for the fastest return - continuation tokens will
+        only be followed until a page with at least one result is returned.
+
+        Faster than `Filter.all().first` unless:
+        - prefetch = 0
+        - prefetch > 0 AND first result is on page x, where x % (prefetch) == 0
+        If either is true, Filter.all().first will have comparable performance.
+        '''
+        result = self.all(prefetch=0)
+        return result.first
+
     def __iter__(self):
         return iter(self.all())
 
@@ -331,6 +346,25 @@ class FilterResult(object):
     def complete(self):
         return self._complete
 
+    @property
+    def first(self):
+        if self._results:
+            return self._results[0]
+
+        if not self.complete:
+            step = iter(self)
+            # Advance until we have some results, or we exhaust the query
+            while not self._results and not self.complete:
+                next(step)
+
+        # Either:
+        # - filter was already complete
+        # - filter is complete after above stepping
+        # - filter is incomplete but there are some results
+        if not self._results:
+            raise ValueError("No results found.")
+        return self._results[0]
+
     def __iter__(self):
         # Already finished, iterate existing list
         if self.complete:
@@ -345,7 +379,7 @@ class FilterResult(object):
             return iter(self.results)
         # Lazy load, prefetching as necessary
         else:
-            return self.__prefetch_iter__
+            return self.__prefetch_iter__()
 
     def __prefetch_iter__(self):
         '''

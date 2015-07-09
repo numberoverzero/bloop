@@ -32,15 +32,15 @@ class __BaseModel(object):
     def __load__(cls, values):
         ''' dict -> obj '''
         meta = cls.__meta__
+        init = meta["bloop.init"]
         columns = meta["dynamo.columns"]
         engine = meta["bloop.engine"].type_engine
         attrs = {}
         for column in columns:
             value = values.get(column.dynamo_name, missing)
-            # Missing expected column
             if value is not missing:
                 attrs[column.model_name] = engine.load(column.typedef, value)
-        return cls(**attrs)
+        return init(**attrs)
 
     @classmethod
     def __dump__(cls, obj):

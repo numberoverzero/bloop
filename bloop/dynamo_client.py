@@ -346,35 +346,16 @@ class DynamoClient(object):
 
     def _filter(self, client_func, **request):
         # Wrap client function in retries
-        call = functools.partial(self.call_with_retries, client_func)
-        empty = []
+        response = self.call_with_retries(client_func, **request)
 
-        results = {
-            "Count": 0,
-            "ScannedCount": 0,
-            "Items": []
-        }
+        # When updating count, ScannedCount is omitted unless it differs
+        # from Count; thus we need to default to assume that the
+        # ScannedCount is equal to the Count
+        count = response.get("Count", 0)
+        response["Count"] = count
+        response["ScannedCount"] = response.get("ScannedCount", count)
 
-        while True:
-            response = call(**request)
-
-            # When updating count, ScannedCount is omitted unless it differs
-            # from Count; thus we need to default to assume that the
-            # ScannedCount is equal to the Count
-            count = response.get("Count", 0)
-            results["Count"] += count
-            results["ScannedCount"] += response.get("ScannedCount", count)
-
-            results["Items"].extend(response.get("Items", empty))
-
-            # Done processing when LastEvaluatedKey is empty
-            last_key = response.get("LastEvaluatedKey", None)
-            if not last_key:
-                break
-            # Otherwise, update the request key and go again
-            request["ExclusiveStartKey"] = last_key
-
-        return results
+        return response
 
     def query(self, **request):
         return self._filter(self.client.query, **request)

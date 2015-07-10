@@ -42,7 +42,7 @@ class Type(declare.TypeDefinition):
         whether this type can load the given
         {type: value} dictionary from dynamo
         '''
-        backing_type, _ = next(iter(value.keys()))
+        backing_type = next(iter(value.keys()))
         return backing_type == self.backing_type
 
     def __dump__(self, value):
@@ -50,6 +50,12 @@ class Type(declare.TypeDefinition):
         dump a python value to a {type: value} dictionary for dynamo storage
         '''
         return {self.backing_type: self.dynamo_dump(value)}
+
+    def dynamo_load(self, value):
+        return value
+
+    def dynamo_dump(self, value):
+        return value
 
     def can_dump(self, value):
         ''' whether this type can dump the given value to dynamo '''
@@ -63,12 +69,6 @@ class Type(declare.TypeDefinition):
 class String(Type):
     python_type = str
     backing_type = STRING
-
-    def dynamo_load(self, value):
-        return value
-
-    def dynamo_dump(self, value):
-        return value
 
 
 class UUID(Type):
@@ -108,10 +108,10 @@ class DateTime(String):
         print(results[0].date)
     '''
     python_type = arrow.Arrow
-    timezone = 'UTC'
+    default_timezone = 'UTC'
 
     def __init__(self, timezone=None):
-        self.timezone = timezone or DateTime.timezone
+        self.timezone = timezone or DateTime.default_timezone
 
     def dynamo_load(self, value):
         # arrow.get(None) returns arrow.utcnow();

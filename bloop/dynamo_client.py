@@ -82,7 +82,7 @@ def partition_batch_write_input(request_items):
 
 
 class DynamoClient(object):
-    def __init__(self, backoff_func=None):
+    def __init__(self, session=None, backoff_func=None):
         '''
 
         backoff_func is an optional function with signature
@@ -90,7 +90,8 @@ class DynamoClient(object):
             - return the number of seconds to sleep
             - raise to stop
         '''
-        self.client = boto3.client("dynamodb")
+        # Fall back to the global session
+        self.client = (session or boto3).client("dynamodb")
         self.backoff_func = backoff_func or default_backoff_func
 
     def batch_get_items(self, request):

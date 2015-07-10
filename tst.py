@@ -3,15 +3,12 @@ from bloop import (
     GlobalSecondaryIndex, ObjectsNotFound
 )
 import arrow
-import boto3
+import boto3.session
 import logging
 logging.basicConfig(level=logging.DEBUG)
 
-# patch session to use a specific profile
-boto3.setup_default_session(profile_name='test-user-bloop')
-
-# http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
-engine = Engine()
+session = boto3.session.Session(profile_name='test-user-bloop')
+engine = Engine(session=session)
 
 
 class GameScores(engine.model):

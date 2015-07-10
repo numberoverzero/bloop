@@ -1,10 +1,10 @@
 import arrow
-import boto3
+import boto3.session
 from bloop import Engine, Column, Integer, DateTime
 
 
-boto3.setup_default_session(profile_name='test-user-bloop')
-engine = Engine()
+session = boto3.session.Session(profile_name='test-user-bloop')
+engine = Engine(session=session)
 
 
 class Model(engine.model):

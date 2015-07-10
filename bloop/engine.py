@@ -47,8 +47,8 @@ def value_of(column):
 class Engine(object):
     model = None
 
-    def __init__(self):
-        self.dynamo_client = DynamoClient()
+    def __init__(self, session=None):
+        self.dynamo_client = DynamoClient(session=session)
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()

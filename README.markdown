@@ -121,6 +121,101 @@ recent_posts = engine.scan(Post).filter(since_yesterday)
 [arrow-docs]: http://crsmithdev.com/arrow/
 [iso-8601]: https://tools.ietf.org/html/rfc3339
 
+# Defining Models
+
+There are 3 key components when building models:
+
+1. A `bloop.Engine`'s base model (`some_engine.model`)
+2. `bloop.Column` to define columns, hash and range keys, and indexes
+3. The various types - `Integer, Float, String, UUID, DateTime, Boolean`
+
+Let's start with the basics.
+
+## Engine.model and sessions
+
+A model can only be rendered by the engine it's base class is built on.  This allows multiple engines to render similar models differently; against differnt endpoints; across regions.  This can be particularly useful when performing migrations - one engine can read an old format, while another writes the new data.
+
+```python
+import bloop
+import boto3.session
+
+sess = boto3.session.Session(profile_name='non-default-profile')
+engine = bloop.Engine(session=sess)
+
+
+class MyModel(engine.model):
+    id = bloop.Column(bloop.UUID, hash_key=True)
+```
+
+Here, we provided a custom `boto3.session.Session` so that we could use custom connection parameters instead of the global default profile.  We then constructed a minimum valid Model, with at least a hash_key.
+
+We aren't quite ready to use the model yet.  The model <--> DynamoDB table binding step is independent from model definition.  This makes it easier to handle any errors that arise during table creation/validation, instead of requring class definitions to be inside try/catch blocks.  Let's bind the model and keep going:
+
+```python
+engine.bind()
+```
+
+Remember that we can bind at any time, and the function is re-entrant.  Only models created since the last `bind` call, or those that previously failed to properly bind, will be bound.
+
+## \_\_init\_\_ and model loading
+
+By default, models provide **kwarg `__init__` methods, similar to `namedtuple` but without allowing positional arguments.  Let's use the `Post` model from above:
+
+```python
+class Post(engine.model):
+    id = Column(UUID, hash_key=True)
+    user = Column(UUID, name='u')
+
+    date = Column(DateTime(timezone='US/Pacific'), name='d')
+    views = Column(Integer, name='v')
+    content = Column(String, name='c')
+
+    by_user = GlobalSecondaryIndex(hash_key='user', projection='keys_only',
+                                   write_units=1, read_units=10)
+```
+
+We can construct some instances using keyword args:
+
+```python
+uid = uuid.uuid4
+
+troll_user = uid()
+admin = uid()
+
+troll_post = Post(id=uid(), user=troll_user, date=arrow.now())
+announcement = Post(id=uid(), user=admin, date=arrow.now())
+```
+
+There is no default value for columns not specified - `announcement.views` will not return 0 or None, but instead throw a NameError.
+
+When loading models from DynamoDB during a query or scan, models are loaded using the method specified in `__meta__["bloop.init"]`.  By default, this is the constructor for the model.  In other words, `Post.__meta__["bloop.init"] is Post`.  Any model can override this setting with another function that takes `**kwargs` and returns a model instance.
+
+## Local and Global Secondary Indexes
+
+## Model Inheritance
+
+## Custom Types
+
+## Custom Object Loading
+
+## Custom Columns
+
+## What's NOT Included
+
+# Operations
+
+## Load
+
+## Save
+
+## Delete
+
+## Query and Scan
+
+### Prefetch
+
+### Chaining
+
 
 # Versioning
 
@@ -148,3 +243,4 @@ tox
 * Tests
 * Docs
 * `__meta__` -> `class Meta` migration in declare
+* Fix model inheritance

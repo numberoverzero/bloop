@@ -238,6 +238,94 @@ TODO - pending declare fixes
 
 ## Custom Types
 
+Building your own custom types should be easy.  In fact, most of the built-in types all branch off of either `Float` or `String`.  Here's all the code to implement DateTime:
+
+```python
+class DateTime(String):
+    python_type = arrow.Arrow
+    default_timezone = 'UTC'
+
+    def __init__(self, timezone=None):
+        self.timezone = timezone or DateTime.timezone
+
+    def dynamo_load(self, value):
+        if value is None:
+            return None
+        iso8601_string = super().dynamo_load(value)
+        return arrow.get(iso8601_string).to(self.timezone)
+
+    def dynamo_dump(self, value):
+        iso8601_string = value.to('utc').isoformat()
+        return super().dynamo_dump(iso8601_string)
+```
+
+And the Binary type:
+
+```python
+class Binary(Type):
+    python_type = bytes
+    backing_type = BINARY
+
+    def dynamo_load(self, value):
+        return base64.b64decode(value)
+
+    def dynamo_dump(self, value):
+        return base64.b64encode(value).decode('utf-8')
+```
+
+* `python_type` is mostly informational; it is used by the default `Type.can_dump` function, which is used for dumping values in `Map` and `List` columns.
+* `backing_type` should be one of the valid DynamoDB types.  You don't need to worry about this if you subclass a concrete type, like `Float` or `Binary`.
+* Types can be used directly when defining Columns, or instances of Types may be passed.  So far we've mostly been using raw Types, such as `Integer` and `String`.  Above however, you'll notice that `DateTime` can take a `timezone` on init.  The type still functions without initialization.
+
+A good way to implement a custom type is to first find the closest existing type to the storage format you'd like.  Then, use `super()` to let the existing Type machinery do the heavy lifting:
+
+```python
+class MyCustomType(SomeExistingBloopType):
+    def dynamo_load(self, value):
+        existing_typed_value = super().load(value)
+        # Manipulate the existing typed value here
+        return existing_typed_value
+
+    def dynamo_dump(self, value):
+        # Manipulate the value into the type that already exists
+        existing_typed_value = some_manipulation_here()
+        return super().dynamo_dump(existing_typed_value)
+```
+
+When writing an (optional) constructor, keep in mind how you'll define columns.  If a constructor is required, your definitions will be:
+
+```python
+
+class Model(engine.model):
+    foo = Column(MyType(foo='yet', bar='another'))
+    bar = Column(MyType(foo='type', bar='setting'))
+```
+
+You may also define `can_dump(self, value)` and `can_load(self, value)` functions for your types, which will be called when trying to dump and load values in Maps or Lists.  Here are the default implementations:
+
+```python
+class Type(declare.TypeDefinition):
+    # ...
+
+    def can_load(self, value):
+        '''
+        whether this type can load the given
+        {type: value} dictionary from dynamo
+        '''
+        backing_type = next(iter(value.keys()))
+        return backing_type == self.backing_type
+
+    def can_dump(self, value):
+        ''' whether this type can dump the given value to dynamo '''
+        return isinstance(value, self.python_type)
+
+    # ...
+```
+
+Note that the argument to can_load will be in the form `{'S': 'value'}` which includes both the dynamo type (as the dict key) and the raw value (as the dict value).  This is required since some types will care about either/both the dynamo type and the actual value stored.
+
+This contrasts with `can_dump` which will only receive the raw value - the dynamo type will be pulled from the type that dumps the value.
+
 ## Custom Object Loading
 
 bloop will usually use a model's `__init__` method when instantiating new model objects from a query or scan result.  There are times when it's preferable to use a different initialization method; a base model may override the default `__init__` behavior and make it impossible for bloop to use, or a custom caching mechanism may want to intercept object creation.  In either case, the model's `__meta__` dict provides access to internal configuration.

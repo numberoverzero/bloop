@@ -48,7 +48,7 @@ class Post(engine.model):
 engine.bind()
 ```
 
-Most of our columns pass a `name` parameter - this is because [attribute names count towards item size](dynamo-limits).  By default the model name is used (we'll still use `id`, for instance) but specifying the backing name allows us to use convenient names (`user`, `date`) while saving space for requests (`u`, `d`).
+Most of our columns pass a `name` parameter - this is because [attribute names count towards item size][dynamo-limits].  By default the model name is used (we'll still use `id`, for instance) but specifying the backing name allows us to use convenient names (`user`, `date`) while saving space for requests (`u`, `d`).
 
 Let's create a new user - and make sure we don't overwrite an existing key!
 
@@ -60,7 +60,7 @@ def create_user(admin=False):
     engine.save(user, condition=does_not_exist)
 ```
 
-bloop works hard to expose DynamoDB's [Conditional Expression](conditional-writes) system in a clean, intuitive interface.  To that end, we can construct conditions that must be met before performing an operation (`save`, `delete`) using the Model's columns and standard comparison operators.  In this case, `User.id.is_(None)` could also be written `User.id == None` which ensures there's no row where the id we want to save exists.
+bloop works hard to expose DynamoDB's [Conditional Expression][conditional-writes] system in a clean, intuitive interface.  To that end, we can construct conditions that must be met before performing an operation (`save`, `delete`) using the Model's columns and standard comparison operators.  In this case, `User.id.is_(None)` could also be written `User.id == None` which ensures there's no row where the id we want to save exists.
 
 Next, let's take advantage of our GlobalSecondaryIndex `by_user` to find all posts by a user:
 
@@ -103,7 +103,7 @@ def edit(user_id, post_id, new_content):
 
 Here we see `engine.load` can load a single object or multiple - batching is automatically taken care of, even grouping models together to minimize request/response size.
 
-bloop leverages the outstanding [`arrow`](arrow-docs) for `DateTime` objects, with values persisted as UTC [ISO 8601](iso-8601) strings.  In addition, comparisons can be made against any timezone, since all values are converted to UTC before they reach DynamoDB.  This makes locale-aware queries trivial to write:
+bloop leverages the outstanding [`arrow`][arrow-docs] for `DateTime` objects, with values persisted as UTC [ISO 8601][iso-8601] strings.  In addition, comparisons can be made against any timezone, since all values are converted to UTC before they reach DynamoDB.  This makes locale-aware queries trivial to write:
 
 ```python
 local_timezone = 'Europe/Paris'

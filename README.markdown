@@ -1,4 +1,4 @@
-# bloop 0.4.0
+# bloop 0.5.0
 
 [![Build Status]
 (https://travis-ci.org/numberoverzero/bloop.svg?branch=master)]
@@ -10,7 +10,7 @@ Downloads https://pypi.python.org/pypi/bloop
 
 Source https://github.com/numberoverzero/bloop
 
-ORM for DynamoDB
+DynamoDB object mapper for python 3.3+
 
 # Installation
 
@@ -18,145 +18,109 @@ ORM for DynamoDB
 
 # Getting Started
 
+We'll be using some simplistic user and post models for a hypothetical forum.
+
+First, we'll set up our models and bind the engine:
+
 ```python
-from bloop import (
-    Engine, Column, Integer, Float, String,
-    ObjectsNotFound, ConstraintViolation
-)
+from bloop import (Boolean, Engine, Column, DateTime,
+                   GlobalSecondaryIndex, Integer, String, UUID)
+import arrow
+import uuid
 
 engine = Engine()
 
-class GameScores(engine.model):
-    user_id = Column(Integer, hash_key=True)
-    game_title = Column(String, range_key=True)
-    top_score = Column(Float)
-    top_score_date = Column(String)
-    wins = Column(Integer)
-    losses = Column(Integer)
 
+class User(engine.model):
+    id = Column(Integer, hash_key=True)
+    admin = Column(Boolean, name='a')
+
+
+class Post(engine.model):
+    id = Column(UUID, hash_key=True)
+    user = Column(UUID, name='u')
+
+    date = Column(DateTime(timezone='US/Pacific'), name='d')
+    views = Column(Integer, name='v')
+    content = Column(String, name='c')
+
+    by_user = GlobalSecondaryIndex(hash_key='user', projection='keys_only',
+                                   write_units=1, read_units=10)
 
 engine.bind()
-
-pong_score = GameScores(user_id=101, game_title="Pong")
-doom_score = GameScores(user_id=102, game_title="Doom")
-scores = [pong_score, doom_score]
-
-try:
-    engine.load(scores, consistent=True)
-except ObjectsNotFound as e:
-    print("Failed to load")
-    for obj in e.missing:
-        print(obj)
-    pong_score.wins = 0
-    doom_score.losses = 0
-else:
-    print("Loaded")
-
-pong_score.wins += 1
-doom_score.losses += 1
-
-engine.save(scores)
-print("Saved")
-
-try:
-    engine.delete(doom_score, condition=GameScores.losses > 3)
-except ConstraintViolation as e:
-    print("Failed to delete")
-else:
-    print("Deleted")
-
-query = (engine.query(GameScores)
-               .key(GameScores.user_id == 101)
-               .filter(GameScores.losses < 10))
-
-print("Query not executed until iteration")
-for result in query:
-    print(result)
-
 ```
 
-# API
+Most of our columns pass a `name` parameter - this is because [attribute names count towards item size](dynamo-limits).  By default the model name is used (we'll still use `id`, for instance) but specifying the backing name allows us to use convenient names (`user`, `date`) while saving space for requests (`u`, `d`).
 
-### [Amazon DynamoDB Actions](actions)
-
-Let's work backwards - where is each Dynamo call used?
-
-* [BatchGetItem](batch-get) - `engine.load(items)`
-* [BatchWriteItem](batch-write) - `engine.save(items)` and `engine.delete(items)`
-* [CreateTable](create-table) - Internal during `engine.bind()`
-* [DeleteItem](delete-item) - `engine.delete(item)` (Singular delete with optional conditions)
-* [DeleteTable](delete-table) - Unused
-* [DescribeTable](describe-table) - Internal during `engine.bind()` (if table mutations are enabled)
-* [GetItem](get-item) - Unused
-* [ListTables](list-tables) - Unused
-* [PutItem](put-item) - `engine.save(item)` (Singular save with optional conditions)
-* [Query](query) - `engine.query(Model)`
-* [Scan](scan) - `engine.scan(Model)`
-* [UpdateItem](update-item) - Unused (no partial writes)
-* [UpdateTable](update-table) - Unused (refuse to modify existing tables)
-
-## Common Actions
-
-### `engine.load`
-
-Pass `consistent=True` for [Consistent Reads](consistent-reads).
+Let's create a new user - and make sure we don't overwrite an existing key!
 
 ```python
-now = time.time  # TODO: UTC!
-item = Visitor(email='joe.mcross@gmail.com', visit_date=now)
-engine.load(item, consistent=True)
-
-another_item = User(email='joe.mcross@gmail.com')
-items = [item, another_item]
-engine.load(items)
+def create_user(admin=False):
+    ''' Create a new user, throwing if the randomly generated id is in use '''
+    user = User(id=uuid.uuid4(), admin=admin)
+    does_not_exist = User.id.is_(None)
+    engine.save(user, condition=does_not_exist)
 ```
 
-### `engine.save` & `engine.delete`
+bloop works hard to expose DynamoDB's [Conditional Expression](conditional-writes) system in a clean, intuitive interface.  To that end, we can construct conditions that must be met before performing an operation (`save`, `delete`) using the Model's columns and standard comparison operators.  In this case, `User.id.is_(None)` could also be written `User.id == None` which ensures there's no row where the id we want to save exists.
 
-Both save and delete expose the same interface (these both map to [PutItem](put-item)).
+Next, let's take advantage of our GlobalSecondaryIndex `by_user` to find all posts by a user:
 
 ```python
-item = Visitor(email='joe.mcross@gmail.com', visit_date=now)
-engine.load(item)
-item.visits += 1
-
-# Save with condition - bail if the visit count isn't what we saw during load
-engine.save(item, Visitor.visits == item.visits-1)
-
-another_item = User(email='joe.mcross@gmail.com')
-items = [item, another_item]
-engine.save(items)
+def posts_by_user(user_id):
+    ''' Returns an iterable of posts by the user '''
+    return engine.query(Post, index=Post.by_user).key(Post.id == user_id)
 ```
 
-### `engine.query` & `engine.scan`
+Again we leverage standard comparison operators to define the key condition with `Post.id == user_id`.  There are a number of moving pieces that allow this function to stay so simple; queries are iterable, lazily loading results and following continuation tokens using appropriate retries with an exponential backoff (configurable).
 
-Both query and scan expose the same interface.  Constraints that are semantically useless for the operation (such as KeyConditions for a scan) will be ignored when constructing the request.  If minimum constraints have not been met to form a valid request (such as omission of KeyConditions for a query) an exception will be raised.
-
-Constraints can be added and modified through chaining.  Both queries and scans are immutable,
-and each constraint specification will return a new query/scan object.  This allows the creation of base queries that can be re-used.
+Let's write a few more helpers for common operations when rendering and updating pages:
 
 ```python
-base_query = engine.query(Model).filter(Model.visits > 50)
+def increment_views(post_id):
+    '''
+    Load post, increment views, save with the condition that the view count
+    still has its old value
+    '''
+    post = Post(id=post_id)
+    engine.load(post)
+    post.views += 1
+    old_views = Post.views == (post.views - 1)
+    engine.save(post, condition=old_views)
 
-# All visits for joe.mcross@gmail.com with over 50 visits
-visits = base_query.key(Model.email=="joe.mcross@gmail.com")
 
-# Queries and scans are executed when iterated
-for visit in visits:
-    print(visit)
+def edit(user_id, post_id, new_content):
+    ''' Verify user can edit post, then change content and update date '''
+    user = User(id=user_id)
+    post = Post(id=post_id)
+    engine.load([user, post])
 
-# Another visitor, again with over 50 visits
-other_visits = base_query.key(Model.email=="foo@bar.com")
+    if (not user.admin) and (post.user != user.id):
+        raise ValueError("User not authorized to edit post.")
+
+    post.content = new_content
+    post.date = arrow.now()  # timezone doesn't matter, bloop stores in UTC
+    engine.save(post)
 ```
 
-An index ([Local](lsi) or [Global](gsi)) can be specified only when constructing the base query, and cannot be changed through chaining.
+Here we see `engine.load` can load a single object or multiple - batching is automatically taken care of, even grouping models together to minimize request/response size.
+
+bloop leverages the outstanding [`arrow`](arrow-docs) for `DateTime` objects, with values persisted as UTC [ISO 8601](iso-8601) strings.  In addition, comparisons can be made against any timezone, since all values are converted to UTC before they reach DynamoDB.  This makes locale-aware queries trivial to write:
 
 ```python
-base_query = engine.query(Model, index=Model.visit_date)
+local_timezone = 'Europe/Paris'
+now_local = arrow.now().to(local_timezone)
+yesterday_local = now_local.replace(days=-1)
 
-# All the same options apply here
-visits = base_query.key(...).consistent.filter(...)
+since_yesterday = Post.date.between(yesterday_local, now_local)
+recent_posts = engine.scan(Post).filter(since_yesterday)
 ```
+
+[dynamo-limits]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html
+[conditional-writes]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html
+[arrow-docs]: http://crsmithdev.com/arrow/
+[iso-8601]: https://tools.ietf.org/html/rfc3339
+
 
 # Versioning
 
@@ -183,22 +147,4 @@ tox
 
 * Tests
 * Docs
-
-[actions]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Operations.html
-[consistent-reads]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/APISummary.html
-[lsi]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
-[gsi]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
-
-[batch-get]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchGetItem.html
-[batch-write]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html
-[create-table]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html
-[delete-item]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html
-[delete-table]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteTable.html
-[describe-table]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DescribeTable.html
-[get-item]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GetItem.html
-[list-tables]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_ListTables.html
-[put-item]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html
-[query]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html
-[scan]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html
-[update-item]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
-[update-table]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateTable.html
+* `__meta__` -> `class Meta` migration in declare

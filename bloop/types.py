@@ -114,6 +114,10 @@ class DateTime(String):
         self.timezone = timezone or DateTime.timezone
 
     def dynamo_load(self, value):
+        # arrow.get(None) returns arrow.utcnow();
+        # we want to preserve the lack of value
+        if value is None:
+            return None
         iso8601_string = super().dynamo_load(value)
         return arrow.get(iso8601_string).to(self.timezone)
 

@@ -240,6 +240,46 @@ TODO - pending declare fixes
 
 ## Custom Object Loading
 
+bloop will usually use a model's `__init__` method when instantiating new model objects from a query or scan result.  There are times when it's preferable to use a different initialization method; a base model may override the default `__init__` behavior and make it impossible for bloop to use, or a custom caching mechanism may want to intercept object creation.  In either case, the model's `__meta__` dict provides access to internal configuration.
+
+Note that the method specified in meta is *not* used during load operations, as the objects already exist and are simply updated with `setattr`.
+
+```python
+
+class User(engine.model):
+
+    def __init__(self):
+        # Disallows **kwarg loading
+        pass
+
+    id = Column(UUID, hash_key=True)
+    admin = Column(Boolean)
+    joined = Column(DateTime)
+    email = Column(String)
+engine.bind()
+
+
+def load_user(**kwargs):
+    print("Using custom loader")
+    user = User()
+    for key, value in kwargs.items():
+        setattr(user, key, value)
+    return user
+User.__meta__["bloop.init"] = load_user
+```
+
+And to try things out:
+
+```python
+# Make a user to find
+user = User()
+user.id = uid = uuid.uuid4()
+engine.save(user)
+
+# This will find the result above, and load the result through `load_user`
+print(engine.query(User).key(User.id == uid).first())
+```
+
 ## Custom Columns
 
 ## What's NOT Included

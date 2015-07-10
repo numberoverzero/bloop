@@ -18,9 +18,7 @@ DynamoDB object mapper for python 3.3+
 
 # Getting Started
 
-We'll be using some simplistic user and post models for a hypothetical forum.
-
-First, we'll set up our models and bind the engine:
+We'll be using some simplistic user and post models for a hypothetical forum.  First, we'll set up our models and bind the engine:
 
 ```python
 from bloop import (Boolean, Engine, Column, DateTime,
@@ -115,11 +113,6 @@ yesterday_local = now_local.replace(days=-1)
 since_yesterday = Post.date.between(yesterday_local, now_local)
 recent_posts = engine.scan(Post).filter(since_yesterday)
 ```
-
-[dynamo-limits]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html
-[conditional-writes]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html
-[arrow-docs]: http://crsmithdev.com/arrow/
-[iso-8601]: https://tools.ietf.org/html/rfc3339
 
 # Defining Models
 
@@ -244,3 +237,8 @@ tox
 * Docs
 * `__meta__` -> `class Meta` migration in declare
 * Fix model inheritance
+
+[dynamo-limits]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html
+[conditional-writes]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html
+[arrow-docs]: http://crsmithdev.com/arrow/
+[iso-8601]: https://tools.ietf.org/html/rfc3339

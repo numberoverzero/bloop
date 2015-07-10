@@ -70,7 +70,12 @@ def posts_by_user(user_id):
     return engine.query(Post, index=Post.by_user).key(Post.id == user_id)
 ```
 
-Again we leverage standard comparison operators to define the key condition with `Post.id == user_id`.  There are a number of moving pieces that allow this function to stay so simple; queries are iterable, lazily loading results and following continuation tokens using appropriate retries with an exponential backoff (configurable).
+Again we leverage standard comparison operators to define the key condition with `Post.id == user_id`.  There are a number of moving pieces that allow this function to stay so simple:
+
+* query parameters can be chained together to create new queries.
+* queries are executed when iterated;
+* results are lazily loaded according to a configurable prefetch setting;
+* continuation tokens are followed using appropriate retries with a configurable exponential backoff;
 
 Let's write a few more helpers for common operations when rendering and updating pages:
 
@@ -118,34 +123,48 @@ recent_posts = engine.scan(Post).filter(since_yesterday)
 
 There are 3 key components when building models:
 
-1. A `bloop.Engine`'s base model (`some_engine.model`)
+1. A `bloop.Engine`'s base model
 2. `bloop.Column` to define columns, hash and range keys, and indexes
 3. The various types - `Integer, Float, String, UUID, DateTime, Boolean`
 
-Let's start with the basics.
-
 ## Engine.model and sessions
 
-A model can only be rendered by the engine it's base class is built on.  This allows multiple engines to render similar models differently; against differnt endpoints; across regions.  This can be particularly useful when performing migrations - one engine can read an old format, while another writes the new data.
+A model can only be rendered by the engine it's base class is built on.  This allows multiple engines to render similar models differently; against differnt endpoints; across regions.  This can be particularly useful when performing migrations, with one engine reading the old format, while another writes data in the new format.
 
 ```python
 import bloop
 import boto3.session
-
-sess = boto3.session.Session(profile_name='non-default-profile')
-engine = bloop.Engine(session=sess)
+regional_engines = {}
 
 
-class MyModel(engine.model):
+def engine(region):
+    '''
+    Ensure a single engine per region.
+
+    Multiple calls with the same region return the same engine.
+    '''
+    engine = regional_engines.get(region)
+    if not engine:
+        session = boto3.session.Session(region_name=region)
+        regional_engines[region] = engine = bloop.Engine(session=session)
+    return engine
+
+
+class EastModel(engine('us-east-1')):
+    id = bloop.Column(bloop.UUID, hash_key=True)
+
+
+class WestModel(engine('us-west-2')):
     id = bloop.Column(bloop.UUID, hash_key=True)
 ```
 
-Here, we provided a custom `boto3.session.Session` so that we could use custom connection parameters instead of the global default profile.  We then constructed a minimum valid Model, with at least a hash_key.
+Here, we provided a custom [`boto3.session.Session`][boto3-session] so that we could use custom connection parameters instead of the global default profile.  We then constructed a minimum valid Model, with at least a hash_key.
 
-We aren't quite ready to use the model yet.  The model <--> DynamoDB table binding step is independent from model definition.  This makes it easier to handle any errors that arise during table creation/validation, instead of requring class definitions to be inside try/catch blocks.  Let's bind the model and keep going:
+We aren't quite ready to use the model yet.  The model <--> DynamoDB table binding step is independent from model definition.  This makes it easier to handle any errors that arise during table creation/validation, instead of requring class definitions to be inside try/catch blocks.  Binding the models is similarly straightforward:
 
 ```python
-engine.bind()
+engine('us-east-1').bind()
+engine('us-west-2').bind()
 ```
 
 Remember that we can bind at any time, and the function is re-entrant.  Only models created since the last `bind` call, or those that previously failed to properly bind, will be bound.
@@ -242,3 +261,4 @@ tox
 [conditional-writes]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html
 [arrow-docs]: http://crsmithdev.com/arrow/
 [iso-8601]: https://tools.ietf.org/html/rfc3339
+[boto3-session]: http://boto3.readthedocs.org/en/latest/reference/core/session.html

@@ -1,5 +1,3 @@
-# http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
-#   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import bloop.column
 import bloop.condition
 import operator
@@ -196,7 +194,8 @@ class Filter(object):
             prefetch = self.engine.prefetch[self.filter_type]
         # dynamo.client.query or dynamo.client.scan
         call = getattr(self.engine.dynamo_client, self.filter_type)
-        request = self.generate_request()
+        renderer = bloop.condition.ConditionRenderer(self.engine, self.model)
+        request = self.generate_request(renderer)
         return FilterResult(prefetch, call, request, self.engine, self.model)
 
     def first(self):
@@ -235,76 +234,47 @@ class Filter(object):
         other._consistent = True
         return other
 
-
-class Query(Filter):
-    filter_type = "query"
-
-    def generate_request(self):
-        meta = self.model.__meta__
+    def generate_request(self, renderer):
         request = {
-            'TableName': meta['dynamo.table.name'],
-            'Select': SELECT_MODES[self._select],
-            'ScanIndexForward': self._forward,
-            'ConsistentRead': self._consistent
+            'TableName': self.model.__meta__['dynamo.table.name'],
+            'Select': SELECT_MODES[self._select]
         }
-
-        if not self._key_condition:
-            raise ValueError("Must specify at least a hash key condition")
-
         if self.index:
             request['IndexName'] = self.index.dynamo_name
-            if self._consistent and bloop.column.is_global_index(self.index):
-                raise ValueError(
-                    "Cannot use ConsistentRead with a GlobalSecondaryIndex")
-
-        # Render key and filter conditions
-        renderer = bloop.condition.ConditionRenderer(
-            self.engine, self.model, legacy=False)
-
-        request.update(renderer.render(self._key_condition, mode="key"))
         if self._filter_condition:
             request.update(renderer.render(self._filter_condition,
                                            mode="filter"))
-
         if self._select == "specific":
             if not self._select_columns:
                 raise ValueError(
                     "Must provide columns to get with 'specific' mode")
             names = map(renderer.name_ref, self._select_columns)
             request['ProjectionExpression'] = ", ".join(names)
+        return request
+
+
+class Query(Filter):
+    filter_type = "query"
+
+    def generate_request(self, renderer):
+        request = super().generate_request(renderer)
+        request['ScanIndexForward'] = self._forward
+        request['ConsistentRead'] = self._consistent
+
+        if not self._key_condition:
+            raise ValueError("Must specify at least a hash key condition")
+
+        if bloop.column.is_global_index(self.index) and self._consistent:
+            raise ValueError(
+                "Cannot use ConsistentRead with a GlobalSecondaryIndex")
+
+        request.update(renderer.render(self._key_condition, mode="key"))
 
         return request
 
 
 class Scan(Filter):
     filter_type = "scan"
-
-    def generate_request(self):
-        meta = self.model.__meta__
-        request = {
-            'TableName': meta['dynamo.table.name'],
-            'Select': SELECT_MODES[self._select]
-        }
-
-        if self.index:
-            request['IndexName'] = self.index.dynamo_name
-
-        # Render key and filter conditions
-        renderer = bloop.condition.ConditionRenderer(
-            self.engine, self.model, legacy=False)
-
-        if self._filter_condition:
-            request.update(renderer.render(self._filter_condition,
-                                           mode="filter"))
-
-        if self._select == "specific":
-            if not self._select_columns:
-                raise ValueError(
-                    "Must provide columns to get with 'specific' mode")
-            names = map(renderer.name_ref, self._select_columns)
-            request['ProjectionExpression'] = ", ".join(names)
-
-        return request
 
 
 class FilterResult(object):

@@ -1,3 +1,5 @@
+# http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
+#   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import operator
 
 missing = object()

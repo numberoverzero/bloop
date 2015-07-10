@@ -52,7 +52,6 @@ class Engine(object):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()
-        self.plugins = collections.defaultdict(list)
         self.model = bloop.model.BaseModel(self)
         self.unbound_models = set()
         self.models = []
@@ -69,29 +68,6 @@ class Engine(object):
     def register(self, model):
         if model not in self.models:
             self.unbound_models.add(model)
-
-    def on(self, event):
-        '''
-        Decorate a function to be invoked when the given `event` occurs.
-
-        Valid events are:
-            - before_load
-            - before_dump
-            - after_load
-            - after_dump
-
-        function signature should match:
-            (event name, model instance, *args, **kwargs)
-        '''
-        def wrap_function(func):
-            self.plugins[event].append(func)
-            return func
-        return wrap_function
-
-    def __trigger__(self, event, model, *args, **kwargs):
-        plugins = self.plugins[event]
-        for plugin in plugins:
-            plugin(event, model, *args, **kwargs)
 
     def __load__(self, model, value):
         return self.type_engine.load(model, value)
@@ -194,9 +170,6 @@ class Engine(object):
                 )
                 obj = objs_by_key.pop(index)
 
-                # Let plugins know we're going to load the object
-                self.__trigger__('before_load', obj)
-
                 # Not using self.__load__(obj, item) because we don't want to
                 # go through meta['bloop.init'] - we want to populate the
                 # existing model instance
@@ -207,9 +180,6 @@ class Engine(object):
                     if value is not missing:
                         value = self.__load__(column.typedef, value)
                         setattr(obj, column.model_name, value)
-
-                # Let plugins clean up or validate the object after loading
-                self.__trigger__('after_load', obj)
 
         # If there are still objects, they weren't found
         if objs_by_key:

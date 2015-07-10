@@ -204,7 +204,7 @@ When loading models from DynamoDB during a query or scan, models are loaded usin
 
 ## Local and Global Secondary Indexes
 
-Global and local secondary indexes are defined similarly to Columns.  It's a good idea to read the documentation for both [GlobalSecondaryIndexes][docs-gsi] and [LocalSecondaryIndexes][doc-lsi] before using either.  A quick summary of how to construct them, and the constraints each has:
+Global and local secondary indexes are defined similarly to Columns.  It's a good idea to read the documentation for both [GlobalSecondaryIndexes][docs-gsi] and [LocalSecondaryIndexes][docs-lsi] before using either.  A quick summary of how to construct them, and the constraints each has:
 
 ```python
 class Post(engine.model):

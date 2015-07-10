@@ -221,7 +221,7 @@ class Post(engine.model):
                                   projection=['views'])
 ```
 
-Global Secondary Indexes provide additional primary keys for querying against, and can be added to any table.  They have their own throughput, indepedent from the table.  These are specified with `write_units` and `read_units`.
+Global Secondary Indexes provide additional primary keys for querying against, and can be added to any table.  They have their own throughput, indepedent from the table.  These are specified with `write_units` and `read_units`.  A GSI can have a range_key, but it is not required.
 
 Local Secondary Indexes provide additional range keys for the same primary key - in this example, we can query against the hash/range pair (id, user) or with the index `by_date` we can query against the hash/range pair (id, date).  LSIs consume the table's read/write units, and do not have their own settings.
 

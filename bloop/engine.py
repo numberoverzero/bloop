@@ -1,5 +1,5 @@
 import bloop.model
-from bloop.expression import Query, Scan
+from bloop.filter import Query, Scan
 from bloop.condition import render
 from bloop.dynamo_client import DynamoClient, dump_key
 import declare

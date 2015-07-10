@@ -204,7 +204,37 @@ When loading models from DynamoDB during a query or scan, models are loaded usin
 
 ## Local and Global Secondary Indexes
 
+Global and local secondary indexes are defined similarly to Columns.  It's a good idea to read the documentation for both [GlobalSecondaryIndexes][docs-gsi] and [LocalSecondaryIndexes][doc-lsi] before using either.  A quick summary of how to construct them, and the constraints each has:
+
+```python
+class Post(engine.model):
+    id = Column(UUID, hash_key=True)
+    user = Column(UUID, range_key=True)
+    date = Column(DateTime)
+    views = Column(Integer)
+
+    by_user = GlobalSecondaryIndex(hash_key='user',
+                                   projection='keys_only',
+                                   write_units=1, read_units=10)
+
+    by_date = LocalSecondaryIndex(range_key='date',
+                                  projection=['views'])
+```
+
+Global Secondary Indexes provide additional primary keys for querying against, and can be added to any table.  They have their own throughput, indepedent from the table.  These are specified with `write_units` and `read_units`.
+
+Local Secondary Indexes provide additional range keys for the same primary key - in this example, we can query against the hash/range pair (id, user) or with the index `by_date` we can query against the hash/range pair (id, date).  LSIs consume the table's read/write units, and do not have their own settings.
+
+To use a Local Secondary Index:
+
+* The table MUST have a range key (in our example, `user`)
+* The LSI hash key will always be the table's hash key (`id`) and cannot be set.
+
+In both cases, the `projection` option allows specifying which attributes of the table are available for retrieval from the given index.  The valid options are `'keys_only'`, `'all'`, or a list of model column names.  If model names are provided, they (along with any hash/range keys of the index/table) will be available when querying/scanning against the index.  Attributes not projected into the index will be retrieved for a LSI, but not a GSI.  I highly recommend reading the [LSI Throughput Considerations][lsi-throughput], which explains what happens when a query includes attributes not projected into the index.
+
 ## Model Inheritance
+
+TODO - pending declare fixes
 
 ## Custom Types
 
@@ -262,3 +292,6 @@ tox
 [arrow-docs]: http://crsmithdev.com/arrow/
 [iso-8601]: https://tools.ietf.org/html/rfc3339
 [boto3-session]: http://boto3.readthedocs.org/en/latest/reference/core/session.html
+[docs-gsi]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
+[docs-lsi]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
+[lsi-throughput]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html#LSI.ThroughputConsiderations

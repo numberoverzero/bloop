@@ -135,7 +135,7 @@ def BaseModel(engine):
                         raise ValueError(
                             "Cannot specify a LocalSecondaryIndex " +
                             "without a table range key")
-                    index._hash_key = model.range_key
+                    index._hash_key = model.hash_key
 
                 if index.range_key:
                     index._range_key = cols[index.range_key]

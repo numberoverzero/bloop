@@ -171,6 +171,9 @@ class Index(Column):
 
 class GlobalSecondaryIndex(Index):
     def __init__(self, *args, write_units=1, read_units=1, **kwargs):
+        if 'hash_key' not in kwargs:
+            raise ValueError(
+                "Must specify a hash_key for a GlobalSecondaryIndex")
         super().__init__(*args, **kwargs)
         self.write_units = write_units
         self.read_units = read_units
@@ -178,7 +181,18 @@ class GlobalSecondaryIndex(Index):
 
 class LocalSecondaryIndex(Index):
     ''' LSIs don't have individual read/write units '''
-    pass
+    def __init__(self, *args, **kwargs):
+        # Hash key MUST be the table hash, pop any other values
+        if 'hash_key' in kwargs:
+            raise ValueError(
+                "Can't specify the hash_key of a LocalSecondaryIndex")
+        if 'range_key' not in kwargs:
+            raise ValueError(
+                "Must specify a range_key for a LocalSecondaryIndex")
+        if ('write_units' in kwargs) or ('read_units' in kwargs):
+            raise ValueError(
+                "A LocalSecondaryIndex does not have its own read/write units")
+        super().__init__(*args, **kwargs)
 
 
 def is_column(field):

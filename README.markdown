@@ -246,7 +246,7 @@ class DateTime(String):
     default_timezone = 'UTC'
 
     def __init__(self, timezone=None):
-        self.timezone = timezone or DateTime.timezone
+        self.timezone = timezone or DateTime.default_timezone
 
     def dynamo_load(self, value):
         if value is None:

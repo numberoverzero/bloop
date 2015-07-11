@@ -416,6 +416,9 @@ tox
 * `__meta__` -> `class Meta` migration in declare
 * Fix model inheritance
 * Allow specifying PutItem or UpdateItem for saves (engine config and per-call)
+* Wait on table during `engine.bind` if any part of the table status is Creating
+* Allow `strict` mode for Query/Scan where a LSI's projected_attributes are not
+  a superset of the requested attributes
 
 [dynamo-limits]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html
 [conditional-writes]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html

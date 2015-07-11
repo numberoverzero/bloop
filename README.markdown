@@ -371,6 +371,240 @@ print(engine.query(User).key(User.id == uid).first())
 
 ## Custom Columns
 
+Columns have three important properties:
+
+1. Column subclasses a `ComparisonMixin` which enables the use of rich comparators to generate ConditionExpressions.
+2. Column also subclasses `declare.Field`to implement the [descriptor protocol][descriptors].
+3. Column exposes a pair of functions for storing per-instance metadata without (probabilistically) colliding with an existing attribute for that object.
+
+Global and Local Secondary Indexes are subclasses of Column, which take advantage of almost none of the above properties.  Before creating your own Column subclass, it is **highly** recommended that you fully review the descriptor protocol, as well as the following notes on the limitations imposed by the above subclassing.  Since bloop's type system is primarily responsible for loading/packing values from/to DynamoDB, it's usually correct to implement custom logic in your own Type.  A custom Column class is most appropriate for behavior that cuts across types.  In other words, `MyColumn(Integer)` and `MyColumn(String)` should probably both be fine.
+
+### Rich comparisons
+
+The Column class implements the various [rich comparison][python-datamodel] methods, making ConditionExpression construction natural: `Model.column <= 5` .  The methods are:
+
+```python
+ComparisonMixin.__lt__(self, other)  # <
+ComparisonMixin.__le__(self, other)  # <=
+ComparisonMixin.__eq__(self, other)  # ==
+ComparisonMixin.__ne__(self, other)  # !=
+ComparisonMixin.__gt__(self, other)  # >
+ComparisonMixin.__ge__(self, other)  # >=
+```
+
+In addition, the following are defined to match the remaining DynamoDB expression operators:
+
+```python
+ComparisonMixin.is_(self, value)             # Alias for ==
+ComparisonMixin.is_not(self, value)          # Alias for !=
+ComparisonMixin.between(self, lower, upper)  # lower <= self <= upper
+ComparisonMixin.in_(self, *values)           # self in values
+ComparisonMixin.begins_with(self, value)     #
+ComparisonMixin.contains(self, value)        # value in self
+```
+
+Unfortunately the `in` keyword in python uses `__contains__` and then `bool()`s the result, making it impossible to return anything other than True or False.  Therefore, we must use `in_()` instead.
+
+Overloading `__eq__` requires explicitly stating that `__hash__` use the default hash method (`object.__hash__`) or it would try to use our custom `__eq__` which will do very bad things.
+
+### Descriptor protocol
+
+Values are stored/loaded from the object's dictionary, according to the name of the column.  The column name is available as `model_name`, and is set when the class is defined.
+
+The descriptor methods require handling some special casing, such as the object being None (reference to the class, not an instance).  Instead of requiring every overriding implementation to handle these cases correctly, Column exposes the following interface that maps to the traditional descriptor methods:
+
+```python
+class Column(...):
+    ...
+
+    def set(self, obj, value):
+        ...
+
+    def get(self, obj):
+        ...
+
+    def delete(self, obj):
+        ...
+```
+
+This lets us focus only on cases where the object reference is an instance of the class.
+
+Let's create a contrived NegativeColumn that negates values on set, and negates them again on get:
+
+```python
+class NegativeColumn(bloop.Column):
+    def set(self, obj, value):
+        super().set(obj, -value)
+
+    def get(self, obj):
+        return -(super().get(obj))
+```
+
+Now when we set a value and inspect the dict, we see it's stored as its negative, but returned as its original value:
+
+```python
+class Model(engine.model):
+    id = NegativeColumn(bloop.Integer, hash_key=True)
+
+instance = Model(id=5)
+print(instance.__dict__)  # {'id': -5}
+print(instance.id)        # 5
+```
+
+### Per-instance metadata
+
+Meta values are also stored in the object's dictionary, under a randomly generated key.  Let's inspect an instance to see:
+
+```python
+class Model(engine.model):
+    id = Column(String, hash_key=True)
+    other = Column(Integer)
+
+instance = Model(id="foo")
+print(instance.__dict__)  # {'id': 'foo'}
+
+# Set a meta value for the `id` column of our instance
+Model.id.meta_set(instance, "meta_id", "meta_id_value")
+print(instance.__dict__)  # {'id': 'foo',
+                          #  '__column_meta_2e1bf988a7124784be30652d61726612': {
+                          #    '__Column_ea53efb34e7b431083328d4773ca2c37': {
+                          #        'meta_id': 'meta_id_value'
+                          #    }
+                          #  }
+                          # }
+```
+
+Meta values are stored first under a dict key that is global for all column metadata - if we add a meta value for a different column there will still be one top-level entry in the object's dictionary, but a second column key (unique to the column setting the metadata) will be created.
+
+```python
+Model.other.meta_set(instance, "meta_other", "meta_other_value")
+print(instance.__dict__)  # {'id': 'foo',
+                          #  '__column_meta_2e1bf988a7124784be30652d61726612': {
+                          #    '__Column_ea53efb34e7b431083328d4773ca2c37': {
+                          #        'meta_id': 'meta_id_value'
+                          #    },
+                          #    '__Column_883c5980eeaf4f77b87abb3d600a7b44': {
+                          #        'meta_other': 'meta_other_value'
+                          #    },
+                          #  }
+                          # }
+```
+
+This allows us to keep the overhead for objects low - each object holds any associated metadata, and is released when the object cleans up.  Otherwise, the Column would have to track when instances were no longer needed and clean up their metadata.
+
+### Putting it all together
+
+Let's create a Column that shares values across unique (hash, range) ids instead of storing values per-instance.  This will make the following work:
+
+```python
+class Model(engine.model):
+    id = SharedColumn(String, hash_key=True)
+    content = SharedColumn(String)
+
+instance = Model(id="unique", content="first draft")
+
+another_instance = Model(id="unique")
+another_instance.content = "second draft"
+
+print(instance.content)  # 'first draft'
+```
+
+To be clear, this is a very bad implementation, as values are never removed.  In fact, we'll get into why it's even worse that that in just a moment.
+
+```python
+class SharedColumn(bloop.Column):
+    '''
+    Since we use hash/range keys to lookup values, we need to store/load
+    those on the object.  Don't interrupt the usual Column.get/set if this is
+    a hash or range column.
+    '''
+    def __init__(self, *args, **kwargs):
+        self.__values = {}
+        super().__init__(*args, **kwargs)
+
+    def set(self, obj, value):
+        if self.hash_key or self.range_key:
+            super().set(obj, value)
+
+        index = self._index(obj)
+        self.__values[index] = value
+
+    def get(self, obj):
+        # Since we use hash/range keys to lookup values, we
+        # need to store/load those on the object.
+        if self.hash_key or self.range_key:
+            return super().get(obj)
+
+        index = self._index(obj)
+        return self.__values[index]
+
+    def delete(self, obj):
+        # Since we use hash/range keys to lookup values, we
+        # need to store/load those on the object.
+        if self.hash_key or self.range_key:
+            super().delete(obj)
+
+        index = self._index(obj)
+        try:
+            del self.__values[index]
+        except KeyError:
+            raise AttributeError("'{}' has no attribute '{}'".format(
+                obj.__class__, self._model_name))
+
+    def _index(self, obj):
+        model = obj.__class__
+        keys = [model.hash_key, model.range_key]
+        index = (getattr(obj, key.model_name) for key in keys if key)
+        return tuple(index)
+```
+
+This **almost** works - except that initialization will fail randomly, with something like: `AttributeError: '<class '__main__.Model'>' has no attribute 'id'`.  This is because our `set` and `get` rely on the hash_key column being populated when seting or getting any other value.  If we happen to try to set `content` before `id` we'll fail because there's no `id` to tell us where to store the content in `SharedColumn.__values`.
+
+To finish the experiment, we need to modify the model to force hash and range keys to load first:
+
+```python
+class Model(engine.model):
+    '''
+    We have to use a custom __init__ since the hash_key column MUST be set
+    before any other columns.  Otherwise, the lookup function will fail.
+
+    Alternatively, we could use a regular Column for the hash_key and range_key
+    and simply share non-key attributes.  That would fall down if we use any
+    indexes, however.
+    '''
+    id = SharedColumn(bloop.String, hash_key=True)
+    content = SharedColumn(bloop.String)
+
+    def __init__(self, **kwargs):
+        cls = self.__class__
+        hash_name = cls.hash_key.dynamo_name
+        hash_value = kwargs.pop(hash_name, None)
+
+        if cls.range_key:
+            range_name = cls.range_key.dynamo_name
+            range_value = kwargs.pop(range_name, None)
+
+        setattr(self, hash_name, hash_value)
+        if Model.range_key:
+            setattr(self, range_name, range_value)
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+```
+
+Now we can see shared state:
+
+```python
+instance = Model(id="unique", content="first draft")
+
+another_instance = Model(id="unique")
+another_instance.content = "second draft"
+
+print(instance.content)  # 'first draft'
+```
+
+**Be careful playing with the descriptor protocol.**
+
 ## What's NOT Included
 
 # Operations
@@ -419,6 +653,7 @@ tox
 * Wait on table during `engine.bind` if any part of the table status is Creating
 * Allow `strict` mode for Query/Scan where a LSI's projected_attributes are not
   a superset of the requested attributes
+* Handle `engine.save` and `engine.load` for models that aren't bound
 
 [dynamo-limits]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html
 [conditional-writes]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html
@@ -428,3 +663,5 @@ tox
 [docs-gsi]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
 [docs-lsi]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
 [lsi-throughput]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html#LSI.ThroughputConsiderations
+[descriptors]: https://docs.python.org/2/howto/descriptor.html
+[python-datamodel]: https://docs.python.org/3.5/reference/datamodel.html#object.__lt__

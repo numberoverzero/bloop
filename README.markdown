@@ -505,18 +505,90 @@ There are a number of features in other object mappers for DynamoDB, and in the 
 
 # Operations
 
+The main interface to models is through an `bloop.Engine`.  After binding an engine (`engine.bind()`) the following can be used to manipulate your objects.
+
 ## Load
+
+```python
+Engine.load(self, objs, *, consistent=False)
+```
+
+* `objs` may be a single object, or an array of objects.
+* If `consistent` is true, consistent reads will be used when loading objects.
 
 ## Save
 
+```python
+Engine.save(self, objs, *, condition=None)
+```
+
+* `objs` may be a single object, or an array of objects.
+* `condition` may be specified only when saving a single object.  This should be a ConditionExpression, most easily constructed using rich comparators with model columns: `no_such_id = Post.id == None` or `new_posts = Post.date >= arrow.now().replace(days=-1)`
+
 ## Delete
+
+```python
+Engine.delete(self, objs, *, condition=None)
+```
+
+* `objs` may be a single object, or an array of objects.
+* `condition` may be specified only when deleting a single object.  This should be a ConditionExpression, most easily constructed using rich comparators with model columns: `no_such_id = Post.id == None` or `new_posts = Post.date >= arrow.now().replace(days=-1)`
 
 ## Query and Scan
 
-### Prefetch
+```python
+Engine.query(self, model, index=None)
+Engine.scan(self, model, index=None)
+```
+
+These methods return a Query or Scan object that can be refined by chaining method calls together.  The available methods are identical, although some will have no effect during a Scan (such as `.key`).
 
 ### Chaining
 
+Each method call will return a new Query or Scan, so that queries can be built up from a base of default options.  Queries and Scans are also iterable, returnig the results of the query or scan.  `for result in engine.scan(Post).filter(Post.views > 100):`
+
+Available methods:
+
+* `key(condition)` - A ConditionExpression that includes a hash key (and optionally a range key).  This is **required** for a Query, and ignored for a Scan.
+* `filter(condition)` - Any filters applied to results after the key condition, but before returning from the server.  These may cover any attributes including non-keys.  Subsequent calls to `filter` will AND the conditions together.
+* `select(columns|'all'|'projected')` - Specify which attributes to load.  Useful when interested in sparse data in large tables.  Not all indexes work with all select options - this depends on the index type and index projection.  To specify columns, pass the column objects as a list: `select([Post.views, Post.date])`.  The key attributes for the index (or table if no index was given) are automatically included in results.
+* `count()` - Immediately executes a COUNT query or scan, returning a dictionary with keys `count, scanned_count`.
+* `all(prefetch=None)` - Compiles the query or scan into a request object and returns a Result object that can be iterated to yield results.  `prefetch` is discussed below, and controls the speed at which results are loaded from the server.
+* `first()` - Compile the query or scan, load the first result using the fastest prefetch option, and return it.
+* `ascending` and `descending` - Sort results according to the [DynamoDB ScanIndexForward setting][scan-index-forward].  `engine.query(Post).key(Post.id=='foo').ascending`
+* `consistent` - Use [strongly consistent reads][consistent-read] when querying.  Invalid when querying a GSI, and ignored when scanning.
+
+Every time a Query or Scan is iterated, a new set of calls is issued to DynamoDB.  To iterate over results from the same batch of calls, use `all()`.
+
+```python
+base_query = engine.query(Post, index=Post.by_user).consistent.ascending
+
+def new_posts(user_id):
+    yesterday = arrow.now.replace(days=-1)
+
+    query = base_query.key(Post.id==user_id).filter(Post.date >= yesterday)
+    query_result = query.all()
+    posts = list(query_result)
+
+    new = results.count
+    scanned = results.scanned_count
+    print("From {} posts, {} were less than a day old".format(posts, scanned))
+
+    return posts
+```
+
+### Prefetch
+
+prefetch controls how many pages are loaded at once when the existing page of results has been exhausted.  Prefetch must be an integer - less than 0 loads all pages immediately, 0 loads results as needed, and positive values load that many pages ahead.
+
+For a prefetch of 1, and a page size of 25 results, let's imagine that the number of results for the first 3 pages are [0, 2, 16, 0].
+
+1. There will be two calls to DynamoDB before the first result is yielded (load page 1, prefetch page 2).
+2. There will be no calls before the second result is yielded.
+3. There will be two calls to DynamoDB before the third result is yielded (load page 3, prefetch page 4).
+4. There will be no calls until the 18th item has been yielded; at that point, page 5 will be loaded, and with no continuation token available to continue loading, StopIteration will be raised.
+
+prefetch can be specified when calling `all()` or on the engine at any point `all` is called.  Engine.prefetch is a dictionary, with keys `scan` and `query`.
 
 # Versioning
 
@@ -566,3 +638,5 @@ tox
 [ddb-trans-conditions]: https://github.com/awslabs/dynamodb-transactions/issues/10
 [ddb-trans-bug]: https://github.com/awslabs/dynamodb-transactions/commit/c3470df17469517432133b1f33534795a4657366
 [update-item-expression]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html#DDB-UpdateItem-request-UpdateExpression
+[scan-index-forward]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-ScanIndexForward
+[consistent-read]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-ConsistentRead

@@ -11,4 +11,4 @@ __all__ = [
     "String", "DateTime", "UUID", "Float", "Integer", "Binary", "StringSet",
     "FloatSet", "IntegerSet", "BinarySet", "Null", "Boolean", "Map", "List"
 ]
-__version__ = "0.5.0"
+__version__ = "0.5.1"

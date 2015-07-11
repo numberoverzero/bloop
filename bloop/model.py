@@ -102,7 +102,6 @@ def BaseModel(engine):
             indexes = set(filter(bloop.column.is_index, columns))
 
             # Remove indexes from columns since they're treated differently
-            # Resolve hash and range keys for indexes
             for index in indexes:
                 index.model = model
                 columns.remove(index)
@@ -118,8 +117,12 @@ def BaseModel(engine):
             model.range_key = None
             for column in columns:
                 if column.hash_key:
+                    if model.hash_key:
+                        raise ValueError("Model hash_key over-specified")
                     model.hash_key = column
                 elif column.range_key:
+                    if model.range_key:
+                        raise ValueError("Model range_key over-specified")
                     model.range_key = column
 
             # Can't do this as part of the above loop since we index after

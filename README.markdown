@@ -494,6 +494,15 @@ This allows us to keep the overhead for objects low - each object holds any asso
 
 ## What's NOT Included
 
+There are a number of features in other object mappers for DynamoDB, and in the many ORMS that are not and (likely) will not be available in bloop.  Some of these are a poor fit for non-relational databases; others are a poor fit for DynamoDB's particular constraints or API.  Some are good ideas that don't fit in an OM and are best left to be implemented above/below bloop.
+
+* Caching - it's a great idea, but caching needs will vary wildly between users.  Due to DynamoDB's intented usage, a handful of common caching styles may even be dangerous for horizontally scalable fleets.  While there may be a lowest-common-denominator for caching, this is not the library to solve that problem.
+* Relations - DynamoDB is not a relational database, and expecting a library that may not be used by everyone communicating with your DynamoDB tables is begging for trouble.  Besides, to get this right you'll also need...
+* Transactions - `engine.save` uses BatchWriteItem, which is [**not atomic**][batch-write].  While transactional libraries [have been written][dynamodb-transactions] they impose [notable limitations][ddb-trans-conditions] and can still have some [particularly nasty bugs][ddb-trans-bug].  Not mentioned in the README, but it also requires ~4x more reads/writes, significantly increasing cost.
+* Atomic updates - There aren't many available, but UpdateItem can [ADD to Number and Set types][update-item-expression].  This allows doing things like `SET myNum = myNum + 3`.  This is a bit of a trap, however.  What happens when the server processes the request, but returns a 400 or times out?  `engine.save` supports conditions, which help with this somewhat.  They can be hairy when there's heavy write contention (many optimistic writes will fail) but are a better guard against accidental double-updates in the face of network failure.
+* "Unique", "Nullable", etc for Column - At best these map poorly to DynamoDB and are misleading; at worst they suggest a stronger guarantee that they can make.  Communicating with DynamoDB through anything other than a library that uses these will trivially defeat their guarantees.  Because these are not enforced server-side, it's the user's responsibility to guard against possibilities including duplicates or None values.  While ConditionExpressions can be used to enforce a unique constraint, conditions can't be used with BatchWrite.  A sometimes-used pattern is not enough to switch all batch writes to iterative (or pooled) PutItem calls.
+* Type validation - This sounds like a great opportunity to subclass Column to check that `self.typedef.can_dump(value)`.  Not everyone needs or wants validation, nor will most parties agree on how/what should be validated when.  Enforcing it by default would make data migrations even more painful.  Better to keep the building blocks simple, and let users customize as needed.
+
 # Operations
 
 ## Load
@@ -552,3 +561,8 @@ tox
 [lsi-throughput]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html#LSI.ThroughputConsiderations
 [descriptors]: https://docs.python.org/2/howto/descriptor.html
 [python-datamodel]: https://docs.python.org/3.5/reference/datamodel.html#object.__lt__
+[batch-write]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchWriteItem.html
+[dynamodb-transactions]: https://github.com/awslabs/dynamodb-transactions
+[ddb-trans-conditions]: https://github.com/awslabs/dynamodb-transactions/issues/10
+[ddb-trans-bug]: https://github.com/awslabs/dynamodb-transactions/commit/c3470df17469517432133b1f33534795a4657366
+[update-item-expression]: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html#DDB-UpdateItem-request-UpdateExpression

@@ -140,15 +140,27 @@ def BaseModel(engine):
                 if index.range_key:
                     index._range_key = cols[index.range_key]
 
-                if index.projection in ["KEYS_ONLY", "ALL"]:
-                    index.projection_attributes = []
+                # Determine projected attributes for the index, including
+                # table hash/range keys, index hash/range keys, and any
+                # non-key projected attributes.
+                projected = index._projection_attributes = set()
+
+                if index.projection == "ALL":
+                    projected.update(columns)
+                elif index.projection == "KEYS_ONLY":
+                    keys = (model.hash_key, model.range_key,
+                            index.hash_key, index.range_key)
+                    projected.update(key for key in keys if key)
+                # List of column model_names - convert to `bloop.Column`
+                # objects and merge with keys in projection_attributes
                 else:
-                    # Store the `bloop.Column` objects instead of the
-                    # given `Column.model_name`s
-                    attributes = index.projection
-                    non_key_attributes = [cols[attr] for attr in attributes]
+                    keys = (model.hash_key, model.range_key,
+                            index.hash_key, index.range_key)
+                    projected.update(key for key in keys if key)
+                    attrs = (cols[attr] for attr in index.projection)
+                    projected.update(attrs)
+
                     index.projection = "INCLUDE"
-                    index.projection_attributes = non_key_attributes
 
             # Entry point for model population. By default this is the
             # model class. Custom subclasses of the engine's

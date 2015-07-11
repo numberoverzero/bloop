@@ -144,7 +144,7 @@ class Column(declare.Field, ComparisonMixin):
 
 
 def validate_projection(projection):
-    invalid = ValueError("Index projections must be either 'KEYS_ONLY', 'ALL',"
+    invalid = ValueError("Index projections must be either 'keys_only', 'all',"
                          " or an iterable of model attributes to include.")
     # String check first since it is also an Iterable
     if isinstance(projection, str):
@@ -167,6 +167,15 @@ class Index(Column):
 
         # projection_attributes will be set up by `bloop.model.ModelMetaclass`
         self.projection = validate_projection(projection)
+
+    @property
+    def projection_attributes(self):
+        '''
+        All attributes available through this index.
+
+        Includes table hash/range, index hash/range, and any projected attrs
+        '''
+        return self._projection_attributes
 
 
 class GlobalSecondaryIndex(Index):

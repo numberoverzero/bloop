@@ -440,6 +440,18 @@ def attribute_definitions(model):
     return attrs
 
 
+def index_projection(index):
+    projection = {
+        'ProjectionType': index.projection,
+        'NonKeyAttributes': [
+            column.dynamo_name for column in index.projection_attributes
+        ]
+    }
+    if index.projection != 'INCLUDE' or not projection['NonKeyAttributes']:
+        projection.pop('NonKeyAttributes')
+    return projection
+
+
 def global_secondary_indexes(model):
     gsis = []
     for index in filter(bloop.column.is_global_index,
@@ -450,18 +462,9 @@ def global_secondary_indexes(model):
             'ReadCapacityUnits': index.read_units
         }
 
-        projection = {
-            'ProjectionType': index.projection,
-            'NonKeyAttributes': [
-                column.dynamo_name for column in index.projection_attributes
-            ]
-        }
-        if not projection['NonKeyAttributes']:
-            projection.pop('NonKeyAttributes')
-
         gsis.append({
             'ProvisionedThroughput': provisioned_throughput,
-            'Projection': projection,
+            'Projection': index_projection(index),
             'IndexName': index.dynamo_name,
             'KeySchema': gsi_key_schema
         })
@@ -474,17 +477,8 @@ def local_secondary_indexes(model):
                         model.__meta__["dynamo.indexes"]):
         lsi_key_schema = key_schema(index)
 
-        projection = {
-            'ProjectionType': index.projection,
-            'NonKeyAttributes': [
-                column.dynamo_name for column in index.projection_attributes
-            ]
-        }
-        if not projection['NonKeyAttributes']:
-            projection.pop('NonKeyAttributes')
-
         lsis.append({
-            'Projection': projection,
+            'Projection': index_projection(index),
             'IndexName': index.dynamo_name,
             'KeySchema': lsi_key_schema
         })

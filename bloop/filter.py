@@ -230,14 +230,7 @@ class Filter(object):
             other._select_columns.update(select)
 
             if is_gsi and not self.index.projection == "ALL":
-                # index_projection = self.index.projection
-                # 'key' includes table hash (+ range) and index hash (+ range)
-                # 'select' includes 'key' and index.projection_attributes
-                keys = [self.index.hash_key, self.index.range_key,
-                        self.model.hash_key, self.model.range_key]
-                projected = {key for key in (keys) if key}
-                projected.update(self.index.projection_attributes)
-
+                projected = self.index.projection_attributes
                 missing_attrs = other._select_columns - projected
                 if missing_attrs:
                     msg = "Projection is missing the following attributes: {}"

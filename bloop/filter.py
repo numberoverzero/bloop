@@ -6,8 +6,8 @@ missing = object()
 SELECT_MODES = {
     "all": "ALL_ATTRIBUTES",
     "projected": "ALL_PROJECTED_ATTRIBUTES",
-    "count": "COUNT",
-    "specific": "SPECIFIC_ATTRIBUTES"
+    "specific": "SPECIFIC_ATTRIBUTES",
+    "count": "COUNT"
 }
 
 
@@ -25,6 +25,21 @@ def validate_key_condition(condition):
         # Valid comparators are EG | LE | LT | GE | GT -- not NE
         return condition.comparator is not operator.ne
     raise ValueError("Invalid KeyCondition {}".format(condition))
+
+
+def validate_select_mode(select):
+    if isinstance(select, str):
+        select = select.lower()
+        if select not in ["all", "projected", "count"]:
+            raise ValueError("Must specify 'all', 'projected', 'count', or"
+                             " a list of column objects to select")
+    else:
+        select = set(select)
+        for col in select:
+            if not isinstance(col, bloop.column.Column):
+                raise ValueError("Must specify 'all', 'projected', 'count', or"
+                                 " a list of column objects to select")
+    return select
 
 
 class Filter(object):
@@ -59,11 +74,14 @@ class Filter(object):
 
         self._key_condition = None
         self._filter_condition = None
-        self._select = "all"
+        if self.index:
+            self._select = "projected"
+        else:
+            self._select = "all"
         self._forward = True
         self._consistent = False
 
-        self._select_columns = []
+        self._select_columns = set()
 
     def copy(self):
         cls = self.__class__
@@ -73,7 +91,7 @@ class Filter(object):
                      "_select", "_forward", "_consistent"]:
             setattr(other, attr, getattr(self, attr))
 
-        other._select_columns = list(self._select_columns)
+        other._select_columns = set(self._select_columns)
         other._key_condition = self._key_condition
 
         return other
@@ -142,18 +160,90 @@ class Filter(object):
 
     def select(self, columns):
         '''
-        columns is REQUIRED when mode is 'specific', and columns must be a list
+        columns must be 'all', 'projected', or a list of `bloop.Column` objects
         '''
-        # Can't just copy and extend in case this is an
-        # empty select() to explicitly select all columns
-        other = self.copy()
-        if not columns:
+
+        # Rules for select are a bit convoluted, and easy to get wrong.
+        # While it's easy to want to guess at intent -- such as
+        # transforming 'all' with a GSI into 'projected' -- that can
+        # easily result in cases where more or less attributes are returned
+        # than were expected.  Instead, we'll carefully validate the index
+        # projection, the select mode, and the list of attributes requested.
+
+        # Combinations:
+        # key: (select mode, index, index projection)
+        # ('projected', [LSI, GSI]) -> Valid
+        # ('projected', no index) -> Invalid, must specify an index
+
+        # ('all', no index) -> Valid
+        # ('all', LSI, ['all', 'key', 'select']) -> Valid*
+        # ('all', GSI, 'all') -> Valid
+        # ('all', GSI, 'key') -> Invalid: key-only GSI can't load all attrs
+        # ('all', GSI, 'select') -> Invalid: even if GSI projection contains
+        #                                    all attributes of the table
+
+        # ('specific', no index) -> Valid
+        # ('specific', LSI, ['all', 'key', 'select']) -> Valid*
+        # ('specific', GSI, 'all') -> Valid
+        # ('specific', GSI, 'key') -> IFF all attrs in GSI's keys
+        # ('specific', GSI, 'select') -> IFF all attrs in GSI's projected attrs
+
+        # *: Any queries against an LSI whose set of requested attributes are
+        #    a superset of the LSI's projected attributes will incure extra
+        #    reads against the table.  While these are valid, it may be worth
+        #    introducing a config variable to strictly disallow extra reads.
+        select = validate_select_mode(columns)
+
+        is_gsi = bloop.column.is_global_index(self.index)
+
+        if select == "count":
+            other = self.copy()
+            other._select = select
             other._select_columns.clear()
-            other._select = "all"
+            return other
+
+        elif select == 'projected':
+            if not self.index:
+                raise ValueError("Cannot select 'projected' attributes"
+                                 " without an index")
+            other = self.copy()
+            other._select = select
+            other._select_columns.clear()
+            return other
+
+        elif select == 'all':
+            ...
+            if is_gsi and self.index.projection != "ALL":
+                raise ValueError("Cannot select 'all' attributes from a GSI"
+                                 " unless the GSI's projection is 'ALL'")
+            other = self.copy()
+            other._select = select
+            other._select_columns.clear()
+            return other
+
+        # select is a list of model names, use 'specific'
         else:
-            other._select_columns.extend(columns)
-            other._select = "specific"
-        return other
+            # Combine before validation, since the total set may no longer
+            # be valid for the index.
+            other = self.copy()
+            other._select = 'specific'
+            other._select_columns.update(select)
+
+            if is_gsi and not self.index.projection == "ALL":
+                # index_projection = self.index.projection
+                # 'key' includes table hash (+ range) and index hash (+ range)
+                # 'select' includes 'key' and index.projection_attributes
+                keys = [self.index.hash_key, self.index.range_key,
+                        self.model.hash_key, self.model.range_key]
+                projected = {key for key in (keys) if key}
+                projected.update(self.index.projection_attributes)
+
+                missing_attrs = other._select_columns - projected
+                if missing_attrs:
+                    msg = "Projection is missing the following attributes: {}"
+                    msg_attrs = [attr.model_name for attr in missing_attrs]
+                    raise ValueError(msg.format(msg_attrs))
+            return other
 
     def count(self):
         other = self.copy()

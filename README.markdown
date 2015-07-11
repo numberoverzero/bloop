@@ -30,7 +30,7 @@ engine = Engine()
 
 
 class User(engine.model):
-    id = Column(Integer, hash_key=True)
+    id = Column(UUID, hash_key=True)
     admin = Column(Boolean, name='a')
 
 
@@ -111,12 +111,13 @@ Here we see `engine.load` can load a single object or multiple - batching is aut
 bloop leverages the outstanding [`arrow`][arrow-docs] for `DateTime` objects, with values persisted as UTC [ISO 8601][iso-8601] strings.  In addition, comparisons can be made against any timezone, since all values are converted to UTC before they reach DynamoDB.  This makes locale-aware queries trivial to write:
 
 ```python
-local_timezone = 'Europe/Paris'
-now_local = arrow.now().to(local_timezone)
-yesterday_local = now_local.replace(days=-1)
+def recent_posts_local_time(timezone, days_old):
+    ''' ex: timezone='Europe/Paris', days_old=1 '''
+    now_local = arrow.now().to(timezone)
+    yesterday_local = now_local.replace(days=-days_old)
 
-since_yesterday = Post.date.between(yesterday_local, now_local)
-recent_posts = engine.scan(Post).filter(since_yesterday)
+    since_yesterday = Post.date.between(yesterday_local, now_local)
+    return engine.scan(Post).filter(since_yesterday)
 ```
 
 # Defining Models
@@ -414,6 +415,7 @@ tox
 * Docs
 * `__meta__` -> `class Meta` migration in declare
 * Fix model inheritance
+* Allow specifying PutItem or UpdateItem for saves (engine config and per-call)
 
 [dynamo-limits]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html
 [conditional-writes]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html

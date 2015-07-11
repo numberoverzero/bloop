@@ -84,7 +84,7 @@ class Column(declare.Field, ComparisonMixin):
         def _attr(attr):
             return "{}={}".format(attr, getattr(self, attr))
         attrs = ", ".join(_attr(attr) for attr in attrs)
-        return "Column({})".format(attrs)
+        return "{}({})".format(self.__class__.__name__, attrs)
 
     @property
     def hash_key(self):

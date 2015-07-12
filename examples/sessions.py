@@ -1,7 +1,6 @@
 """
-Combined source from the README's "Engine.model and sessions" section.
-
-To play around:
+# Combined source from the README's "Engine.model and sessions" section.
+# To play around:
 
 from sessions import *
 
@@ -12,7 +11,6 @@ west_model = WestModel(id=uid())
 engine('us-east-1').save(east_model)
 engine('us-west-2').save(west_model)
 """
-
 import bloop
 import boto3.session
 regional_engines = {}

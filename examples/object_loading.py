@@ -1,7 +1,6 @@
 """
-Combined source from the README's "Custom Object Loading" section.
-
-To play around:
+# Combined source from the README's "Custom Object Loading" section.
+# To play around:
 
 from object_loading import *
 
@@ -14,6 +13,7 @@ engine.save(user)
 print(engine.query(CustomUser).key(CustomUser.id == uid).first())
 """
 from bloop import (Engine, Column, DateTime, Boolean, String, UUID)
+import uuid  # flake8: noqa
 engine = Engine()
 
 

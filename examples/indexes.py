@@ -1,7 +1,6 @@
 """
-Combined source from the README's "Local and Global Secondary Indexes" section.
-
-To play around:
+# Combined source from the README's "Local and Global Secondary Indexes" section.
+# To play around:
 
 from indexes import *
 

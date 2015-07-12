@@ -1,7 +1,6 @@
 """
-Combined source from the README's "Getting Started" section.
-
-To play around:
+# Combined source from the README's "Getting Started" section.
+# To play around:
 
 from getting_started import *
 
@@ -13,7 +12,6 @@ edit(user.id, post.id, "World!")
 for post in recent_posts_local_time("US/Pacific", 1):
     print(post)
 """
-
 from bloop import (Boolean, Engine, Column, DateTime,
                    GlobalSecondaryIndex, Integer, String, UUID)
 import arrow
@@ -36,7 +34,6 @@ class Post(engine.model):
 
     by_user = GlobalSecondaryIndex(hash_key='user', projection='keys_only',
                                    write_units=1, read_units=10)
-
 engine.bind()
 
 

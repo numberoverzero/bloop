@@ -6,9 +6,11 @@ import functools
 import bloop.column
 
 
+BUSY = object()
 DEFAULT_BACKOFF_COEFF = 50.0
 DEFAULT_MAX_ATTEMPTS = 4
 MAX_BATCH_SIZE = 25
+READY = object()
 RETRYABLE_ERRORS = [
     "InternalServerError",
     "ProvisionedThroughputExceededException"
@@ -302,12 +304,15 @@ class DynamoClient(object):
             error_code = error.response['Error']['Code']
             if error_code != 'ResourceInUseException':
                 raise error
-            # Table already exists, let's make sure it matches what we expect
-            else:
-                actual_table = self.describe_table(model)
-                if ordered(actual_table) != ordered(table):
-                    raise ValueError(
-                        TABLE_MISMATCH.format(actual_table, table))
+
+        # Wait for the table and all GSIs to be ACTIVE, then validate.
+        status = BUSY
+        while status is BUSY:
+            actual_table = self.describe_table(model)
+            status = table_status(actual_table)
+        if ordered(actual_table) != ordered(table):
+            raise ValueError(
+                TABLE_MISMATCH.format(actual_table, table))
 
     def delete_item(self, table, key, expression):
         self.call_with_retries(self.client.delete_item,
@@ -324,11 +329,11 @@ class DynamoClient(object):
         # to `DynamoClient.create_table` so we can compare them with `ordered`
         table_fields = ["TableName", "ProvisionedThroughput", "KeySchema",
                         "AttributeDefinitions", "GlobalSecondaryIndexes",
-                        "LocalSecondaryIndexes"]
+                        "LocalSecondaryIndexes", "TableStatus"]
         table = {field: table.get(field, []) for field in table_fields}
         table["ProvisionedThroughput"].pop("NumberOfDecreasesToday", None)
 
-        junk_index_fields = ["IndexStatus", "ItemCount", "IndexSizeBytes"]
+        junk_index_fields = ["ItemCount", "IndexSizeBytes"]
 
         for index in table['GlobalSecondaryIndexes']:
             for field in junk_index_fields:
@@ -491,6 +496,21 @@ def local_secondary_indexes(model):
             'KeySchema': lsi_key_schema
         })
     return lsis
+
+
+def table_status(table):
+    '''
+    Returns BUSY if table or any GSI is not ACTIVE, otherwise READY
+
+    mutates table - pops status entries
+    '''
+    status = READY
+    if table.pop("TableStatus", "ACTIVE") != "ACTIVE":
+        status = BUSY
+    for index in table.get('GlobalSecondaryIndexes', []):
+        if index.pop("IndexStatus", "ACTIVE") != "ACTIVE":
+            status = BUSY
+    return status
 
 
 def ordered(obj):

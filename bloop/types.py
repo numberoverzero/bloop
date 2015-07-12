@@ -219,6 +219,12 @@ BinarySet = set_type('BinarySet', Binary, BINARY_SET)
 
 
 class Null(Type):
+    '''
+    Load/dump are taken from the boto3 TypeSerializer/TypeDeserializer
+
+    https://github.com/boto/boto3/blob/545fa5120137bbdc3d4e493012c97d6ad35df9af/boto3/dynamodb/types.py#L197
+    https://github.com/boto/boto3/blob/545fa5120137bbdc3d4e493012c97d6ad35df9af/boto3/dynamodb/types.py#L269
+    '''
     python_type = type(None)
     backing_type = NULL
 
@@ -234,10 +240,10 @@ class Boolean(Type):
     backing_type = BOOLEAN
 
     def dynamo_load(self, value):
-        return value
+        return bool(value)
 
     def dynamo_dump(self, value):
-        return value
+        return bool(value)
 
 
 class Map(Type):

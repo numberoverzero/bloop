@@ -157,3 +157,29 @@ def test_set_can_dump():
     typedef = types.StringSet()
     assert typedef.can_dump(set(["1", "2", "3"]))
     assert not typedef.can_dump(set(["1", 2, "3"]))
+
+
+def test_null():
+    typedef = types.Null()
+
+    values = [None, -1, decimal.Decimal(4/3), "string", object()]
+
+    for value in values:
+        assert typedef.dynamo_dump(value) is True
+        assert typedef.dynamo_load(value) is None
+
+
+def test_bool():
+    ''' Boolean will never store/load as empty - bool(None) is False '''
+    typedef = types.Boolean()
+
+    truthy = [1, True, object(), bool, "str"]
+    falsy = [False, None, 0, set(), ""]
+
+    for value in truthy:
+        assert typedef.dynamo_dump(value) is True
+        assert typedef.dynamo_load(value) is True
+
+    for value in falsy:
+        assert typedef.dynamo_dump(value) is False
+        assert typedef.dynamo_load(value) is False

@@ -78,6 +78,7 @@ def main():
     user = create_user(admin=True)
     post = Post(id=uuid.uuid4(), user=user.id, date=arrow.now(),
                 views=0, content="Hello!")
+    engine.save(post)
     increment_views(post.id)
     edit(user.id, post.id, "World!")
     for post in recent_posts_local_time("US/Pacific", 1):

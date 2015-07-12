@@ -152,11 +152,11 @@ def engine(region):
     return engine
 
 
-class EastModel(engine('us-east-1')):
+class EastModel(engine('us-east-1').model):
     id = bloop.Column(bloop.UUID, hash_key=True)
 
 
-class WestModel(engine('us-west-2')):
+class WestModel(engine('us-west-2').model):
     id = bloop.Column(bloop.UUID, hash_key=True)
 ```
 
@@ -210,7 +210,7 @@ Global and local secondary indexes are defined similarly to Columns.  It's a goo
 
 ```python
 class IndexPost(engine.model):
-    id = Column(UUID, hash_key=True)
+    forum = Column(String, hash_key=True)
     user = Column(UUID, range_key=True)
     date = Column(DateTime)
     views = Column(Integer)
@@ -221,16 +221,17 @@ class IndexPost(engine.model):
 
     by_date = LocalSecondaryIndex(range_key='date',
                                   projection=['views'])
+engine.bind()
 ```
 
 Global Secondary Indexes provide additional primary keys for querying against, and can be added to any table.  They have their own throughput, indepedent from the table.  These are specified with `write_units` and `read_units`.  A GSI can have a range_key, but it is not required.
 
-Local Secondary Indexes provide additional range keys for the same primary key - in this example, we can query against the hash/range pair (id, user) or with the index `by_date` we can query against the hash/range pair (id, date).  LSIs consume the table's read/write units, and do not have their own settings.
+Local Secondary Indexes provide additional range keys for the same primary key - in this example, we can query against the hash/range pair (forum, user) or with the index `by_date` we can query against the hash/range pair (forum, date).  LSIs consume the table's read/write units, and do not have their own settings.
 
 To use a Local Secondary Index:
 
 * The table MUST have a range key (in our example, `user`)
-* The LSI hash key will always be the table's hash key (`id`) and cannot be set.
+* The LSI hash key will always be the table's hash key (`forum`) and cannot be set.
 
 In both cases, the `projection` option allows specifying which attributes of the table are available for retrieval from the given index.  The valid options are `'keys_only'`, `'all'`, or a list of model column names.  If model names are provided, they (along with any hash/range keys of the index/table) will be available when querying/scanning against the index.  Attributes not projected into the index will be retrieved for a LSI, but not a GSI.  I highly recommend reading the [LSI Throughput Considerations][lsi-throughput], which explains what happens when a query includes attributes not projected into the index.
 
@@ -554,7 +555,7 @@ Every time a Query or Scan is iterated, a new set of calls is issued to DynamoDB
 base_query = engine.query(Post, index=Post.by_user).consistent.ascending
 
 def new_posts(user_id):
-    yesterday = arrow.now.replace(days=-1)
+    yesterday = arrow.now().replace(days=-1)
 
     query = base_query.key(Post.id==user_id).filter(Post.date >= yesterday)
     query_result = query.all()

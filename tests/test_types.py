@@ -144,3 +144,16 @@ def test_sets():
         dumped = typedef.dynamo_dump(loaded)
         check(dumped, expected)
         assert typedef.dynamo_load(expected) == loaded
+
+    # Any set type will do
+    typedef = types.IntegerSet()
+    assert typedef.dynamo_dump(None) is None
+    assert typedef.dynamo_load(None) is None
+
+
+def test_set_can_dump():
+    ''' Checks all values in the set '''
+
+    typedef = types.StringSet()
+    assert typedef.can_dump(set(["1", "2", "3"]))
+    assert not typedef.can_dump(set(["1", 2, "3"]))

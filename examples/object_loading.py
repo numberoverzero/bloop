@@ -1,19 +1,8 @@
 """
-# Combined source from the README's "Custom Object Loading" section.
-# To play around:
-
-from object_loading import *
-
-# Make a user to find
-user = CustomUser()
-user.id = uid = uuid.uuid4()
-engine.save(user)
-
-# This will find the result above, and load the result through `load_user`
-print(engine.query(CustomUser).key(CustomUser.id == uid).first())
+Combined source from the README's "Custom Object Loading" section.
 """
 from bloop import (Engine, Column, DateTime, Boolean, String, UUID)
-import uuid  # flake8: noqa
+import uuid
 engine = Engine()
 
 
@@ -37,3 +26,16 @@ def load_user(**kwargs):
         setattr(user, key, value)
     return user
 CustomUser.Meta.bloop_init = load_user
+
+
+def main():
+    # Make a user to find
+    user = CustomUser()
+    user.id = uid = uuid.uuid4()
+    engine.save(user)
+
+    # This will find the result above, and load the result through `load_user`
+    print(engine.query(CustomUser).key(CustomUser.id == uid).first())
+
+if __name__ == "__main__":
+    main()

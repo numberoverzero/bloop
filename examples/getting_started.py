@@ -1,16 +1,5 @@
 """
-# Combined source from the README's "Getting Started" section.
-# To play around:
-
-from getting_started import *
-
-user = create_user(admin=True)
-post = Post(id=uuid.uuid4(), user=user.id, date=arrow.now(),
-            views=0, content="Hello!")
-increment_views(post.id)
-edit(user.id, post.id, "World!")
-for post in recent_posts_local_time("US/Pacific", 1):
-    print(post)
+Combined source from the README's "Getting Started" section.
 """
 from bloop import (Boolean, Engine, Column, DateTime,
                    GlobalSecondaryIndex, Integer, String, UUID)
@@ -83,3 +72,16 @@ def recent_posts_local_time(timezone, days_old):
 
     since_yesterday = Post.date.between(yesterday_local, now_local)
     return engine.scan(Post).filter(since_yesterday)
+
+
+def main():
+    user = create_user(admin=True)
+    post = Post(id=uuid.uuid4(), user=user.id, date=arrow.now(),
+                views=0, content="Hello!")
+    increment_views(post.id)
+    edit(user.id, post.id, "World!")
+    for post in recent_posts_local_time("US/Pacific", 1):
+        print(post)
+
+if __name__ == "__main__":
+    main()

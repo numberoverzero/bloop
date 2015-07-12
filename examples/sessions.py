@@ -1,18 +1,9 @@
 """
-# Combined source from the README's "Engine.model and sessions" section.
-# To play around:
-
-from sessions import *
-
-uid = uuid.uuid4
-east_model = EastModel(id=uid())
-west_model = WestModel(id=uid())
-
-engine('us-east-1').save(east_model)
-engine('us-west-2').save(west_model)
+Combined source from the README's "Engine.model and sessions" section.
 """
-import bloop
+from bloop import Engine, Column, UUID
 import boto3.session
+import uuid
 regional_engines = {}
 
 
@@ -25,16 +16,28 @@ def engine(region):
     engine = regional_engines.get(region)
     if not engine:
         session = boto3.session.Session(region_name=region)
-        regional_engines[region] = engine = bloop.Engine(session=session)
+        regional_engines[region] = engine = Engine(session=session)
     return engine
 
 
 class EastModel(engine('us-east-1')):
-    id = bloop.Column(bloop.UUID, hash_key=True)
+    id = Column(UUID, hash_key=True)
 
 
 class WestModel(engine('us-west-2')):
-    id = bloop.Column(bloop.UUID, hash_key=True)
+    id = Column(UUID, hash_key=True)
 
 engine('us-east-1').bind()
 engine('us-west-2').bind()
+
+
+def main():
+    uid = uuid.uuid4
+    east_model = EastModel(id=uid())
+    west_model = WestModel(id=uid())
+
+    engine('us-east-1').save(east_model)
+    engine('us-west-2').save(west_model)
+
+if __name__ == "__main__":
+    main()

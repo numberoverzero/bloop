@@ -276,22 +276,14 @@ class DynamoClient(object):
             attempts += 1
 
     def create_table(self, model):
-        ''' Suppress ResourceInUseException (table already exists) '''
-        table = {
-            "TableName": model.Meta.table_name,
-            "ProvisionedThroughput": {
-                'WriteCapacityUnits': model.Meta.write_units,
-                'ReadCapacityUnits': model.Meta.read_units
-            },
-            "KeySchema": key_schema(model=model),
-            "AttributeDefinitions": attribute_definitions(model),
-            "GlobalSecondaryIndexes": global_secondary_indexes(model),
-            "LocalSecondaryIndexes": local_secondary_indexes(model)
-        }
-        if not table['GlobalSecondaryIndexes']:
-            table.pop('GlobalSecondaryIndexes')
-        if not table['LocalSecondaryIndexes']:
-            table.pop('LocalSecondaryIndexes')
+        '''
+        Suppress ResourceInUseException (table already exists)
+
+        Does not wait for table to be ACTIVE, or validate schema.  This allows
+        multiple CreateTable calls to kick off at once, and busy polling can
+        block afterwards.
+        '''
+        table = table_for_model(model)
 
         # Bound ref to create w/retries
         create = functools.partial(self.call_with_retries,
@@ -304,15 +296,6 @@ class DynamoClient(object):
             error_code = error.response['Error']['Code']
             if error_code != 'ResourceInUseException':
                 raise error
-
-        # Wait for the table and all GSIs to be ACTIVE, then validate.
-        status = BUSY
-        while status is BUSY:
-            actual_table = self.describe_table(model)
-            status = table_status(actual_table)
-        if ordered(actual_table) != ordered(table):
-            raise ValueError(
-                TABLE_MISMATCH.format(actual_table, table))
 
     def delete_item(self, table, key, expression):
         self.call_with_retries(self.client.delete_item,
@@ -372,6 +355,20 @@ class DynamoClient(object):
 
     def scan(self, **request):
         return self._filter(self.client.scan, **request)
+
+    def validate_table(self, model):
+        '''
+        Poll table status until Table and all GSIs are ACTIVE.
+        Raise ValueError if actual table doesn't match expected
+        '''
+        expected = table_for_model(model)
+        status = BUSY
+        while status is BUSY:
+            actual = self.describe_table(model)
+            status = table_status(actual)
+        if ordered(actual) != ordered(expected):
+            raise ValueError(
+                TABLE_MISMATCH.format(actual, expected))
 
 
 # Column/model helpers
@@ -496,6 +493,26 @@ def local_secondary_indexes(model):
             'KeySchema': lsi_key_schema
         })
     return lsis
+
+
+def table_for_model(model):
+    """ Return the expected table dict for a given model. """
+    table = {
+        "TableName": model.Meta.table_name,
+        "ProvisionedThroughput": {
+            'WriteCapacityUnits': model.Meta.write_units,
+            'ReadCapacityUnits': model.Meta.read_units
+        },
+        "KeySchema": key_schema(model=model),
+        "AttributeDefinitions": attribute_definitions(model),
+        "GlobalSecondaryIndexes": global_secondary_indexes(model),
+        "LocalSecondaryIndexes": local_secondary_indexes(model)
+    }
+    if not table['GlobalSecondaryIndexes']:
+        table.pop('GlobalSecondaryIndexes')
+    if not table['LocalSecondaryIndexes']:
+        table.pop('LocalSecondaryIndexes')
+    return table
 
 
 def table_status(table):

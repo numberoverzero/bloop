@@ -77,21 +77,27 @@ class Engine(object):
 
     def bind(self):
         ''' Create tables for all models that have been registered '''
-        # If any model's table fails to create, we want to push it back into
-        # the unbound_models set so any error can be handled and retried.
-        while self.unbound_models:
-            model = self.unbound_models.pop()
-            try:
-                self.dynamo_client.create_table(model)
-            except Exception as exception:
-                self.unbound_models.add(model)
-                raise exception
-            else:
-                self.type_engine.register(model)
-                columns = model.Meta.columns
-                for column in columns:
-                    self.type_engine.register(column.typedef)
-                self.type_engine.bind()
+        # create_table doesn't block until ACTIVE or validate.
+        # It also doesn't throw when the table already exists, making it safe
+        # to call multiple times for the same unbound model.
+        for model in self.unbound_models:
+            self.dynamo_client.create_table(model)
+
+        unverified = set(self.unbound_models)
+        while unverified:
+            model = unverified.pop()
+
+            self.dynamo_client.validate_table(model)
+            # If the call above didn't throw, everything's good to go.
+
+            self.type_engine.register(model)
+            columns = model.Meta.columns
+            for column in columns:
+                self.type_engine.register(column.typedef)
+            self.type_engine.bind()
+            # If nothing above threw, we can mark this model bound
+
+            self.unbound_models.remove(model)
 
     def load(self, objs, *, consistent=False):
         '''

@@ -61,8 +61,9 @@ class Type(declare.TypeDefinition):
         ''' whether this type can dump the given value to dynamo '''
         return isinstance(value, self.python_type)
 
-    def __repr__(self, *a, **kw):
-        return "Type({}, {})".format(self.python_type, self.backing_type)
+    def __repr__(self, *a, **kw):  # pragma: no cover
+        return "{}({}, {})".format(self.__class__.__name__,
+                                   self.python_type, self.backing_type)
     __str__ = __repr__
 
 
@@ -71,14 +72,17 @@ class String(Type):
     backing_type = STRING
 
 
-class UUID(Type):
+class UUID(String):
     python_type = uuid.UUID
-    backing_type = STRING
 
     def dynamo_load(self, value):
+        if value is None:
+            return None
         return uuid.UUID(value)
 
     def dynamo_dump(self, value):
+        if value is None:
+            return None
         return str(value)
 
 
@@ -122,6 +126,8 @@ class DateTime(String):
         return arrow.get(iso8601_string).to(self.timezone)
 
     def dynamo_dump(self, value):
+        if value is None:
+            return None
         # ALWAYS store in UTC - we can manipulate the timezone on load
         iso8601_string = value.to('utc').isoformat()
         return super().dynamo_dump(iso8601_string)
@@ -132,9 +138,13 @@ class Float(Type):
     backing_type = NUMBER
 
     def dynamo_load(self, value):
+        if value is None:
+            return None
         return DYNAMODB_CONTEXT.create_decimal(value)
 
     def dynamo_dump(self, value):
+        if value is None:
+            return None
         n = str(DYNAMODB_CONTEXT.create_decimal(value))
         if any(filter(lambda x: x in n, ('Infinity', 'NaN'))):
             raise TypeError('Infinity and NaN not supported')
@@ -142,7 +152,7 @@ class Float(Type):
 
     def can_dump(self, value):
         ''' explicitly disallow bool and subclasses '''
-        return (isinstance(value, self.backing_type) and not
+        return (isinstance(value, self.python_type) and not
                 isinstance(value, bool))
 
 
@@ -150,10 +160,14 @@ class Integer(Float):
     python_type = int
 
     def dynamo_load(self, value):
+        if value is None:
+            return None
         number = super().dynamo_load(value)
         return int(number)
 
     def dynamo_dump(self, value):
+        if value is None:
+            return None
         value = int(value)
         return super().dynamo_dump(value)
 
@@ -163,36 +177,45 @@ class Binary(Type):
     backing_type = BINARY
 
     def dynamo_load(self, value):
+        if value is None:
+            return None
         return base64.b64decode(value)
 
     def dynamo_dump(self, value):
+        if value is None:
+            return None
         return base64.b64encode(value).decode('utf-8')
 
 
-class Set(Type):
-    ''' Adapter for sets of objects '''
-    python_type = collections.abc.Set
-    backing_type = None
+def set_type(typename, typedef, dynamo_type):
+    class Set(Type):
+        ''' Adapter for sets of objects '''
+        python_type = collections.abc.Set
+        backing_type = dynamo_type
 
-    def __init__(self, typedef, dynamo_type):
-        self.typedef = typedef
-        self.backing_type = dynamo_type
-        super().__init__()
+        def __init__(self, *args, **kwargs):
+            self.typedef = typedef(*args, **kwargs)
+            super().__init__()
 
-    def dynamo_load(self, value):
-        return set(self.typedef.load(v) for v in value)
+        def dynamo_load(self, value):
+            if value is None:
+                return None
+            return set(self.typedef.dynamo_load(v) for v in value)
 
-    def dynamo_dump(self, value):
-        return [self.typedef.dump(v) for v in value]
+        def dynamo_dump(self, value):
+            if value is None:
+                return None
+            return [self.typedef.dynamo_dump(v) for v in value]
 
-    def can_dump(self, value):
-        return all(map(self.typedef.can_dump, value))
+        def can_dump(self, value):
+            return all(map(self.typedef.can_dump, value))
+    return type(typename, (Set,), {})
 
 
-StringSet = Set(String, STRING_SET)
-FloatSet = Set(Float, NUMBER_SET)
-IntegerSet = Set(Integer, NUMBER_SET)
-BinarySet = Set(Binary, BINARY_SET)
+StringSet = set_type('StringSet', String, STRING_SET)
+FloatSet = set_type('FloatSet', Float, NUMBER_SET)
+IntegerSet = set_type('IntegerSet', Integer, NUMBER_SET)
+BinarySet = set_type('BinarySet', Binary, BINARY_SET)
 
 
 class Null(Type):

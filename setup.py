@@ -22,7 +22,6 @@ REQUIREMENTS = [
 TEST_REQUIREMENTS = [
     'tox',
     'pytest',
-    'pytest-cov',
     'coverage',
     'flake8'
 ]

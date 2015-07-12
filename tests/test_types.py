@@ -1,5 +1,4 @@
 import arrow
-import base64
 import decimal
 import pytest
 import uuid

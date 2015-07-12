@@ -326,20 +326,20 @@ class DynamoClient(object):
                         "AttributeDefinitions", "GlobalSecondaryIndexes",
                         "LocalSecondaryIndexes"]
         table = {field: table.get(field, []) for field in table_fields}
-        table["ProvisionedThroughput"].pop("NumberOfDecreasesToday")
+        table["ProvisionedThroughput"].pop("NumberOfDecreasesToday", None)
 
         junk_index_fields = ["IndexStatus", "ItemCount", "IndexSizeBytes"]
 
         for index in table['GlobalSecondaryIndexes']:
             for field in junk_index_fields:
-                index.pop(field)
+                index.pop(field, None)
             index["ProvisionedThroughput"].pop("NumberOfDecreasesToday")
         if not table['GlobalSecondaryIndexes']:
             table.pop('GlobalSecondaryIndexes')
 
         for index in table['LocalSecondaryIndexes']:
             for field in junk_index_fields:
-                index.pop(field)
+                index.pop(field, None)
         if not table['LocalSecondaryIndexes']:
             table.pop('LocalSecondaryIndexes')
 

@@ -1,4 +1,4 @@
-# bloop 0.5.3
+# bloop 0.5.4
 
 [![Build Status]
 (https://travis-ci.org/numberoverzero/bloop.svg?branch=master)]
@@ -604,8 +604,6 @@ tox
 
 ### TODO
 
-* Bug fixes:
-  * Better handling for `engine.save` and `engine.load` on models that aren't bound
 * Tests
 * Documentation:
   * Refine README

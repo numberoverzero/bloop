@@ -70,10 +70,24 @@ class Engine(object):
             self.unbound_models.add(model)
 
     def __load__(self, model, value):
-        return self.type_engine.load(model, value)
+        try:
+            return self.type_engine.load(model, value)
+        except declare.DeclareException:
+            if model in self.unbound_models:
+                raise RuntimeError("Must call `engine.bind()` before loading")
+            else:
+                raise ValueError(
+                    "Failed to load unknown model {}".format(model))
 
     def __dump__(self, model, value):
-        return self.type_engine.dump(model, value)
+        try:
+            return self.type_engine.dump(model, value)
+        except declare.DeclareException:
+            if model in self.unbound_models:
+                raise RuntimeError("Must call `engine.bind()` before dumping")
+            else:
+                raise ValueError(
+                    "Failed to dump unknown model {}".format(model))
 
     def bind(self):
         ''' Create tables for all models that have been registered '''

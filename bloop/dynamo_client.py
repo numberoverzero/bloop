@@ -276,12 +276,12 @@ class DynamoClient(object):
     def create_table(self, model):
         ''' Suppress ResourceInUseException (table already exists) '''
         table = {
-            "TableName": model.__meta__["dynamo.table.name"],
+            "TableName": model.Meta.table_name,
             "ProvisionedThroughput": {
-                'WriteCapacityUnits': model.write_units,
-                'ReadCapacityUnits': model.read_units
+                'WriteCapacityUnits': model.Meta.write_units,
+                'ReadCapacityUnits': model.Meta.read_units
             },
-            "KeySchema": key_schema(model),
+            "KeySchema": key_schema(model=model),
             "AttributeDefinitions": attribute_definitions(model),
             "GlobalSecondaryIndexes": global_secondary_indexes(model),
             "LocalSecondaryIndexes": local_secondary_indexes(model)
@@ -316,7 +316,7 @@ class DynamoClient(object):
     def describe_table(self, model):
         description = self.call_with_retries(
             self.client.describe_table,
-            TableName=model.__meta__["dynamo.table.name"])
+            TableName=model.Meta.table_name)
         table = description["Table"]
 
         # We don't care about a bunch of the returned attributes, and want to
@@ -383,27 +383,35 @@ def dump_key(engine, obj):
 
     returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
     '''
-    model = obj.__class__
+    meta = obj.__class__.Meta
     dynamo_key = {}
 
-    hash_value = getattr(obj, model.hash_key.model_name)
-    dynamo_key.update(dump_column(engine, model.hash_key, hash_value))
+    hash_value = getattr(obj, meta.hash_key.model_name)
+    dynamo_key.update(dump_column(engine, meta.hash_key, hash_value))
 
-    if model.range_key:
-        range_value = getattr(obj, model.range_key.model_name)
-        dynamo_key.update(dump_column(engine, model.range_key, range_value))
+    if meta.range_key:
+        range_value = getattr(obj, meta.range_key.model_name)
+        dynamo_key.update(dump_column(engine, meta.range_key, range_value))
 
     return dynamo_key
 
 
-def key_schema(model):
+def key_schema(*, index=None, model=None):
+    if index:
+        hash_key = index.hash_key
+        range_key = index.range_key
+    elif model:
+        hash_key = model.Meta.hash_key
+        range_key = model.Meta.range_key
+    else:
+        raise ValueError("Provide either model or index")
     schema = [{
-        'AttributeName': model.hash_key.dynamo_name,
+        'AttributeName': hash_key.dynamo_name,
         'KeyType': 'HASH'
     }]
-    if model.range_key:
+    if range_key:
         schema.append({
-            'AttributeName': model.range_key.dynamo_name,
+            'AttributeName': range_key.dynamo_name,
             'KeyType': 'RANGE'
         })
     return schema
@@ -411,8 +419,8 @@ def key_schema(model):
 
 def attribute_definitions(model):
     ''' Only include table and index hash/range keys '''
-    columns = model.__meta__["dynamo.columns"]
-    indexes = model.__meta__["dynamo.indexes"]
+    columns = model.Meta.columns
+    indexes = model.Meta.indexes
     dedupe_attrs = set()
     attrs = []
 
@@ -455,8 +463,8 @@ def index_projection(index):
 def global_secondary_indexes(model):
     gsis = []
     for index in filter(bloop.column.is_global_index,
-                        model.__meta__["dynamo.indexes"]):
-        gsi_key_schema = key_schema(index)
+                        model.Meta.indexes):
+        gsi_key_schema = key_schema(index=index)
         provisioned_throughput = {
             'WriteCapacityUnits': index.write_units,
             'ReadCapacityUnits': index.read_units
@@ -474,8 +482,8 @@ def global_secondary_indexes(model):
 def local_secondary_indexes(model):
     lsis = []
     for index in filter(bloop.column.is_local_index,
-                        model.__meta__["dynamo.indexes"]):
-        lsi_key_schema = key_schema(index)
+                        model.Meta.indexes):
+        lsi_key_schema = key_schema(index=index)
 
         lsis.append({
             'Projection': index_projection(index),

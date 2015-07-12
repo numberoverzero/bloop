@@ -88,7 +88,7 @@ class Engine(object):
                 raise exception
             else:
                 self.type_engine.register(model)
-                columns = model.__meta__['dynamo.columns']
+                columns = model.Meta.columns
                 for column in columns:
                     self.type_engine.register(column.typedef)
                 self.type_engine.bind()
@@ -137,8 +137,7 @@ class Engine(object):
 
         # Use set here to properly de-dupe list (don't load same obj twice)
         for obj in set(objs):
-            meta = obj.__meta__
-            table_name = meta['dynamo.table.name']
+            table_name = obj.Meta.table_name
             if table_name not in request_items:
                 request_items[table_name] = {
                     "Keys": [],
@@ -173,7 +172,7 @@ class Engine(object):
                 # Not using self.__load__(obj, item) because we don't want to
                 # go through meta['bloop.init'] - we want to populate the
                 # existing model instance
-                columns = obj.__meta__["dynamo.columns"]
+                columns = obj.Meta.columns
                 for column in columns:
                     value = item.get(column.dynamo_name, missing)
                     # Missing expected column
@@ -194,7 +193,7 @@ class Engine(object):
         elif len(objs) == 1 and condition:
             obj = objs[0]
             model = obj.__class__
-            table_name = model.__meta__['dynamo.table.name']
+            table_name = model.Meta.table_name
             item = self.__dump__(model, obj)
             expression = render(self, model, condition, mode="condition")
             self.dynamo_client.put_item(table_name, item, expression)
@@ -208,7 +207,7 @@ class Engine(object):
                         "Item": self.__dump__(obj.__class__, obj)
                     }
                 }
-                table_name = obj.__meta__['dynamo.table.name']
+                table_name = obj.Meta.table_name
                 request_items[table_name].append(put_item)
 
             self.dynamo_client.batch_write_items(request_items)
@@ -221,7 +220,7 @@ class Engine(object):
         elif len(objs) == 1 and condition:
             obj = objs[0]
             model = obj.__class__
-            table_name = model.__meta__['dynamo.table.name']
+            table_name = model.Meta.table_name
             key = dump_key(self, obj)
             expression = render(self, model, condition, mode="condition")
             self.dynamo_client.delete_item(table_name, key, expression)
@@ -235,7 +234,7 @@ class Engine(object):
                         "Key": dump_key(self, obj)
                     }
                 }
-                table_name = obj.__meta__['dynamo.table.name']
+                table_name = obj.Meta.table_name
                 request_items[table_name].append(del_item)
 
             self.dynamo_client.batch_write_items(request_items)

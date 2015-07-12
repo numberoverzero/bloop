@@ -107,8 +107,8 @@ class Filter(object):
             hash_column = self.index.hash_key
             range_column = self.index.range_key
         else:
-            hash_column = self.model.hash_key
-            range_column = self.model.range_key
+            hash_column = self.model.Meta.hash_key
+            range_column = self.model.Meta.range_key
 
         max_conditions = 1
         if range_column:
@@ -319,7 +319,7 @@ class Filter(object):
 
     def generate_request(self, renderer):
         request = {
-            'TableName': self.model.__meta__['dynamo.table.name'],
+            'TableName': self.model.Meta.table_name,
             'Select': SELECT_MODES[self._select]
         }
         if self.index:
@@ -372,11 +372,6 @@ class FilterResult(object):
         self._request = request
         self.engine = engine
         self.model = model
-
-        # We'll need to access these to load each result
-        meta = model.__meta__
-        self._columns = meta["dynamo.columns"]
-        self._init = meta["bloop.init"]
 
         self.count = 0
         self.scanned_count = 0

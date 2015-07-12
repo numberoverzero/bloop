@@ -1,4 +1,4 @@
-# bloop 0.5.1
+# bloop 0.5.2
 
 [![Build Status]
 (https://travis-ci.org/numberoverzero/bloop.svg?branch=master)]
@@ -58,6 +58,7 @@ def create_user(admin=False):
     user = User(id=uuid.uuid4(), admin=admin)
     does_not_exist = User.id.is_(None)
     engine.save(user, condition=does_not_exist)
+    return user
 ```
 
 bloop works hard to expose DynamoDB's [Conditional Expression][conditional-writes] system in a clean, intuitive interface.  To that end, we can construct conditions that must be met before performing an operation (`save`, `delete`) using the Model's columns and standard comparison operators.  In this case, `User.id.is_(None)` could also be written `User.id == None` which ensures there's no row where the id we want to save exists.
@@ -201,14 +202,14 @@ announcement = Post(id=uid(), user=admin, date=arrow.now())
 
 There is no default value for columns not specified - `announcement.views` will not return 0 or None, but instead throw a NameError.
 
-When loading models from DynamoDB during a query or scan, models are loaded using the method specified in `__meta__["bloop.init"]`.  By default, this is the constructor for the model.  In other words, `Post.__meta__["bloop.init"] is Post`.  Any model can override this setting with another function that takes `**kwargs` and returns a model instance.
+When loading models from DynamoDB during a query or scan, models are loaded using the method specified in `Meta.bloop_init`.  By default, this is the constructor for the model.  In other words, `Post.Meta.bloop_init is Post`.  Any model can override this setting with another function that takes `**kwargs` and returns a model instance.  For more on defining a custom `Meta.bloop_init`, see Custom Object Loading.
 
 ## Local and Global Secondary Indexes
 
 Global and local secondary indexes are defined similarly to Columns.  It's a good idea to read the documentation for both [GlobalSecondaryIndexes][docs-gsi] and [LocalSecondaryIndexes][docs-lsi] before using either.  A quick summary of how to construct them, and the constraints each has:
 
 ```python
-class Post(engine.model):
+class IndexPost(engine.model):
     id = Column(UUID, hash_key=True)
     user = Column(UUID, range_key=True)
     date = Column(DateTime)
@@ -235,7 +236,7 @@ In both cases, the `projection` option allows specifying which attributes of the
 
 ## Model Inheritance
 
-TODO - pending declare fixes
+Inheritance is not supported for models.
 
 ## Custom Types
 
@@ -329,13 +330,13 @@ This contrasts with `can_dump` which will only receive the raw value - the dynam
 
 ## Custom Object Loading
 
-bloop will usually use a model's `__init__` method when instantiating new model objects from a query or scan result.  There are times when it's preferable to use a different initialization method; a base model may override the default `__init__` behavior and make it impossible for bloop to use, or a custom caching mechanism may want to intercept object creation.  In either case, the model's `__meta__` dict provides access to internal configuration.
+bloop will usually use a model's `__init__` method when instantiating new model objects from a query or scan result.  There are times when it's preferable to use a different initialization method; a base model may override the default `__init__` behavior and make it impossible for bloop to use, or a custom caching mechanism may want to intercept object creation.  In either case, the model's `Meta` class provides access to internal configuration.
 
-Note that the method specified in meta is *not* used during load operations, as the objects already exist and are simply updated with `setattr`.
+Note that the method specified in meta is *not* used during load operations, as the objects already exist and are simply updated using `setattr`.
 
 ```python
 
-class User(engine.model):
+class CustomUser(engine.model):
 
     def __init__(self):
         # Disallows **kwarg loading
@@ -350,23 +351,23 @@ engine.bind()
 
 def load_user(**kwargs):
     print("Using custom loader")
-    user = User()
+    user = CustomUser()
     for key, value in kwargs.items():
         setattr(user, key, value)
     return user
-User.__meta__["bloop.init"] = load_user
+CustomUser.Meta.bloop_init = load_user
 ```
 
 And to try things out:
 
 ```python
 # Make a user to find
-user = User()
+user = CustomUser()
 user.id = uid = uuid.uuid4()
 engine.save(user)
 
 # This will find the result above, and load the result through `load_user`
-print(engine.query(User).key(User.id == uid).first())
+print(engine.query(CustomUser).key(CustomUser.id == uid).first())
 ```
 
 ## Custom Columns
@@ -492,17 +493,6 @@ print(instance.__dict__)  # {'id': 'foo',
 
 This allows us to keep the overhead for objects low - each object holds any associated metadata, and is released when the object cleans up.  Otherwise, the Column would have to track when instances were no longer needed and clean up their metadata.
 
-## What's NOT Included
-
-There are a number of features in other object mappers for DynamoDB, and in the many ORMS that are not and (likely) will not be available in bloop.  Some of these are a poor fit for non-relational databases; others are a poor fit for DynamoDB's particular constraints or API.  Some are good ideas that don't fit in an OM and are best left to be implemented above/below bloop.
-
-* Caching - it's a great idea, but caching needs will vary wildly between users.  Due to DynamoDB's intented usage, a handful of common caching styles may even be dangerous for horizontally scalable fleets.  While there may be a lowest-common-denominator for caching, this is not the library to solve that problem.
-* Relations - DynamoDB is not a relational database, and expecting a library that may not be used by everyone communicating with your DynamoDB tables is begging for trouble.  Besides, to get this right you'll also need...
-* Transactions - `engine.save` uses BatchWriteItem, which is [**not atomic**][batch-write].  While transactional libraries [have been written][dynamodb-transactions] they impose [notable limitations][ddb-trans-conditions] and can still have some [particularly nasty bugs][ddb-trans-bug].  Not mentioned in the README, but it also requires ~4x more reads/writes, significantly increasing cost.
-* Atomic updates - There aren't many available, but UpdateItem can [ADD to Number and Set types][update-item-expression].  This allows doing things like `SET myNum = myNum + 3`.  This is a bit of a trap, however.  What happens when the server processes the request, but returns a 400 or times out?  `engine.save` supports conditions, which help with this somewhat.  They can be hairy when there's heavy write contention (many optimistic writes will fail) but are a better guard against accidental double-updates in the face of network failure.
-* "Unique", "Nullable", etc for Column - At best these map poorly to DynamoDB and are misleading; at worst they suggest a stronger guarantee that they can make.  Communicating with DynamoDB through anything other than a library that uses these will trivially defeat their guarantees.  Because these are not enforced server-side, it's the user's responsibility to guard against possibilities including duplicates or None values.  While ConditionExpressions can be used to enforce a unique constraint, conditions can't be used with BatchWrite.  A sometimes-used pattern is not enough to switch all batch writes to iterative (or pooled) PutItem calls.
-* Type validation - This sounds like a great opportunity to subclass Column to check that `self.typedef.can_dump(value)`.  Not everyone needs or wants validation, nor will most parties agree on how/what should be validated when.  Enforcing it by default would make data migrations even more painful.  Better to keep the building blocks simple, and let users customize as needed.
-
 # Operations
 
 The main interface to models is through an `bloop.Engine`.  After binding an engine (`engine.bind()`) the following can be used to manipulate your objects.
@@ -614,8 +604,6 @@ tox
 ### TODO
 
 * Bug fixes:
-  * `__meta__` -> `class Meta` migration in declare
-  * Fix model inheritance
   * Better handling for `engine.save` and `engine.load` on models that aren't bound
 * Tests
 * Documentation:

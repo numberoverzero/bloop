@@ -1,4 +1,7 @@
 import uuid
+import bloop.model
+import pytest
+
 from bloop import Column, UUID, Boolean, DateTime, String
 missing = object()
 
@@ -83,3 +86,88 @@ def test_equality(User):
     assert user != another
 
     assert user == same
+
+
+def test_multiple_base_models(engine):
+    ''' Once an engine has a `model` attr, BaseModel should always throw '''
+    with pytest.raises(ValueError):
+        bloop.model.BaseModel(engine)
+
+
+def test_meta_read_write_units(engine):
+    '''
+    If `read_units` or `write_units` is missing from a model's Meta,
+    it defaults to 1
+    '''
+    class Model(engine.model):
+        id = Column(UUID, hash_key=True)
+
+    assert Model.Meta.write_units == 1
+    assert Model.Meta.read_units == 1
+
+    class Other(engine.model):
+        class Meta:
+            read_units = 2
+            write_units = 3
+        id = Column(UUID, hash_key=True)
+
+    assert Other.Meta.write_units == 3
+    assert Other.Meta.read_units == 2
+
+
+def test_meta_indexes_columns(User):
+    ''' An index should not be considered a Column, even if it subclasses '''
+    assert User.by_email not in User.Meta.columns
+    assert User.by_email in User.Meta.indexes
+
+
+def test_meta_indexed_columns_indexes(engine):
+    column = Column(UUID, hash_key=True, name='dynamo_name')
+
+    class Model(engine.model):
+        model_name = column
+
+    assert Model.Meta.columns_by_model_name == {'model_name': column}
+    assert Model.Meta.columns_by_dynamo_name == {'dynamo_name': column}
+
+
+def test_meta_keys(engine):
+    ''' Various combinations of hash and range keys (some impossible) '''
+    hash_column = lambda: Column(UUID, hash_key=True)
+    range_column = lambda: Column(UUID, range_key=True)
+
+    class HashOnly(engine.model):
+        h = hash_column()
+
+    class RangeOnly(engine.model):
+        r = range_column()
+
+    class Neither(engine.model):
+        pass
+
+    class Both(engine.model):
+        h = hash_column()
+        r = range_column()
+
+    expect = [
+        (HashOnly, (HashOnly.h, None)),
+        (RangeOnly, (None, RangeOnly.r)),
+        (Neither, (None, None)),
+        (Both, (Both.h, Both.r))
+    ]
+
+    for (model, (hash_key, range_key)) in expect:
+        assert model.Meta.hash_key is hash_key
+        assert model.Meta.range_key is range_key
+
+
+def test_model_extra_keys(engine):
+    with pytest.raises(ValueError):
+        class DoubleHash(engine.model):
+            id = Column(UUID, hash_key=True)
+            other = Column(UUID, hash_key=True)
+
+    with pytest.raises(ValueError):
+        class DoubleRange(engine.model):
+            id = Column(UUID, range_key=True)
+            other = Column(UUID, range_key=True)

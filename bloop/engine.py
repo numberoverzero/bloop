@@ -48,7 +48,7 @@ class Engine(object):
     model = None
 
     def __init__(self, session=None):
-        self.dynamo_client = DynamoClient(session=session)
+        self.client = DynamoClient(session=session)
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()
@@ -95,13 +95,13 @@ class Engine(object):
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
         for model in self.unbound_models:
-            self.dynamo_client.create_table(model)
+            self.client.create_table(model)
 
         unverified = set(self.unbound_models)
         while unverified:
             model = unverified.pop()
 
-            self.dynamo_client.validate_table(model)
+            self.client.validate_table(model)
             # If the call above didn't throw, everything's good to go.
 
             self.type_engine.register(model)
@@ -143,7 +143,7 @@ class Engine(object):
         objs = list_of(objs)
 
         # The RequestItems dictionary of table:Key(list) that will be
-        # passed to dynamo_client
+        # passed to client
         request_items = {}
 
         # table_name:dynamodb_name(list) of table keys (hash and opt range)
@@ -176,7 +176,7 @@ class Engine(object):
             )
             objs_by_key[index] = obj
 
-        results = self.dynamo_client.batch_get_items(request_items)
+        results = self.client.batch_get_items(request_items)
 
         for table_name, items in results.items():
             # The attributes that make up the key
@@ -216,7 +216,7 @@ class Engine(object):
             table_name = model.Meta.table_name
             item = self.__dump__(model, obj)
             expression = render(self, model, condition, mode="condition")
-            self.dynamo_client.put_item(table_name, item, expression)
+            self.client.put_item(table_name, item, expression)
 
         else:
             request_items = collections.defaultdict(list)
@@ -230,7 +230,7 @@ class Engine(object):
                 table_name = obj.Meta.table_name
                 request_items[table_name].append(put_item)
 
-            self.dynamo_client.batch_write_items(request_items)
+            self.client.batch_write_items(request_items)
 
     def delete(self, objs, *, condition=None):
         objs = list_of(objs)
@@ -243,7 +243,7 @@ class Engine(object):
             table_name = model.Meta.table_name
             key = dump_key(self, obj)
             expression = render(self, model, condition, mode="condition")
-            self.dynamo_client.delete_item(table_name, key, expression)
+            self.client.delete_item(table_name, key, expression)
 
         else:
             request_items = collections.defaultdict(list)
@@ -257,7 +257,7 @@ class Engine(object):
                 table_name = obj.Meta.table_name
                 request_items[table_name].append(del_item)
 
-            self.dynamo_client.batch_write_items(request_items)
+            self.client.batch_write_items(request_items)
 
     def query(self, model, index=None):
         return Query(engine=self, model=model, index=index)

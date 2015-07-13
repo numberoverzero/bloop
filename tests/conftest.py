@@ -35,7 +35,7 @@ def local_bind(engine):
 
 
 @pytest.fixture
-def User(engine, local_bind):
+def UnboundUser(engine):
     class User(engine.model):
         id = bloop.Column(bloop.UUID, hash_key=True)
         age = bloop.Column(bloop.Integer)
@@ -45,5 +45,10 @@ def User(engine, local_bind):
 
         by_email = bloop.GlobalSecondaryIndex(hash_key='email',
                                               projection='all')
-    engine.bind()
     return User
+
+
+@pytest.fixture
+def User(UnboundUser, engine, local_bind):
+    engine.bind()
+    return UnboundUser

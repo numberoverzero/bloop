@@ -62,8 +62,8 @@ class Type(declare.TypeDefinition):
         return isinstance(value, self.python_type)
 
     def __repr__(self, *a, **kw):  # pragma: no cover
-        return "{}({}, {})".format(self.__class__.__name__,
-                                   self.python_type, self.backing_type)
+        return "{}(python_type={}, backing_type={})".format(
+            self.__class__.__name__, self.python_type, self.backing_type)
     __str__ = __repr__
 
 
@@ -116,6 +116,7 @@ class DateTime(String):
 
     def __init__(self, timezone=None):
         self.timezone = timezone or DateTime.default_timezone
+        super().__init__()
 
     def dynamo_load(self, value):
         # arrow.get(None) returns arrow.utcnow();
@@ -208,7 +209,8 @@ def set_type(typename, typedef, dynamo_type):
             return [self.typedef.dynamo_dump(v) for v in value]
 
         def can_dump(self, value):
-            return all(map(self.typedef.can_dump, value))
+            return (super().can_dump(value) and
+                    all(map(self.typedef.can_dump, value)))
     return type(typename, (Set,), {})
 
 
@@ -251,10 +253,10 @@ class Map(Type):
     backing_type = MAP
 
     def dynamo_load(self, value):
-        return {k: load(v) for (k, v) in value.items()}
+        return {k: self.serializer.load(v) for (k, v) in value.items()}
 
     def dynamo_dump(self, value):
-        return {k: dump(v) for (k, v) in value.items()}
+        return {k: self.serializer.dump(v) for (k, v) in value.items()}
 
 
 class List(Type):
@@ -262,14 +264,16 @@ class List(Type):
     backing_type = LIST
 
     def dynamo_load(self, value):
-        return [load(v) for v in value]
+        return [self.serializer.load(v) for v in value]
 
     def dynamo_dump(self, value):
-        return [dump(v) for v in value]
+        return [self.serializer.dump(v) for v in value]
 
 
 TYPES.extend([
     String,
+    UUID,
+    DateTime,
     Float,
     Integer,
     Binary,
@@ -284,16 +288,28 @@ TYPES.extend([
 ])
 
 
-def load(value):
-    ''' value is a dictionary {dynamo_type: value} '''
-    for type_class in TYPES:
-        if type_class.can_load(value):
-            return type_class.load(value)
-    raise TypeError("Don't know how to load " + str(value))
+class DefaultSerializer:
+    ''' Default load/dump for Maps and Lists. '''
 
+    def __init__(self, types=None):
+        self.types = []
+        for typedef in (types or TYPES):
+            self.types.append(typedef())
 
-def dump(value):
-    for type_class in TYPES:
-        if type_class.can_dump(value):
-            return type_class.dump(value)
-    raise TypeError("Don't know how to dump " + str(value))
+    def load(self, value):
+        ''' value is a dictionary {dynamo_type: value} '''
+        for typedef in self.types:
+            if typedef.can_load(value):
+                return typedef.__load__(value)
+        raise TypeError("Don't know how to load " + str(value))
+
+    def dump(self, value):
+        for typedef in self.types:
+            if typedef.can_dump(value):
+                return typedef.__dump__(value)
+        raise TypeError("Don't know how to dump " + str(value))
+
+# Have to set default serializers for Map, List after all Types have been
+# defined
+
+Map.serializer = List.serializer = DefaultSerializer()

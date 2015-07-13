@@ -1,4 +1,5 @@
 import arrow
+import base64
 import decimal
 import pytest
 import uuid
@@ -38,7 +39,7 @@ def test_load_dump_best_effort():
 
 def test_string():
     typedef = types.String()
-    symmetric_test(typedef, (None, None), ("foo", "foo"))
+    symmetric_test(typedef, (None, None), ('foo', 'foo'))
 
 
 def test_uuid():
@@ -91,7 +92,7 @@ def test_float():
     symmetric_test(typedef,
                    (None, None),
                    (1.5, '1.5'),
-                   (d(4)/d(3), "1.333333333333333333333333333"))
+                   (d(4)/d(3), '1.333333333333333333333333333'))
 
 
 def test_float_disallow_bool():
@@ -127,14 +128,14 @@ def test_sets():
 
     tests = [
         (types.StringSet(),
-         set(["Hello", "World"]),
-         set(["Hello", "World"])),
+         set(['Hello', 'World']),
+         set(['Hello', 'World'])),
         (types.FloatSet(),
          set([4.5, 3, None]),
-         set(["4.5", "3", None])),
+         set(['4.5', '3', None])),
         (types.IntegerSet(),
          set([None, 0, -1, 1]),
-         set([None, "0", "-1", "1"])),
+         set([None, '0', '-1', '1'])),
         (types.BinarySet(),
          set([b'123', b'456']),
          set(['MTIz', 'NDU2']))
@@ -155,14 +156,14 @@ def test_set_can_dump():
     ''' Checks all values in the set '''
 
     typedef = types.StringSet()
-    assert typedef.can_dump(set(["1", "2", "3"]))
-    assert not typedef.can_dump(set(["1", 2, "3"]))
+    assert typedef.can_dump(set(['1', '2', '3']))
+    assert not typedef.can_dump(set(['1', 2, '3']))
 
 
 def test_null():
     typedef = types.Null()
 
-    values = [None, -1, decimal.Decimal(4/3), "string", object()]
+    values = [None, -1, decimal.Decimal(4/3), 'string', object()]
 
     for value in values:
         assert typedef.dynamo_dump(value) is True
@@ -173,8 +174,8 @@ def test_bool():
     ''' Boolean will never store/load as empty - bool(None) is False '''
     typedef = types.Boolean()
 
-    truthy = [1, True, object(), bool, "str"]
-    falsy = [False, None, 0, set(), ""]
+    truthy = [1, True, object(), bool, 'str']
+    falsy = [False, None, 0, set(), '']
 
     for value in truthy:
         assert typedef.dynamo_dump(value) is True
@@ -183,3 +184,77 @@ def test_bool():
     for value in falsy:
         assert typedef.dynamo_dump(value) is False
         assert typedef.dynamo_load(value) is False
+
+
+def test_map_list_single_value():
+    '''
+    Map and List DO NOT support UUID or DateTime.
+
+    There are no native types for UUID or DateTime, so both use the String
+    type in Dynamo - when loading, it's impossible to determine whether the
+    loaded value is a String, UUID, or DateTime.
+
+    Strings that represent valid UUIDs or DateTimes will not be
+    loaded as such - guessing is a terrible resolution to ambiguity.
+    '''
+
+    map_typedef = types.Map()
+    list_typedef = types.List()
+    binary_obj = b'123'
+    binary_str = base64.b64encode(binary_obj).decode('utf-8')
+
+    loaded_objs = {
+        'string': 'value',
+        'float': decimal.Decimal('0.125'),
+        'int': 4,
+        'binary': binary_obj,
+        'null': None,
+        'boolean': True,
+        'map': {'map_str': 'map_value', 'map_float': decimal.Decimal('0.125')},
+        'list': [4, binary_obj]
+    }
+
+    dumped_objs = {
+        'string': {'S': 'value'},
+        'float': {'N': '0.125'},
+        'int': {'N': '4'},
+        'binary': {'B': binary_str},
+        'null': {'NULL': True},
+        'boolean': {'BOOL': True},
+        'map': {'M': {'map_str': {'S': 'map_value'},
+                      'map_float': {'N': '0.125'}}},
+        'list': {'L': [{'N': '4'}, {'B': binary_str}]}
+    }
+
+    for key, loaded_obj in loaded_objs.items():
+        dumped_obj = dumped_objs[key]
+
+        loaded_map = {'test': loaded_obj}
+        dumped_map = {'test': dumped_obj}
+        assert map_typedef.dynamo_dump(loaded_map) == dumped_map
+        assert map_typedef.dynamo_load(dumped_map) == loaded_map
+
+        loaded_list = [loaded_obj]
+        dumped_list = [dumped_obj]
+        assert list_typedef.dynamo_dump(loaded_list) == dumped_list
+        assert list_typedef.dynamo_load(dumped_list) == loaded_list
+
+
+def test_map_list_unknown_type():
+    ''' Trying to load/dump an unknown type raises TypeError '''
+
+    class UnknownObject:
+        pass
+
+    unknown_obj = UnknownObject()
+    unknown_type = {'not S, B, BOOL, etc': unknown_obj}
+
+    with pytest.raises(TypeError):
+        types.Map().dynamo_dump({'test': unknown_obj})
+    with pytest.raises(TypeError):
+        types.List().dynamo_dump([unknown_obj])
+
+    with pytest.raises(TypeError):
+        types.Map().dynamo_load({'test': unknown_type})
+    with pytest.raises(TypeError):
+        types.List().dynamo_load([unknown_type])

@@ -1,7 +1,6 @@
 import bloop
 import bloop.condition
 import operator
-import pytest
 
 
 def test_equals_alias_exists():
@@ -85,19 +84,3 @@ def test_dynamo_name():
     column = bloop.Column(bloop.Integer, name='foo')
     column.model_name = 'bar'
     assert column.dynamo_name == 'foo'
-
-
-def test_projection_validation():
-    ''' should be all, keys_only, or a list of column model names '''
-    Index = bloop.column.Index
-
-    with pytest.raises(ValueError):
-        Index(projection='foo')
-    with pytest.raises(ValueError):
-        Index(projection=object())
-    with pytest.raises(ValueError):
-        Index(projection=['only strings', 1, None])
-
-    assert Index(projection='all').projection == 'ALL'
-    assert Index(projection='keys_only').projection == 'KEYS_ONLY'
-    assert Index(projection=['foo', 'bar']).projection == ['foo', 'bar']

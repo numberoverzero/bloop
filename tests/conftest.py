@@ -8,14 +8,14 @@ def noop(*a, **kw):
 
 @pytest.fixture
 def session():
-    class Client:
+    class DummyClient:
         pass
 
-    class Session:
+    class DummySession:
         def client(self, name):
             assert name == "dynamodb"
-            return Client()
-    return Session()
+            return DummyClient()
+    return DummySession()
 
 
 @pytest.fixture

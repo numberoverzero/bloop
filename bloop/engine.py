@@ -1,5 +1,5 @@
 import bloop.condition
-import bloop.dynamo_client
+import bloop.client
 import bloop.filter
 import bloop.model
 import collections
@@ -41,7 +41,7 @@ class Engine(object):
     model = None
 
     def __init__(self, session=None):
-        self.client = bloop.dynamo_client.DynamoClient(session=session)
+        self.client = bloop.client.Client(session=session)
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()
@@ -157,7 +157,7 @@ class Engine(object):
                     "Keys": [],
                     "ConsistentRead": consistent
                 }
-            key = bloop.dynamo_client.dump_key(self, obj)
+            key = bloop.client.dump_key(self, obj)
             # Add the key to the request
             request_items[table_name]["Keys"].append(key)
             # Make sure we can find the key shape for this table
@@ -239,7 +239,7 @@ class Engine(object):
             model = obj.__class__
             item = {
                 "TableName": model.Meta.table_name,
-                "Key": bloop.dynamo_client.dump_key(self, obj)
+                "Key": bloop.client.dump_key(self, obj)
             }
             item.update(bloop.condition.render(
                 self, condition, mode="condition"))
@@ -251,7 +251,7 @@ class Engine(object):
             for obj in set(objs):
                 del_item = {
                     "DeleteRequest": {
-                        "Key": bloop.dynamo_client.dump_key(self, obj)
+                        "Key": bloop.client.dump_key(self, obj)
                     }
                 }
                 table_name = obj.Meta.table_name

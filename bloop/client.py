@@ -91,7 +91,7 @@ def partition_batch_write_input(request_items):
         yield chunk
 
 
-class DynamoClient(object):
+class Client(object):
     def __init__(self, session=None, backoff_func=None):
         '''
 
@@ -325,7 +325,7 @@ class DynamoClient(object):
 
         # We don't care about a bunch of the returned attributes, and want to
         # massage the returned value to match `table_for_model` that's passed
-        # to `DynamoClient.create_table` so we can compare them with `ordered`
+        # to `Client.create_table` so we can compare them with `ordered`
         table_fields = ["TableName", "ProvisionedThroughput", "KeySchema",
                         "AttributeDefinitions", "GlobalSecondaryIndexes",
                         "LocalSecondaryIndexes", "TableStatus"]

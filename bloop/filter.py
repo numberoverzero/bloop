@@ -1,5 +1,6 @@
 import bloop.column
 import bloop.condition
+import bloop.index
 import operator
 
 missing = object()
@@ -35,8 +36,8 @@ def validate_select_mode(select):
                              " a list of column objects to select")
     else:
         select = set(select)
-        for col in select:
-            if not isinstance(col, bloop.column.Column):
+        for column in select:
+            if not bloop.column.is_column(column):
                 raise ValueError("Must specify 'all', 'projected', 'count', or"
                                  " a list of column objects to select")
     return select
@@ -194,7 +195,7 @@ class Filter(object):
         #    introducing a config variable to strictly disallow extra reads.
         select = validate_select_mode(columns)
 
-        is_gsi = bloop.column.is_global_index(self.index)
+        is_gsi = bloop.index.is_global_index(self.index)
 
         if select == "count":
             other = self.copy()
@@ -276,7 +277,7 @@ class Filter(object):
         if prefetch is None:
             prefetch = self.engine.prefetch[self.filter_type]
         # dynamo.client.query or dynamo.client.scan
-        call = getattr(self.engine.dynamo_client, self.filter_type)
+        call = getattr(self.engine.client, self.filter_type)
         renderer = bloop.condition.ConditionRenderer(self.engine, self.model)
         request = self.generate_request(renderer)
         return FilterResult(prefetch, call, request, self.engine, self.model)
@@ -347,7 +348,7 @@ class Query(Filter):
         if not self._key_condition:
             raise ValueError("Must specify at least a hash key condition")
 
-        if bloop.column.is_global_index(self.index) and self._consistent:
+        if bloop.index.is_global_index(self.index) and self._consistent:
             raise ValueError(
                 "Cannot use ConsistentRead with a GlobalSecondaryIndex")
 

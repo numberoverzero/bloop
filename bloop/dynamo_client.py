@@ -4,6 +4,7 @@ import collections
 import time
 import functools
 import bloop.column
+import bloop.index
 
 
 BUSY = object()
@@ -464,7 +465,7 @@ def index_projection(index):
 
 def global_secondary_indexes(model):
     gsis = []
-    for index in filter(bloop.column.is_global_index,
+    for index in filter(bloop.index.is_global_index,
                         model.Meta.indexes):
         gsi_key_schema = key_schema(index=index)
         provisioned_throughput = {
@@ -483,7 +484,7 @@ def global_secondary_indexes(model):
 
 def local_secondary_indexes(model):
     lsis = []
-    for index in filter(bloop.column.is_local_index,
+    for index in filter(bloop.index.is_local_index,
                         model.Meta.indexes):
         lsi_key_schema = key_schema(index=index)
 

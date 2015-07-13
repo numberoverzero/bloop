@@ -63,6 +63,9 @@ class __BaseModel(object):
         return "{}({})".format(cls_name, attrs)
     __repr__ = __str__
 
+    def __hash__(self):
+        return super().__hash__()
+
     def __eq__(self, other):
         ''' Only checks defined columns. '''
         cls = self.__class__
@@ -139,25 +142,25 @@ def BaseModel(engine):
             cols = Meta.columns_by_model_name
             for index in indexes:
                 if bloop.index.is_global_index(index):
-                    index._hash_key = cols[index.hash_key]
+                    index.hash_key = cols[index.hash_key]
                 elif bloop.index.is_local_index(index):
                     if not Meta.range_key:
                         raise ValueError(
                             "Cannot specify a LocalSecondaryIndex " +
                             "without a table range key")
-                    index._hash_key = Meta.hash_key
+                    index.hash_key = Meta.hash_key
                 else:
                     raise ValueError("Index is an abstract class, must specify"
                                      "LocalSecondaryIndex or"
                                      "GlobalSecondaryIndex")
 
                 if index.range_key:
-                    index._range_key = cols[index.range_key]
+                    index.range_key = cols[index.range_key]
 
                 # Determine projected attributes for the index, including
                 # table hash/range keys, index hash/range keys, and any
                 # non-key projected attributes.
-                projected = index._projection_attributes = set()
+                projected = index.projection_attributes = set()
 
                 if index.projection == "ALL":
                     projected.update(columns)

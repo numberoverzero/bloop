@@ -21,20 +21,21 @@ def validate_projection(projection):
 
 
 class Index(declare.Field):
-    def __init__(self, *args, projection='KEYS_ONLY', **kwargs):
+    def __init__(self, *args, hash_key=None, range_key=None,
+                 name=None, projection='KEYS_ONLY', **kwargs):
+        self.hash_key = hash_key
+        self.range_key = range_key
+        self._dynamo_name = name
         super().__init__(*args, **kwargs)
 
         # projection_attributes will be set up by `bloop.model.ModelMetaclass`
         self.projection = validate_projection(projection)
 
     @property
-    def projection_attributes(self):
-        '''
-        All attributes available through this index.
-
-        Includes table hash/range, index hash/range, and any projected attrs
-        '''
-        return self._projection_attributes
+    def dynamo_name(self):
+        if self._dynamo_name is None:
+            return self.model_name
+        return self._dynamo_name
 
 
 class GlobalSecondaryIndex(Index):

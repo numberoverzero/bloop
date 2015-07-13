@@ -150,6 +150,10 @@ def BaseModel(engine):
                             "Cannot specify a LocalSecondaryIndex " +
                             "without a table range key")
                     index._hash_key = Meta.hash_key
+                else:
+                    raise ValueError("Index is an abstract class, must specify"
+                                     "LocalSecondaryIndex or"
+                                     "GlobalSecondaryIndex")
 
                 if index.range_key:
                     index._range_key = cols[index.range_key]

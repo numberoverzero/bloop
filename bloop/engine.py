@@ -215,7 +215,7 @@ class Engine(object):
             model = obj.__class__
             table_name = model.Meta.table_name
             item = self.__dump__(model, obj)
-            expression = render(self, model, condition, mode="condition")
+            expression = render(self, condition, mode="condition")
             self.client.put_item(table_name, item, expression)
 
         else:
@@ -242,7 +242,7 @@ class Engine(object):
             model = obj.__class__
             table_name = model.Meta.table_name
             key = dump_key(self, obj)
-            expression = render(self, model, condition, mode="condition")
+            expression = render(self, condition, mode="condition")
             self.client.delete_item(table_name, key, expression)
 
         else:

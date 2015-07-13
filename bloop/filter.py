@@ -278,7 +278,7 @@ class Filter(object):
             prefetch = self.engine.prefetch[self.filter_type]
         # dynamo.client.query or dynamo.client.scan
         call = getattr(self.engine.client, self.filter_type)
-        renderer = bloop.condition.ConditionRenderer(self.engine, self.model)
+        renderer = bloop.condition.ConditionRenderer(self.engine)
         request = self.generate_request(renderer)
         return FilterResult(prefetch, call, request, self.engine, self.model)
 
@@ -454,7 +454,7 @@ class FilterResult(object):
     def _step(self):
         ''' Single call, advancing ExclusiveStartKey if necessary. '''
         if self._continue:
-            self.request["ExclusiveStartKey"] = self._continue
+            self._request["ExclusiveStartKey"] = self._continue
         response = self._call(**self._request)
         self._continue = response.get("LastEvaluatedKey", None)
 

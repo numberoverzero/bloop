@@ -12,15 +12,14 @@ ATTR_NAMES = "ExpressionAttributeNames"
 ATTR_VALUES = "ExpressionAttributeValues"
 
 
-def render(engine, model, condition, mode, legacy=False):
-    renderer = ConditionRenderer(engine, model, legacy=legacy)
+def render(engine, condition, mode, legacy=False):
+    renderer = ConditionRenderer(engine, legacy=legacy)
     return renderer.render(condition, mode=mode)
 
 
 class ConditionRenderer(object):
-    def __init__(self, engine, model, legacy=False):
+    def __init__(self, engine, legacy=False):
         self.engine = engine
-        self.model = model
         self.legacy = legacy
         self.attr_values = {}
         self.attr_names = {}
@@ -31,7 +30,7 @@ class ConditionRenderer(object):
         self.name_attr_index = {}
         self.__ref_index = 0
 
-    def value_ref(self, column, value=missing):
+    def value_ref(self, column, value):
         ref = ":v{}".format(self.__ref_index)
         self.__ref_index += 1
 
@@ -39,8 +38,6 @@ class ConditionRenderer(object):
         # typedef into dynamo's format, then persist a reference
         # in ExpressionAttributeValues
         type_engine = self.engine.type_engine
-        if value is missing:
-            value = getattr(self.model, column.model_name)
         dynamo_value = type_engine.dump(column.typedef, value)
 
         self.attr_values[ref] = dynamo_value

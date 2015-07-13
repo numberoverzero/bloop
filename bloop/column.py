@@ -1,8 +1,6 @@
 import bloop.condition
 import operator
 import declare
-import uuid
-missing = object()
 
 
 class ComparisonMixin(object):
@@ -67,13 +65,10 @@ class ComparisonMixin(object):
 
 class Column(declare.Field, ComparisonMixin):
     def __init__(self, *args, hash_key=None, range_key=None,
-                 name=missing, **kwargs):
-        self._hash_key = hash_key
-        self._range_key = range_key
+                 name=None, **kwargs):
+        self.hash_key = hash_key
+        self.range_key = range_key
         self._dynamo_name = name
-
-        self.column_key = "__{}_{}".format(
-            self.__class__.__name__, uuid.uuid4().hex)
         super().__init__(*args, **kwargs)
 
     def __str__(self):  # pragma: no cover
@@ -85,24 +80,8 @@ class Column(declare.Field, ComparisonMixin):
         return "{}({})".format(self.__class__.__name__, attrs)
 
     @property
-    def hash_key(self):
-        '''
-        - Non-index columns return True/False.
-        - Indexes return the `bloop.Column` that is their hash_key.
-        '''
-        return self._hash_key
-
-    @property
-    def range_key(self):
-        '''
-        - Non-index columns return True/False.
-        - Indexes return the `bloop.Column` that is their range_key (or None).
-        '''
-        return self._range_key
-
-    @property
     def dynamo_name(self):
-        if self._dynamo_name is missing:
+        if self._dynamo_name is None:
             return self.model_name
         return self._dynamo_name
 

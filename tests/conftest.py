@@ -24,6 +24,11 @@ def engine(session):
 
 
 @pytest.fixture
+def renderer(engine):
+    return bloop.condition.ConditionRenderer(engine)
+
+
+@pytest.fixture
 def local_bind(engine):
     engine.client.create_table = noop
     engine.client.validate_table = noop

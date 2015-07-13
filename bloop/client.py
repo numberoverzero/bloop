@@ -395,33 +395,6 @@ class Client(object):
                 TABLE_MISMATCH.format(actual, expected))
 
 
-# Column/model helpers
-def dump_column(engine, column, value):
-    ''' dump a single column into the appropriate dynamo format '''
-    dynamo_value = engine.__dump__(column.typedef, value)
-    return {column.dynamo_name: dynamo_value}
-
-
-def dump_key(engine, obj):
-    '''
-    dump the hash (and range, if there is one) key(s) of an object into
-    a dynamo-friendly format.
-
-    returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
-    '''
-    meta = obj.__class__.Meta
-    dynamo_key = {}
-
-    hash_value = getattr(obj, meta.hash_key.model_name)
-    dynamo_key.update(dump_column(engine, meta.hash_key, hash_value))
-
-    if meta.range_key:
-        range_value = getattr(obj, meta.range_key.model_name)
-        dynamo_key.update(dump_column(engine, meta.range_key, range_value))
-
-    return dynamo_key
-
-
 def key_schema(*, index=None, model=None):
     if index:
         hash_key = index.hash_key

@@ -55,7 +55,7 @@ class __BaseModel(object):
 
     def __str__(self):  # pragma: no cover
         cls_name = self.__class__.__name__
-        columns = self.__class__.Meta.columns
+        columns = self.Meta.columns
 
         def _attr(attr):
             return "{}={}".format(attr, repr(getattr(self, attr, None)))

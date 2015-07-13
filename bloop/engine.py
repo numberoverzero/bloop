@@ -37,6 +37,28 @@ def value_of(column):
     return next(iter(column.values()))
 
 
+def dump_key(engine, obj):
+    '''
+    dump the hash (and range, if there is one) key(s) of an object into
+    a dynamo-friendly format.
+
+    returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
+    '''
+    meta = obj.Meta
+    hash_key, range_key = meta.hash_key, meta.range_key
+
+    hash_value = getattr(obj, hash_key.model_name)
+    key = {
+        hash_key.dynamo_name: engine.__dump__(
+            hash_key.typedef, hash_value)
+    }
+    if range_key:
+        range_value = getattr(obj, range_key.model_name)
+        key[range_key.dynamo_name] = engine.__dump__(
+            range_key.typedef, range_value)
+    return key
+
+
 class Engine(object):
     model = None
 
@@ -157,7 +179,7 @@ class Engine(object):
                     "Keys": [],
                     "ConsistentRead": consistent
                 }
-            key = bloop.client.dump_key(self, obj)
+            key = dump_key(self, obj)
             # Add the key to the request
             request_items[table_name]["Keys"].append(key)
             # Make sure we can find the key shape for this table
@@ -239,7 +261,7 @@ class Engine(object):
             model = obj.__class__
             item = {
                 "TableName": model.Meta.table_name,
-                "Key": bloop.client.dump_key(self, obj)
+                "Key": dump_key(self, obj)
             }
             item.update(bloop.condition.render(
                 self, condition, mode="condition"))
@@ -251,7 +273,7 @@ class Engine(object):
             for obj in set(objs):
                 del_item = {
                     "DeleteRequest": {
-                        "Key": bloop.client.dump_key(self, obj)
+                        "Key": dump_key(self, obj)
                     }
                 }
                 table_name = obj.Meta.table_name

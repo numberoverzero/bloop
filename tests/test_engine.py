@@ -1,3 +1,4 @@
+import bloop
 import bloop.engine
 import pytest
 import uuid
@@ -37,6 +38,21 @@ def test_register_bound_model(User, engine):
     assert User in engine.models
     engine.register(User)
     assert User not in engine.unbound_models
+
+
+def test_dump_key(User, engine, local_bind):
+    class HashAndRange(engine.model):
+        foo = bloop.Column(bloop.Integer, hash_key=True)
+        bar = bloop.Column(bloop.Integer, range_key=True)
+    engine.bind()
+
+    user = User(id=uuid.uuid4())
+    user_key = {'id': {'S': str(user.id)}}
+    assert bloop.engine.dump_key(engine, user) == user_key
+
+    obj = HashAndRange(foo=4, bar=5)
+    obj_key = {'bar': {'N': '5'}, 'foo': {'N': '4'}}
+    assert bloop.engine.dump_key(engine, obj) == obj_key
 
 
 def test_load_object(User, engine):

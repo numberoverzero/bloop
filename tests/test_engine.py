@@ -3,6 +3,20 @@ import pytest
 import uuid
 
 
+def ordered(obj):
+    '''
+    Return sorted version of nested dicts/lists for comparing.
+
+    http://stackoverflow.com/a/25851972
+    '''
+    if isinstance(obj, dict):
+        return sorted((k, ordered(v)) for k, v in obj.items())
+    if isinstance(obj, list):
+        return sorted(ordered(x) for x in obj)
+    else:
+        return obj
+
+
 def test_missing_objects(User, engine):
     '''
     When objects aren't loaded, ObjectsNotFound is raised with a list of
@@ -46,6 +60,32 @@ def test_load_object(User, engine):
     assert user.id == user_id
 
 
+def test_load_objects(User, engine):
+    user1 = User(id=uuid.uuid4())
+    user2 = User(id=uuid.uuid4())
+    expected = {'User': {'Keys': [{'id': {'S': str(user1.id)}},
+                                  {'id': {'S': str(user2.id)}}],
+                         'ConsistentRead': False}}
+    response = {'User': [{'age': {'N': 5},
+                          'name': {'S': 'foo'},
+                          'id': {'S': str(user1.id)}},
+                         {'age': {'N': 10},
+                          'name': {'S': 'bar'},
+                          'id': {'S': str(user2.id)}}]}
+
+    def respond(input):
+        assert ordered(input) == ordered(expected)
+        return response
+    engine.client.batch_get_items = respond
+
+    engine.load((user1, user2))
+
+    assert user1.age == 5
+    assert user1.name == 'foo'
+    assert user2.age == 10
+    assert user2.name == 'bar'
+
+
 def test_load_dump_unbound(UnboundUser, engine):
     user_id = uuid.uuid4()
     user = UnboundUser(id=user_id, age=5, name='foo')
@@ -74,7 +114,7 @@ def test_load_dump_unknown(engine):
         engine.__dump__(NotModeled, obj)
 
 
-def test_save_multi_condition(User, engine):
+def test_illegal_save(User, engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
     condition = User.id.is_(None)
 
@@ -97,7 +137,21 @@ def test_save_condition(User, engine):
     engine.save(user, condition=condition)
 
 
-def test_delete_multi_condition(User, engine):
+def test_save_multiple(User, engine):
+    user1 = User(id=uuid.uuid4())
+    user2 = User(id=uuid.uuid4())
+
+    expected = {'User': [
+        {'PutRequest': {'Item': {'id': {'S': str(user1.id)}}}},
+        {'PutRequest': {'Item': {'id': {'S': str(user2.id)}}}}]}
+
+    def validate(items):
+        assert ordered(items) == ordered(expected)
+    engine.client.batch_write_items = validate
+    engine.save((user1, user2))
+
+
+def test_illegal_delete(User, engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
     condition = User.id.is_(None)
 
@@ -118,3 +172,17 @@ def test_delete_condition(User, engine):
         assert item == expected
     engine.client.delete_item = validate
     engine.delete(user, condition=condition)
+
+
+def test_delete_multiple(User, engine):
+    user1 = User(id=uuid.uuid4())
+    user2 = User(id=uuid.uuid4())
+
+    expected = {'User': [
+        {'DeleteRequest': {'Key': {'id': {'S': str(user1.id)}}}},
+        {'DeleteRequest': {'Key': {'id': {'S': str(user2.id)}}}}]}
+
+    def validate(items):
+        assert ordered(items) == ordered(expected)
+    engine.client.batch_write_items = validate
+    engine.delete((user1, user2))

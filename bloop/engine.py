@@ -18,7 +18,7 @@ class ObjectsNotFound(Exception):
 def list_of(objs):
     ''' wrap single elements in a list '''
     # String check first since it is also an Iterable
-    if isinstance(objs, str):
+    if isinstance(objs, str):  # pragma: no cover
         return [objs]
     elif isinstance(objs, collections.abc.Iterable):
         return objs
@@ -47,7 +47,7 @@ class Engine(object):
         self.type_engine = declare.TypeEngine.unique()
         self.model = bloop.model.BaseModel(self)
         self.unbound_models = set()
-        self.models = []
+        self.models = set()
 
         # Control how many pages are loaded at once during scans/queries.
         #   < 0: the full query will be executed at once.
@@ -105,6 +105,7 @@ class Engine(object):
             # If nothing above threw, we can mark this model bound
 
             self.unbound_models.remove(model)
+            self.models.add(model)
 
     def load(self, objs, *, consistent=False):
         '''
@@ -206,11 +207,13 @@ class Engine(object):
         elif len(objs) == 1 and condition:
             obj = objs[0]
             model = obj.__class__
-            table_name = model.Meta.table_name
-            item = self.__dump__(model, obj)
-            expression = bloop.condition.render(self, condition,
-                                                mode="condition")
-            self.client.put_item(table_name, item, expression)
+            item = {
+                "TableName": model.Meta.table_name,
+                "Item": self.__dump__(model, obj),
+            }
+            item.update(bloop.condition.render(
+                self, condition, mode="condition"))
+            self.client.put_item(item)
 
         else:
             request_items = collections.defaultdict(list)
@@ -234,11 +237,13 @@ class Engine(object):
         elif len(objs) == 1 and condition:
             obj = objs[0]
             model = obj.__class__
-            table_name = model.Meta.table_name
-            key = bloop.dynamo_client.dump_key(self, obj)
-            expression = bloop.condition.render(self, condition,
-                                                mode="condition")
-            self.client.delete_item(table_name, key, expression)
+            item = {
+                "TableName": model.Meta.table_name,
+                "Key": bloop.dynamo_client.dump_key(self, obj)
+            }
+            item.update(bloop.condition.render(
+                self, condition, mode="condition"))
+            self.client.delete_item(item)
 
         else:
             request_items = collections.defaultdict(list)

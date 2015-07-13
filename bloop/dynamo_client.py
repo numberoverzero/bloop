@@ -305,15 +305,15 @@ class DynamoClient(object):
             if error_code != 'ResourceInUseException':
                 raise error
 
-    def delete_item(self, table, key, expression):
+    def delete_item(self, item):
         try:
-            self.call_with_retries(self.client.delete_item,
-                                   TableName=table, Key=key, **expression)
+            self.call_with_retries(self.client.delete_item, **item)
         except botocore.exceptions.ClientError as error:
             error_code = error.response['Error']['Code']
             if error_code == 'ConditionalCheckFailedException':
                 raise ConstraintViolation(
-                    "Failed to meet condition: {}".format(expression), key)
+                    "Failed to meet condition during delete: {}".format(item),
+                    item)
             else:
                 raise error
 
@@ -365,15 +365,15 @@ class DynamoClient(object):
     def query(self, **request):
         return self._filter(self.client.query, **request)
 
-    def put_item(self, table, item, expression):
+    def put_item(self, item):
         try:
-            self.call_with_retries(self.client.put_item,
-                                   TableName=table, Item=item, **expression)
+            self.call_with_retries(self.client.put_item, **item)
         except botocore.exceptions.ClientError as error:
             error_code = error.response['Error']['Code']
             if error_code == 'ConditionalCheckFailedException':
                 raise ConstraintViolation(
-                    "Failed to meet condition: {}".format(expression), item)
+                    "Failed to meet condition during put: {}".format(item),
+                    item)
             else:
                 raise error
 

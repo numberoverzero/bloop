@@ -1,6 +1,6 @@
 import bloop.condition
-import operator
 import declare
+import operator
 
 
 class ComparisonMixin(object):

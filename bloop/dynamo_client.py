@@ -1,10 +1,10 @@
+import bloop.column
+import bloop.index
 import boto3
 import botocore
 import collections
-import time
 import functools
-import bloop.column
-import bloop.index
+import time
 
 
 BUSY = object()

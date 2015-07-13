@@ -1,10 +1,10 @@
+import bloop.condition
+import bloop.dynamo_client
+import bloop.filter
 import bloop.model
-from bloop.filter import Query, Scan
-from bloop.condition import render
-from bloop.dynamo_client import DynamoClient, dump_key
-import declare
 import collections
 import collections.abc
+import declare
 missing = object()
 
 
@@ -48,7 +48,7 @@ class Engine(object):
     model = None
 
     def __init__(self, session=None):
-        self.client = DynamoClient(session=session)
+        self.client = bloop.dynamo_client.DynamoClient(session=session)
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()
@@ -163,7 +163,7 @@ class Engine(object):
                     "Keys": [],
                     "ConsistentRead": consistent
                 }
-            key = dump_key(self, obj)
+            key = bloop.dynamo_client.dump_key(self, obj)
             # Add the key to the request
             request_items[table_name]["Keys"].append(key)
             # Make sure we can find the key shape for this table
@@ -215,7 +215,8 @@ class Engine(object):
             model = obj.__class__
             table_name = model.Meta.table_name
             item = self.__dump__(model, obj)
-            expression = render(self, condition, mode="condition")
+            expression = bloop.condition.render(self, condition,
+                                                mode="condition")
             self.client.put_item(table_name, item, expression)
 
         else:
@@ -241,8 +242,9 @@ class Engine(object):
             obj = objs[0]
             model = obj.__class__
             table_name = model.Meta.table_name
-            key = dump_key(self, obj)
-            expression = render(self, condition, mode="condition")
+            key = bloop.dynamo_client.dump_key(self, obj)
+            expression = bloop.condition.render(self, condition,
+                                                mode="condition")
             self.client.delete_item(table_name, key, expression)
 
         else:
@@ -251,7 +253,7 @@ class Engine(object):
             for obj in set(objs):
                 del_item = {
                     "DeleteRequest": {
-                        "Key": dump_key(self, obj)
+                        "Key": bloop.dynamo_client.dump_key(self, obj)
                     }
                 }
                 table_name = obj.Meta.table_name
@@ -259,8 +261,8 @@ class Engine(object):
 
             self.client.batch_write_items(request_items)
 
-    def query(self, model, index=None):
-        return Query(engine=self, model=model, index=index)
+    def query(self, model, index=None):  # pragma: no cover
+        return bloop.filter.Query(engine=self, model=model, index=index)
 
-    def scan(self, model, index=None):
-        return Scan(engine=self, model=model, index=index)
+    def scan(self, model, index=None):  # pragma: no cover
+        return bloop.filter.Scan(engine=self, model=model, index=index)

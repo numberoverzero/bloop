@@ -1,5 +1,5 @@
-import bloop.condition
 import bloop.client
+import bloop.condition
 import bloop.filter
 import bloop.model
 import collections

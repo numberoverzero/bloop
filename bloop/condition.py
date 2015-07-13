@@ -65,8 +65,6 @@ class ConditionRenderer(object):
         return ref
 
     def render(self, condition, mode):
-        if not condition:
-            return {}
         rendered_expression = condition.render(self)
         # Legacy expressions are of the form:
         # { "dynamo_name":
@@ -151,7 +149,7 @@ class Not(Condition):
     def render(self, renderer):
         if renderer.legacy:
             raise ValueError("Don't know how to render legacy NOT")
-        return "( NOT {})".format(self.condition.render(renderer))
+        return "(NOT {})".format(self.condition.render(renderer))
 
 
 class Comparison(Condition):

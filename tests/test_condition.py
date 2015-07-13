@@ -37,3 +37,13 @@ def test_legacy_refs(engine, User):
     with pytest.raises(ValueError):
         renderer.name_ref(User.age)
     assert renderer.value_ref(User.age, 5) == {'N': '5'}
+
+
+def test_no_refs(engine):
+    '''
+    when name/value refs are missing, ExpressionAttributeNames/Values
+    aren't populated '''
+    condition = bloop.condition.And()
+    renderer = bloop.condition.ConditionRenderer(engine)
+    expected = {'ConditionExpression': '()'}
+    assert renderer.render(condition, 'condition') == expected

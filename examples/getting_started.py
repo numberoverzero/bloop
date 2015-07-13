@@ -23,7 +23,7 @@ class Post(engine.model):
 
     by_user = GlobalSecondaryIndex(hash_key='user', projection='keys_only',
                                    write_units=1, read_units=10)
-# engine.bind()
+engine.bind()
 
 
 def create_user(admin=False):

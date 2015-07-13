@@ -117,7 +117,7 @@ class Not(Condition):
     def __init__(self, condition):
         self.condition = condition
 
-    def __str__(self):
+    def __str__(self):  # pragma: no cover
         return "Not({})".format(self.condition)
 
     def __len__(self):
@@ -144,7 +144,7 @@ class Comparison(Condition):
         self.comparator = comparator
         self.value = value
 
-    def __str__(self):
+    def __str__(self):  # pragma: no cover
         return "Compare({}, {}, {})".format(
             self.comparator_strings[self.comparator],
             self.column, self.value)
@@ -161,7 +161,7 @@ class AttributeExists(Condition):
         self.column = column
         self.negate = negate
 
-    def __str__(self):
+    def __str__(self):  # pragma: no cover
         name = "AttributeNotExists" if self.negate else "AttributeExists"
         return "{}({})".format(name, self.column)
 
@@ -176,7 +176,7 @@ class BeginsWith(Condition):
         self.column = column
         self.value = value
 
-    def __str__(self):
+    def __str__(self):  # pragma: no cover
         return "BeginsWith({}, {})".format(self.column, self.value)
 
     def render(self, renderer):
@@ -190,7 +190,7 @@ class Contains(Condition):
         self.column = column
         self.value = value
 
-    def __str__(self):
+    def __str__(self):  # pragma: no cover
         return "Contains({}, {})".format(self.column, self.value)
 
     def render(self, renderer):
@@ -205,7 +205,7 @@ class Between(Condition):
         self.lower = lower
         self.upper = upper
 
-    def __str__(self):
+    def __str__(self):  # pragma: no cover
         return "Between({}, {}, {})".format(
             self.column, self.lower, self.upper)
 
@@ -222,7 +222,7 @@ class In(Condition):
         self.column = column
         self.values = values
 
-    def __str__(self):
+    def __str__(self):  # pragma: no cover
         values = ", ".join(str(c) for c in self.values)
         return "In({}, [{}])".format(self.column, values)
 

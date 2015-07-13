@@ -1,8 +1,10 @@
 import uuid
+import bloop.column
 import bloop.model
 import pytest
 
-from bloop import Column, UUID, Boolean, DateTime, String
+from bloop import (Column, UUID, Boolean, DateTime, String,
+                   LocalSecondaryIndex, GlobalSecondaryIndex)
 missing = object()
 
 
@@ -171,3 +173,102 @@ def test_model_extra_keys(engine):
         class DoubleRange(engine.model):
             id = Column(UUID, range_key=True)
             other = Column(UUID, range_key=True)
+
+
+def test_invalid_local_index(engine):
+    with pytest.raises(ValueError):
+        class InvalidIndex(engine.model):
+            id = Column(UUID, hash_key=True)
+            index = LocalSecondaryIndex(range_key='id')
+
+
+def test_index_keys(engine):
+    ''' Make sure index hash and range keys are objects, not strings '''
+    class Model(engine.model):
+        id = Column(UUID, hash_key=True)
+        other = Column(DateTime, range_key=True)
+        another = Column(UUID)
+        last = Column(String)
+
+        by_last = GlobalSecondaryIndex(hash_key='another', range_key='last')
+        by_another = LocalSecondaryIndex(range_key='last')
+
+    assert Model.by_last.hash_key is Model.another
+    assert Model.by_last.range_key is Model.last
+
+    assert Model.by_another.hash_key is Model.id
+    assert Model.by_another.range_key is Model.last
+
+
+def test_local_index_no_range_key(engine):
+    ''' A table range_key is required to specify a LocalSecondaryIndex '''
+    with pytest.raises(ValueError):
+        class Model(engine.model):
+            id = Column(UUID, hash_key=True)
+            another = Column(UUID)
+            by_another = LocalSecondaryIndex(range_key='another')
+
+
+def test_abstract_index(engine):
+    ''' Can't use a direct Index, since it's abstract '''
+    with pytest.raises(ValueError):
+        class Model(engine.model):
+            id = Column(UUID, hash_key=True)
+            another = Column(UUID)
+            by_another = bloop.column.Index(hash_key='another')
+
+
+def test_index_projections(engine):
+    ''' Make sure index projections are calculated to include table keys '''
+    Global, Local = GlobalSecondaryIndex, LocalSecondaryIndex
+
+    class Model(engine.model):
+        id = Column(UUID, hash_key=True)
+        other = Column(UUID, range_key=True)
+        another = Column(UUID)
+        date = Column(DateTime)
+        boolean = Column(Boolean)
+
+        g_all = Global(hash_key='another', range_key='date', projection='all')
+        g_key = Global(hash_key='another', projection='keys_only')
+        g_inc = Global(hash_key='other', projection=['another', 'date'])
+
+        l_all = Local(range_key='another', projection='all')
+        l_key = Local(range_key='another', projection='keys_only')
+        l_inc = Local(range_key='another', projection=['date'])
+
+    uuids = set([Model.id, Model.other, Model.another])
+    no_boolean = set(Model.Meta.columns)
+    no_boolean.remove(Model.boolean)
+
+    assert Model.g_all.projection == "ALL"
+    assert Model.g_all.projection_attributes == set(Model.Meta.columns)
+    assert Model.g_key.projection == "KEYS_ONLY"
+    assert Model.g_key.projection_attributes == uuids
+    assert Model.g_inc.projection == "INCLUDE"
+    assert Model.g_inc.projection_attributes == no_boolean
+
+    assert Model.l_all.projection == "ALL"
+    assert Model.l_all.projection_attributes == set(Model.Meta.columns)
+    assert Model.l_key.projection == "KEYS_ONLY"
+    assert Model.l_key.projection_attributes == uuids
+    assert Model.l_inc.projection == "INCLUDE"
+    assert Model.l_inc.projection_attributes == no_boolean
+
+
+def test_meta_table_name(engine):
+    '''
+    If table_name is missing from a model's Meta, use the model's __name__
+    '''
+    class Model(engine.model):
+        id = Column(UUID, hash_key=True)
+
+    assert Model.Meta.table_name == 'Model'
+
+    class Other(engine.model):
+        class Meta:
+            table_name = 'table_name'
+            write_units = 3
+        id = Column(UUID, hash_key=True)
+
+    assert Other.Meta.table_name == 'table_name'

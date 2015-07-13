@@ -1,4 +1,5 @@
 import bloop.column
+import bloop.index
 import declare
 missing = object()
 
@@ -112,12 +113,7 @@ def BaseModel(engine):
             # while some list operations uses __eq__ which will break
             # with the ComparisonMixin
             columns = set(filter(bloop.column.is_column, Meta.fields))
-            indexes = set(filter(bloop.column.is_index, columns))
-
-            # Remove indexes from columns since they're treated differently
-            for index in indexes:
-                index.model = model
-                columns.remove(index)
+            indexes = set(filter(bloop.index.is_index, Meta.fields))
 
             Meta.indexes = indexes
             Meta.columns = columns
@@ -142,9 +138,9 @@ def BaseModel(engine):
             # in indexed columns and the relate proper `bloop.Column` object
             cols = Meta.columns_by_model_name
             for index in indexes:
-                if bloop.column.is_global_index(index):
+                if bloop.index.is_global_index(index):
                     index._hash_key = cols[index.hash_key]
-                elif bloop.column.is_local_index(index):
+                elif bloop.index.is_local_index(index):
                     if not Meta.range_key:
                         raise ValueError(
                             "Cannot specify a LocalSecondaryIndex " +

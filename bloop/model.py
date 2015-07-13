@@ -63,7 +63,7 @@ class __BaseModel(object):
         return "{}({})".format(cls_name, attrs)
     __repr__ = __str__
 
-    def __hash__(self):
+    def __hash__(self):  # pragma: no cover
         return super().__hash__()
 
     def __eq__(self, other):

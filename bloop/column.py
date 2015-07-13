@@ -56,7 +56,7 @@ class ComparisonMixin(object):
         ''' lower <= column.value <= upper '''
         return bloop.condition.Between(self, lower, upper)
 
-    def in_(self, *values):
+    def in_(self, values):
         ''' column.value in [3, 4, 5] '''
         return bloop.condition.In(self, values)
 
@@ -78,7 +78,7 @@ class Column(declare.Field, ComparisonMixin):
             self.__class__.__name__, uuid.uuid4().hex)
         super().__init__(*args, **kwargs)
 
-    def __str__(self):
+    def __str__(self):  # pragma: no cover
         attrs = ["model_name", "dynamo_name", "hash_key", "range_key"]
 
         def _attr(attr):
@@ -107,40 +107,6 @@ class Column(declare.Field, ComparisonMixin):
         if self._dynamo_name is missing:
             return self.model_name
         return self._dynamo_name
-
-    def __meta__(self, obj):
-        ''' Return the column-specific metadata dict for a given object '''
-        meta = obj.__dict__.get(_meta_key, None)
-        if meta is None:
-            meta = obj.__dict__[_meta_key] = {}
-        column_meta = meta.get(self.column_key, None)
-        if column_meta is None:
-            column_meta = meta[self.column_key] = {}
-        return column_meta
-
-    def meta_get(self, obj, name, default=missing):
-        '''
-        look up and return the value of a property in the column metadata,
-        setting and return the default value if specified.
-
-        if `default` is not set, KeyError is raised and the metadata dict is
-        not mutated.
-        '''
-        obj_meta = self.__meta__(obj)
-        value = obj_meta.get(name, missing)
-        # Failed to find - either set and return default, or raise
-        if value is missing:
-            # Don't mutate on fail to find
-            if default is missing:
-                raise KeyError("Unknown column meta property {}".format(name))
-            else:
-                value = obj_meta[name] = default
-        return value
-
-    def meta_set(self, obj, name, value):
-        obj_meta = self.__meta__(obj)
-        obj_meta[name] = value
-        return value
 
 
 def validate_projection(projection):

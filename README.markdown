@@ -373,11 +373,10 @@ print(engine.query(CustomUser).key(CustomUser.id == uid).first())
 
 ## Custom Columns
 
-Columns have three important properties:
+Columns have two important properties:
 
 1. Column subclasses a `ComparisonMixin` which enables the use of rich comparators to generate ConditionExpressions.
 2. Column also subclasses `declare.Field`to implement the [descriptor protocol][descriptors].
-3. Column exposes a pair of functions for storing per-instance metadata without (probabilistically) colliding with an existing attribute for that object.
 
 Global and Local Secondary Indexes are subclasses of Column, which take advantage of almost none of the above properties.  Before creating your own Column subclass, it is **highly** recommended that you fully review the descriptor protocol, as well as the following notes on the limitations imposed by the above subclassing.  Since bloop's type system is primarily responsible for loading/packing values from/to DynamoDB, it's usually correct to implement custom logic in your own Type.  A custom Column class is most appropriate for behavior that cuts across types.  In other words, `MyColumn(Integer)` and `MyColumn(String)` should probably both be fine.
 
@@ -452,47 +451,6 @@ instance = Model(id=5)
 print(instance.__dict__)  # {'id': -5}
 print(instance.id)        # 5
 ```
-
-### Per-instance metadata
-
-Meta values are also stored in the object's dictionary, under a randomly generated key.  Let's inspect an instance to see:
-
-```python
-class Model(engine.model):
-    id = Column(String, hash_key=True)
-    other = Column(Integer)
-
-instance = Model(id="foo")
-print(instance.__dict__)  # {'id': 'foo'}
-
-# Set a meta value for the `id` column of our instance
-Model.id.meta_set(instance, "meta_id", "meta_id_value")
-print(instance.__dict__)  # {'id': 'foo',
-                          #  '__column_meta_2e1bf988a7124784be30652d61726612': {
-                          #    '__Column_ea53efb34e7b431083328d4773ca2c37': {
-                          #        'meta_id': 'meta_id_value'
-                          #    }
-                          #  }
-                          # }
-```
-
-Meta values are stored first under a dict key that is global for all column metadata - if we add a meta value for a different column there will still be one top-level entry in the object's dictionary, but a second column key (unique to the column setting the metadata) will be created.
-
-```python
-Model.other.meta_set(instance, "meta_other", "meta_other_value")
-print(instance.__dict__)  # {'id': 'foo',
-                          #  '__column_meta_2e1bf988a7124784be30652d61726612': {
-                          #    '__Column_ea53efb34e7b431083328d4773ca2c37': {
-                          #        'meta_id': 'meta_id_value'
-                          #    },
-                          #    '__Column_883c5980eeaf4f77b87abb3d600a7b44': {
-                          #        'meta_other': 'meta_other_value'
-                          #    },
-                          #  }
-                          # }
-```
-
-This allows us to keep the overhead for objects low - each object holds any associated metadata, and is released when the object cleans up.  Otherwise, the Column would have to track when instances were no longer needed and clean up their metadata.
 
 # Operations
 

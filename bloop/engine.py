@@ -15,13 +15,6 @@ class ObjectsNotFound(Exception):
         self.missing = list(objs)
 
 
-class ConstraintViolation(Exception):
-    ''' Thrown when a condition is not met during save/delete '''
-    def __init__(self, message, obj):
-        super().__init__(message)
-        self.obj = obj
-
-
 def list_of(objs):
     ''' wrap single elements in a list '''
     # String check first since it is also an Iterable

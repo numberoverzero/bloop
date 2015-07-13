@@ -20,6 +20,13 @@ TABLE_MISMATCH = ("Existing table does not match expected fields."
                   "  EXPECTED: {} ACTUAL: {}")
 
 
+class ConstraintViolation(Exception):
+    ''' Thrown when a condition is not met during save/delete '''
+    def __init__(self, message, obj):
+        super().__init__(message)
+        self.obj = obj
+
+
 def default_backoff_func(operation, attempts):
     '''
     Exponential backoff helper.
@@ -299,8 +306,16 @@ class DynamoClient(object):
                 raise error
 
     def delete_item(self, table, key, expression):
-        self.call_with_retries(self.client.delete_item,
-                               TableName=table, Key=key, **expression)
+        try:
+            self.call_with_retries(self.client.delete_item,
+                                   TableName=table, Key=key, **expression)
+        except botocore.exceptions.ClientError as error:
+            error_code = error.response['Error']['Code']
+            if error_code == 'ConditionalCheckFailedException':
+                raise ConstraintViolation(
+                    "Failed to meet condition: {}".format(expression), key)
+            else:
+                raise error
 
     def describe_table(self, model):
         description = self.call_with_retries(
@@ -351,8 +366,16 @@ class DynamoClient(object):
         return self._filter(self.client.query, **request)
 
     def put_item(self, table, item, expression):
-        self.call_with_retries(self.client.put_item,
-                               TableName=table, Item=item, **expression)
+        try:
+            self.call_with_retries(self.client.put_item,
+                                   TableName=table, Item=item, **expression)
+        except botocore.exceptions.ClientError as error:
+            error_code = error.response['Error']['Code']
+            if error_code == 'ConditionalCheckFailedException':
+                raise ConstraintViolation(
+                    "Failed to meet condition: {}".format(expression), item)
+            else:
+                raise error
 
     def scan(self, **request):
         return self._filter(self.client.scan, **request)

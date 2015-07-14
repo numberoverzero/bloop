@@ -49,12 +49,12 @@ def main():
     engine.save(posts)
 
     print("Posts by user1.\nGSI projection includes (forum, user)\n")
-    user_posts = engine.query(IndexPost, index=IndexPost.by_user)
+    user_posts = engine.query(IndexPost.by_user)
     for post in user_posts.key(IndexPost.user == user1):
         print(post)
     print("\nPosts within the last 3 hours in forum 'Support'."
           "\nLSI projection contains (forum, user, date, views)\n")
-    recent_posts = engine.query(IndexPost, index=IndexPost.by_date)
+    recent_posts = engine.query(IndexPost.by_date)
     forum_key = IndexPost.forum == "Support"
     date_key = IndexPost.date.between(arrow.now().replace(hours=-3),
                                       arrow.now())

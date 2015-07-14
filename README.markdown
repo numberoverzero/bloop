@@ -68,7 +68,7 @@ Next, let's take advantage of our GlobalSecondaryIndex `by_user` to find all pos
 ```python
 def posts_by_user(user_id):
     ''' Returns an iterable of posts by the user '''
-    return engine.query(Post, index=Post.by_user).key(Post.id == user_id)
+    return engine.query(Post.by_user).key(Post.id == user_id)
 ```
 
 Again we leverage standard comparison operators to define the key condition with `Post.id == user_id`.  There are a number of moving pieces that allow this function to stay so simple:
@@ -486,11 +486,11 @@ Engine.delete(self, objs, *, condition=None)
 ## Query and Scan
 
 ```python
-Engine.query(self, model, index=None)
-Engine.scan(self, model, index=None)
+Engine.query(self, model_or_index)
+Engine.scan(self, model_or_index)
 ```
 
-These methods return a Query or Scan object that can be refined by chaining method calls together.  The available methods are identical, although some will have no effect during a Scan (such as `.key`).
+These methods return a Query or Scan object that can be refined by chaining method calls together.  The available methods are identical, although some will have no effect during a Scan (such as `.key`).  Either a model (`Post`) or an index (`Post.by_user`) can be provided.
 
 ### Chaining
 
@@ -510,7 +510,7 @@ Available methods:
 Every time a Query or Scan is iterated, a new set of calls is issued to DynamoDB.  To iterate over results from the same batch of calls, use `all()`.
 
 ```python
-base_query = engine.query(Post, index=Post.by_user).consistent.ascending
+base_query = engine.query(Post.by_user).consistent.ascending
 
 def new_posts(user_id):
     yesterday = arrow.now().replace(days=-1)

@@ -29,17 +29,22 @@ def validate_key_condition(condition):
 
 
 def validate_select_mode(select):
+    invalid = ValueError("Must specify 'all', 'projected', 'count', or"
+                         " a list of column objects to select")
     if isinstance(select, str):
         select = select.lower()
         if select not in ["all", "projected", "count"]:
-            raise ValueError("Must specify 'all', 'projected', 'count', or"
-                             " a list of column objects to select")
+            raise invalid
     else:
-        select = set(select)
+        try:
+            select = set(select)
+        except TypeError:
+            raise invalid
+        if not select:
+            raise invalid
         for column in select:
             if not bloop.column.is_column(column):
-                raise ValueError("Must specify 'all', 'projected', 'count', or"
-                                 " a list of column objects to select")
+                raise invalid
     return select
 
 
@@ -208,7 +213,6 @@ class Filter(object):
             return other
 
         elif select == 'all':
-            ...
             if is_gsi and self.index.projection != "ALL":
                 raise ValueError("Cannot select 'all' attributes from a GSI"
                                  " unless the GSI's projection is 'ALL'")
@@ -365,7 +369,7 @@ class FilterResult(object):
     def __init__(self, prefetch, call, request, engine, model):
         self._call = call
         self._prefetch = prefetch
-        self._request = request
+        self.request = request
         self.engine = engine
         self.model = model
 
@@ -449,8 +453,8 @@ class FilterResult(object):
     def _step(self):
         ''' Single call, advancing ExclusiveStartKey if necessary. '''
         if self._continue:
-            self._request["ExclusiveStartKey"] = self._continue
-        response = self._call(**self._request)
+            self.request["ExclusiveStartKey"] = self._continue
+        response = self._call(**self.request)
         self._continue = response.get("LastEvaluatedKey", None)
 
         self.count += response["Count"]

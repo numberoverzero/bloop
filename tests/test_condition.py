@@ -126,3 +126,17 @@ def test_in(renderer, User):
                 'ExpressionAttributeValues': {':v1': {'S': 'bar'},
                                               ':v2': {'S': 'foo'}}}
     assert renderer.render(condition, 'condition') == expected
+
+
+def test_base_condition(User):
+    ''' (Condition() OP condition) is condition '''
+    base = bloop.condition.Condition()
+    other = User.email == 'foo'
+
+    assert (base & other) is other
+    assert (base | other) is other
+    assert (~base) is base
+    assert len(base) == 0
+
+    with pytest.raises(ValueError):
+        base.render(None)

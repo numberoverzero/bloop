@@ -17,7 +17,7 @@ def render(engine, condition, mode):
     return renderer.render(condition, mode=mode)
 
 
-class ConditionRenderer(object):
+class ConditionRenderer:
     def __init__(self, engine):
         self.engine = engine
         self.attr_values = {}
@@ -67,7 +67,7 @@ class ConditionRenderer(object):
         return expression
 
 
-class Condition(object):
+class BaseCondition:
     def __and__(self, other):
         return And(self, other)
     __iand__ = __and__
@@ -84,7 +84,40 @@ class Condition(object):
         return 1
 
 
-class MultiCondition(Condition):
+class Condition(BaseCondition):
+    '''
+    Empty condition that can be used as an initial value for iteratively
+    building conditions.
+
+    Usage:
+        condition = Condition()
+        for foo in bar:
+            condition &= Model.field == foo
+    '''
+    def __and__(self, other):
+        return other
+    __iand__ = __and__
+
+    def __or__(self, other):
+        return other
+    __ior__ = __or__
+
+    def __invert__(self):
+        return self
+    __neg__ = __invert__
+
+    def __len__(self):
+        return 0
+
+    def __str__(self):  # pragma: no cover
+        return "EmptyCondition()"
+    __repr__ = __str__
+
+    def render(self, renderer):
+        raise ValueError("Can't render empty condition")
+
+
+class MultiCondition(BaseCondition):
     def __init__(self, *conditions):
         self.conditions = conditions
 
@@ -114,7 +147,7 @@ class Or(MultiCondition):
     uname = "OR"
 
 
-class Not(Condition):
+class Not(BaseCondition):
     def __init__(self, condition):
         self.condition = condition
 
@@ -129,7 +162,7 @@ class Not(Condition):
         return "(NOT {})".format(self.condition.render(renderer))
 
 
-class Comparison(Condition):
+class Comparison(BaseCondition):
     comparator_strings = {
         operator.eq: "=",
         operator.ne: "<>",
@@ -159,7 +192,7 @@ class Comparison(Condition):
         return "({} {} {})".format(nref, comparator, vref)
 
 
-class AttributeExists(Condition):
+class AttributeExists(BaseCondition):
     def __init__(self, column, negate):
         self.column = column
         self.negate = negate
@@ -175,7 +208,7 @@ class AttributeExists(Condition):
         return "({}({}))".format(name, nref)
 
 
-class BeginsWith(Condition):
+class BeginsWith(BaseCondition):
     def __init__(self, column, value):
         self.column = column
         self.value = value
@@ -190,7 +223,7 @@ class BeginsWith(Condition):
         return "(begins_with({}, {}))".format(nref, vref)
 
 
-class Contains(Condition):
+class Contains(BaseCondition):
     def __init__(self, column, value):
         self.column = column
         self.value = value
@@ -205,7 +238,7 @@ class Contains(Condition):
         return "(contains({}, {}))".format(nref, vref)
 
 
-class Between(Condition):
+class Between(BaseCondition):
     def __init__(self, column, lower, upper):
         self.column = column
         self.lower = lower
@@ -224,7 +257,7 @@ class Between(Condition):
             nref, vref_lower, vref_upper)
 
 
-class In(Condition):
+class In(BaseCondition):
     def __init__(self, column, values):
         self.column = column
         self.values = values

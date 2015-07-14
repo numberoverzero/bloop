@@ -224,7 +224,7 @@ def test_select_specific(engine, User):
 
     result = q.select([User.email, User.joined]).all()
     expected = {'Select': 'SPECIFIC_ATTRIBUTES',
-                'ExpressionAttributeNames': {'#n1': 'email', '#n0': 'joined',
+                'ExpressionAttributeNames': {'#n0': 'email', '#n1': 'joined',
                                              '#n2': 'id'},
                 'ScanIndexForward': True,
                 'ExpressionAttributeValues': {':v3': {'S': str(user_id)}},
@@ -267,3 +267,74 @@ def test_select_specific_gsi_projection(engine, local_bind):
                 'ExpressionAttributeValues': {':v2': {'S': 'now'}},
                 'ProjectionExpression': '#n0'}
     assert result.request == expected
+
+
+def test_count(engine, User):
+    user_id = uuid.uuid4()
+    q = engine.query(User).key(User.id == user_id)
+
+    expected = {'TableName': 'User',
+                'ConsistentRead': False,
+                'KeyConditionExpression': '(#n0 = :v1)',
+                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
+                'ExpressionAttributeNames': {'#n0': 'id'},
+                'Select': 'COUNT',
+                'ScanIndexForward': True}
+
+    def respond(**request):
+        assert request == expected
+        item = User(id=user_id, age=5)
+        return {
+            "Count": 1,
+            "ScannedCount": 2,
+            "Items": [engine.__dump__(User, item)]
+        }
+    engine.client.query = respond
+
+    count = q.count()
+    assert count == {"count": 1, "scanned_count": 2}
+
+
+def test_first(engine, User):
+    q = engine.scan(User).filter(User.email == "foo@domain.com")
+    expected = {'Select': 'ALL_ATTRIBUTES',
+                'TableName': 'User',
+                'FilterExpression': '(#n0 = :v1)',
+                'ExpressionAttributeNames': {'#n0': 'email'},
+                'ExpressionAttributeValues': {':v1': {'S': 'foo@domain.com'}}}
+
+    def respond(**request):
+        assert request == expected
+        item = User(email="foo@domain.com")
+        return {
+            "Count": 1,
+            "ScannedCount": 2,
+            "Items": [engine.__dump__(User, item)]
+        }
+    engine.client.scan = respond
+
+    first = q.first()
+    assert first.email == "foo@domain.com"
+
+
+def test_iter(engine, User):
+    q = engine.scan(User).filter(User.email == "foo@domain.com")
+    expected = {'Select': 'ALL_ATTRIBUTES',
+                'TableName': 'User',
+                'FilterExpression': '(#n0 = :v1)',
+                'ExpressionAttributeNames': {'#n0': 'email'},
+                'ExpressionAttributeValues': {':v1': {'S': 'foo@domain.com'}}}
+
+    def respond(**request):
+        assert request == expected
+        item = User(email="foo@domain.com")
+        return {
+            "Count": 1,
+            "ScannedCount": 2,
+            "Items": [engine.__dump__(User, item)]
+        }
+    engine.client.scan = respond
+
+    results = list(q)
+    assert len(results) == 1
+    assert results[0].email == "foo@domain.com"

@@ -91,6 +91,7 @@ class MultiCondition(Condition):
     def __str__(self):  # pragma: no cover
         conditions = ", ".join(str(c) for c in self.conditions)
         return self.name + "({})".format(conditions)
+    __repr__ = __str__
 
     def __len__(self):
         return sum(map(len, self.conditions))
@@ -119,6 +120,7 @@ class Not(Condition):
 
     def __str__(self):  # pragma: no cover
         return "Not({})".format(self.condition)
+    __repr__ = __str__
 
     def __len__(self):
         return len(self.condition)
@@ -148,6 +150,7 @@ class Comparison(Condition):
         return "Compare({}, {}, {})".format(
             self.comparator_strings[self.comparator],
             self.column, self.value)
+    __repr__ = __str__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column)
@@ -164,6 +167,7 @@ class AttributeExists(Condition):
     def __str__(self):  # pragma: no cover
         name = "AttributeNotExists" if self.negate else "AttributeExists"
         return "{}({})".format(name, self.column)
+    __repr__ = __str__
 
     def render(self, renderer):
         name = "attribute_not_exists" if self.negate else "attribute_exists"
@@ -178,6 +182,7 @@ class BeginsWith(Condition):
 
     def __str__(self):  # pragma: no cover
         return "BeginsWith({}, {})".format(self.column, self.value)
+    __repr__ = __str__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column)
@@ -192,6 +197,7 @@ class Contains(Condition):
 
     def __str__(self):  # pragma: no cover
         return "Contains({}, {})".format(self.column, self.value)
+    __repr__ = __str__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column)
@@ -208,6 +214,7 @@ class Between(Condition):
     def __str__(self):  # pragma: no cover
         return "Between({}, {}, {})".format(
             self.column, self.lower, self.upper)
+    __repr__ = __str__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column)
@@ -225,6 +232,7 @@ class In(Condition):
     def __str__(self):  # pragma: no cover
         values = ", ".join(str(c) for c in self.values)
         return "In({}, [{}])".format(self.column, values)
+    __repr__ = __str__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column)

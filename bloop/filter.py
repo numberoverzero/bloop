@@ -18,13 +18,13 @@ def consume(iter):
 
 
 def validate_key_condition(condition):
-    if isinstance(condition, bloop.condition.BeginsWith):
-        return True
-    elif isinstance(condition, bloop.condition.Between):
+    if isinstance(condition, (bloop.condition.BeginsWith,
+                              bloop.condition.Between)):
         return True
     elif isinstance(condition, bloop.condition.Comparison):
         # Valid comparators are EG | LE | LT | GE | GT -- not NE
-        return condition.comparator is not operator.ne
+        if condition.comparator is not operator.ne:
+            return True
     raise ValueError("Invalid KeyCondition {}".format(condition))
 
 
@@ -102,18 +102,11 @@ class Filter(object):
         if self._key_condition:
             condition &= self._key_condition
 
-        # a hash condition is always required; a range condition
-        # is allowed if the table/index has a range
-        if self.index:
-            hash_column = self.index.hash_key
-            range_column = self.index.range_key
-        else:
-            hash_column = self.model.Meta.hash_key
-            range_column = self.model.Meta.range_key
+        obj = self.index or self.model.Meta
+        hash_column = obj.hash_key
+        range_column = obj.range_key
 
-        max_conditions = 1
-        if range_column:
-            max_conditions += 1
+        max_conditions = 1 + bool(range_column)
 
         if not condition:
             raise ValueError("At least one key condition (hash) is required")
@@ -146,6 +139,8 @@ class Filter(object):
         # Simply validate all other conditions
         else:
             validate_key_condition(condition)
+            if condition.column is not hash_column:
+                raise ValueError("Must specify a hash key")
 
         other = self.copy()
         other._key_condition = condition

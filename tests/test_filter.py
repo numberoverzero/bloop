@@ -338,3 +338,45 @@ def test_iter(engine, User):
     results = list(q)
     assert len(results) == 1
     assert results[0].email == "foo@domain.com"
+
+
+def test_properties(engine, User):
+    ''' ascending, descending, consistent '''
+    user_id = uuid.uuid4()
+    q = engine.query(User).key(User.id == user_id)
+
+    # ascending
+    result = q.ascending.all()
+    print(result.request)
+    expected = {'Select': 'ALL_ATTRIBUTES',
+                'ExpressionAttributeNames': {'#n0': 'id'},
+                'ScanIndexForward': True,
+                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
+                'TableName': 'User',
+                'KeyConditionExpression': '(#n0 = :v1)',
+                'ConsistentRead': False}
+    assert result.request == expected
+
+    # descending
+    result = q.descending.all()
+    print(result.request)
+    expected = {'Select': 'ALL_ATTRIBUTES',
+                'ExpressionAttributeNames': {'#n0': 'id'},
+                'ScanIndexForward': False,
+                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
+                'TableName': 'User',
+                'KeyConditionExpression': '(#n0 = :v1)',
+                'ConsistentRead': False}
+    assert result.request == expected
+
+    # consistent
+    result = q.consistent.all()
+    print(result.request)
+    expected = {'Select': 'ALL_ATTRIBUTES',
+                'ExpressionAttributeNames': {'#n0': 'id'},
+                'ScanIndexForward': True,
+                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
+                'TableName': 'User',
+                'KeyConditionExpression': '(#n0 = :v1)',
+                'ConsistentRead': True}
+    assert result.request == expected

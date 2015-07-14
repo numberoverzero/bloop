@@ -328,9 +328,6 @@ class Filter(object):
             request.update(renderer.render(self._filter_condition,
                                            mode="filter"))
         if self._select == "specific":
-            if not self._select_columns:
-                raise ValueError(
-                    "Must provide columns to get with 'specific' mode")
             names = map(renderer.name_ref, self._select_columns)
             request['ProjectionExpression'] = ", ".join(names)
         return request

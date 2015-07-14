@@ -313,6 +313,9 @@ class Filter(object):
 
     @property
     def consistent(self):
+        if bloop.index.is_global_index(self.index):
+            raise ValueError(
+                "Cannot use ConsistentRead with a GlobalSecondaryIndex")
         other = self.copy()
         other._consistent = True
         return other
@@ -343,11 +346,6 @@ class Query(Filter):
 
         if not self._key_condition:
             raise ValueError("Must specify at least a hash key condition")
-
-        if bloop.index.is_global_index(self.index) and self._consistent:
-            raise ValueError(
-                "Cannot use ConsistentRead with a GlobalSecondaryIndex")
-
         request.update(renderer.render(self._key_condition, mode="key"))
 
         return request
@@ -400,7 +398,11 @@ class FilterResult(object):
             step = iter(self)
             # Advance until we have some results, or we exhaust the query
             while not self._results and not self.complete:
-                next(step)
+                try:
+                    next(step)
+                except StopIteration:
+                    # The step above exhausted the results, nothing left
+                    break
 
         # Either:
         # - filter was already complete

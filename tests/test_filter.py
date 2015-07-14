@@ -380,3 +380,105 @@ def test_properties(engine, User):
                 'KeyConditionExpression': '(#n0 = :v1)',
                 'ConsistentRead': True}
     assert result.request == expected
+
+
+def test_query_no_key(User, engine):
+    q = engine.query(User)
+
+    with pytest.raises(ValueError):
+        q.all()
+
+
+def test_query_consistent_gsi(User, engine):
+    q = engine.query(User.by_email).key(User.email == 'foo')
+
+    with pytest.raises(ValueError):
+        q.consistent
+
+
+def test_results_incomplete(User, engine):
+    q = engine.query(User).key(User.id == uuid.uuid4())
+    calls = 0
+
+    def respond(**request):
+        nonlocal calls
+        calls += 1
+        return {"Count": 1, "ScannedCount": 2}
+    engine.client.query = respond
+
+    results = q.all()
+    assert not results.complete
+
+    with pytest.raises(RuntimeError):
+        results.results
+
+    list(results)
+    assert results.complete
+    assert not results.results
+
+    # Multiple iterations don't re-call the client
+    list(results)
+    assert calls == 1
+
+
+def test_first_no_prefetch(User, engine):
+    '''
+    When there's no prefetch and a pagination token is presented,
+    .first should return a result from the first page, without being marked
+    complete.
+    '''
+    user_id = uuid.uuid4()
+    q = engine.query(User).key(User.id == user_id)
+
+    expected = {'TableName': 'User',
+                'ConsistentRead': False,
+                'KeyConditionExpression': '(#n0 = :v1)',
+                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
+                'ExpressionAttributeNames': {'#n0': 'id'},
+                'Select': 'ALL_ATTRIBUTES',
+                'ScanIndexForward': True}
+    continue_tokens = {None: "first", "first": "second", "second": None}
+
+    def respond(**request):
+        print(request)
+        token = request.pop("ExclusiveStartKey", None)
+        assert request == expected
+        item = User(id=user_id, name=None)
+        return {
+            "Count": 1,
+            "ScannedCount": 2,
+            "Items": [engine.__dump__(User, item)],
+            "LastEvaluatedKey": continue_tokens[token]
+        }
+    engine.client.query = respond
+
+    results = q.all()
+
+    assert results.first.name is None
+    # Second call doesn't fetch
+    assert results.first.name is None
+
+
+def test_first_no_results(User, engine):
+    '''
+    When there's no prefetch and a pagination token is presented,
+    .first should return a result from the first page, without being marked
+    complete.
+    '''
+    user_id = uuid.uuid4()
+    q = engine.query(User).key(User.id == user_id)
+
+    def respond(**request):
+        return {
+            "Count": 1,
+            "ScannedCount": 2
+        }
+    engine.client.query = respond
+
+    results = q.all()
+
+    with pytest.raises(ValueError):
+        results.first
+    # Subsequent results skip the stepping
+    with pytest.raises(ValueError):
+        results.first

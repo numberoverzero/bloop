@@ -37,7 +37,7 @@ def validate_select_mode(select):
             raise invalid
     else:
         try:
-            select = set(select)
+            select = list(select)
         except TypeError:
             raise invalid
         if not select:
@@ -87,7 +87,7 @@ class Filter(object):
         self._forward = True
         self._consistent = False
 
-        self._select_columns = set()
+        self._select_columns = []
 
     def copy(self):
         cls = self.__class__
@@ -97,7 +97,7 @@ class Filter(object):
                      "_select", "_forward", "_consistent"]:
             setattr(other, attr, getattr(self, attr))
 
-        other._select_columns = set(self._select_columns)
+        other._select_columns = list(self._select_columns)
         other._key_condition = self._key_condition
 
         return other
@@ -227,11 +227,11 @@ class Filter(object):
             # be valid for the index.
             other = self.copy()
             other._select = 'specific'
-            other._select_columns.update(select)
+            other._select_columns.extend(select)
 
             if is_gsi and not self.index.projection == "ALL":
                 projected = self.index.projection_attributes
-                missing_attrs = other._select_columns - projected
+                missing_attrs = set(other._select_columns) - projected
                 if missing_attrs:
                     msg = "Projection is missing the following attributes: {}"
                     msg_attrs = [attr.model_name for attr in missing_attrs]

@@ -1,6 +1,7 @@
 import bloop.client
 import bloop.condition
 import bloop.filter
+import bloop.index
 import bloop.model
 import collections
 import collections.abc
@@ -281,8 +282,16 @@ class Engine(object):
 
             self.client.batch_write_items(request_items)
 
-    def query(self, model, index=None):  # pragma: no cover
+    def query(self, obj):
+        if bloop.index.is_index(obj):
+            model, index = obj.model, obj
+        else:
+            model, index = obj, None
         return bloop.filter.Query(engine=self, model=model, index=index)
 
-    def scan(self, model, index=None):  # pragma: no cover
+    def scan(self, obj):
+        if bloop.index.is_index(obj):
+                model, index = obj.model, obj
+        else:
+            model, index = obj, None
         return bloop.filter.Scan(engine=self, model=model, index=index)

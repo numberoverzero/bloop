@@ -141,6 +141,7 @@ def BaseModel(engine):
             # in indexed columns and the relate proper `bloop.Column` object
             cols = Meta.columns_by_model_name
             for index in indexes:
+                index.model = model
                 if bloop.index.is_global_index(index):
                     index.hash_key = cols[index.hash_key]
                 elif bloop.index.is_local_index(index):

@@ -68,7 +68,7 @@ class Filter(object):
     # Scan -> 'scan, Query -> 'query'
     filter_type = "filter"
 
-    def __init__(self, engine, model, index=None):
+    def __init__(self, engine, *, model=None, index=None):
         self.engine = engine
         self.model = model
         self.index = index

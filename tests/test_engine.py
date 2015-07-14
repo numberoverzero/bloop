@@ -202,3 +202,25 @@ def test_delete_multiple(User, engine):
         assert ordered(items) == ordered(expected)
     engine.client.batch_write_items = validate
     engine.delete((user1, user2))
+
+
+def test_query(User, engine):
+    ''' Engine.query supports model and index-based queries '''
+    index_query = engine.query(User.by_email)
+    assert index_query.model is User
+    assert index_query.index is User.by_email
+
+    model_query = engine.query(User)
+    assert model_query.model is User
+    assert model_query.index is None
+
+
+def test_scan(User, engine):
+    ''' Engine.scan supports model and index-based queries '''
+    index_scan = engine.scan(User.by_email)
+    assert index_scan.model is User
+    assert index_scan.index is User.by_email
+
+    model_scan = engine.scan(User)
+    assert model_scan.model is User
+    assert model_scan.index is None

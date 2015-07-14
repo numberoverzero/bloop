@@ -4,20 +4,6 @@ import pytest
 import uuid
 
 
-def ordered(obj):
-    '''
-    Return sorted version of nested dicts/lists for comparing.
-
-    http://stackoverflow.com/a/25851972
-    '''
-    if isinstance(obj, dict):
-        return sorted((k, ordered(v)) for k, v in obj.items())
-    if isinstance(obj, list):
-        return sorted(ordered(x) for x in obj)
-    else:
-        return obj
-
-
 def test_missing_objects(User, engine):
     '''
     When objects aren't loaded, ObjectsNotFound is raised with a list of
@@ -76,7 +62,7 @@ def test_load_object(User, engine):
     assert user.id == user_id
 
 
-def test_load_objects(User, engine):
+def test_load_objects(User, engine, ordered):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
     expected = {'User': {'Keys': [{'id': {'S': str(user1.id)}},
@@ -153,7 +139,7 @@ def test_save_condition(User, engine):
     engine.save(user, condition=condition)
 
 
-def test_save_multiple(User, engine):
+def test_save_multiple(User, engine, ordered):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
 
@@ -190,7 +176,7 @@ def test_delete_condition(User, engine):
     engine.delete(user, condition=condition)
 
 
-def test_delete_multiple(User, engine):
+def test_delete_multiple(User, engine, ordered):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
 

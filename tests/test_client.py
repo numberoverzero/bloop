@@ -432,7 +432,7 @@ def test_put_item_condition_failed(User, client, client_error):
     assert called
 
 
-def test_describe_table(User, client, ordered):
+def test_describe_table(User, client):
     full = {
         'AttributeDefinitions': [
             {'AttributeType': 'S', 'AttributeName': 'id'},
@@ -480,3 +480,32 @@ def test_describe_table(User, client, ordered):
     actual = client.describe_table(User)
     assert actual == expected
     assert called
+
+
+def test_query_scan(User, client):
+    def call(**request):
+        return responses[request["index"]]
+
+    client.client.query = call
+    client.client.scan = call
+
+    responses = [
+        {},
+        {"Count": -1},
+        {"ScannedCount": -1},
+        {"Count": 1, "ScannedCount": 2}
+    ]
+
+    expecteds = [
+        {"Count": 0, "ScannedCount": 0},
+        {"Count": -1, "ScannedCount": -1},
+        {"Count": 0, "ScannedCount": -1},
+        {"Count": 1, "ScannedCount": 2},
+    ]
+
+    for index, expected in enumerate(expecteds):
+        actual = client.query(index=index)
+        assert actual == expected
+
+        actual = client.scan(index=index)
+        assert actual == expected

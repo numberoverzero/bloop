@@ -347,7 +347,6 @@ def test_properties(engine, User):
 
     # ascending
     result = q.ascending.all()
-    print(result.request)
     expected = {'Select': 'ALL_ATTRIBUTES',
                 'ExpressionAttributeNames': {'#n0': 'id'},
                 'ScanIndexForward': True,
@@ -359,7 +358,6 @@ def test_properties(engine, User):
 
     # descending
     result = q.descending.all()
-    print(result.request)
     expected = {'Select': 'ALL_ATTRIBUTES',
                 'ExpressionAttributeNames': {'#n0': 'id'},
                 'ScanIndexForward': False,
@@ -371,7 +369,6 @@ def test_properties(engine, User):
 
     # consistent
     result = q.consistent.all()
-    print(result.request)
     expected = {'Select': 'ALL_ATTRIBUTES',
                 'ExpressionAttributeNames': {'#n0': 'id'},
                 'ScanIndexForward': True,
@@ -440,7 +437,6 @@ def test_first_no_prefetch(User, engine):
     continue_tokens = {None: "first", "first": "second", "second": None}
 
     def respond(**request):
-        print(request)
         token = request.pop("ExclusiveStartKey", None)
         assert request == expected
         item = User(id=user_id, name=None)
@@ -457,6 +453,7 @@ def test_first_no_prefetch(User, engine):
     assert results.first.name is None
     # Second call doesn't fetch
     assert results.first.name is None
+    assert not results.complete
 
 
 def test_first_no_results(User, engine):
@@ -482,3 +479,129 @@ def test_first_no_results(User, engine):
     # Subsequent results skip the stepping
     with pytest.raises(ValueError):
         results.first
+
+
+def test_prefetch_all(User, engine):
+    user_id = uuid.uuid4()
+    q = engine.query(User).key(User.id == user_id)
+    calls = 0
+    expected = {'TableName': 'User',
+                'ConsistentRead': False,
+                'KeyConditionExpression': '(#n0 = :v1)',
+                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
+                'ExpressionAttributeNames': {'#n0': 'id'},
+                'Select': 'ALL_ATTRIBUTES',
+                'ScanIndexForward': True}
+    continue_tokens = {None: "first", "first": "second", "second": None}
+
+    def respond(**request):
+        nonlocal calls
+        calls += 1
+
+        token = request.pop("ExclusiveStartKey", None)
+        assert request == expected
+        item = User(id=user_id, name=token)
+
+        result = {
+            "Count": 1,
+            "ScannedCount": 2,
+            "Items": [engine.__dump__(User, item)],
+            "LastEvaluatedKey": continue_tokens[token]
+        }
+        next_token = continue_tokens.get(token, None)
+        if next_token:
+            result["LastEvaluatedKey"] = next_token
+        return result
+    engine.client.query = respond
+
+    results = q.all(prefetch=-1)
+
+    assert calls == 3
+    assert results.count == 3
+    assert results.scanned_count == 6
+
+
+def test_prefetch_first(User, engine):
+    user_id = uuid.uuid4()
+    q = engine.query(User).key(User.id == user_id)
+    calls = 0
+    expected = {'TableName': 'User',
+                'ConsistentRead': False,
+                'KeyConditionExpression': '(#n0 = :v1)',
+                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
+                'ExpressionAttributeNames': {'#n0': 'id'},
+                'Select': 'ALL_ATTRIBUTES',
+                'ScanIndexForward': True}
+    continue_tokens = {None: "first", "first": None}
+
+    def respond(**request):
+        nonlocal calls
+        calls += 1
+
+        token = request.pop("ExclusiveStartKey", None)
+        assert request == expected
+        item = User(id=user_id, name=token)
+
+        result = {
+            "Count": 1,
+            "ScannedCount": 2,
+            "Items": [engine.__dump__(User, item)],
+            "LastEvaluatedKey": continue_tokens[token]
+        }
+        next_token = continue_tokens.get(token, None)
+        if next_token:
+            result["LastEvaluatedKey"] = next_token
+        return result
+    engine.client.query = respond
+
+    results = q.all(prefetch=1)
+
+    # Not iterated, no fetches
+    assert calls == 0
+    # First call fetches twice, even though a result
+    # is in the first response.
+    results.first
+    assert calls == 2
+
+
+def test_prefetch_iter(User, engine):
+    user_id = uuid.uuid4()
+    q = engine.query(User).key(User.id == user_id)
+    calls = 0
+    expected = {'TableName': 'User',
+                'ConsistentRead': False,
+                'KeyConditionExpression': '(#n0 = :v1)',
+                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
+                'ExpressionAttributeNames': {'#n0': 'id'},
+                'Select': 'ALL_ATTRIBUTES',
+                'ScanIndexForward': True}
+    continue_tokens = {None: "first", "first": "second", "second": None}
+
+    def respond(**request):
+        nonlocal calls
+        calls += 1
+
+        token = request.pop("ExclusiveStartKey", None)
+        assert request == expected
+        item = User(id=user_id, name=token)
+
+        result = {
+            "Count": 1,
+            "ScannedCount": 2,
+            "Items": [engine.__dump__(User, item)],
+            "LastEvaluatedKey": continue_tokens[token]
+        }
+        next_token = continue_tokens.get(token, None)
+        if next_token:
+            result["LastEvaluatedKey"] = next_token
+        return result
+    engine.client.query = respond
+
+    results = q.all(prefetch=1)
+
+    # Not iterated, no fetches
+    assert calls == 0
+    # Exhaust the results
+    assert len(list(results)) == 3
+    # Only two continue tokens
+    assert calls == 3

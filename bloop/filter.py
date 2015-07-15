@@ -440,6 +440,8 @@ class FilterResult(object):
             objs = list(self._step())
             while self._continue and prefetch:
                 prefetch -= 1
+                # Doesn't need the same catch on StopIteration as in `first`
+                # since self._continue would be set on the above _step call
                 objs.extend(self._step())
             for obj in objs:
                     yield obj

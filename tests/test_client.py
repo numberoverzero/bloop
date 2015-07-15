@@ -1,3 +1,5 @@
+import botocore
+import pytest
 import uuid
 
 
@@ -255,3 +257,60 @@ def test_batch_write_unprocessed(User, client):
 
     client.batch_write_items(request)
     assert calls == 2
+
+
+def test_create_table(User, client):
+    expected = {
+        'AttributeDefinitions': [
+            {'AttributeName': 'id', 'AttributeType': 'S'},
+            {'AttributeName': 'email', 'AttributeType': 'S'}],
+        'ProvisionedThroughput': {'ReadCapacityUnits': 1,
+                                  'WriteCapacityUnits': 1},
+        'KeySchema': [{'AttributeName': 'id', 'KeyType': 'HASH'}],
+        'TableName': 'User',
+        'GlobalSecondaryIndexes': [
+            {'Projection': {'ProjectionType': 'ALL'},
+             'ProvisionedThroughput': {'ReadCapacityUnits': 1,
+                                       'WriteCapacityUnits': 1},
+             'IndexName': 'by_email',
+             'KeySchema': [{'AttributeName': 'email', 'KeyType': 'HASH'}]}]}
+
+    called = False
+
+    def create_table(**table):
+        nonlocal called
+        called = True
+        assert table == expected
+    client.client.create_table = create_table
+    client.create_table(User)
+    assert called
+
+
+def test_create_raises_unknown(User, client):
+    def create_table(**table):
+        error_response = {'Error': {
+            'Code': 'FooError',
+            'Message': 'FooMessage'}}
+        raise botocore.exceptions.ClientError(error_response, 'OperationName')
+    client.client.create_table = create_table
+
+    with pytest.raises(botocore.exceptions.ClientError) as excinfo:
+        client.create_table(User)
+    assert excinfo.value.response['Error']['Code'] == 'FooError'
+    assert excinfo.value.response['Error']['Message'] == 'FooMessage'
+
+
+def test_create_already_exists(User, client):
+    called = False
+
+    def create_table(**table):
+        nonlocal called
+        called = True
+        error_response = {'Error': {
+            'Code': 'ResourceInUseException',
+            'Message': 'FooMessage'}}
+        raise botocore.exceptions.ClientError(error_response, 'OperationName')
+    client.client.create_table = create_table
+
+    client.create_table(User)
+    assert called

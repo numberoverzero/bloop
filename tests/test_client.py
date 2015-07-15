@@ -1,5 +1,6 @@
 import bloop.client
 import botocore
+import copy
 import pytest
 import uuid
 
@@ -400,6 +401,7 @@ def test_put_item_unknown_error(User, client, client_error):
     def put_item(**item):
         nonlocal called
         called = True
+        assert item == request
         raise client_error('FooError')
     client.client.put_item = put_item
 
@@ -420,10 +422,61 @@ def test_put_item_condition_failed(User, client, client_error):
     def put_item(**item):
         nonlocal called
         called = True
+        assert item == request
         raise client_error('ConditionalCheckFailedException')
     client.client.put_item = put_item
 
     with pytest.raises(bloop.client.ConstraintViolation) as excinfo:
         client.put_item(request)
     assert excinfo.value.obj == request
+    assert called
+
+
+def test_describe_table(User, client, ordered):
+    full = {
+        'AttributeDefinitions': [
+            {'AttributeType': 'S', 'AttributeName': 'id'},
+            {'AttributeType': 'S', 'AttributeName': 'email'}],
+        'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'id'}],
+        'ProvisionedThroughput': {'ReadCapacityUnits': 1,
+                                  'WriteCapacityUnits': 1,
+                                  'NumberOfDecreasesToday': 4},
+        'GlobalSecondaryIndexes': [
+            {'ItemCount': 7,
+             'IndexSizeBytes': 8,
+             'IndexName': 'by_email',
+             'ProvisionedThroughput': {
+                 'NumberOfDecreasesToday': 3,
+                 'ReadCapacityUnits': 1,
+                 'WriteCapacityUnits': 1},
+             'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}],
+             'Projection': {'ProjectionType': 'ALL'}}],
+        'LocalSecondaryIndexes': [
+            {'ItemCount': 7,
+             'IndexSizeBytes': 8,
+             'IndexName': 'by_foo',
+             'KeySchema': [{'KeyType': 'RANGE', 'AttributeName': 'foo'}],
+             'Projection': {'ProjectionType': 'ALL'}}],
+        'TableName': 'User'}
+
+    expected = copy.deepcopy(full)
+    expected['ProvisionedThroughput'].pop('NumberOfDecreasesToday')
+    gsi = expected['GlobalSecondaryIndexes'][0]
+    gsi.pop('ItemCount')
+    gsi.pop('IndexSizeBytes')
+    gsi['ProvisionedThroughput'].pop('NumberOfDecreasesToday')
+    lsi = expected['LocalSecondaryIndexes'][0]
+    lsi.pop('ItemCount')
+    lsi.pop('IndexSizeBytes')
+    called = False
+
+    def describe_table(TableName):
+        nonlocal called
+        called = True
+        assert TableName == User.Meta.table_name
+        return {"Table": full}
+    client.client.describe_table = describe_table
+
+    actual = client.describe_table(User)
+    assert actual == expected
     assert called

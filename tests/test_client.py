@@ -335,30 +335,41 @@ def test_default_backoff():
             operation, bloop.client.DEFAULT_MAX_ATTEMPTS)
 
 
-def test_create_table(User, client):
+def test_create_table(ComplexModel, client, ordered):
     expected = {
-        'AttributeDefinitions': [
-            {'AttributeName': 'id', 'AttributeType': 'S'},
-            {'AttributeName': 'email', 'AttributeType': 'S'}],
-        'ProvisionedThroughput': {'ReadCapacityUnits': 1,
-                                  'WriteCapacityUnits': 1},
-        'KeySchema': [{'AttributeName': 'id', 'KeyType': 'HASH'}],
-        'TableName': 'User',
+        'LocalSecondaryIndexes': [
+            {'Projection': {'NonKeyAttributes': ['date', 'name',
+                                                 'email', 'joined'],
+                            'ProjectionType': 'INCLUDE'},
+             'IndexName': 'by_joined',
+             'KeySchema': [
+                {'KeyType': 'HASH', 'AttributeName': 'name'},
+                {'KeyType': 'RANGE', 'AttributeName': 'joined'}]}],
+        'ProvisionedThroughput': {'ReadCapacityUnits': 3,
+                                  'WriteCapacityUnits': 2},
         'GlobalSecondaryIndexes': [
             {'Projection': {'ProjectionType': 'ALL'},
-             'ProvisionedThroughput': {'ReadCapacityUnits': 1,
-                                       'WriteCapacityUnits': 1},
              'IndexName': 'by_email',
-             'KeySchema': [{'AttributeName': 'email', 'KeyType': 'HASH'}]}]}
-
+             'ProvisionedThroughput': {'ReadCapacityUnits': 4,
+                                       'WriteCapacityUnits': 5},
+             'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}]}],
+        'TableName': 'CustomTableName',
+        'KeySchema': [
+            {'KeyType': 'HASH', 'AttributeName': 'name'},
+            {'KeyType': 'RANGE', 'AttributeName': 'date'}],
+        'AttributeDefinitions': [
+            {'AttributeType': 'S', 'AttributeName': 'date'},
+            {'AttributeType': 'S', 'AttributeName': 'name'},
+            {'AttributeType': 'S', 'AttributeName': 'joined'},
+            {'AttributeType': 'S', 'AttributeName': 'email'}]}
     called = False
 
     def create_table(**table):
         nonlocal called
         called = True
-        assert table == expected
+        assert ordered(table) == ordered(expected)
     client.client.create_table = create_table
-    client.create_table(User)
+    client.create_table(ComplexModel)
     assert called
 
 
@@ -506,32 +517,39 @@ def test_put_item_condition_failed(User, client, client_error):
     assert called
 
 
-def test_describe_table(User, client):
+def test_describe_table(ComplexModel, client):
     full = {
-        'AttributeDefinitions': [
-            {'AttributeType': 'S', 'AttributeName': 'id'},
-            {'AttributeType': 'S', 'AttributeName': 'email'}],
-        'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'id'}],
-        'ProvisionedThroughput': {'ReadCapacityUnits': 1,
-                                  'WriteCapacityUnits': 1,
+        'LocalSecondaryIndexes': [
+            {'ItemCount': 7,
+             'IndexSizeBytes': 8,
+             'Projection': {'NonKeyAttributes': ['date', 'name',
+                                                 'email', 'joined'],
+                            'ProjectionType': 'INCLUDE'},
+             'IndexName': 'by_joined',
+             'KeySchema': [
+                 {'KeyType': 'HASH', 'AttributeName': 'name'},
+                 {'KeyType': 'RANGE', 'AttributeName': 'joined'}]}],
+        'ProvisionedThroughput': {'ReadCapacityUnits': 3,
+                                  'WriteCapacityUnits': 2,
                                   'NumberOfDecreasesToday': 4},
         'GlobalSecondaryIndexes': [
             {'ItemCount': 7,
              'IndexSizeBytes': 8,
+             'Projection': {'ProjectionType': 'ALL'},
              'IndexName': 'by_email',
-             'ProvisionedThroughput': {
-                 'NumberOfDecreasesToday': 3,
-                 'ReadCapacityUnits': 1,
-                 'WriteCapacityUnits': 1},
-             'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}],
-             'Projection': {'ProjectionType': 'ALL'}}],
-        'LocalSecondaryIndexes': [
-            {'ItemCount': 7,
-             'IndexSizeBytes': 8,
-             'IndexName': 'by_foo',
-             'KeySchema': [{'KeyType': 'RANGE', 'AttributeName': 'foo'}],
-             'Projection': {'ProjectionType': 'ALL'}}],
-        'TableName': 'User'}
+             'ProvisionedThroughput': {'ReadCapacityUnits': 4,
+                                       'WriteCapacityUnits': 5,
+                                       'NumberOfDecreasesToday': 6},
+             'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}]}],
+        'TableName': 'CustomTableName',
+        'KeySchema': [
+            {'KeyType': 'HASH', 'AttributeName': 'name'},
+            {'KeyType': 'RANGE', 'AttributeName': 'date'}],
+        'AttributeDefinitions': [
+            {'AttributeType': 'S', 'AttributeName': 'date'},
+            {'AttributeType': 'S', 'AttributeName': 'name'},
+            {'AttributeType': 'S', 'AttributeName': 'joined'},
+            {'AttributeType': 'S', 'AttributeName': 'email'}]}
 
     expected = copy.deepcopy(full)
     expected['ProvisionedThroughput'].pop('NumberOfDecreasesToday')
@@ -547,11 +565,11 @@ def test_describe_table(User, client):
     def describe_table(TableName):
         nonlocal called
         called = True
-        assert TableName == User.Meta.table_name
+        assert TableName == ComplexModel.Meta.table_name
         return {"Table": full}
     client.client.describe_table = describe_table
 
-    actual = client.describe_table(User)
+    actual = client.describe_table(ComplexModel)
     assert actual == expected
     assert called
 
@@ -583,3 +601,77 @@ def test_query_scan(User, client):
 
         actual = client.scan(index=index)
         assert actual == expected
+
+
+def test_validate_compares_tables(User, client):
+    full = {
+        'AttributeDefinitions': [
+            {'AttributeType': 'S', 'AttributeName': 'id'},
+            {'AttributeType': 'S', 'AttributeName': 'email'}],
+        'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'id'}],
+        'ProvisionedThroughput': {'ReadCapacityUnits': 1,
+                                  'WriteCapacityUnits': 1,
+                                  'NumberOfDecreasesToday': 4},
+        'GlobalSecondaryIndexes': [
+            {'ItemCount': 7,
+             'IndexSizeBytes': 8,
+             'IndexName': 'by_email',
+             'ProvisionedThroughput': {
+                 'NumberOfDecreasesToday': 3,
+                 'ReadCapacityUnits': 1,
+                 'WriteCapacityUnits': 1},
+             'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}],
+             'Projection': {'ProjectionType': 'ALL'}}],
+        'TableName': 'User'}
+
+    def describe_table(TableName):
+        assert TableName == "User"
+        return {"Table": full}
+    client.client.describe_table = describe_table
+    client.validate_table(User)
+
+
+def test_validate_checks_status(User, client):
+    full = {
+        'AttributeDefinitions': [
+            {'AttributeType': 'S', 'AttributeName': 'id'},
+            {'AttributeType': 'S', 'AttributeName': 'email'}],
+        'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'id'}],
+        'ProvisionedThroughput': {'ReadCapacityUnits': 1,
+                                  'WriteCapacityUnits': 1,
+                                  'NumberOfDecreasesToday': 4},
+        'GlobalSecondaryIndexes': [
+            {'ItemCount': 7,
+             'IndexSizeBytes': 8,
+             'IndexName': 'by_email',
+             'ProvisionedThroughput': {
+                 'NumberOfDecreasesToday': 3,
+                 'ReadCapacityUnits': 1,
+                 'WriteCapacityUnits': 1},
+             'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}],
+             'Projection': {'ProjectionType': 'ALL'}}],
+        'TableName': 'User'}
+
+    pending = {'TableStatus': 'CREATING'}
+    calls = 0
+
+    def describe_table(TableName):
+        nonlocal calls
+        calls += 1
+        assert TableName == "User"
+        if calls > 2:
+            return {"Table": full}
+        return {"Table": pending}
+    client.client.describe_table = describe_table
+    client.validate_table(User)
+
+    assert calls == 3
+
+
+def test_validate_fails(ComplexModel, client):
+    def describe_table(TableName):
+        assert TableName == "CustomTableName"
+        return {"Table": {}}
+    client.client.describe_table = describe_table
+    with pytest.raises(ValueError):
+        client.validate_table(ComplexModel)

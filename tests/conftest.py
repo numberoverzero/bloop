@@ -1,4 +1,5 @@
 import bloop
+import botocore
 import pytest
 
 
@@ -74,3 +75,14 @@ def UnboundUser(engine):
 def User(UnboundUser, engine, local_bind):
     engine.bind()
     return UnboundUser
+
+
+@pytest.fixture
+def client_error():
+    def ClientError(code):
+        error_response = {'Error': {
+            'Code': code,
+            'Message': 'FooMessage'}}
+        operation_name = 'OperationName'
+        return botocore.exceptions.ClientError(error_response, operation_name)
+    return ClientError

@@ -1,3 +1,4 @@
+import bloop.client
 import botocore
 import pytest
 import uuid
@@ -286,31 +287,86 @@ def test_create_table(User, client):
     assert called
 
 
-def test_create_raises_unknown(User, client):
-    def create_table(**table):
-        error_response = {'Error': {
-            'Code': 'FooError',
-            'Message': 'FooMessage'}}
-        raise botocore.exceptions.ClientError(error_response, 'OperationName')
-    client.client.create_table = create_table
-
-    with pytest.raises(botocore.exceptions.ClientError) as excinfo:
-        client.create_table(User)
-    assert excinfo.value.response['Error']['Code'] == 'FooError'
-    assert excinfo.value.response['Error']['Message'] == 'FooMessage'
-
-
-def test_create_already_exists(User, client):
+def test_create_raises_unknown(User, client, client_error):
     called = False
 
     def create_table(**table):
         nonlocal called
         called = True
-        error_response = {'Error': {
-            'Code': 'ResourceInUseException',
-            'Message': 'FooMessage'}}
-        raise botocore.exceptions.ClientError(error_response, 'OperationName')
+        raise client_error('FooError')
+    client.client.create_table = create_table
+
+    with pytest.raises(botocore.exceptions.ClientError) as excinfo:
+        client.create_table(User)
+    assert excinfo.value.response['Error']['Code'] == 'FooError'
+    assert called
+
+
+def test_create_already_exists(User, client, client_error):
+    called = False
+
+    def create_table(**table):
+        nonlocal called
+        called = True
+        raise client_error('ResourceInUseException')
     client.client.create_table = create_table
 
     client.create_table(User)
+    assert called
+
+
+def test_delete_item(User, client):
+    user_id = uuid.uuid4()
+    request = {'Key': {'id': {'S': str(user_id)}},
+               'TableName': 'User',
+               'ExpressionAttributeNames': {'#n0': 'id'},
+               'ConditionExpression': '(attribute_not_exists(#n0))'}
+    called = False
+
+    def delete_item(**item):
+        nonlocal called
+        called = True
+        assert item == request
+    client.client.delete_item = delete_item
+    client.delete_item(request)
+    assert called
+
+
+def test_delete_item_unknown_error(User, client, client_error):
+    called = False
+    user_id = uuid.uuid4()
+    request = {'Key': {'id': {'S': str(user_id)}},
+               'TableName': 'User',
+               'ExpressionAttributeNames': {'#n0': 'id'},
+               'ConditionExpression': '(attribute_not_exists(#n0))'}
+
+    def delete_item(**item):
+        nonlocal called
+        called = True
+        raise client_error('FooError')
+    client.client.delete_item = delete_item
+
+    with pytest.raises(botocore.exceptions.ClientError) as excinfo:
+        client.delete_item(request)
+    assert excinfo.value.response['Error']['Code'] == 'FooError'
+    assert called
+
+
+def test_delete_item_condition_failed(User, client, client_error):
+    called = False
+    user_id = uuid.uuid4()
+    request = {'Key': {'id': {'S': str(user_id)}},
+               'TableName': 'User',
+               'ExpressionAttributeNames': {'#n0': 'id'},
+               'ConditionExpression': '(attribute_not_exists(#n0))'}
+
+    def delete_item(**item):
+        nonlocal called
+        called = True
+        raise client_error('ConditionalCheckFailedException')
+    client.client.delete_item = delete_item
+
+    with pytest.raises(bloop.client.ConstraintViolation) as excinfo:
+        client.delete_item(request)
+    assert excinfo.value.obj == request
     assert called

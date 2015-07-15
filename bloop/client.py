@@ -2,7 +2,6 @@ import bloop.column
 import bloop.index
 import boto3
 import botocore
-import collections
 import enum
 import functools
 import time
@@ -51,10 +50,6 @@ def partition_batch_get_input(request_items):
     chunk = {}
     items = 0
     for table_name, key, consistent_read in iterate_items():
-        if items == MAX_BATCH_SIZE:
-            yield chunk
-            items = 0
-            chunk = {}
         table = chunk.get(table_name, None)
         # First occurance of the table in this chunk
         if table is None:
@@ -64,6 +59,10 @@ def partition_batch_get_input(request_items):
         # Dump the key into the chunk table's `Keys` list
         table["Keys"].append(key)
         items += 1
+        if items >= MAX_BATCH_SIZE:
+            yield chunk
+            items = 0
+            chunk = {}
     # Last chunk, less than MAX_BATCH_SIZE items
     if chunk:
         yield chunk
@@ -77,13 +76,17 @@ def partition_batch_write_input(request_items):
             for item in items:
                 yield (table_name, item)
 
-    chunk = collections.defaultdict(list)
+    chunk = {}
     items = 0
     for table_name, item in iterate_items():
         if items == MAX_BATCH_SIZE:
             yield chunk
             items = 0
             chunk = {}
+        table = chunk.get(table_name, None)
+        # First occurance of the table in this chunk
+        if table is None:
+            chunk[table_name] = []
         chunk[table_name].append(item)
         items += 1
     # Last chunk, less than MAX_BATCH_SIZE items
@@ -166,7 +169,7 @@ class Client(object):
         response = {}
 
         def iterate_response(batch):
-            for table_name, table_items in batch["Responses"].items():
+            for table_name, table_items in batch.get("Responses", {}).items():
                 for item in table_items:
                     yield (table_name, item)
 

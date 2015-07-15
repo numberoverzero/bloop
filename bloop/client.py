@@ -91,7 +91,6 @@ def partition_batch_write_input(batch_size, request_items):
             chunk = {}
     # Last chunk, less than batch_size items
     if chunk:
-        print("chunk")
         yield chunk
 
 
@@ -328,33 +327,30 @@ class Client(object):
     def describe_table(self, model):
         description = self.call_with_retries(
             self.client.describe_table,
-            TableName=model.Meta.table_name)
-        table = description["Table"]
+            TableName=model.Meta.table_name)["Table"]
 
         # We don't care about a bunch of the returned attributes, and want to
         # massage the returned value to match `table_for_model` that's passed
         # to `Client.create_table` so we can compare them with `ordered`
-        table_fields = ["TableName", "ProvisionedThroughput", "KeySchema",
-                        "AttributeDefinitions", "GlobalSecondaryIndexes",
-                        "LocalSecondaryIndexes", "TableStatus"]
-        table = {field: table.get(field, []) for field in table_fields}
-        table["ProvisionedThroughput"].pop("NumberOfDecreasesToday", None)
-
+        fields = ["TableName", "ProvisionedThroughput", "KeySchema",
+                  "AttributeDefinitions", "GlobalSecondaryIndexes",
+                  "LocalSecondaryIndexes", "TableStatus"]
         junk_index_fields = ["ItemCount", "IndexSizeBytes"]
+        table = {}
+        for field in fields:
+            value = description.get(field, None)
+            if value is not None:
+                table[field] = value
+        table.get("ProvisionedThroughput", {}).pop(
+            "NumberOfDecreasesToday", None)
 
-        for index in table['GlobalSecondaryIndexes']:
+        for index in table.get('GlobalSecondaryIndexes', []):
             for field in junk_index_fields:
                 index.pop(field, None)
             index["ProvisionedThroughput"].pop("NumberOfDecreasesToday")
-        if not table['GlobalSecondaryIndexes']:
-            table.pop('GlobalSecondaryIndexes')
-
-        for index in table['LocalSecondaryIndexes']:
+        for index in table.get('LocalSecondaryIndexes', []):
             for field in junk_index_fields:
                 index.pop(field, None)
-        if not table['LocalSecondaryIndexes']:
-            table.pop('LocalSecondaryIndexes')
-
         return table
 
     def _filter(self, client_func, **request):

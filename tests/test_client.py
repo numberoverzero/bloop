@@ -651,21 +651,53 @@ def test_validate_checks_status(User, client):
              'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}],
              'Projection': {'ProjectionType': 'ALL'}}],
         'TableName': 'User'}
-
-    pending = {'TableStatus': 'CREATING'}
     calls = 0
 
     def describe_table(TableName):
         nonlocal calls
         calls += 1
-        assert TableName == "User"
-        if calls > 2:
-            return {"Table": full}
-        return {"Table": pending}
+        if calls < 2:
+            return {'Table': {'TableStatus': 'CREATING'}}
+        return {'Table': full}
+
     client.client.describe_table = describe_table
     client.validate_table(User)
+    assert calls == 2
 
-    assert calls == 3
+
+def test_validate_checks_index_status(User, client):
+    full = {
+        'AttributeDefinitions': [
+            {'AttributeType': 'S', 'AttributeName': 'id'},
+            {'AttributeType': 'S', 'AttributeName': 'email'}],
+        'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'id'}],
+        'ProvisionedThroughput': {'ReadCapacityUnits': 1,
+                                  'WriteCapacityUnits': 1,
+                                  'NumberOfDecreasesToday': 4},
+        'GlobalSecondaryIndexes': [
+            {'ItemCount': 7,
+             'IndexSizeBytes': 8,
+             'IndexName': 'by_email',
+             'ProvisionedThroughput': {
+                 'NumberOfDecreasesToday': 3,
+                 'ReadCapacityUnits': 1,
+                 'WriteCapacityUnits': 1},
+             'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}],
+             'Projection': {'ProjectionType': 'ALL'}}],
+        'TableName': 'User'}
+    calls = 0
+
+    def describe_table(TableName):
+        nonlocal calls
+        calls += 1
+        if calls < 2:
+            return {'Table': {
+                'GlobalSecondaryIndexes': [{'IndexStatus': 'CREATING'}]}}
+        return {'Table': full}
+
+    client.client.describe_table = describe_table
+    client.validate_table(User)
+    assert calls == 2
 
 
 def test_validate_fails(ComplexModel, client):

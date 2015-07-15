@@ -347,7 +347,8 @@ class Client(object):
         for index in table.get('GlobalSecondaryIndexes', []):
             for field in junk_index_fields:
                 index.pop(field, None)
-            index["ProvisionedThroughput"].pop("NumberOfDecreasesToday", None)
+            index.get("ProvisionedThroughput", {}).pop(
+                "NumberOfDecreasesToday", None)
         for index in table.get('LocalSecondaryIndexes', []):
             for field in junk_index_fields:
                 index.pop(field, None)

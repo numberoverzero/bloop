@@ -78,6 +78,26 @@ def User(UnboundUser, engine, local_bind):
 
 
 @pytest.fixture
+def ComplexModel(engine, local_bind):
+    class Model(engine.model):
+        class Meta:
+            write_units = 2
+            read_units = 3
+            table_name = 'CustomTableName'
+        name = bloop.Column(bloop.UUID, hash_key=True)
+        date = bloop.Column(bloop.DateTime, range_key=True)
+        email = bloop.Column(bloop.String)
+        joined = bloop.Column(bloop.DateTime)
+
+        by_email = bloop.GlobalSecondaryIndex(hash_key='email', read_units=4,
+                                              projection='all', write_units=5)
+        by_joined = bloop.LocalSecondaryIndex(range_key='joined',
+                                              projection=['email'])
+    engine.bind()
+    return Model
+
+
+@pytest.fixture
 def client_error():
     def ClientError(code):
         error_response = {'Error': {

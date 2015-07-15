@@ -24,6 +24,11 @@ def ordered():
 
 
 @pytest.fixture
+def client(session):
+    return bloop.client.Client(session=session)
+
+
+@pytest.fixture
 def session():
     class DummyClient:
         pass

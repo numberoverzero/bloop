@@ -1,4 +1,3 @@
-import bloop
 import uuid
 
 
@@ -29,7 +28,7 @@ def test_batch_get_one_item(User, client):
 def test_batch_get_one_batch(User, client):
     ''' A single call when the number of requested items is <= batch size '''
     # Simulate a full batch
-    bloop.client.MAX_BATCH_SIZE = 2
+    client.batch_size = 2
 
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
@@ -62,7 +61,7 @@ def test_batch_get_one_batch(User, client):
 def test_batch_get_paginated(User, client):
     ''' Paginate requests to fit within the max batch size '''
     # Minimum batch size so we can force pagination with 2 users
-    bloop.client.MAX_BATCH_SIZE = 1
+    client.batch_size = 1
 
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
@@ -110,7 +109,6 @@ def test_batch_get_unprocessed(User, client):
 
     request = {'User': {'Keys': [{'id': {'S': str(user1.id)}}],
                         'ConsistentRead': False}}
-
     expected_requests = [
         {'User': {'Keys': [{'id': {'S': str(user1.id)}}],
                   'ConsistentRead': False}},
@@ -140,3 +138,120 @@ def test_batch_get_unprocessed(User, client):
 
     assert calls == 2
     assert response == expected_response
+
+
+def test_batch_write_one_item(User, client):
+    ''' A single call for a single item '''
+    user1 = User(id=uuid.uuid4())
+
+    request = {'User': [
+        {'PutRequest': {'Item': {'id': {'S': str(user1.id)}}}}]
+    }
+    # When batching input with less keys than the batch size, the request
+    # will look identical
+    expected_request = request
+
+    calls = 0
+
+    def handle(RequestItems):
+        nonlocal calls
+        calls += 1
+        assert RequestItems == expected_request
+        return {}
+    client.client.batch_write_item = handle
+    client.batch_write_items(request)
+    assert calls == 1
+
+
+def test_batch_write_one_batch(User, client):
+    ''' A single call when the number of requested items is <= batch size '''
+    # Simulate a full batch
+    client.batch_size = 2
+
+    user1 = User(id=uuid.uuid4())
+    user2 = User(id=uuid.uuid4())
+
+    request = {'User': [
+        {'PutRequest': {'Item': {'id': {'S': str(user1.id)}}}},
+        {'PutRequest': {'Item': {'id': {'S': str(user2.id)}}}}]
+    }
+    # When batching input with less keys than the batch size, the request
+    # will look identical
+    expected_request = request
+
+    calls = 0
+
+    def handle(RequestItems):
+        nonlocal calls
+        calls += 1
+        assert RequestItems == expected_request
+        return {}
+    client.client.batch_write_item = handle
+
+    client.batch_write_items(request)
+    assert calls == 1
+
+
+def test_batch_write_paginated(User, client):
+    ''' Paginate requests to fit within the max batch size '''
+    # Minimum batch size so we can force pagination with 2 users
+    client.batch_size = 1
+
+    user1 = User(id=uuid.uuid4())
+    user2 = User(id=uuid.uuid4())
+
+    request = {'User': [
+        {'PutRequest': {'Item': {'id': {'S': str(user1.id)}}}},
+        {'PutRequest': {'Item': {'id': {'S': str(user2.id)}}}}]
+    }
+    expected_requests = [
+        {'User': [
+            {'PutRequest': {'Item': {'id': {'S': str(user1.id)}}}}]},
+        {'User': [
+            {'PutRequest': {'Item': {'id': {'S': str(user2.id)}}}}]}
+    ]
+    calls = 0
+
+    def handle(RequestItems):
+        nonlocal calls
+        expected = expected_requests[calls]
+        calls += 1
+        assert RequestItems == expected
+        return {}
+    client.client.batch_write_item = handle
+
+    client.batch_write_items(request)
+    assert calls == 2
+
+
+def test_batch_write_unprocessed(User, client):
+    ''' Re-request unprocessed items '''
+    user1 = User(id=uuid.uuid4())
+
+    request = {'User': [
+        {'PutRequest': {'Item': {'id': {'S': str(user1.id)}}}}]
+    }
+    expected_requests = [
+        {'User': [
+            {'PutRequest': {'Item': {'id': {'S': str(user1.id)}}}}]},
+        {'User': [
+            {'PutRequest': {'Item': {'id': {'S': str(user1.id)}}}}]}
+    ]
+    responses = [
+        {"UnprocessedItems": {'User': [
+            {'PutRequest': {'Item': {'id': {'S': str(user1.id)}}}}]}},
+        {}
+    ]
+    calls = 0
+
+    def handle(RequestItems):
+        nonlocal calls
+        expected = expected_requests[calls]
+        response = responses[calls]
+        calls += 1
+        assert RequestItems == expected
+        return response
+    client.client.batch_write_item = handle
+
+    client.batch_write_items(request)
+    assert calls == 2

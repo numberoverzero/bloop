@@ -347,7 +347,7 @@ class Client(object):
         for index in table.get('GlobalSecondaryIndexes', []):
             for field in junk_index_fields:
                 index.pop(field, None)
-            index["ProvisionedThroughput"].pop("NumberOfDecreasesToday")
+            index["ProvisionedThroughput"].pop("NumberOfDecreasesToday", None)
         for index in table.get('LocalSecondaryIndexes', []):
             for field in junk_index_fields:
                 index.pop(field, None)
@@ -396,18 +396,17 @@ class Client(object):
             status = table_status(actual)
         if ordered(actual) != ordered(expected):
             raise ValueError(
-                TABLE_MISMATCH.format(actual, expected))
+                TABLE_MISMATCH.format(expected, actual))
 
 
 def key_schema(*, index=None, model=None):
     if index:
         hash_key = index.hash_key
         range_key = index.range_key
-    elif model:
+    # model
+    else:
         hash_key = model.Meta.hash_key
         range_key = model.Meta.range_key
-    else:
-        raise ValueError("Provide either model or index")
     schema = [{
         'AttributeName': hash_key.dynamo_name,
         'KeyType': 'HASH'

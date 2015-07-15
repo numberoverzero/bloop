@@ -38,7 +38,7 @@ def default_backoff_func(operation, attempts):
     return (DEFAULT_BACKOFF_COEFF * (2 ** attempts)) / 1000.0
 
 
-def partition_batch_get_input(request_items):
+def partition_batch_get_input(batch_size, request_items):
     ''' Takes a batch_get input and partitions into 25 object chunks '''
 
     def iterate_items():
@@ -59,16 +59,16 @@ def partition_batch_get_input(request_items):
         # Dump the key into the chunk table's `Keys` list
         table["Keys"].append(key)
         items += 1
-        if items >= MAX_BATCH_SIZE:
+        if items >= batch_size:
             yield chunk
             items = 0
             chunk = {}
-    # Last chunk, less than MAX_BATCH_SIZE items
+    # Last chunk, less than batch_size items
     if chunk:
         yield chunk
 
 
-def partition_batch_write_input(request_items):
+def partition_batch_write_input(batch_size, request_items):
     ''' Takes a batch_write input and partitions into 25 object chunks '''
 
     def iterate_items():
@@ -79,23 +79,25 @@ def partition_batch_write_input(request_items):
     chunk = {}
     items = 0
     for table_name, item in iterate_items():
-        if items == MAX_BATCH_SIZE:
-            yield chunk
-            items = 0
-            chunk = {}
         table = chunk.get(table_name, None)
         # First occurance of the table in this chunk
         if table is None:
             chunk[table_name] = []
         chunk[table_name].append(item)
         items += 1
-    # Last chunk, less than MAX_BATCH_SIZE items
+        if items == batch_size:
+            yield chunk
+            items = 0
+            chunk = {}
+    # Last chunk, less than batch_size items
     if chunk:
+        print("chunk")
         yield chunk
 
 
 class Client(object):
-    def __init__(self, session=None, backoff_func=None):
+    def __init__(self, session=None, backoff_func=None,
+                 batch_size=MAX_BATCH_SIZE):
         '''
 
         backoff_func is an optional function with signature
@@ -106,6 +108,7 @@ class Client(object):
         # Fall back to the global session
         self.client = (session or boto3).client("dynamodb")
         self.backoff_func = backoff_func or default_backoff_func
+        self.batch_size = batch_size
 
     def batch_get_items(self, request):
         '''
@@ -177,7 +180,8 @@ class Client(object):
         get_batch = functools.partial(self.call_with_retries,
                                       self.client.batch_get_item)
 
-        for request_batch in partition_batch_get_input(request):
+        for request_batch in partition_batch_get_input(self.batch_size,
+                                                       request):
             # After the first call, request_batch is the
             # UnprocessedKeys from the first call
             while request_batch:
@@ -250,7 +254,8 @@ class Client(object):
         write_batch = functools.partial(self.call_with_retries,
                                         self.client.batch_write_item)
 
-        for request_batch in partition_batch_write_input(request):
+        for request_batch in partition_batch_write_input(self.batch_size,
+                                                         request):
             # After the first call, request_batch is the
             # UnprocessedKeys from the first call
             while request_batch:
@@ -259,7 +264,7 @@ class Client(object):
                 # If there are no unprocessed items, this will be an empty
                 # list which will break the while loop, moving to the next
                 # batch of items
-                request_batch = batch_response["UnprocessedItems"]
+                request_batch = batch_response.get("UnprocessedItems", None)
 
     def call_with_retries(self, func, *args, **kwargs):
         '''

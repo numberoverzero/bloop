@@ -3,6 +3,7 @@ import uuid
 
 
 def test_batch_get_one_item(User, client):
+    ''' A single call for a single item '''
     user1 = User(id=uuid.uuid4())
 
     request = {'User': {'Keys': [{'id': {'S': str(user1.id)}}],
@@ -26,6 +27,7 @@ def test_batch_get_one_item(User, client):
 
 
 def test_batch_get_one_batch(User, client):
+    ''' A single call when the number of requested items is <= batch size '''
     # Simulate a full batch
     bloop.client.MAX_BATCH_SIZE = 2
 
@@ -58,6 +60,7 @@ def test_batch_get_one_batch(User, client):
 
 
 def test_batch_get_paginated(User, client):
+    ''' Paginate requests to fit within the max batch size '''
     # Minimum batch size so we can force pagination with 2 users
     bloop.client.MAX_BATCH_SIZE = 1
 
@@ -84,6 +87,44 @@ def test_batch_get_paginated(User, client):
                                    'age': {'N': '4'}},
                                   {'id': {'S': str(user2.id)},
                                    'age': {'N': '5'}}]}
+    calls = 0
+
+    def handle(RequestItems):
+        nonlocal calls
+        expected = expected_requests[calls]
+        response = responses[calls]
+        calls += 1
+        assert RequestItems == expected
+        return response
+    client.client.batch_get_item = handle
+
+    response = client.batch_get_items(request)
+
+    assert calls == 2
+    assert response == expected_response
+
+
+def test_batch_get_unprocessed(User, client):
+    ''' Re-request unprocessed keys '''
+    user1 = User(id=uuid.uuid4())
+
+    request = {'User': {'Keys': [{'id': {'S': str(user1.id)}}],
+                        'ConsistentRead': False}}
+
+    expected_requests = [
+        {'User': {'Keys': [{'id': {'S': str(user1.id)}}],
+                  'ConsistentRead': False}},
+        {'User': {'Keys': [{'id': {'S': str(user1.id)}}],
+                  'ConsistentRead': False}}
+    ]
+    responses = [
+        {"UnprocessedKeys": {'User': {'Keys': [{'id': {'S': str(user1.id)}}],
+                             'ConsistentRead': False}}},
+        {"Responses": {"User": [{'id': {'S': str(user1.id)},
+                                 'age': {'N': '4'}}]}}
+    ]
+    expected_response = {'User': [{'id': {'S': str(user1.id)},
+                                   'age': {'N': '4'}}]}
     calls = 0
 
     def handle(RequestItems):

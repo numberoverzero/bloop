@@ -98,6 +98,14 @@ def ComplexModel(engine, local_bind):
 
 
 @pytest.fixture
+def SimpleModel(engine, local_bind):
+    class Model(engine.model):
+        id = bloop.Column(bloop.UUID, hash_key=True)
+    engine.bind()
+    return Model
+
+
+@pytest.fixture
 def client_error():
     def ClientError(code):
         error_response = {'Error': {

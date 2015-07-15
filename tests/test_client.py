@@ -675,3 +675,19 @@ def test_validate_fails(ComplexModel, client):
     client.client.describe_table = describe_table
     with pytest.raises(ValueError):
         client.validate_table(ComplexModel)
+
+
+def test_validate_simple_model(SimpleModel, client):
+    full = {
+        'KeySchema': [{'AttributeName': 'id', 'KeyType': 'HASH'}],
+        'AttributeDefinitions': [
+            {'AttributeName': 'id', 'AttributeType': 'S'}],
+        'TableName': 'Model',
+        'ProvisionedThroughput': {'ReadCapacityUnits': 1,
+                                  'WriteCapacityUnits': 1}}
+
+    def describe_table(TableName):
+        assert TableName == "Model"
+        return {"Table": full}
+    client.client.describe_table = describe_table
+    client.validate_table(SimpleModel)

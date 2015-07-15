@@ -3,15 +3,15 @@ import bloop.index
 import boto3
 import botocore
 import collections
+import enum
 import functools
 import time
 
 
-BUSY = object()
+TableStatus = enum.Enum('TableStatus', ['Busy', 'Ready'])
 DEFAULT_BACKOFF_COEFF = 50.0
 DEFAULT_MAX_ATTEMPTS = 4
 MAX_BATCH_SIZE = 25
-READY = object()
 RETRYABLE_ERRORS = [
     "InternalServerError",
     "ProvisionedThroughputExceededException"
@@ -386,8 +386,8 @@ class Client(object):
         Raise ValueError if actual table doesn't match expected
         '''
         expected = table_for_model(model)
-        status = BUSY
-        while status is BUSY:
+        status = TableStatus.Busy
+        while status is TableStatus.Busy:
             actual = self.describe_table(model)
             status = table_status(actual)
         if ordered(actual) != ordered(expected):
@@ -518,12 +518,12 @@ def table_status(table):
 
     mutates table - pops status entries
     '''
-    status = READY
+    status = TableStatus.Ready
     if table.pop("TableStatus", "ACTIVE") != "ACTIVE":
-        status = BUSY
+        status = TableStatus.Busy
     for index in table.get('GlobalSecondaryIndexes', []):
         if index.pop("IndexStatus", "ACTIVE") != "ACTIVE":
-            status = BUSY
+            status = TableStatus.Busy
     return status
 
 

@@ -24,7 +24,8 @@ def test_no_refs(renderer):
     aren't populated '''
     condition = bloop.condition.And()
     expected = {'ConditionExpression': '()'}
-    assert renderer.render(condition, 'condition') == expected
+    renderer.render(condition, 'condition')
+    assert renderer.rendered == expected
 
 
 def test_condition_ops(User):
@@ -63,7 +64,8 @@ def test_multi_shortcut(renderer, User):
     expected = {'ConditionExpression': '(#n0 >= :v1)',
                 'ExpressionAttributeNames': {'#n0': 'age'},
                 'ExpressionAttributeValues': {':v1': {'N': '3'}}}
-    assert renderer.render(condition, 'condition') == expected
+    renderer.render(condition, 'condition')
+    assert renderer.rendered == expected
 
 
 def test_not(renderer, User):
@@ -72,7 +74,8 @@ def test_not(renderer, User):
     expected = {'ConditionExpression': '(NOT (#n0 >= :v1))',
                 'ExpressionAttributeNames': {'#n0': 'age'},
                 'ExpressionAttributeValues': {':v1': {'N': '3'}}}
-    assert renderer.render(condition, 'condition') == expected
+    renderer.render(condition, 'condition')
+    assert renderer.rendered == expected
 
 
 def test_invalid_comparator(User):
@@ -80,18 +83,23 @@ def test_invalid_comparator(User):
         bloop.condition.Comparison(User.age, 'foo', 5)
 
 
-def test_attribute_exists(renderer, User):
+def test_attribute_exists(User, renderer):
     exists = User.age.is_not(None)
-    not_exists = User.age.is_(None)
-
     expected_exists = {'ConditionExpression': '(attribute_exists(#n0))',
                        'ExpressionAttributeNames': {'#n0': 'age'}}
+
+    renderer.render(exists, 'condition')
+    assert renderer.rendered == expected_exists
+
+
+def test_attribute_not_exists(User, renderer):
+    not_exists = User.age.is_(None)
     expected_not_exists = {
         'ConditionExpression': '(attribute_not_exists(#n0))',
         'ExpressionAttributeNames': {'#n0': 'age'}}
 
-    assert renderer.render(exists, 'condition') == expected_exists
-    assert renderer.render(not_exists, 'condition') == expected_not_exists
+    renderer.render(not_exists, 'condition')
+    assert renderer.rendered == expected_not_exists
 
 
 def test_begins_with(renderer, User):
@@ -99,7 +107,8 @@ def test_begins_with(renderer, User):
     expected = {'ConditionExpression': '(begins_with(#n0, :v1))',
                 'ExpressionAttributeNames': {'#n0': 'name'},
                 'ExpressionAttributeValues': {':v1': {'S': 'foo'}}}
-    assert renderer.render(condition, 'condition') == expected
+    renderer.render(condition, 'condition')
+    assert renderer.rendered == expected
 
 
 def test_contains(renderer, User):
@@ -107,7 +116,8 @@ def test_contains(renderer, User):
     expected = {'ConditionExpression': '(contains(#n0, :v1))',
                 'ExpressionAttributeNames': {'#n0': 'name'},
                 'ExpressionAttributeValues': {':v1': {'S': 'foo'}}}
-    assert renderer.render(condition, 'condition') == expected
+    renderer.render(condition, 'condition')
+    assert renderer.rendered == expected
 
 
 def test_between(renderer, User):
@@ -116,7 +126,8 @@ def test_between(renderer, User):
                 'ExpressionAttributeNames': {'#n0': 'name'},
                 'ExpressionAttributeValues': {':v1': {'S': 'bar'},
                                               ':v2': {'S': 'foo'}}}
-    assert renderer.render(condition, 'condition') == expected
+    renderer.render(condition, 'condition')
+    assert renderer.rendered == expected
 
 
 def test_in(renderer, User):
@@ -125,7 +136,8 @@ def test_in(renderer, User):
                 'ExpressionAttributeNames': {'#n0': 'name'},
                 'ExpressionAttributeValues': {':v1': {'S': 'bar'},
                                               ':v2': {'S': 'foo'}}}
-    assert renderer.render(condition, 'condition') == expected
+    renderer.render(condition, 'condition')
+    assert renderer.rendered == expected
 
 
 def test_base_condition(User):

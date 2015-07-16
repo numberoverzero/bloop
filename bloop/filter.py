@@ -308,7 +308,9 @@ class Filter(object):
             # If more are requested than a LSI supports, all will be loaded.
             # In all other cases, just the selected columns will be.
             if bloop.index.is_local_index(self.index):
-                if self._select_columns > self.index.projection_attributes:
+                selected = set(self._select_columns)
+                available = self.index.projection_attributes
+                if selected > available:
                     return self.model.Meta.columns
             return self._select_columns
 
@@ -359,11 +361,11 @@ class Filter(object):
         if self.index:
             request['IndexName'] = self.index.dynamo_name
         if self._filter_condition:
-            request.update(renderer.render(self._filter_condition,
-                                           mode="filter"))
+            renderer.render(self._filter_condition, mode="filter")
         if self._select == "specific":
             names = map(renderer.name_ref, self._select_columns)
             request['ProjectionExpression'] = ", ".join(names)
+        request.update(renderer.rendered)
         return request
 
 
@@ -377,8 +379,8 @@ class Query(Filter):
 
         if not self._key_condition:
             raise ValueError("Must specify at least a hash key condition")
-        request.update(renderer.render(self._key_condition, mode="key"))
-
+        renderer.render(self._key_condition, mode="key")
+        request.update(renderer.rendered)
         return request
 
 

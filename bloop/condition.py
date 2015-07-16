@@ -12,13 +12,16 @@ ATTR_VALUES = "ExpressionAttributeValues"
 
 
 def render(engine, condition, mode):
+    ''' Render a single condition. '''
     renderer = ConditionRenderer(engine)
-    return renderer.render(condition, mode=mode)
+    renderer.render(condition, mode=mode)
+    return renderer.rendered
 
 
 class ConditionRenderer:
     def __init__(self, engine):
         self.engine = engine
+        self.expressions = {}
         self.attr_values = {}
         self.attr_names = {}
         # Reverse index names so we can re-use ExpressionAttributeNames.
@@ -50,15 +53,18 @@ class ConditionRenderer:
         return ref
 
     def render(self, condition, mode):
-        rendered_expression = condition.render(self)
-        # An expression contains the compressed string, and any name/value ref
         key = EXPRESSION_KEYS[mode]
-        expression = {key: rendered_expression}
+        rendered_expression = condition.render(self)
+        self.expressions[key] = rendered_expression
+
+    @property
+    def rendered(self):
+        expressions = dict(self.expressions)
         if self.attr_names:
-            expression[ATTR_NAMES] = self.attr_names
+            expressions[ATTR_NAMES] = self.attr_names
         if self.attr_values:
-            expression[ATTR_VALUES] = self.attr_values
-        return expression
+            expressions[ATTR_VALUES] = self.attr_values
+        return expressions
 
 
 class BaseCondition:

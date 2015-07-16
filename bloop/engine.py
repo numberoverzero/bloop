@@ -3,6 +3,7 @@ import bloop.condition
 import bloop.filter
 import bloop.index
 import bloop.model
+import bloop.tracking
 import collections
 import collections.abc
 import declare
@@ -96,6 +97,7 @@ class Engine(object):
                     "Failed to load unknown model {}".format(model))
 
     def __dump__(self, model, obj):
+        ''' Return a dict of the obj in DynamoDB format '''
         try:
             return self.type_engine.dump(model, obj)
         except declare.DeclareException:
@@ -105,9 +107,12 @@ class Engine(object):
                 raise ValueError(
                     "Failed to dump unknown model {}".format(model))
 
-    def __update__(self, obj, attrs):
-        columns = obj.Meta.columns
-        for column in columns:
+    def __instance__(self, model):
+        ''' Return an instance of a given model '''
+        return self.__load__(model, {})
+
+    def __update__(self, obj, attrs, expected):
+        for column in expected:
             value = attrs.get(column.dynamo_name, missing)
             # Missing expected column - try to remove the existing
             # value.  If the value didn't exist on the obj, it's
@@ -121,6 +126,7 @@ class Engine(object):
             else:
                 value = self.__load__(column.typedef, value)
                 setattr(obj, column.model_name, value)
+        bloop.tracking.update(obj, attrs, expected)
 
     def bind(self):
         ''' Create tables for all models that have been registered '''
@@ -222,7 +228,8 @@ class Engine(object):
                     tuple(value_of(item[n]) for n in key_shape)
                 )
                 obj = objs_by_key.pop(index)
-                self.__update__(obj, item)
+                # All columns are expected from a table load
+                self.__update__(obj, item, obj.Meta.columns)
 
         # If there are still objects, they weren't found
         if objs_by_key:

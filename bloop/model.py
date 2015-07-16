@@ -33,7 +33,8 @@ class __BaseModel(object):
     def __load__(cls, attrs):
         ''' dict -> obj '''
         obj = cls.Meta.bloop_init()
-        cls.Meta.bloop_engine.__update__(obj, attrs)
+        # Expect all columns on load
+        cls.Meta.bloop_engine.__update__(obj, attrs, cls.Meta.columns)
         return obj
 
     @classmethod

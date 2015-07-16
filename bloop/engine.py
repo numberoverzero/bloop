@@ -83,6 +83,15 @@ class Engine(object):
             "scan": 0
         }
 
+        # Control how objects are persisted.  PutItem will completely overwrite
+        # an existing item, including deleting fields not set on the
+        # local item.  A query against a GSI with projection KEYS_ONLY will
+        # not load non-key attributes, and saving it back with PutItem would
+        # clear all non-key attributes.
+
+        # Options: "update", "put"
+        self.persist_mode = "put"
+
     def register(self, model):
         if model not in self.models:
             self.unbound_models.add(model)
@@ -251,9 +260,16 @@ class Engine(object):
             }
             item.update(bloop.condition.render(
                 self, condition, mode="condition"))
-            self.client.put_item(item)
+            if self.persist_mode == "put":
+                self.client.put_item(item)
+            elif self.persist_mode == "update":
+                raise NotImplemented("")
+            else:
+                raise ValueError(
+                    "Unknown persist mode {}".format(self.persist_mode))
+            bloop.tracking.update_current(obj, self)
 
-        else:
+        if self.persist_mode == "put":
             request_items = collections.defaultdict(list)
             # Use set here to properly de-dupe list (don't save same obj twice)
             for obj in set(objs):
@@ -264,8 +280,17 @@ class Engine(object):
                 }
                 table_name = obj.Meta.table_name
                 request_items[table_name].append(put_item)
-
             self.client.batch_write_items(request_items)
+            # TODO: update tracking for each object as its batch
+            # successfully writes.  Otherwise we could fail to update the
+            # tracking for an object if a subsequent batch fails to write
+            for obj in set(objs):
+                bloop.tracking.update_current(obj, self)
+        elif self.persist_mode == "update":
+                raise NotImplemented("")
+        else:
+            raise ValueError(
+                "Unknown persist mode {}".format(self.persist_mode))
 
     def delete(self, objs, *, condition=None):
         objs = list_of(objs)
@@ -282,6 +307,7 @@ class Engine(object):
             item.update(bloop.condition.render(
                 self, condition, mode="condition"))
             self.client.delete_item(item)
+            bloop.tracking.clear(obj)
 
         else:
             request_items = collections.defaultdict(list)
@@ -296,6 +322,11 @@ class Engine(object):
                 request_items[table_name].append(del_item)
 
             self.client.batch_write_items(request_items)
+            # TODO: clear tracking for each object as its batch
+            # successfully deletes.  Otherwise we could fail to clear the
+            # tracking for an object if a subsequent batch fails to delete
+            for obj in set(objs):
+                bloop.tracking.clear(obj)
 
     def query(self, obj):
         if bloop.index.is_index(obj):

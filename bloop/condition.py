@@ -2,7 +2,6 @@
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import operator
 
-missing = object()
 EXPRESSION_KEYS = {
     "condition": "ConditionExpression",
     "filter": "FilterExpression",

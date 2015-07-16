@@ -3,7 +3,6 @@ import bloop.condition
 import bloop.index
 import operator
 
-missing = object()
 SELECT_MODES = {
     "all": "ALL_ATTRIBUTES",
     "projected": "ALL_PROJECTED_ATTRIBUTES",

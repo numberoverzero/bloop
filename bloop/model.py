@@ -1,7 +1,8 @@
 import bloop.column
 import bloop.index
+import bloop.util
 import declare
-missing = object()
+MISSING = bloop.util.Sentinel('MISSING')
 
 
 class __BaseModel(object):
@@ -24,8 +25,8 @@ class __BaseModel(object):
         # Only set values from **attrs if there's a
         # corresponding `model_name` for a column in the model
         for column in self.Meta.columns:
-            value = attrs.get(column.model_name, missing)
-            if value is not missing:
+            value = attrs.get(column.model_name, MISSING)
+            if value is not MISSING:
                 setattr(self, column.model_name, value)
 
     @classmethod
@@ -43,9 +44,9 @@ class __BaseModel(object):
         columns = cls.Meta.columns
         engine = cls.Meta.bloop_engine.type_engine
         for column in columns:
-            value = getattr(obj, column.model_name, missing)
+            value = getattr(obj, column.model_name, MISSING)
             # Missing expected column
-            if value is not missing:
+            if value is not MISSING:
                 attrs[column.dynamo_name] = engine.dump(column.typedef, value)
         return attrs
 
@@ -68,8 +69,8 @@ class __BaseModel(object):
         if not isinstance(other, cls):
             return False
         for column in cls.Meta.columns:
-            value = getattr(self, column.dynamo_name, missing)
-            other_value = getattr(other, column.dynamo_name, missing)
+            value = getattr(self, column.dynamo_name, MISSING)
+            other_value = getattr(other, column.dynamo_name, MISSING)
             if value != other_value:
                 return False
         return True

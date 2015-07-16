@@ -4,10 +4,11 @@ import bloop.filter
 import bloop.index
 import bloop.model
 import bloop.tracking
+import bloop.util
 import collections
 import collections.abc
 import declare
-missing = object()
+MISSING = bloop.util.Sentinel('MISSING')
 
 
 class ObjectsNotFound(Exception):
@@ -113,11 +114,11 @@ class Engine(object):
 
     def __update__(self, obj, attrs, expected):
         for column in expected:
-            value = attrs.get(column.dynamo_name, missing)
+            value = attrs.get(column.dynamo_name, MISSING)
             # Missing expected column - try to remove the existing
             # value.  If the value didn't exist on the obj, it's
             # already in the expected state.
-            if value is missing:
+            if value is MISSING:
                 try:
                     delattr(obj, column.model_name)
                 except AttributeError:

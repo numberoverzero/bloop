@@ -88,6 +88,22 @@ def test_load_objects(User, engine, ordered):
     assert user2.name == 'bar'
 
 
+def test_load_missing_attrs(User, engine):
+    '''
+    When an instance of a Model is loaded into, existing attributes should be
+    overwritten with new values, or if there is no new value, should be deleted
+    '''
+    obj = User(id=uuid.uuid4(), age=4, name='user')
+
+    response = {'User': [{'age': {'N': 5},
+                          'id': {'S': str(obj.id)}}]}
+
+    engine.client.batch_get_items = lambda input: response
+    engine.load(obj)
+    assert obj.age == 5
+    assert not hasattr(obj, 'name')
+
+
 def test_load_dump_unbound(UnboundUser, engine):
     user_id = uuid.uuid4()
     user = UnboundUser(id=user_id, age=5, name='foo')

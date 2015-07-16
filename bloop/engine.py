@@ -95,9 +95,9 @@ class Engine(object):
                 raise ValueError(
                     "Failed to load unknown model {}".format(model))
 
-    def __dump__(self, model, value):
+    def __dump__(self, model, obj):
         try:
-            return self.type_engine.dump(model, value)
+            return self.type_engine.dump(model, obj)
         except declare.DeclareException:
             if model in self.unbound_models:
                 raise RuntimeError("Must call `engine.bind()` before dumping")
@@ -212,8 +212,16 @@ class Engine(object):
                 columns = obj.Meta.columns
                 for column in columns:
                     value = item.get(column.dynamo_name, missing)
-                    # Missing expected column
-                    if value is not missing:
+                    # Missing expected column - try to remove the existing
+                    # value.  If the value didn't exist on the obj, it's
+                    # already in the expected state.
+                    if value is missing:
+                        try:
+                            delattr(obj, column.model_name)
+                        except AttributeError:
+                            pass
+                    # Load the value through the column's typedef into the obj
+                    else:
                         value = self.__load__(column.typedef, value)
                         setattr(obj, column.model_name, value)
 

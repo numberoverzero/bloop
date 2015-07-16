@@ -1,5 +1,6 @@
 import bloop.column
 import bloop.index
+import bloop.util
 import boto3
 import botocore
 import enum
@@ -395,7 +396,7 @@ class Client(object):
         while status is TableStatus.Busy:
             actual = self.describe_table(model)
             status = table_status(actual)
-        if ordered(actual) != ordered(expected):
+        if bloop.util.ordered(actual) != bloop.util.ordered(expected):
             raise ValueError(
                 TABLE_MISMATCH.format(expected, actual))
 
@@ -529,17 +530,3 @@ def table_status(table):
         if index.pop("IndexStatus", "ACTIVE") != "ACTIVE":
             status = TableStatus.Busy
     return status
-
-
-def ordered(obj):
-    '''
-    Return sorted version of nested dicts/lists for comparing.
-
-    http://stackoverflow.com/a/25851972
-    '''
-    if isinstance(obj, dict):
-        return sorted((k, ordered(v)) for k, v in obj.items())
-    if isinstance(obj, list):
-        return sorted(ordered(x) for x in obj)
-    else:
-        return obj

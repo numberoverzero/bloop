@@ -1,4 +1,5 @@
 import bloop.client
+import bloop.util
 import botocore
 import copy
 import pytest
@@ -335,7 +336,7 @@ def test_default_backoff():
             operation, bloop.client.DEFAULT_MAX_ATTEMPTS)
 
 
-def test_create_table(ComplexModel, client, ordered):
+def test_create_table(ComplexModel, client):
     expected = {
         'LocalSecondaryIndexes': [
             {'Projection': {'NonKeyAttributes': ['date', 'name',
@@ -367,7 +368,7 @@ def test_create_table(ComplexModel, client, ordered):
     def create_table(**table):
         nonlocal called
         called = True
-        assert ordered(table) == ordered(expected)
+        assert bloop.util.ordered(table) == bloop.util.ordered(expected)
     client.client.create_table = create_table
     client.create_table(ComplexModel)
     assert called

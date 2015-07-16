@@ -1,5 +1,6 @@
 import bloop
 import bloop.engine
+import bloop.util
 import pytest
 import uuid
 
@@ -62,7 +63,7 @@ def test_load_object(User, engine):
     assert user.id == user_id
 
 
-def test_load_objects(User, engine, ordered):
+def test_load_objects(User, engine):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
     expected = {'User': {'Keys': [{'id': {'S': str(user1.id)}},
@@ -76,7 +77,7 @@ def test_load_objects(User, engine, ordered):
                           'id': {'S': str(user2.id)}}]}
 
     def respond(input):
-        assert ordered(input) == ordered(expected)
+        assert bloop.util.ordered(input) == bloop.util.ordered(expected)
         return response
     engine.client.batch_get_items = respond
 
@@ -155,7 +156,7 @@ def test_save_condition(User, engine):
     engine.save(user, condition=condition)
 
 
-def test_save_multiple(User, engine, ordered):
+def test_save_multiple(User, engine):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
 
@@ -164,7 +165,7 @@ def test_save_multiple(User, engine, ordered):
         {'PutRequest': {'Item': {'id': {'S': str(user2.id)}}}}]}
 
     def validate(items):
-        assert ordered(items) == ordered(expected)
+        assert bloop.util.ordered(items) == bloop.util.ordered(expected)
     engine.client.batch_write_items = validate
     engine.save((user1, user2))
 
@@ -192,7 +193,7 @@ def test_delete_condition(User, engine):
     engine.delete(user, condition=condition)
 
 
-def test_delete_multiple(User, engine, ordered):
+def test_delete_multiple(User, engine):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
 
@@ -201,7 +202,7 @@ def test_delete_multiple(User, engine, ordered):
         {'DeleteRequest': {'Key': {'id': {'S': str(user2.id)}}}}]}
 
     def validate(items):
-        assert ordered(items) == ordered(expected)
+        assert bloop.util.ordered(items) == bloop.util.ordered(expected)
     engine.client.batch_write_items = validate
     engine.delete((user1, user2))
 

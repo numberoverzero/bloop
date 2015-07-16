@@ -301,7 +301,7 @@ class Filter(object):
           else: set(selected)
         '''
         if self._select == 'all':
-            return self.model.Meta.Columns
+            return self.model.Meta.columns
         elif self._select == 'projected':
             return self.index.projection_attributes
         # specific
@@ -310,7 +310,7 @@ class Filter(object):
             # In all other cases, just the selected columns will be.
             if bloop.index.is_local_index(self.index):
                 if self._select_columns > self.index.projection_attributes:
-                    return self.model.Meta.Columns
+                    return self.model.Meta.columns
             return self._select_columns
 
     def first(self):

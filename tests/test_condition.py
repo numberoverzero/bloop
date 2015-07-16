@@ -2,17 +2,6 @@ import bloop.condition
 import pytest
 
 
-def test_render(engine, User):
-    ''' render modes: condition, filter, key '''
-
-    condition = User.age >= 3
-    expected = {'ConditionExpression': '(#n0 >= :v1)',
-                'ExpressionAttributeNames': {'#n0': 'age'},
-                'ExpressionAttributeValues': {':v1': {'N': '3'}}}
-    rendered = bloop.condition.render(engine, condition, "condition")
-    assert expected == rendered
-
-
 def test_duplicate_name_refs(renderer, User):
     ''' name refs are re-used for the same name '''
     assert renderer.name_ref(User.age) == renderer.name_ref(User.age) == "#n0"

@@ -254,13 +254,14 @@ class Engine(object):
         elif len(objs) == 1 and condition:
             obj = objs[0]
             model = obj.__class__
+            renderer = bloop.condition.ConditionRenderer(self)
+            renderer.render(condition, 'condition')
             if self.persist_mode == "put":
                 item = {
                     "TableName": model.Meta.table_name,
                     "Item": self.__dump__(model, obj),
                 }
-                item.update(bloop.condition.render(
-                    self, condition, mode="condition"))
+                item.update(renderer.rendered)
                 self.client.put_item(item)
             elif self.persist_mode == "update":
                 raise NotImplemented("")
@@ -301,12 +302,13 @@ class Engine(object):
         elif len(objs) == 1 and condition:
             obj = objs[0]
             model = obj.__class__
+            renderer = bloop.condition.ConditionRenderer(self)
+            renderer.render(condition, 'condition')
             item = {
                 "TableName": model.Meta.table_name,
                 "Key": dump_key(self, obj)
             }
-            item.update(bloop.condition.render(
-                self, condition, mode="condition"))
+            item.update(renderer.rendered)
             self.client.delete_item(item)
             bloop.tracking.clear(obj)
 

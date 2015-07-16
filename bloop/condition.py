@@ -11,13 +11,6 @@ ATTR_NAMES = "ExpressionAttributeNames"
 ATTR_VALUES = "ExpressionAttributeValues"
 
 
-def render(engine, condition, mode):
-    ''' Render a single condition. '''
-    renderer = ConditionRenderer(engine)
-    renderer.render(condition, mode=mode)
-    return renderer.rendered
-
-
 class ConditionRenderer:
     def __init__(self, engine):
         self.engine = engine

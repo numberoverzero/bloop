@@ -152,3 +152,14 @@ def update(obj, attrs, expected):
             _del_value(obj, name)
         else:
             _set_value(obj, name, value)
+
+
+def update_current(obj, engine):
+    ''' Set an object's tracking to match the current state. '''
+    attrs = _get_current(obj, engine)
+    update(obj, attrs, obj.Meta.columns)
+
+
+def clear(obj):
+    ''' Clear all tracking for an object.  Usually after a delete. '''
+    update(obj, {}, obj.Meta.columns)

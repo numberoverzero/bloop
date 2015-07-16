@@ -1,5 +1,6 @@
 import bloop
 import bloop.engine
+import bloop.tracking
 import bloop.util
 import pytest
 import uuid
@@ -260,6 +261,52 @@ def test_save_update_multiple(User, engine):
     engine.client.update_item = validate
     engine.save((user1, user2))
     assert calls == 2
+
+
+def test_save_set_del_field(User, engine):
+    ''' UpdateItem can DELETE fields as well as SET '''
+    engine.persist_mode = "update"
+    user = User(id=uuid.uuid4(), age=4)
+
+    # Manually force a tracking update so we think age is persisted
+    bloop.tracking.update_current(user, engine)
+
+    # Expect to see a DELETE on age, and a SET on email
+    del user.age
+    user.email = 'foo@domain.com'
+
+    expected = {'Key': {'id': {'S': str(user.id)}},
+                'ExpressionAttributeNames': {'#n0': 'email', '#n2': 'age'},
+                'TableName': 'User',
+                'UpdateExpression': 'SET #n0=:v1 DELETE #n2',
+                'ExpressionAttributeValues': {':v1': {'S': 'foo@domain.com'}}}
+
+    def validate(item):
+        assert item == expected
+    engine.client.update_item = validate
+    engine.save(user)
+
+
+def test_save_update_del_field(User, engine):
+    engine.persist_mode = "update"
+    user = User(id=uuid.uuid4(), age=4)
+
+    # Manually force a tracking update so we think age is persisted
+    bloop.tracking.update_current(user, engine)
+
+    # Expect to see a DELETE on age, and a SET on email
+    del user.age
+
+    expected = {'Key': {'id': {'S': str(user.id)}},
+                'ExpressionAttributeNames': {'#n0': 'age'},
+                'TableName': 'User',
+                'UpdateExpression': "DELETE #n0"}
+
+    def validate(item):
+        print(item)
+        assert item == expected
+    engine.client.update_item = validate
+    engine.save(user)
 
 
 def test_illegal_delete(User, engine):

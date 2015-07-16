@@ -103,13 +103,13 @@ def diff_obj(obj, engine):
     The return dict is:
 
     {
-        "set": [Column<Foo>, Column<Bar>, ...],
-        "del": [Column<Baz>, ...]
+        "SET": [(Column<Foo>, obj.Foo), (Column<Bar>, obj.Bar), ...],
+        "DELETE": [Column<Baz>, ...]
     }
     '''
     current = _get_current(obj, engine)
     tracking = _get_tracking(obj)
-    diff = {"set": [], "del": []}
+    diff = {"SET": [], "DELETE": []}
 
     for column in obj.Meta.columns:
         name = column.dynamo_name
@@ -117,9 +117,9 @@ def diff_obj(obj, engine):
         tracking_value = tracking[name]
         change = _diff_value(current_value, tracking_value)
         if change is _DIFF.SET:
-            diff["set"].append(column)
+            diff["SET"].append((column, getattr(obj, column.model_name)))
         elif change is _DIFF.DEL:
-            diff["del"].append(column)
+            diff["DELETE"].append(column)
         # Don't do anything if it's _DIFF.NOOP
     return diff
 

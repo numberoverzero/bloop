@@ -10,7 +10,7 @@ Downloads https://pypi.python.org/pypi/bloop
 
 Source https://github.com/numberoverzero/bloop
 
-DynamoDB object mapper for python 3.3+
+DynamoDB object mapper for python 3.4+
 
 # Installation
 

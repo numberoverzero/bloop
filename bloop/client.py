@@ -335,7 +335,7 @@ class Client(object):
         fields = ["TableName", "ProvisionedThroughput", "KeySchema",
                   "AttributeDefinitions", "GlobalSecondaryIndexes",
                   "LocalSecondaryIndexes", "TableStatus"]
-        junk_index_fields = ["ItemCount", "IndexSizeBytes"]
+        junk_index_fields = ["ItemCount", "IndexSizeBytes", "IndexArn"]
         table = {}
         for field in fields:
             value = description.get(field, None)

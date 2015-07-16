@@ -533,7 +533,8 @@ def test_describe_table(ComplexModel, client):
                                   'WriteCapacityUnits': 2,
                                   'NumberOfDecreasesToday': 4},
         'GlobalSecondaryIndexes': [
-            {'ItemCount': 7,
+            {'IndexArn': 'arn:aws:dynamodb:us-west-2:*:*',
+             'ItemCount': 7,
              'IndexSizeBytes': 8,
              'Projection': {'ProjectionType': 'ALL'},
              'IndexName': 'by_email',
@@ -556,6 +557,7 @@ def test_describe_table(ComplexModel, client):
     gsi = expected['GlobalSecondaryIndexes'][0]
     gsi.pop('ItemCount')
     gsi.pop('IndexSizeBytes')
+    gsi.pop('IndexArn')
     gsi['ProvisionedThroughput'].pop('NumberOfDecreasesToday')
     lsi = expected['LocalSecondaryIndexes'][0]
     lsi.pop('ItemCount')

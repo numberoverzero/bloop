@@ -1,22 +1,9 @@
+import bloop.util
 import enum
 
-Diff = enum.Enum('Diff', ['SET', 'DEL', 'NOOP'])
+_DIFF = enum.Enum('DIFF', ['SET', 'DEL', 'NOOP'])
+_MISSING = bloop.util.Sentinel('MISSING')
 _TRACKING_ATTR_NAME = '__tracking__'
-MISSING = object()
-
-
-def _ordered(obj):
-    '''
-    Return sorted version of nested dicts/lists for comparing.
-
-    http://stackoverflow.com/a/25851972
-    '''
-    if isinstance(obj, dict):
-        return sorted((k, _ordered(v)) for k, v in obj.items())
-    if isinstance(obj, list):
-        return sorted(_ordered(x) for x in obj)
-    else:
-        return obj
 
 
 def _tracking_dict(obj):
@@ -60,7 +47,7 @@ def _get_value(obj, name):
     Returns the value for an attr from the obj's tracking dict, or MISSING if
     there is no value.
     '''
-    return _tracking_dict(obj).get(name, MISSING)
+    return _tracking_dict(obj).get(name, _MISSING)
 
 
 def _get_tracking(obj):
@@ -82,30 +69,30 @@ def _get_current(obj, engine):
     attrs = engine.__dump__(obj.__cls__, obj)
     for column in obj.Meta.columns:
         if column.dynamo_name not in attrs:
-            attrs[column.dynamo_name] = MISSING
+            attrs[column.dynamo_name] = _MISSING
     return attrs
 
 
 def _diff_value(current, loaded):
     '''
-    Diff of two values, where either, neither, or both can be MISSING.
-    Returns the Diff value that should be applied to the attribute when
+    _DIFF of two values, where either, neither, or both can be MISSING.
+    Returns the _DIFF value that should be applied to the attribute when
     saving back to DynamoDB.
 
-     current  | loaded  | Diff
+     current  | loaded  | _DIFF
     ----------|---------|-----------
-      foo     |    foo  | Diff.NOOP
-      MISSING | MISSING | Diff.NOOP
-      MISSING | bar     | Diff.DEL
-      foo     |    bar  | Diff.SET
-      foo     | MISSING | Diff.SET
+      foo     |    foo  | _DIFF.NOOP
+      MISSING | MISSING | _DIFF.NOOP
+      MISSING | bar     | _DIFF.DEL
+      foo     |    bar  | _DIFF.SET
+      foo     | MISSING | _DIFF.SET
     '''
-    if _ordered(current) == _ordered(loaded):
-        return Diff.NOOP
-    elif current is MISSING:
-        return Diff.DEL
+    if bloop.util.ordered(current) == bloop.util.ordered(loaded):
+        return _DIFF.NOOP
+    elif current is _MISSING:
+        return _DIFF.DEL
     else:
-        return Diff.SET
+        return _DIFF.SET
 
 
 def diff_obj(obj, engine):
@@ -129,11 +116,11 @@ def diff_obj(obj, engine):
         current_value = current[name]
         tracking_value = tracking[name]
         change = _diff_value(current_value, tracking_value)
-        if change is Diff.SET:
+        if change is _DIFF.SET:
             diff["set"].append(column)
-        elif change is Diff.DEL:
+        elif change is _DIFF.DEL:
             diff["del"].append(column)
-        # Don't do anything if it's Diff.NOOP
+        # Don't do anything if it's _DIFF.NOOP
     return diff
 
 
@@ -160,8 +147,8 @@ def update(obj, attrs, expected):
     '''
     for column in expected:
         name = column.dynamo_name
-        value = attrs.get(name, MISSING)
-        if value is MISSING:
+        value = attrs.get(name, _MISSING)
+        if value is _MISSING:
             _del_value(obj, name)
         else:
             _set_value(obj, name, value)

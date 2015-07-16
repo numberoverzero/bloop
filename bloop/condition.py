@@ -33,12 +33,7 @@ class ConditionRenderer:
         ref = ":v{}".format(self.__ref_index)
         self.__ref_index += 1
 
-        # Dump the value (default to current) through the column's
-        # typedef into dynamo's format, then persist a reference
-        # in ExpressionAttributeValues
-        type_engine = self.engine.type_engine
-        dynamo_value = type_engine.dump(column.typedef, value)
-
+        dynamo_value = self.engine.__dump__(column.typedef, value)
         self.attr_values[ref] = dynamo_value
 
         return ref

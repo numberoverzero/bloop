@@ -52,6 +52,11 @@ class ConditionRenderer:
         self.name_attr_index[column.dynamo_name] = ref
         return ref
 
+    def refs(self, pair):
+        ''' Return (#n0, #v1) tuple for a given (column, value) pair '''
+        column, value = pair
+        return self.name_ref(column), self.value_ref(column, value)
+
     def render(self, condition, mode):
         key = EXPRESSION_KEYS[mode]
         rendered_expression = condition.render(self)
@@ -60,6 +65,22 @@ class ConditionRenderer:
     def projection(self, columns):
         names = map(self.name_ref, columns)
         self.expressions['ProjectionExpression'] = ", ".join(names)
+
+    def update(self, attrs):
+        set_fmt = "{}={}"
+        expression = ''
+        if attrs.get("SET", None):
+            expression += "SET "
+            pairs = map(self.refs, attrs["SET"])
+            pairs = (set_fmt.format(*pair) for pair in pairs)
+            pairs = ", ".join(pairs)
+            expression += pairs
+        if attrs.get("DELETE", None):
+            expression += " DELETE "
+            names = map(self.name_ref, attrs["DELETE"])
+            names = ", ".join(names)
+            expression += names
+        self.expressions['UpdateExpression'] = expression.strip()
 
     @property
     def rendered(self):

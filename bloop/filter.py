@@ -279,7 +279,39 @@ class Filter(object):
         call = getattr(self.engine.client, self.filter_type)
         renderer = bloop.condition.ConditionRenderer(self.engine)
         request = self.generate_request(renderer)
-        return FilterResult(prefetch, call, request, self.engine, self.model)
+
+        expected = self._expected()
+        return FilterResult(prefetch, call, request, self.engine,
+                            self.model, expected)
+
+    def _expected(self):
+        '''
+        Return a list of Columns that are expected for the current options.
+
+        No index:
+          if select(all): all columns
+          else: set(selected)
+        GSI:
+          if select(projected): all projected columns
+          else: set(selected)
+        LSI:
+          if select(all) : all columns
+          if select(projected): all projected columns
+          if set(selected) > set(projected): all columns
+          else: set(selected)
+        '''
+        if self._select == 'all':
+            return self.model.Meta.Columns
+        elif self._select == 'projected':
+            return self.index.projection_attributes
+        # specific
+        else:
+            # If more are requested than a LSI supports, all will be loaded.
+            # In all other cases, just the selected columns will be.
+            if bloop.index.is_local_index(self.index):
+                if self._select_columns > self.index.projection_attributes:
+                    return self.model.Meta.Columns
+            return self._select_columns
 
     def first(self):
         '''
@@ -361,12 +393,13 @@ class FilterResult(object):
 
     Uses engine.prefetch to control call batching
     '''
-    def __init__(self, prefetch, call, request, engine, model):
+    def __init__(self, prefetch, call, request, engine, model, expected):
         self._call = call
         self._prefetch = prefetch
         self.request = request
         self.engine = engine
         self.model = model
+        self.expected = expected
 
         self.count = 0
         self.scanned_count = 0
@@ -463,6 +496,7 @@ class FilterResult(object):
 
         results = response.get("Items", [])
         for result in results:
-            obj = self.engine.__load__(self.model, result)
+            obj = self.engine.__instance__(self.model)
+            self.engine.__update__(self.model, result, self.expected)
             self._results.append(obj)
             yield obj

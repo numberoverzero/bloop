@@ -54,7 +54,7 @@ Let's create a new user - and make sure we don't overwrite an existing key!
 
 ```python
 def create_user(admin=False):
-    ''' Create a new user, throwing if the randomly generated id is in use '''
+    ''' Create a new user, raising if the randomly generated id is in use '''
     user = User(id=uuid.uuid4(), admin=admin)
     does_not_exist = User.id.is_(None)
     engine.save(user, condition=does_not_exist)
@@ -200,7 +200,7 @@ troll_post = Post(id=uid(), user=troll_user, date=arrow.now())
 announcement = Post(id=uid(), user=admin, date=arrow.now())
 ```
 
-There is no default value for columns not specified - `announcement.views` will not return 0 or None, but instead throw a NameError.
+There is no default value for columns not specified - `announcement.views` will not return 0 or None, but instead raise an AttributeError.
 
 When loading models from DynamoDB during a query or scan, models are loaded using the method specified in `Meta.bloop_init`.  By default, this is the constructor for the model.  In other words, `Post.Meta.bloop_init is Post`.  Any model can override this setting with another function that takes `**kwargs` and returns a model instance.  For more on defining a custom `Meta.bloop_init`, see Custom Object Loading.
 

@@ -30,15 +30,11 @@ class __BaseModel(object):
                 setattr(self, column.model_name, value)
 
     @classmethod
-    def __load__(cls, values):
+    def __load__(cls, attrs):
         ''' dict -> obj '''
-        attrs = {}
-        engine = cls.Meta.bloop_engine.type_engine
-        for column in cls.Meta.columns:
-            value = values.get(column.dynamo_name, missing)
-            if value is not missing:
-                attrs[column.model_name] = engine.load(column.typedef, value)
-        return cls.Meta.bloop_init(**attrs)
+        obj = cls.Meta.bloop_init()
+        cls.Meta.bloop_engine.__update__(obj, attrs)
+        return obj
 
     @classmethod
     def __dump__(cls, obj):

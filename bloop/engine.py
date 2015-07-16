@@ -254,13 +254,13 @@ class Engine(object):
         elif len(objs) == 1 and condition:
             obj = objs[0]
             model = obj.__class__
-            item = {
-                "TableName": model.Meta.table_name,
-                "Item": self.__dump__(model, obj),
-            }
-            item.update(bloop.condition.render(
-                self, condition, mode="condition"))
             if self.persist_mode == "put":
+                item = {
+                    "TableName": model.Meta.table_name,
+                    "Item": self.__dump__(model, obj),
+                }
+                item.update(bloop.condition.render(
+                    self, condition, mode="condition"))
                 self.client.put_item(item)
             elif self.persist_mode == "update":
                 raise NotImplemented("")
@@ -268,7 +268,8 @@ class Engine(object):
                 raise ValueError(
                     "Unknown persist mode {}".format(self.persist_mode))
             bloop.tracking.update_current(obj, self)
-
+            return
+        # Multiple objects
         if self.persist_mode == "put":
             request_items = collections.defaultdict(list)
             # Use set here to properly de-dupe list (don't save same obj twice)

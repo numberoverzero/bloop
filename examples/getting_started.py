@@ -36,7 +36,7 @@ def create_user(admin=False):
 
 def posts_by_user(user_id):
     ''' Returns an iterable of posts by the user '''
-    return engine.query(Post.by_user).key(Post.id == user_id)
+    return engine.query(Post.by_user).key(Post.user == user_id)
 
 
 def increment_views(post_id):

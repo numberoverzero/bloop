@@ -78,6 +78,7 @@ class Column(declare.Field, ComparisonMixin):
             return "{}={}".format(attr, getattr(self, attr))
         attrs = ", ".join(_attr(attr) for attr in attrs)
         return "{}({})".format(self.__class__.__name__, attrs)
+    __repr__ = __str__
 
     @property
     def dynamo_name(self):

@@ -21,10 +21,9 @@ class __BaseModel(object):
             # ... cross-model code goes here
     '''
     def __init__(self, **attrs):
-        columns = self.Meta.columns
         # Only set values from **attrs if there's a
         # corresponding `model_name` for a column in the model
-        for column in columns:
+        for column in self.Meta.columns:
             value = attrs.get(column.model_name, missing)
             if value is not missing:
                 setattr(self, column.model_name, value)

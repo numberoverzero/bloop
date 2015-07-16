@@ -68,7 +68,7 @@ Next, let's take advantage of our GlobalSecondaryIndex `by_user` to find all pos
 ```python
 def posts_by_user(user_id):
     ''' Returns an iterable of posts by the user '''
-    return engine.query(Post.by_user).key(Post.id == user_id)
+    return engine.query(Post.by_user).key(Post.user == user_id)
 ```
 
 Again we leverage standard comparison operators to define the key condition with `Post.id == user_id`.  There are a number of moving pieces that allow this function to stay so simple:

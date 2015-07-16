@@ -497,6 +497,6 @@ class FilterResult(object):
         results = response.get("Items", [])
         for result in results:
             obj = self.engine.__instance__(self.model)
-            self.engine.__update__(self.model, result, self.expected)
+            self.engine.__update__(obj, result, self.expected)
             self._results.append(obj)
             yield obj

@@ -105,6 +105,23 @@ class Engine(object):
                 raise ValueError(
                     "Failed to dump unknown model {}".format(model))
 
+    def __update__(self, obj, attrs):
+        columns = obj.Meta.columns
+        for column in columns:
+            value = attrs.get(column.dynamo_name, missing)
+            # Missing expected column - try to remove the existing
+            # value.  If the value didn't exist on the obj, it's
+            # already in the expected state.
+            if value is missing:
+                try:
+                    delattr(obj, column.model_name)
+                except AttributeError:
+                    pass
+            # Load the value through the column's typedef into the obj
+            else:
+                value = self.__load__(column.typedef, value)
+                setattr(obj, column.model_name, value)
+
     def bind(self):
         ''' Create tables for all models that have been registered '''
         # create_table doesn't block until ACTIVE or validate.
@@ -205,25 +222,7 @@ class Engine(object):
                     tuple(value_of(item[n]) for n in key_shape)
                 )
                 obj = objs_by_key.pop(index)
-
-                # Not using self.__load__(obj, item) because we don't want to
-                # go through meta['bloop.init'] - we want to populate the
-                # existing model instance
-                columns = obj.Meta.columns
-                for column in columns:
-                    value = item.get(column.dynamo_name, missing)
-                    # Missing expected column - try to remove the existing
-                    # value.  If the value didn't exist on the obj, it's
-                    # already in the expected state.
-                    if value is missing:
-                        try:
-                            delattr(obj, column.model_name)
-                        except AttributeError:
-                            pass
-                    # Load the value through the column's typedef into the obj
-                    else:
-                        value = self.__load__(column.typedef, value)
-                        setattr(obj, column.model_name, value)
+                self.__update__(obj, item)
 
         # If there are still objects, they weren't found
         if objs_by_key:

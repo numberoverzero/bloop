@@ -107,11 +107,14 @@ def diff_obj(obj, engine):
         "DELETE": [Column<Baz>, ...]
     }
     '''
+    hash_key, range_key = obj.Meta.hash_key, obj.Meta.range_key
     current = _get_current(obj, engine)
     tracking = _get_tracking(obj)
     diff = {"SET": [], "DELETE": []}
-
     for column in obj.Meta.columns:
+        # hash and range keys can't be updated
+        if (column is hash_key) or (column is range_key):
+            continue
         name = column.dynamo_name
         current_value = current[name]
         tracking_value = tracking[name]
@@ -121,6 +124,10 @@ def diff_obj(obj, engine):
         elif change is _DIFF.DEL:
             diff["DELETE"].append(column)
         # Don't do anything if it's _DIFF.NOOP
+    if not diff["SET"]:
+        diff.pop("SET")
+    if not diff["DELETE"]:
+        diff.pop("DELETE")
     return diff
 
 

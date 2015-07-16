@@ -27,6 +27,19 @@ def validate_key_condition(condition):
     raise ValueError("Invalid KeyCondition {}".format(condition))
 
 
+def validate_prefetch(value):
+    invalid = ValueError("prefetch must be `all` or a non-negative int")
+    if value != "all":
+        try:
+            value = int(value)
+        except ValueError:
+            raise invalid
+        else:
+            if value < 0:
+                raise invalid
+    return value
+
+
 def validate_select_mode(select):
     invalid = ValueError("Must specify 'all', 'projected', 'count', or"
                          " a list of column objects to select")
@@ -242,7 +255,7 @@ class Filter(object):
         other._select = "count"
         other._select_columns.clear()
         # Force fetch all
-        result = other.all(prefetch=-1)
+        result = other.all(prefetch="all")
         return {
             "count": result.count,
             "scanned_count": result.scanned_count
@@ -273,7 +286,7 @@ class Filter(object):
         print(results.count, results.scanned_count)
         '''
         if prefetch is None:
-            prefetch = self.engine.prefetch[self.filter_type]
+            prefetch = self.engine.prefetch
         # dynamo.client.query or dynamo.client.scan
         call = getattr(self.engine.client, self.filter_type)
         renderer = bloop.condition.ConditionRenderer(self.engine)
@@ -310,7 +323,7 @@ class Filter(object):
             if bloop.index.is_local_index(self.index):
                 selected = set(self._select_columns)
                 available = self.index.projection_attributes
-                if selected > available:
+                if not selected.issubset(available):
                     return self.model.Meta.columns
             return self._select_columns
 
@@ -395,7 +408,7 @@ class FilterResult(object):
     '''
     def __init__(self, prefetch, call, request, engine, model, expected):
         self._call = call
-        self._prefetch = prefetch
+        self._prefetch = validate_prefetch(prefetch)
         self.request = request
         self.engine = engine
         self.model = model
@@ -409,7 +422,7 @@ class FilterResult(object):
         self._complete = False
 
         # Kick off the full execution
-        if prefetch < 0:
+        if prefetch == "all":
             consume(self)
 
     @property
@@ -450,7 +463,7 @@ class FilterResult(object):
         if self.complete:
             return iter(self.results)
         # Fully exhaust the filter before returning an iterator
-        elif self._prefetch < 0:
+        elif self._prefetch == "all":
             # Give self._continue a chance to be not None
             consume(self._step())
             while self._continue:

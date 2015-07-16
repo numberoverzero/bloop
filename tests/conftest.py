@@ -68,9 +68,10 @@ def ComplexModel(engine, local_bind):
             read_units = 3
             table_name = 'CustomTableName'
         name = bloop.Column(bloop.UUID, hash_key=True)
-        date = bloop.Column(bloop.DateTime, range_key=True)
+        date = bloop.Column(bloop.String, range_key=True)
         email = bloop.Column(bloop.String)
-        joined = bloop.Column(bloop.DateTime)
+        joined = bloop.Column(bloop.String)
+        not_projected = bloop.Column(bloop.Integer)
 
         by_email = bloop.GlobalSecondaryIndex(hash_key='email', read_units=4,
                                               projection='all', write_units=5)

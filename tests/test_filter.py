@@ -269,6 +269,21 @@ def test_select_specific_gsi_projection(engine, local_bind):
     assert result.request == expected
 
 
+def test_select_specific_lsi(ComplexModel, engine, local_bind):
+    key_condition = ComplexModel.name == "name"
+    key_condition &= (ComplexModel.joined == "now")
+    q = engine.query(ComplexModel.by_joined).key(key_condition)
+
+    # Unprojected attributes expect a full load
+    result = q.select([ComplexModel.not_projected]).all()
+    assert set(result.expected) == ComplexModel.Meta.columns
+
+    # All attributes projected
+    result = q.select([ComplexModel.email]).all()
+    assert set(result.expected).issubset(
+        ComplexModel.by_joined.projection_attributes)
+
+
 def test_count(engine, User):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
@@ -514,11 +529,19 @@ def test_prefetch_all(User, engine):
         return result
     engine.client.query = respond
 
-    results = q.all(prefetch=-1)
+    results = q.all(prefetch="all")
 
     assert calls == 3
     assert results.count == 3
     assert results.scanned_count == 6
+
+
+def test_invalid_prefetch(User, engine):
+    q = engine.query(User).key(User.id == uuid.uuid4())
+    with pytest.raises(ValueError):
+        q.all(prefetch=-1)
+    with pytest.raises(ValueError):
+        q.all(prefetch="none")
 
 
 def test_prefetch_first(User, engine):

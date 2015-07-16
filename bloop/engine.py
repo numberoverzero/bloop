@@ -65,7 +65,7 @@ def dump_key(engine, obj):
 class Engine(object):
     model = None
 
-    def __init__(self, session=None):
+    def __init__(self, session=None, prefetch=0, persist_mode="overwrite"):
         self.client = bloop.client.Client(session=session)
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
@@ -75,13 +75,10 @@ class Engine(object):
         self.models = set()
 
         # Control how many pages are loaded at once during scans/queries.
-        #   < 0: the full query will be executed at once.
+        #   "all": the full query will be executed at once.
         #   = 0: Pages will be loaded on demand.
         #   > 0: that number of pages will be fetched at a time.
-        self.prefetch = {
-            "query": 0,
-            "scan": 0
-        }
+        self.prefetch = prefetch
 
         # Control how objects are persisted.  PutItem will completely overwrite
         # an existing item, including deleting fields not set on the
@@ -89,8 +86,26 @@ class Engine(object):
         # not load non-key attributes, and saving it back with PutItem would
         # clear all non-key attributes.
 
-        # Options: "update", "put"
-        self.persist_mode = "put"
+        # Options: "update", "overwrite"
+        self.persist_mode = persist_mode
+
+    @property
+    def prefetch(self):
+        return self._prefetch
+
+    @prefetch.setter
+    def prefetch(self, value):
+        self._prefetch = bloop.filter.validate_prefetch(value)
+
+    @property
+    def persist_mode(self):
+        return self._persist_mode
+
+    @persist_mode.setter
+    def persist_mode(self, value):
+        if value not in ("overwrite", "update"):
+            raise ValueError("persist_mode must be `overwrite` or `update`")
+        self._persist_mode = value
 
     def register(self, model):
         if model not in self.models:
@@ -256,7 +271,7 @@ class Engine(object):
             model = obj.__class__
             renderer = bloop.condition.ConditionRenderer(self)
             renderer.render(condition, 'condition')
-            if self.persist_mode == "put":
+            if self.persist_mode == "overwrite":
                 item = {
                     "TableName": model.Meta.table_name,
                     "Item": self.__dump__(model, obj),
@@ -276,14 +291,14 @@ class Engine(object):
                 renderer.update(diff)
                 item.update(renderer.rendered)
                 self.client.update_item(item)
-            else:
+            else:  # pragma: no cover
                 raise ValueError(
                     "Unknown persist mode {}".format(self.persist_mode))
             # Mark all columns of the item as tracked
             bloop.tracking.update_current(obj, self)
             return
         # Multiple objects
-        if self.persist_mode == "put":
+        if self.persist_mode == "overwrite":
             request_items = collections.defaultdict(list)
             # Use set here to properly de-dupe list (don't save same obj twice)
             for obj in set(objs):
@@ -316,7 +331,7 @@ class Engine(object):
                 item.update(renderer.rendered)
                 self.client.update_item(item)
                 bloop.tracking.update_current(obj, self)
-        else:
+        else:  # pragma: no cover
             raise ValueError(
                 "Unknown persist mode {}".format(self.persist_mode))
 

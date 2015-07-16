@@ -386,6 +386,18 @@ class Client(object):
     def scan(self, **request):
         return self._filter(self.client.scan, **request)
 
+    def update_item(self, item):
+        try:
+            self.call_with_retries(self.client.update_item, **item)
+        except botocore.exceptions.ClientError as error:
+            error_code = error.response['Error']['Code']
+            if error_code == 'ConditionalCheckFailedException':
+                raise ConstraintViolation(
+                    "Failed to meet condition during update: {}".format(item),
+                    item)
+            else:
+                raise error
+
     def validate_table(self, model):
         '''
         Poll table status until Table and all GSIs are ACTIVE.

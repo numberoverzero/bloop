@@ -518,6 +518,65 @@ def test_put_item_condition_failed(User, client, client_error):
     assert called
 
 
+def test_update_item(User, client):
+    user_id = uuid.uuid4()
+    request = {'Key': {'id': {'S': str(user_id)}},
+               'TableName': 'User',
+               'ExpressionAttributeNames': {'#n0': 'id'},
+               'ConditionExpression': '(attribute_not_exists(#n0))'}
+    called = False
+
+    def update_item(**item):
+        nonlocal called
+        called = True
+        assert item == request
+    client.client.update_item = update_item
+    client.update_item(request)
+    assert called
+
+
+def test_update_item_unknown_error(User, client, client_error):
+    called = False
+    user_id = uuid.uuid4()
+    request = {'Key': {'id': {'S': str(user_id)}},
+               'TableName': 'User',
+               'ExpressionAttributeNames': {'#n0': 'id'},
+               'ConditionExpression': '(attribute_not_exists(#n0))'}
+
+    def update_item(**item):
+        nonlocal called
+        called = True
+        assert item == request
+        raise client_error('FooError')
+    client.client.update_item = update_item
+
+    with pytest.raises(botocore.exceptions.ClientError) as excinfo:
+        client.update_item(request)
+    assert excinfo.value.response['Error']['Code'] == 'FooError'
+    assert called
+
+
+def test_update_item_condition_failed(User, client, client_error):
+    called = False
+    user_id = uuid.uuid4()
+    request = {'Key': {'id': {'S': str(user_id)}},
+               'TableName': 'User',
+               'ExpressionAttributeNames': {'#n0': 'id'},
+               'ConditionExpression': '(attribute_not_exists(#n0))'}
+
+    def update_item(**item):
+        nonlocal called
+        called = True
+        assert item == request
+        raise client_error('ConditionalCheckFailedException')
+    client.client.update_item = update_item
+
+    with pytest.raises(bloop.client.ConstraintViolation) as excinfo:
+        client.update_item(request)
+    assert excinfo.value.obj == request
+    assert called
+
+
 def test_describe_table(ComplexModel, client):
     full = {
         'LocalSecondaryIndexes': [

@@ -66,7 +66,7 @@ def _get_current(obj, engine):
     Returns a dict of {dynamo_name: value} for a given object.  Attributes not
     set on the object are replaced with MISSING.
     '''
-    attrs = engine.__dump__(obj.__cls__, obj)
+    attrs = engine.__dump__(obj.__class__, obj)
     for column in obj.Meta.columns:
         if column.dynamo_name not in attrs:
             attrs[column.dynamo_name] = _MISSING

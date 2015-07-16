@@ -57,6 +57,10 @@ class ConditionRenderer:
         rendered_expression = condition.render(self)
         self.expressions[key] = rendered_expression
 
+    def projection(self, columns):
+        names = map(self.name_ref, columns)
+        self.expressions['ProjectionExpression'] = ", ".join(names)
+
     @property
     def rendered(self):
         expressions = dict(self.expressions)

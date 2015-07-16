@@ -363,8 +363,7 @@ class Filter(object):
         if self._filter_condition:
             renderer.render(self._filter_condition, mode="filter")
         if self._select == "specific":
-            names = map(renderer.name_ref, self._select_columns)
-            request['ProjectionExpression'] = ", ".join(names)
+            renderer.projection(self._select_columns)
         request.update(renderer.rendered)
         return request
 

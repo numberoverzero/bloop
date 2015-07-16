@@ -264,10 +264,22 @@ class Engine(object):
                 item.update(renderer.rendered)
                 self.client.put_item(item)
             elif self.persist_mode == "update":
-                raise NotImplemented("")
+                # bail early if there are no diffs
+                diff = bloop.tracking.diff_obj(obj, self)
+                if not diff:
+                    return
+                item = {
+                    "TableName": model.Meta.table_name,
+                    "Key": dump_key(self, obj)
+                }
+                # Load the tracking diff, dump into an UpdateExpression
+                renderer.update(diff)
+                item.update(renderer.rendered)
+                self.client.update_item(item)
             else:
                 raise ValueError(
                     "Unknown persist mode {}".format(self.persist_mode))
+            # Mark all columns of the item as tracked
             bloop.tracking.update_current(obj, self)
             return
         # Multiple objects
@@ -289,7 +301,21 @@ class Engine(object):
             for obj in set(objs):
                 bloop.tracking.update_current(obj, self)
         elif self.persist_mode == "update":
-                raise NotImplemented("")
+            for obj in set(objs):
+                # bail early if there are no diffs
+                diff = bloop.tracking.diff_obj(obj, self)
+                if not diff:
+                    continue
+                item = {
+                    "TableName": obj.Meta.table_name,
+                    "Key": dump_key(self, obj)
+                }
+                # Load the tracking diff, dump into an UpdateExpression
+                renderer = bloop.condition.ConditionRenderer(self)
+                renderer.update(diff)
+                item.update(renderer.rendered)
+                self.client.update_item(item)
+                bloop.tracking.update_current(obj, self)
         else:
             raise ValueError(
                 "Unknown persist mode {}".format(self.persist_mode))

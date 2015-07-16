@@ -1,4 +1,4 @@
-# bloop 0.6
+# bloop 0.7.0
 
 [![Build Status]
 (https://travis-ci.org/numberoverzero/bloop.svg?branch=master)]
@@ -559,19 +559,6 @@ git clone https://github.com/numberoverzero/bloop.git
 pip install tox
 tox
 ```
-
-### TODO
-
-* Documentation:
-  * Refine README
-  * Overhaul Docstrings
-  * Set up Sphinx, ReadTheDocs
-* Enhancements:
-  * (Accepted) Allow `strict` mode for Query/Scan where a LSI's projected_attributes are not
-    a superset of the requested attributes
-  * (Pending) Sane proposal for UpdateItem model over PutItem (engine config? atomic updates?)
-  * (Brainstorming) Engine hooks?  What about context managers?
-    * `with engine.hook('__load__', my_load_hook): engine.load(foo)`
 
 [dynamo-limits]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html
 [conditional-writes]: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html

@@ -21,6 +21,30 @@ def test_missing_objects(User, engine):
     assert set(excinfo.value.missing) == set(users)
 
 
+def test_prefetch(User, engine):
+    invalid = [-1, "none"]
+    for value in invalid:
+        with pytest.raises(ValueError):
+            engine.prefetch = value
+
+    valid = [0, 2, "all"]
+    for value in valid:
+        engine.prefetch = value
+        assert engine.prefetch == value
+
+
+def test_persist_mode(User, engine):
+    invalid = [None, 'foo', -1]
+    for mode in invalid:
+        with pytest.raises(ValueError):
+            engine.persist_mode = mode
+
+    valid = ["overwrite", "update"]
+    for mode in valid:
+        engine.persist_mode = mode
+        assert engine.persist_mode == mode
+
+
 def test_register_bound_model(User, engine):
     assert User in engine.models
     engine.register(User)
@@ -168,6 +192,74 @@ def test_save_multiple(User, engine):
         assert bloop.util.ordered(items) == bloop.util.ordered(expected)
     engine.client.batch_write_items = validate
     engine.save((user1, user2))
+
+
+def test_save_update_condition_key_only(User, engine):
+    '''
+    Even when the diff is empty, an UpdateItem should be issued
+    (in case this is really a create - the item doesn't exist yet)
+    '''
+    engine.persist_mode = "update"
+    user = User(id=uuid.uuid4())
+    condition = User.id.is_(None)
+    expected = {'ConditionExpression': '(attribute_not_exists(#n0))',
+                'TableName': 'User',
+                'ExpressionAttributeNames': {'#n0': 'id'},
+                'Key': {'id': {'S': str(user.id)}}}
+
+    def validate(item):
+        assert item == expected
+    engine.client.update_item = validate
+    engine.save(user, condition=condition)
+
+
+def test_save_update_condition(User, engine):
+    '''
+    Non-empty diff
+    '''
+    engine.persist_mode = "update"
+    user = User(id=uuid.uuid4(), age=4)
+    condition = User.id.is_(None)
+    expected = {'ConditionExpression': '(attribute_not_exists(#n0))',
+                'ExpressionAttributeNames': {'#n0': 'id', '#n1': 'age'},
+                'TableName': 'User',
+                'Key': {'id': {'S': str(user.id)}},
+                'ExpressionAttributeValues': {':v2': {'N': '4'}},
+                'UpdateExpression': 'SET #n1=:v2'}
+
+    def validate(item):
+        assert item == expected
+    engine.client.update_item = validate
+    engine.save(user, condition=condition)
+
+
+def test_save_update_multiple(User, engine):
+    engine.persist_mode = "update"
+    user1 = User(id=uuid.uuid4(), age=4)
+    user2 = User(id=uuid.uuid4(), age=5)
+
+    expected = [
+        {'UpdateExpression': 'SET #n0=:v1',
+         'Key': {'id': {'S': str(user1.id)}},
+         'TableName': 'User',
+         'ExpressionAttributeNames': {'#n0': 'age'},
+         'ExpressionAttributeValues': {':v1': {'N': '4'}}},
+        {'UpdateExpression': 'SET #n0=:v1',
+         'Key': {'id': {'S': str(user2.id)}},
+         'TableName': 'User',
+         'ExpressionAttributeNames': {'#n0': 'age'},
+         'ExpressionAttributeValues': {':v1': {'N': '5'}}}
+    ]
+    calls = 0
+
+    def validate(item):
+        nonlocal calls
+        calls += 1
+        assert item in expected
+        expected.remove(item)
+    engine.client.update_item = validate
+    engine.save((user1, user2))
+    assert calls == 2
 
 
 def test_illegal_delete(User, engine):

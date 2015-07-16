@@ -281,8 +281,6 @@ class Engine(object):
             elif self.persist_mode == "update":
                 # bail early if there are no diffs
                 diff = bloop.tracking.diff_obj(obj, self)
-                if not diff:
-                    return
                 item = {
                     "TableName": model.Meta.table_name,
                     "Key": dump_key(self, obj)
@@ -319,8 +317,6 @@ class Engine(object):
             for obj in set(objs):
                 # bail early if there are no diffs
                 diff = bloop.tracking.diff_obj(obj, self)
-                if not diff:
-                    continue
                 item = {
                     "TableName": obj.Meta.table_name,
                     "Key": dump_key(self, obj)

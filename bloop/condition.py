@@ -60,6 +60,8 @@ class ConditionRenderer:
         self.expressions['ProjectionExpression'] = ", ".join(names)
 
     def update(self, attrs):
+        if not attrs:
+            return
         set_fmt = "{}={}"
         expression = ''
         if attrs.get("SET", None):

@@ -49,12 +49,9 @@ def dump_key(engine, obj):
     '''
     meta = obj.Meta
     hash_key, range_key = meta.hash_key, meta.range_key
-
     hash_value = getattr(obj, hash_key.model_name)
     key = {
-        hash_key.dynamo_name: engine.__dump__(
-            hash_key.typedef, hash_value)
-    }
+        hash_key.dynamo_name: engine.__dump__(hash_key.typedef, hash_value)}
     if range_key:
         range_value = getattr(obj, range_key.model_name)
         key[range_key.dynamo_name] = engine.__dump__(
@@ -85,8 +82,6 @@ class Engine(object):
         # local item.  A query against a GSI with projection KEYS_ONLY will
         # not load non-key attributes, and saving it back with PutItem would
         # clear all non-key attributes.
-
-        # Options: "update", "overwrite"
         self.persist_mode = persist_mode
 
     @property
@@ -206,16 +201,13 @@ class Engine(object):
         engine.load(hash_only, hash_and_range)
         '''
         objs = list_of(objs)
-
         # The RequestItems dictionary of table:Key(list) that will be
         # passed to client
         request_items = {}
-
         # table_name:dynamodb_name(list) of table keys (hash and opt range)
         # that is used to pull the correct attributes from result items
         # when mapping fields back to the input models
         table_key_shapes = {}
-
         # Index objects by the (table_name, dump_key) tuple that
         # can be used to find their attributes in the results map
         objs_by_key = {}
@@ -224,21 +216,16 @@ class Engine(object):
         for obj in set(objs):
             table_name = obj.Meta.table_name
             if table_name not in request_items:
-                request_items[table_name] = {
-                    "Keys": [],
-                    "ConsistentRead": consistent
-                }
+                request_items[table_name] = {"Keys": [],
+                                             "ConsistentRead": consistent}
             key = dump_key(self, obj)
             request_items[table_name]["Keys"].append(key)
             # Make sure we can find the key shape for this table and index
             # the object by its table name and key values for quickly loading
             # from results
             key_shape = table_key_shapes[table_name] = list(key)
-
-            index = (
-                table_name,
-                tuple(value_of(key[n]) for n in key_shape)
-            )
+            index = (table_name,
+                     tuple(value_of(key[n]) for n in key_shape))
             objs_by_key[index] = obj
 
         results = self.client.batch_get_items(request_items)
@@ -248,10 +235,8 @@ class Engine(object):
             key_shape = table_key_shapes[table_name]
             for item in items:
                 # Find the instance by key in the index above O(1)
-                index = (
-                    table_name,
-                    tuple(value_of(item[n]) for n in key_shape)
-                )
+                index = (table_name,
+                         tuple(value_of(item[n]) for n in key_shape))
                 obj = objs_by_key.pop(index)
                 self.__update__(obj, item, obj.Meta.columns)
 
@@ -285,11 +270,8 @@ class Engine(object):
         renderer.update(diff)
         if condition:
             renderer.render(condition, 'condition')
-
-        item = {
-            "TableName": model.Meta.table_name,
-            "Key": dump_key(self, obj)
-        }
+        item = {"TableName": model.Meta.table_name,
+                "Key": dump_key(self, obj)}
         item.update(renderer.rendered)
         self.client.update_item(item)
         # Mark all columns of the item as tracked
@@ -303,10 +285,8 @@ class Engine(object):
             renderer = bloop.condition.ConditionRenderer(self)
             if condition:
                 renderer.render(condition, 'condition')
-            item = {
-                "TableName": model.Meta.table_name,
-                "Item": self.__dump__(model, obj),
-            }
+            item = {"TableName": model.Meta.table_name,
+                    "Item": self.__dump__(model, obj)}
             item.update(renderer.rendered)
             self.client.put_item(item)
             # Mark all columns of the item as tracked
@@ -315,11 +295,8 @@ class Engine(object):
             request_items = collections.defaultdict(list)
             # Use set here to properly de-dupe list (don't save same obj twice)
             for obj in set(objs):
-                put_item = {
-                    "PutRequest": {
-                        "Item": self.__dump__(obj.__class__, obj)
-                    }
-                }
+                put_item = {"PutRequest": {
+                    "Item": self.__dump__(obj.__class__, obj)}}
                 table_name = obj.Meta.table_name
                 request_items[table_name].append(put_item)
             self.client.batch_write_items(request_items)
@@ -339,10 +316,8 @@ class Engine(object):
             model = obj.__class__
             renderer = bloop.condition.ConditionRenderer(self)
             renderer.render(condition, 'condition')
-            item = {
-                "TableName": model.Meta.table_name,
-                "Key": dump_key(self, obj)
-            }
+            item = {"TableName": model.Meta.table_name,
+                    "Key": dump_key(self, obj)}
             item.update(renderer.rendered)
             self.client.delete_item(item)
             bloop.tracking.clear(obj)
@@ -351,11 +326,8 @@ class Engine(object):
             request_items = collections.defaultdict(list)
             # Use set here to properly de-dupe list (don't save same obj twice)
             for obj in set(objs):
-                del_item = {
-                    "DeleteRequest": {
-                        "Key": dump_key(self, obj)
-                    }
-                }
+                del_item = {"DeleteRequest": {
+                    "Key": dump_key(self, obj)}}
                 table_name = obj.Meta.table_name
                 request_items[table_name].append(del_item)
 

@@ -166,6 +166,18 @@ def test_illegal_save(User, engine):
         engine.save(users, condition=condition)
 
 
+def test_save_single_overwrite(User, engine):
+    user_id = uuid.uuid4()
+    user = User(id=user_id)
+    expected = {'TableName': 'User',
+                'Item': {'id': {'S': str(user_id)}}}
+
+    def validate(item):
+        assert item == expected
+    engine.client.put_item = validate
+    engine.save(user)
+
+
 def test_save_condition(User, engine):
     user_id = uuid.uuid4()
     user = User(id=user_id)
@@ -221,14 +233,15 @@ def test_save_update_condition(User, engine):
     engine.persist_mode = "update"
     user = User(id=uuid.uuid4(), age=4)
     condition = User.id.is_(None)
-    expected = {'ConditionExpression': '(attribute_not_exists(#n0))',
-                'ExpressionAttributeNames': {'#n0': 'id', '#n1': 'age'},
+    expected = {'ConditionExpression': '(attribute_not_exists(#n2))',
+                'ExpressionAttributeNames': {'#n2': 'id', '#n0': 'age'},
                 'TableName': 'User',
                 'Key': {'id': {'S': str(user.id)}},
-                'ExpressionAttributeValues': {':v2': {'N': '4'}},
-                'UpdateExpression': 'SET #n1=:v2'}
+                'ExpressionAttributeValues': {':v1': {'N': '4'}},
+                'UpdateExpression': 'SET #n0=:v1'}
 
     def validate(item):
+        print(item)
         assert item == expected
     engine.client.update_item = validate
     engine.save(user, condition=condition)

@@ -229,12 +229,12 @@ class Engine(object):
                     "ConsistentRead": consistent
                 }
             key = dump_key(self, obj)
-            # Add the key to the request
             request_items[table_name]["Keys"].append(key)
-            # Make sure we can find the key shape for this table
+            # Make sure we can find the key shape for this table and index
+            # the object by its table name and key values for quickly loading
+            # from results
             key_shape = table_key_shapes[table_name] = list(key)
-            # Index the object by its table name and key
-            # values for quickly loading from results
+
             index = (
                 table_name,
                 tuple(value_of(key[n]) for n in key_shape)
@@ -247,13 +247,12 @@ class Engine(object):
             # The attributes that make up the key
             key_shape = table_key_shapes[table_name]
             for item in items:
-                # Build the index so we can find the object to load in O(1)
+                # Find the instance by key in the index above O(1)
                 index = (
                     table_name,
                     tuple(value_of(item[n]) for n in key_shape)
                 )
                 obj = objs_by_key.pop(index)
-                # All columns are expected from a table load
                 self.__update__(obj, item, obj.Meta.columns)
 
         # If there are still objects, they weren't found
@@ -265,38 +264,54 @@ class Engine(object):
         objs = list_of(objs)
         if len(objs) > 1 and condition:
             raise ValueError("condition is only usable with a single object")
+        if self.persist_mode == "update":
+            for obj in objs:
+                # Safe to forward condition since it's None for lists
+                self._save_update(obj, condition=condition)
+        elif self.persist_mode == "overwrite":
+            self._save_overwrite(objs, condition=condition)
+        else:  # pragma: no cover
+            raise ValueError(
+                "Unknown persist mode {}".format(self.persist_mode))
 
-        elif len(objs) == 1 and condition:
+    def _save_update(self, obj, *, condition=None):
+        '''
+        Don't need to check len(objs) if condition, since it's verified above
+        '''
+        model = obj.__class__
+        # Load the tracking diff, dump into an UpdateExpression
+        diff = bloop.tracking.diff_obj(obj, self)
+        renderer = bloop.condition.ConditionRenderer(self)
+        renderer.update(diff)
+        if condition:
+            renderer.render(condition, 'condition')
+
+        item = {
+            "TableName": model.Meta.table_name,
+            "Key": dump_key(self, obj)
+        }
+        item.update(renderer.rendered)
+        self.client.update_item(item)
+        # Mark all columns of the item as tracked
+        bloop.tracking.update_current(obj, self)
+        return
+
+    def _save_overwrite(self, objs, *, condition=None):
+        if len(objs) == 1:
             obj = objs[0]
             model = obj.__class__
             renderer = bloop.condition.ConditionRenderer(self)
-            renderer.render(condition, 'condition')
-            if self.persist_mode == "overwrite":
-                item = {
-                    "TableName": model.Meta.table_name,
-                    "Item": self.__dump__(model, obj),
-                }
-                item.update(renderer.rendered)
-                self.client.put_item(item)
-            elif self.persist_mode == "update":
-                # bail early if there are no diffs
-                diff = bloop.tracking.diff_obj(obj, self)
-                item = {
-                    "TableName": model.Meta.table_name,
-                    "Key": dump_key(self, obj)
-                }
-                # Load the tracking diff, dump into an UpdateExpression
-                renderer.update(diff)
-                item.update(renderer.rendered)
-                self.client.update_item(item)
-            else:  # pragma: no cover
-                raise ValueError(
-                    "Unknown persist mode {}".format(self.persist_mode))
+            if condition:
+                renderer.render(condition, 'condition')
+            item = {
+                "TableName": model.Meta.table_name,
+                "Item": self.__dump__(model, obj),
+            }
+            item.update(renderer.rendered)
+            self.client.put_item(item)
             # Mark all columns of the item as tracked
             bloop.tracking.update_current(obj, self)
-            return
-        # Multiple objects
-        if self.persist_mode == "overwrite":
+        else:
             request_items = collections.defaultdict(list)
             # Use set here to properly de-dupe list (don't save same obj twice)
             for obj in set(objs):
@@ -313,23 +328,6 @@ class Engine(object):
             # tracking for an object if a subsequent batch fails to write
             for obj in set(objs):
                 bloop.tracking.update_current(obj, self)
-        elif self.persist_mode == "update":
-            for obj in set(objs):
-                # bail early if there are no diffs
-                diff = bloop.tracking.diff_obj(obj, self)
-                item = {
-                    "TableName": obj.Meta.table_name,
-                    "Key": dump_key(self, obj)
-                }
-                # Load the tracking diff, dump into an UpdateExpression
-                renderer = bloop.condition.ConditionRenderer(self)
-                renderer.update(diff)
-                item.update(renderer.rendered)
-                self.client.update_item(item)
-                bloop.tracking.update_current(obj, self)
-        else:  # pragma: no cover
-            raise ValueError(
-                "Unknown persist mode {}".format(self.persist_mode))
 
     def delete(self, objs, *, condition=None):
         objs = list_of(objs)

@@ -175,6 +175,7 @@ def test_save_single_overwrite(User, engine):
     def validate(item):
         assert item == expected
     engine.client.put_item = validate
+    engine.persist_mode = "overwrite"
     engine.save(user)
 
 
@@ -190,6 +191,7 @@ def test_save_condition(User, engine):
     def validate(item):
         assert item == expected
     engine.client.put_item = validate
+    engine.persist_mode = "overwrite"
     engine.save(user, condition=condition)
 
 
@@ -204,6 +206,7 @@ def test_save_multiple(User, engine):
     def validate(items):
         assert bloop.util.ordered(items) == bloop.util.ordered(expected)
     engine.client.batch_write_items = validate
+    engine.persist_mode = "overwrite"
     engine.save((user1, user2))
 
 

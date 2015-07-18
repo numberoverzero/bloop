@@ -139,7 +139,7 @@ class Condition(BaseCondition):
 
 class MultiCondition(BaseCondition):
     def __init__(self, *conditions):
-        self.conditions = conditions
+        self.conditions = list(conditions)
 
     def __str__(self):  # pragma: no cover
         conditions = ", ".join(str(c) for c in self.conditions)
@@ -161,10 +161,18 @@ class And(MultiCondition):
     name = "And"
     uname = "AND"
 
+    def __and__(self, other):
+        self.conditions.append(other)
+        return self
+
 
 class Or(MultiCondition):
     name = "Or"
     uname = "OR"
+
+    def __or__(self, other):
+        self.conditions.append(other)
+        return self
 
 
 class Not(BaseCondition):

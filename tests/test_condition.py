@@ -21,11 +21,11 @@ def test_condition_ops(User):
     age, name = (User.age >= 3), (User.name == 'foo')
 
     and_condition = age & name
-    assert and_condition.conditions == (age, name)
+    assert and_condition.conditions == [age, name]
     assert isinstance(and_condition, bloop.condition.And)
 
     or_condition = age | name
-    assert or_condition.conditions == (age, name)
+    assert or_condition.conditions == [age, name]
     assert isinstance(or_condition, bloop.condition.Or)
 
     not_condition = ~age
@@ -55,6 +55,28 @@ def test_multi_shortcut(renderer, User):
                 'ExpressionAttributeValues': {':v1': {'N': '3'}}}
     renderer.render(condition, 'condition')
     assert renderer.rendered == expected
+
+
+def test_and_appends(renderer, User):
+    '''
+    ((condition & condition) & condition) flattens the AND into one condition
+    '''
+    age = User.age >= 3
+    name = User.name == 'foo'
+    email = User.email != 'bar'
+    condition = (age & name) & email
+    assert condition.conditions == [age, name, email]
+
+
+def test_or_appends(renderer, User):
+    '''
+    ((condition | condition) | condition) flattens the OR into one condition
+    '''
+    age = User.age >= 3
+    name = User.name == 'foo'
+    email = User.email != 'bar'
+    condition = (age | name) | email
+    assert condition.conditions == [age, name, email]
 
 
 def test_not(renderer, User):

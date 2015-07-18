@@ -44,32 +44,32 @@ def _del_value(obj, name):
 
 def _get_value(obj, name):
     '''
-    Returns the value for an attr from the obj's tracking dict, or MISSING if
-    there is no value.
+    Returns the value for an attr from the obj's tracking dict.  Raises
+    KeyError if there is no value.
     '''
-    return _tracking_dict(obj).get(name, _MISSING)
+    return _tracking_dict(obj)[name]
 
 
 def _get_tracking(obj):
     '''
     Returns a dict of {dynamo_name: value} for a given object.  Attributes not
-    set when the object was last loaded are replaced with MISSING.
+    set when the object was last loaded are not returned.
     '''
     attrs = {}
     for column in obj.Meta.columns:
-        attrs[column.dynamo_name] = _get_value(obj, column.dynamo_name)
+        try:
+            attrs[column.dynamo_name] = _get_value(obj, column.dynamo_name)
+        except KeyError:
+            continue
     return attrs
 
 
 def _get_current(obj, engine):
     '''
     Returns a dict of {dynamo_name: value} for a given object.  Attributes not
-    set on the object are replaced with MISSING.
+    set on the object are not included.
     '''
     attrs = engine.__dump__(obj.__class__, obj)
-    for column in obj.Meta.columns:
-        if column.dynamo_name not in attrs:
-            attrs[column.dynamo_name] = _MISSING
     return attrs
 
 
@@ -116,8 +116,8 @@ def diff_obj(obj, engine):
         if (column is hash_key) or (column is range_key):
             continue
         name = column.dynamo_name
-        current_value = current[name]
-        tracking_value = tracking[name]
+        current_value = current.get(name, _MISSING)
+        tracking_value = tracking.get(name, _MISSING)
         change = _diff_value(current_value, tracking_value)
         if change is _DIFF.SET:
             diff["SET"].append((column, getattr(obj, column.model_name)))

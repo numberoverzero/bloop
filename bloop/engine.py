@@ -261,14 +261,15 @@ class Engine(object):
         if len(objs) > 1 and condition:
             raise ValueError("condition is only usable with a single object")
         if self.persist_mode == "update":
-            for obj in objs:
-                # Safe to forward condition since it's None for lists
-                self._save_update(obj, condition=condition)
+            func = self._save_update
         elif self.persist_mode == "overwrite":
-            self._save_overwrite(objs, condition=condition)
+            func = self._save_overwrite
         else:  # pragma: no cover
             raise ValueError(
                 "Unknown persist mode {}".format(self.persist_mode))
+        for obj in objs:
+                # Safe to forward condition since it's None for lists
+                func(obj, condition=condition)
 
     def _save_update(self, obj, *, condition=None):
         '''
@@ -289,33 +290,17 @@ class Engine(object):
         bloop.tracking.update_current(obj, self)
         return
 
-    def _save_overwrite(self, objs, *, condition=None):
-        if len(objs) == 1:
-            obj = objs[0]
-            model = obj.__class__
-            renderer = bloop.condition.ConditionRenderer(self)
-            if condition:
-                renderer.render(condition, 'condition')
-            item = {"TableName": model.Meta.table_name,
-                    "Item": self.__dump__(model, obj)}
-            item.update(renderer.rendered)
-            self.client.put_item(item)
-            # Mark all columns of the item as tracked
-            bloop.tracking.update_current(obj, self)
-        else:
-            request_items = collections.defaultdict(list)
-            # Use set here to properly de-dupe list (don't save same obj twice)
-            for obj in set(objs):
-                put_item = {"PutRequest": {
-                    "Item": self.__dump__(obj.__class__, obj)}}
-                table_name = obj.Meta.table_name
-                request_items[table_name].append(put_item)
-            self.client.batch_write_items(request_items)
-            # TODO: update tracking for each object as its batch
-            # successfully writes.  Otherwise we could fail to update the
-            # tracking for an object if a subsequent batch fails to write
-            for obj in set(objs):
-                bloop.tracking.update_current(obj, self)
+    def _save_overwrite(self, obj, *, condition=None):
+        model = obj.__class__
+        renderer = bloop.condition.ConditionRenderer(self)
+        if condition:
+            renderer.render(condition, 'condition')
+        item = {"TableName": model.Meta.table_name,
+                "Item": self.__dump__(model, obj)}
+        item.update(renderer.rendered)
+        self.client.put_item(item)
+        # Mark all columns of the item as tracked
+        bloop.tracking.update_current(obj, self)
 
     def delete(self, objs, *, condition=None):
         objs = list_of(objs)

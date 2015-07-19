@@ -199,15 +199,19 @@ def test_save_multiple(User, engine):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
 
-    expected = {'User': [
-        {'PutRequest': {'Item': {'id': {'S': str(user1.id)}}}},
-        {'PutRequest': {'Item': {'id': {'S': str(user2.id)}}}}]}
+    expected = [
+        {'Item': {'id': {'S': str(user1.id)}}, 'TableName': 'User'},
+        {'Item': {'id': {'S': str(user2.id)}}, 'TableName': 'User'}]
+    calls = 0
 
-    def validate(items):
-        assert bloop.util.ordered(items) == bloop.util.ordered(expected)
-    engine.client.batch_write_items = validate
+    def validate(item):
+        assert item in expected
+        nonlocal calls
+        calls += 1
+    engine.client.put_item = validate
     engine.persist_mode = "overwrite"
     engine.save((user1, user2))
+    assert calls == 2
 
 
 def test_save_update_condition_key_only(User, engine):

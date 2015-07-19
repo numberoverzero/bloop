@@ -26,24 +26,24 @@ def test_prefetch(User, engine):
     invalid = [-1, "none"]
     for value in invalid:
         with pytest.raises(ValueError):
-            engine.prefetch = value
+            engine.config.prefetch = value
 
     valid = [0, 2, "all"]
     for value in valid:
-        engine.prefetch = value
-        assert engine.prefetch == value
+        engine.config.prefetch = value
+        assert engine.config.prefetch == value
 
 
-def test_persist_mode(User, engine):
+def test_config_persist(User, engine):
     invalid = [None, 'foo', -1]
     for mode in invalid:
         with pytest.raises(ValueError):
-            engine.persist_mode = mode
+            engine.config.persist = mode
 
     valid = ["overwrite", "update"]
     for mode in valid:
-        engine.persist_mode = mode
-        assert engine.persist_mode == mode
+        engine.config.persist = mode
+        assert engine.config.persist == mode
 
 
 def test_register_bound_model(User, engine):
@@ -70,7 +70,7 @@ def test_dump_key(User, engine, local_bind):
 def test_load_object(User, engine):
     user_id = uuid.uuid4()
     expected = {'User': {'Keys': [{'id': {'S': str(user_id)}}],
-                         'ConsistentRead': False}}
+                         'ConsistentRead': True}}
     response = {'User': [{'age': {'N': 5},
                           'name': {'S': 'foo'},
                           'id': {'S': str(user_id)}}]}
@@ -81,7 +81,7 @@ def test_load_object(User, engine):
     engine.client.batch_get_items = respond
 
     user = User(id=user_id)
-    engine.load(user)
+    engine.load(user, consistent=True)
 
     assert user.age == 5
     assert user.name == 'foo'
@@ -187,7 +187,7 @@ def test_save_single_overwrite(User, engine):
     def validate(item):
         assert item == expected
     engine.client.put_item = validate
-    engine.persist_mode = "overwrite"
+    engine.config.persist = "overwrite"
     engine.save(user)
 
 
@@ -203,7 +203,7 @@ def test_save_condition(User, engine):
     def validate(item):
         assert item == expected
     engine.client.put_item = validate
-    engine.persist_mode = "overwrite"
+    engine.config.persist = "overwrite"
     engine.save(user, condition=condition)
 
 
@@ -221,7 +221,7 @@ def test_save_multiple(User, engine):
         nonlocal calls
         calls += 1
     engine.client.put_item = validate
-    engine.persist_mode = "overwrite"
+    engine.config.persist = "overwrite"
     engine.save((user1, user2))
     assert calls == 2
 
@@ -231,7 +231,7 @@ def test_save_update_condition_key_only(User, engine):
     Even when the diff is empty, an UpdateItem should be issued
     (in case this is really a create - the item doesn't exist yet)
     '''
-    engine.persist_mode = "update"
+    engine.config.persist = "update"
     user = User(id=uuid.uuid4())
     condition = User.id.is_(None)
     expected = {'ConditionExpression': '(attribute_not_exists(#n0))',
@@ -249,7 +249,7 @@ def test_save_update_condition(User, engine):
     '''
     Non-empty diff
     '''
-    engine.persist_mode = "update"
+    engine.config.persist = "update"
     user = User(id=uuid.uuid4(), age=4)
     condition = User.id.is_(None)
     expected = {'ConditionExpression': '(attribute_not_exists(#n2))',
@@ -267,7 +267,7 @@ def test_save_update_condition(User, engine):
 
 
 def test_save_update_multiple(User, engine):
-    engine.persist_mode = "update"
+    engine.config.persist = "update"
     user1 = User(id=uuid.uuid4(), age=4)
     user2 = User(id=uuid.uuid4(), age=5)
 
@@ -297,7 +297,7 @@ def test_save_update_multiple(User, engine):
 
 def test_save_set_del_field(User, engine):
     ''' UpdateItem can DELETE fields as well as SET '''
-    engine.persist_mode = "update"
+    engine.config.persist = "update"
     user = User(id=uuid.uuid4(), age=4)
 
     # Manually force a tracking update so we think age is persisted
@@ -320,7 +320,7 @@ def test_save_set_del_field(User, engine):
 
 
 def test_save_update_del_field(User, engine):
-    engine.persist_mode = "update"
+    engine.config.persist = "update"
     user = User(id=uuid.uuid4(), age=4)
 
     # Manually force a tracking update so we think age is persisted

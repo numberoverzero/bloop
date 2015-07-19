@@ -1,5 +1,6 @@
 import bloop.client
 import bloop.condition
+import bloop.config
 import bloop.filter
 import bloop.index
 import bloop.model
@@ -7,6 +8,7 @@ import bloop.tracking
 import bloop.util
 import collections
 import collections.abc
+import contextlib
 import declare
 MISSING = bloop.util.Sentinel('MISSING')
 
@@ -20,7 +22,6 @@ class ObjectsNotFound(Exception):
 
 def list_of(objs):
     ''' wrap single elements in a list '''
-    # String check first since it is also an Iterable
     if isinstance(objs, str):  # pragma: no cover
         return [objs]
     elif isinstance(objs, collections.abc.Iterable):
@@ -30,13 +31,7 @@ def list_of(objs):
 
 
 def value_of(column):
-    '''
-    Return the value in a key definition
-
-    Example
-    -------
-    value_of({'S': 'Space Invaders'}) -> 'Space Invaders'
-    '''
+    ''' value_of({'S': 'Space Invaders'}) -> 'Space Invaders' '''
     return next(iter(column.values()))
 
 
@@ -59,11 +54,10 @@ def dump_key(engine, obj):
     return key
 
 
-class Engine(object):
+class Engine:
     model = None
 
-    def __init__(self, session=None, prefetch=0, persist_mode="update",
-                 strict_queries=False):
+    def __init__(self, session=None, **config):
         self.client = bloop.client.Client(session=session)
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
@@ -71,47 +65,7 @@ class Engine(object):
         self.model = bloop.model.BaseModel(self)
         self.unbound_models = set()
         self.models = set()
-
-        # Control how many pages are loaded at once during scans/queries.
-        #   "all": the full query will be executed at once.
-        #   = 0: Pages will be loaded on demand.
-        #   > 0: that number of pages will be fetched at a time.
-        self.prefetch = prefetch
-
-        # Control how objects are persisted.  PutItem will completely overwrite
-        # an existing item, including deleting fields not set on the
-        # local item.  A query against a GSI with projection KEYS_ONLY will
-        # not load non-key attributes, and saving it back with PutItem would
-        # clear all non-key attributes.
-        self.persist_mode = persist_mode
-
-        self.strict_queries = strict_queries
-
-    @property
-    def prefetch(self):
-        return self._prefetch
-
-    @prefetch.setter
-    def prefetch(self, value):
-        self._prefetch = bloop.filter.validate_prefetch(value)
-
-    @property
-    def strict_queries(self):
-        return self._strict_queries
-
-    @strict_queries.setter
-    def strict_queries(self, value):
-        self._strict_queries = bool(value)
-
-    @property
-    def persist_mode(self):
-        return self._persist_mode
-
-    @persist_mode.setter
-    def persist_mode(self, value):
-        if value not in ("overwrite", "update"):
-            raise ValueError("persist_mode must be `overwrite` or `update`")
-        self._persist_mode = value
+        self.config = bloop.config.EngineConfig(**config)
 
     def register(self, model):
         if model not in self.models:
@@ -184,7 +138,7 @@ class Engine(object):
             self.unbound_models.remove(model)
             self.models.add(model)
 
-    def load(self, objs, *, consistent=False):
+    def load(self, objs, *, consistent=None):
         '''
         Populate objects from dynamodb, optionally using consistent reads.
 
@@ -211,6 +165,9 @@ class Engine(object):
         # Load multiple instances
         engine.load(hash_only, hash_and_range)
         '''
+        if consistent is None:
+            consistent = self.config.consistent
+
         objs = list_of(objs)
         # The RequestItems dictionary of table:Key(list) that will be
         # passed to client
@@ -258,13 +215,14 @@ class Engine(object):
 
     def save(self, objs, *, condition=None):
         objs = list_of(objs)
-        if self.persist_mode == "update":
+        mode = self.config.persist
+        if mode == "update":
             func = self._save_update
-        elif self.persist_mode == "overwrite":
+        elif mode == "overwrite":
             func = self._save_overwrite
         else:  # pragma: no cover
             raise ValueError(
-                "Unknown persist mode {}".format(self.persist_mode))
+                "Unknown persist mode {}".format(mode))
         for obj in objs:
             func(obj, condition=condition)
             # Mark all columns of the item as tracked
@@ -321,3 +279,28 @@ class Engine(object):
         else:
             model, index = obj, None
         return bloop.filter.Scan(engine=self, model=model, index=index)
+
+    @contextlib.contextmanager
+    def context(self, **config):
+        '''
+        with engine.context(atomic=True, consistent=True) as atomic:
+            atomic.load(obj)
+            del obj.foo
+            obj.bar += 1
+            atomic.save(obj)
+        '''
+        yield EngineView(self, **config)
+
+
+class EngineView(Engine):
+    def __init__(self, engine, **config):
+        self.client = engine.client
+        self.config = engine.config.copy(**config)
+        self.model = engine.model
+        self.type_engine = engine.type_engine
+
+    def register(self, model):
+        raise RuntimeError("EngineViews can't modify engine types or bindings")
+
+    def bind(self, model):
+        raise RuntimeError("EngineViews can't modify engine types or bindings")

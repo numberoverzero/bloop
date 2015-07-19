@@ -15,4 +15,4 @@ __all__ = [
     'LocalSecondaryIndex', 'Map', 'Null', 'ObjectsNotFound', 'String',
     'StringSet', 'UUID'
 ]
-__version__ = '0.7.0'
+__version__ = '0.7.1'

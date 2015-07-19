@@ -341,12 +341,25 @@ def test_save_update_del_field(User, engine):
     engine.save(user)
 
 
-def test_illegal_delete(User, engine):
+def test_delete_multiple_condition(User, engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
-    condition = User.id.is_(None)
+    condition = User.id == 'foo'
+    expected = [{'Key': {'id': {'S': str(user.id)}},
+                 'ExpressionAttributeValues': {':v1': {'S': 'foo'}},
+                 'ExpressionAttributeNames': {'#n0': 'id'},
+                 'ConditionExpression': '(#n0 = :v1)',
+                 'TableName': 'User'} for user in users]
+    calls = 0
 
-    with pytest.raises(ValueError):
-        engine.delete(users, condition=condition)
+    def validate(item):
+        print(item)
+        assert item in expected
+        nonlocal calls
+        calls += 1
+
+    engine.client.delete_item = validate
+    engine.delete(users, condition=condition)
+    assert calls == 3
 
 
 def test_delete_condition(User, engine):
@@ -368,14 +381,18 @@ def test_delete_multiple(User, engine):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
 
-    expected = {'User': [
-        {'DeleteRequest': {'Key': {'id': {'S': str(user1.id)}}}},
-        {'DeleteRequest': {'Key': {'id': {'S': str(user2.id)}}}}]}
+    expected = [
+        {'Key': {'id': {'S': str(user1.id)}}, 'TableName': 'User'},
+        {'Key': {'id': {'S': str(user2.id)}}, 'TableName': 'User'}]
+    calls = 0
 
-    def validate(items):
-        assert bloop.util.ordered(items) == bloop.util.ordered(expected)
-    engine.client.batch_write_items = validate
+    def validate(item):
+        assert item in expected
+        nonlocal calls
+        calls += 1
+    engine.client.delete_item = validate
     engine.delete((user1, user2))
+    assert calls == 2
 
 
 def test_query(User, engine):

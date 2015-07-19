@@ -297,35 +297,17 @@ class Engine(object):
 
     def delete(self, objs, *, condition=None):
         objs = list_of(objs)
-        if len(objs) > 1 and condition:
-            raise ValueError("condition is only usable with a single object")
-
-        elif len(objs) == 1 and condition:
-            obj = objs[0]
-            model = obj.__class__
+        additional = {}
+        if condition:
             renderer = bloop.condition.ConditionRenderer(self)
             renderer.render(condition, 'condition')
-            item = {"TableName": model.Meta.table_name,
+            additional.update(renderer.rendered)
+        for obj in objs:
+            item = {"TableName": obj.Meta.table_name,
                     "Key": dump_key(self, obj)}
-            item.update(renderer.rendered)
+            item.update(additional)
             self.client.delete_item(item)
             bloop.tracking.clear(obj)
-
-        else:
-            request_items = collections.defaultdict(list)
-            # Use set here to properly de-dupe list (don't save same obj twice)
-            for obj in set(objs):
-                del_item = {"DeleteRequest": {
-                    "Key": dump_key(self, obj)}}
-                table_name = obj.Meta.table_name
-                request_items[table_name].append(del_item)
-
-            self.client.batch_write_items(request_items)
-            # TODO: clear tracking for each object as its batch
-            # successfully deletes.  Otherwise we could fail to clear the
-            # tracking for an object if a subsequent batch fails to delete
-            for obj in set(objs):
-                bloop.tracking.clear(obj)
 
     def query(self, obj):
         if bloop.index.is_index(obj):

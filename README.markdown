@@ -472,7 +472,7 @@ Engine.save(self, objs, *, condition=None)
 ```
 
 * `objs` may be a single object, or an array of objects.
-* `condition` may be specified only when saving a single object.  This should be a ConditionExpression, most easily constructed using rich comparators with model columns: `no_such_id = Post.id == None` or `new_posts = Post.date >= arrow.now().replace(days=-1)`
+* `condition` may be specified when saving any number of objects - when saving multiple objects, the same condition is used for each object.  This should be a ConditionExpression, most easily constructed using rich comparators with model columns: `no_such_id = Post.id == None` or `new_posts = Post.date >= arrow.now().replace(days=-1)`
 
 ## Delete
 
@@ -481,7 +481,7 @@ Engine.delete(self, objs, *, condition=None)
 ```
 
 * `objs` may be a single object, or an array of objects.
-* `condition` may be specified only when deleting a single object.  This should be a ConditionExpression, most easily constructed using rich comparators with model columns: `no_such_id = Post.id == None` or `new_posts = Post.date >= arrow.now().replace(days=-1)`
+* `condition` may be specified when deleting any number of objects - when deleting multiple objects, the same condition is used for each object.  This should be a ConditionExpression, most easily constructed using rich comparators with model columns: `no_such_id = Post.id == None` or `new_posts = Post.date >= arrow.now().replace(days=-1)`
 
 ## Query and Scan
 

@@ -39,31 +39,26 @@ def default_backoff_func(operation, attempts):
     return (DEFAULT_BACKOFF_COEFF * (2 ** attempts)) / 1000.0
 
 
-def partition_batch_get_input(batch_size, request_items):
+def partition_batch_get_input(batch_size, items):
     ''' Takes a batch_get input and partitions into 25 object chunks '''
-
-    def iterate_items():
-        for table_name, table_attrs in request_items.items():
-            consistent_read = table_attrs.get("ConsistentRead", False)
-            for key in table_attrs["Keys"]:
-                yield (table_name, key, consistent_read)
-
     chunk = {}
-    items = 0
-    for table_name, key, consistent_read in iterate_items():
-        table = chunk.get(table_name, None)
-        # First occurance of the table in this chunk
-        if table is None:
-            table = chunk[table_name] = {
-                "ConsistentRead": consistent_read,
-                "Keys": []}
-        # Dump the key into the chunk table's `Keys` list
-        table["Keys"].append(key)
-        items += 1
-        if items >= batch_size:
-            yield chunk
-            items = 0
-            chunk = {}
+    count = 0
+    for table_name, table_attrs in items.items():
+        consistent_read = table_attrs.get("ConsistentRead", False)
+        for key in table_attrs["Keys"]:
+            # This check needs to be in the inner loop, in case the chunk
+            # clears in the middle of iterating this table's keys.
+            table = chunk.get(table_name, None)
+            if table is None:
+                table = chunk[table_name] = {
+                    "ConsistentRead": consistent_read,
+                    "Keys": []}
+            table["Keys"].append(key)
+            count += 1
+            if count >= batch_size:
+                yield chunk
+                count = 0
+                chunk = {}
     # Last chunk, less than batch_size items
     if chunk:
         yield chunk
@@ -94,7 +89,6 @@ class Client(object):
         Handles batching and throttling/retry with backoff
         '''
         response = {}
-
         get_batch = functools.partial(self.call_with_retries,
                                       self.client.batch_get_item)
         request_batches = partition_batch_get_input(self.batch_size, items)
@@ -104,8 +98,6 @@ class Client(object):
             # UnprocessedKeys from the first call
             while request_batch:
                 batch_response = get_batch(RequestItems=request_batch)
-
-                # Add batch results to the full results table
                 items = batch_response.get("Responses", {}).items()
                 for table_name, table_items in items:
                     if table_name not in response:
@@ -153,11 +145,8 @@ class Client(object):
         block afterwards.
         '''
         table = table_for_model(model)
-
-        # Bound ref to create w/retries
         create = functools.partial(self.call_with_retries,
                                    self.client.create_table)
-
         try:
             create(**table)
         except botocore.exceptions.ClientError as error:
@@ -218,7 +207,6 @@ class Client(object):
         count = response.get("Count", 0)
         response["Count"] = count
         response["ScannedCount"] = response.get("ScannedCount", count)
-
         return response
 
     def query(self, **request):

@@ -134,6 +134,13 @@ def test_load_dump_unknown(engine):
         engine.__dump__(NotModeled, obj)
 
 
+def test_save_unknown_mode(engine, User):
+    user = User(id=uuid.uuid4())
+    engine.config['persist'] = 'foo'
+    with pytest.raises(ValueError):
+        engine.save(user)
+
+
 def test_save_multiple_condition(User, engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
     condition = User.id.is_(None)

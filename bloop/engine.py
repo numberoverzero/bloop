@@ -221,47 +221,41 @@ class Engine:
 
     def save(self, objs, *, condition=None):
         objs = list_of(objs)
+        atomic = self.config["atomic"]
         mode = self.config["persist"]
-        if mode == "update":
-            func = self._save_update
-        elif mode == "overwrite":
-            func = self._save_overwrite
-        else:  # pragma: no cover
-            raise ValueError(
-                "Unknown persist mode {}".format(mode))
+        update = mode == 'update'
+        rendering = atomic or condition or update
+        try:
+            func = {'overwrite': self.client.put_item,
+                    'update': self.client.update_item}[mode]
+        except KeyError:
+            raise ValueError('Unknown persist mode {}'.format(mode))
         for obj in objs:
-            func(obj, condition=condition)
-            # Mark all columns of the item as tracked
+            if mode == 'overwrite':
+                item = {"TableName": obj.Meta.table_name,
+                        "Item": self.__dump__(obj.__class__, obj)}
+            if mode == 'update':
+                item = {"TableName": obj.Meta.table_name,
+                        "Key": dump_key(self, obj)}
+            if rendering:
+                renderer = bloop.condition.ConditionRenderer(self)
+                item_condition = bloop.condition.Condition()
+                if update:
+                    diff = bloop.tracking.diff_obj(obj, self)
+                    renderer.update(diff)
+                if atomic:
+                    item_condition &= bloop.tracking.atomic_condition(obj)
+                if condition:
+                    item_condition &= condition
+                if item_condition:
+                    renderer.render(item_condition, 'condition')
+                item.update(renderer.rendered)
+            func(item)
             bloop.tracking.update_current(obj, self)
-
-    def _save_update(self, obj, *, condition=None):
-        '''
-        Don't need to check len(objs) if condition, since it's verified above
-        '''
-        # Load the tracking diff, dump into an UpdateExpression
-        diff = bloop.tracking.diff_obj(obj, self)
-        renderer = bloop.condition.ConditionRenderer(self)
-        renderer.update(diff)
-        if condition:
-            renderer.render(condition, 'condition')
-        item = {"TableName": obj.Meta.table_name,
-                "Key": dump_key(self, obj)}
-        item.update(renderer.rendered)
-        self.client.update_item(item)
-
-    def _save_overwrite(self, obj, *, condition=None):
-        renderer = bloop.condition.ConditionRenderer(self)
-        if condition:
-            renderer.render(condition, 'condition')
-        item = {"TableName": obj.Meta.table_name,
-                "Item": self.__dump__(obj.__class__, obj)}
-        item.update(renderer.rendered)
-        self.client.put_item(item)
 
     def delete(self, objs, *, condition=None):
         objs = list_of(objs)
         rendering = self.config['atomic'] or condition
-
         for obj in objs:
             item = {"TableName": obj.Meta.table_name,
                     "Key": dump_key(self, obj)}

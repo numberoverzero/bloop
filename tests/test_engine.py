@@ -158,12 +158,24 @@ def test_load_dump_unknown(engine):
         engine.__dump__(NotModeled, obj)
 
 
-def test_illegal_save(User, engine):
+def test_save_multiple_condition(User, engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
     condition = User.id.is_(None)
 
-    with pytest.raises(ValueError):
-        engine.save(users, condition=condition)
+    expected = [{'ConditionExpression': '(attribute_not_exists(#n0))',
+                 'ExpressionAttributeNames': {'#n0': 'id'},
+                 'Key': {'id': {'S': str(user.id)}},
+                 'TableName': 'User'} for user in users]
+    calls = 0
+
+    def validate(item):
+        assert item in expected
+        nonlocal calls
+        calls += 1
+
+    engine.client.update_item = validate
+    engine.save(users, condition=condition)
+    assert calls == 3
 
 
 def test_save_single_overwrite(User, engine):

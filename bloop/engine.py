@@ -258,8 +258,6 @@ class Engine(object):
 
     def save(self, objs, *, condition=None):
         objs = list_of(objs)
-        if len(objs) > 1 and condition:
-            raise ValueError("condition is only usable with a single object")
         if self.persist_mode == "update":
             func = self._save_update
         elif self.persist_mode == "overwrite":
@@ -268,39 +266,34 @@ class Engine(object):
             raise ValueError(
                 "Unknown persist mode {}".format(self.persist_mode))
         for obj in objs:
-                # Safe to forward condition since it's None for lists
-                func(obj, condition=condition)
+            func(obj, condition=condition)
+            # Mark all columns of the item as tracked
+            bloop.tracking.update_current(obj, self)
 
     def _save_update(self, obj, *, condition=None):
         '''
         Don't need to check len(objs) if condition, since it's verified above
         '''
-        model = obj.__class__
         # Load the tracking diff, dump into an UpdateExpression
         diff = bloop.tracking.diff_obj(obj, self)
         renderer = bloop.condition.ConditionRenderer(self)
         renderer.update(diff)
         if condition:
             renderer.render(condition, 'condition')
-        item = {"TableName": model.Meta.table_name,
+        item = {"TableName": obj.Meta.table_name,
                 "Key": dump_key(self, obj)}
         item.update(renderer.rendered)
         self.client.update_item(item)
-        # Mark all columns of the item as tracked
-        bloop.tracking.update_current(obj, self)
-        return
 
     def _save_overwrite(self, obj, *, condition=None):
         model = obj.__class__
         renderer = bloop.condition.ConditionRenderer(self)
         if condition:
             renderer.render(condition, 'condition')
-        item = {"TableName": model.Meta.table_name,
+        item = {"TableName": obj.Meta.table_name,
                 "Item": self.__dump__(model, obj)}
         item.update(renderer.rendered)
         self.client.put_item(item)
-        # Mark all columns of the item as tracked
-        bloop.tracking.update_current(obj, self)
 
     def delete(self, objs, *, condition=None):
         objs = list_of(objs)

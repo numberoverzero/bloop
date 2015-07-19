@@ -286,12 +286,11 @@ class Engine(object):
         self.client.update_item(item)
 
     def _save_overwrite(self, obj, *, condition=None):
-        model = obj.__class__
         renderer = bloop.condition.ConditionRenderer(self)
         if condition:
             renderer.render(condition, 'condition')
         item = {"TableName": obj.Meta.table_name,
-                "Item": self.__dump__(model, obj)}
+                "Item": self.__dump__(obj.__class__, obj)}
         item.update(renderer.rendered)
         self.client.put_item(item)
 

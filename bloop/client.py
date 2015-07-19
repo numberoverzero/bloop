@@ -69,32 +69,6 @@ def partition_batch_get_input(batch_size, request_items):
         yield chunk
 
 
-def partition_batch_write_input(batch_size, request_items):
-    ''' Takes a batch_write input and partitions into 25 object chunks '''
-
-    def iterate_items():
-        for table_name, items in request_items.items():
-            for item in items:
-                yield (table_name, item)
-
-    chunk = {}
-    items = 0
-    for table_name, item in iterate_items():
-        table = chunk.get(table_name, None)
-        # First occurance of the table in this chunk
-        if table is None:
-            chunk[table_name] = []
-        chunk[table_name].append(item)
-        items += 1
-        if items == batch_size:
-            yield chunk
-            items = 0
-            chunk = {}
-    # Last chunk, less than batch_size items
-    if chunk:
-        yield chunk
-
-
 class Client(object):
     def __init__(self, session=None, backoff_func=None,
                  batch_size=MAX_BATCH_SIZE):
@@ -118,56 +92,6 @@ class Client(object):
                 APIReference/API_BatchGetItem.html
 
         Handles batching and throttling/retry with backoff
-
-        Example
-        ------
-        From the same document above, the example input would be:
-
-        {
-            "Forum": {
-                "Keys": [
-                    { "Name":{"S":"Amazon DynamoDB"} },
-                    { "Name":{"S":"Amazon RDS"} },
-                    { "Name":{"S":"Amazon Redshift"} }
-                ]
-            },
-            "Thread": {
-                "Keys": [{
-                    "ForumName":{"S":"Amazon DynamoDB"},
-                    "Subject":{"S":"Concurrent reads"}
-                }]
-            }
-        }
-
-        And the returned response would be:
-        {
-            "Forum": [
-                {
-                    "Name":{"S":"Amazon DynamoDB"},
-                    "Threads":{"N":"5"},
-                    "Messages":{"N":"19"},
-                    "Views":{"N":"35"}
-                },
-                {
-                    "Name":{"S":"Amazon RDS"},
-                    "Threads":{"N":"8"},
-                    "Messages":{"N":"32"},
-                    "Views":{"N":"38"}
-                },
-                {
-                    "Name":{"S":"Amazon Redshift"},
-                    "Threads":{"N":"12"},
-                    "Messages":{"N":"55"},
-                    "Views":{"N":"47"}
-                }
-            ],
-            "Thread": [
-                {
-                    "Tags":{"SS":["Reads","MultipleUsers"]},
-                    "Message":{"S":"... Are there any limits?"}
-                }
-            ]
-        }
         '''
         response = {}
 
@@ -199,72 +123,6 @@ class Client(object):
                 request_batch = batch_response.get("UnprocessedKeys",  None)
 
         return response
-
-    def batch_write_items(self, request):
-        '''
-        Takes the "RequestItems" dict documented here:
-            http://docs.aws.amazon.com/amazondynamodb/latest/ \
-                APIReference/API_BatchWriteItem.html
-
-        Handles batching and throttling/retry with backoff
-
-        Example
-        ------
-        From the same document above, the example input would be:
-
-        {
-            "RequestItems": {
-                "Forum": [
-                    {
-                        "PutRequest": {
-                            "Item": {
-                                "Name": {"S": "Amazon DynamoDB"},
-                                "Category": {"S": "Amazon Web Services"}
-                            }
-                        }
-                    },
-                    {
-                        "PutRequest": {
-                            "Item": {
-                                "Name": {"S": "Amazon RDS"},
-                                "Category": {"S": "Amazon Web Services"}
-                            }
-                        }
-                    },
-                    {
-                        "DeleteRequest": {
-                            "Key": {
-                                "Name": {"S": "Amazon Redshift"}
-                            }
-                        }
-                    },
-                    {
-                        "PutRequest": {
-                            "Item": {
-                                "Name": {"S": "Amazon ElastiCache"},
-                                "Category": {"S": "Amazon Web Services"}
-                            }
-                        }
-                    }
-                ]
-            }
-        }
-        '''
-        # Bound ref to batch_write for retries
-        write_batch = functools.partial(self.call_with_retries,
-                                        self.client.batch_write_item)
-
-        for request_batch in partition_batch_write_input(self.batch_size,
-                                                         request):
-            # After the first call, request_batch is the
-            # UnprocessedKeys from the first call
-            while request_batch:
-                batch_response = write_batch(RequestItems=request_batch)
-
-                # If there are no unprocessed items, this will be an empty
-                # list which will break the while loop, moving to the next
-                # batch of items
-                request_batch = batch_response.get("UnprocessedItems", None)
 
     def call_with_retries(self, func, *args, **kwargs):
         '''

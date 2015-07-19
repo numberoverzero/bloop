@@ -79,6 +79,51 @@ class Client(object):
         self.backoff_func = backoff_func or default_backoff_func
         self.batch_size = batch_size
 
+    def _call_with_retries(self, func, *args, **kwargs):
+        ''' Uses `self.backoff_func` to handle retries '''
+        operation = func.__name__
+        attempts = 1
+        while True:
+            try:
+                output = func(*args, **kwargs)
+            except botocore.exceptions.ClientError as error:
+                error_code = error.response['Error']['Code']
+                if error_code not in RETRYABLE_ERRORS:
+                    raise error
+            else:
+                # No exception, success!
+                return output
+
+            # Backoff in milliseconds
+            # backoff_func will return a number of seconds to wait, or raise
+            delay = self.backoff_func(operation, attempts)
+            time.sleep(delay)
+            attempts += 1
+
+    def _filter(self, client_func, **request):
+        # Wrap client function in retries
+        response = self._call_with_retries(client_func, **request)
+
+        # When updating count, ScannedCount is omitted unless it differs
+        # from Count; thus we need to default to assume that the
+        # ScannedCount is equal to the Count
+        count = response.get("Count", 0)
+        response["Count"] = count
+        response["ScannedCount"] = response.get("ScannedCount", count)
+        return response
+
+    def _modify_item(self, client_func, name, item):
+        try:
+            self._call_with_retries(client_func, **item)
+        except botocore.exceptions.ClientError as error:
+            error_code = error.response['Error']['Code']
+            if error_code == 'ConditionalCheckFailedException':
+                raise ConstraintViolation(
+                    "Failed to meet condition during {}: {}".format(
+                        name, item), item)
+            else:
+                raise error
+
     def batch_get_items(self, items):
         '''
         Takes the "RequestItems" dict and returns the "Responses" dict
@@ -89,7 +134,7 @@ class Client(object):
         Handles batching and throttling/retry with backoff
         '''
         response = {}
-        get_batch = functools.partial(self.call_with_retries,
+        get_batch = functools.partial(self._call_with_retries,
                                       self.client.batch_get_item)
         request_batches = partition_batch_get_input(self.batch_size, items)
 
@@ -111,31 +156,6 @@ class Client(object):
 
         return response
 
-    def call_with_retries(self, func, *args, **kwargs):
-        '''
-        Uses `self.backoff_func` to handle retries.
-
-        Does not partition or map results
-        '''
-        operation = func.__name__
-        attempts = 1
-        while True:
-            try:
-                output = func(*args, **kwargs)
-            except botocore.exceptions.ClientError as error:
-                error_code = error.response['Error']['Code']
-                if error_code not in RETRYABLE_ERRORS:
-                    raise error
-            else:
-                # No exception, success!
-                return output
-
-            # Backoff in milliseconds
-            # backoff_func will return a number of seconds to wait, or raise
-            delay = self.backoff_func(operation, attempts)
-            time.sleep(delay)
-            attempts += 1
-
     def create_table(self, model):
         '''
         Suppress ResourceInUseException (table already exists)
@@ -145,7 +165,7 @@ class Client(object):
         block afterwards.
         '''
         table = table_for_model(model)
-        create = functools.partial(self.call_with_retries,
+        create = functools.partial(self._call_with_retries,
                                    self.client.create_table)
         try:
             create(**table)
@@ -156,19 +176,10 @@ class Client(object):
                 raise error
 
     def delete_item(self, item):
-        try:
-            self.call_with_retries(self.client.delete_item, **item)
-        except botocore.exceptions.ClientError as error:
-            error_code = error.response['Error']['Code']
-            if error_code == 'ConditionalCheckFailedException':
-                raise ConstraintViolation(
-                    "Failed to meet condition during delete: {}".format(item),
-                    item)
-            else:
-                raise error
+        self._modify_item(self.client.delete_item, "delete", item)
 
     def describe_table(self, model):
-        description = self.call_with_retries(
+        description = self._call_with_retries(
             self.client.describe_table,
             TableName=model.Meta.table_name)["Table"]
 
@@ -197,47 +208,17 @@ class Client(object):
                 index.pop(field, None)
         return table
 
-    def _filter(self, client_func, **request):
-        # Wrap client function in retries
-        response = self.call_with_retries(client_func, **request)
-
-        # When updating count, ScannedCount is omitted unless it differs
-        # from Count; thus we need to default to assume that the
-        # ScannedCount is equal to the Count
-        count = response.get("Count", 0)
-        response["Count"] = count
-        response["ScannedCount"] = response.get("ScannedCount", count)
-        return response
+    def put_item(self, item):
+        self._modify_item(self.client.put_item, "put", item)
 
     def query(self, **request):
         return self._filter(self.client.query, **request)
-
-    def put_item(self, item):
-        try:
-            self.call_with_retries(self.client.put_item, **item)
-        except botocore.exceptions.ClientError as error:
-            error_code = error.response['Error']['Code']
-            if error_code == 'ConditionalCheckFailedException':
-                raise ConstraintViolation(
-                    "Failed to meet condition during put: {}".format(item),
-                    item)
-            else:
-                raise error
 
     def scan(self, **request):
         return self._filter(self.client.scan, **request)
 
     def update_item(self, item):
-        try:
-            self.call_with_retries(self.client.update_item, **item)
-        except botocore.exceptions.ClientError as error:
-            error_code = error.response['Error']['Code']
-            if error_code == 'ConditionalCheckFailedException':
-                raise ConstraintViolation(
-                    "Failed to meet condition during update: {}".format(item),
-                    item)
-            else:
-                raise error
+        self._modify_item(self.client.update_item, "update", item)
 
     def validate_table(self, model):
         '''

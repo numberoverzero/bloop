@@ -179,20 +179,20 @@ def test_call_with_retries(session, client_error):
     # Try the call 4 times, then raise RuntimeError
     tries, context = 0, {'calls': 0}
     with pytest.raises(RuntimeError):
-        client.call_with_retries(always_raise_retryable, context)
+        client._call_with_retries(always_raise_retryable, context)
     assert tries == 4
     assert context['calls'] == 4
 
     # Fails on first call, first retry, succeeds third call
     tries, context = 0, {'calls': 0}
-    client.call_with_retries(raise_twice_retryable, context)
+    client._call_with_retries(raise_twice_retryable, context)
     assert tries == 2
     assert context['calls'] == 3
 
     # Fails on first call, no retries
     tries, context = 0, {'calls': 0}
     with pytest.raises(botocore.exceptions.ClientError) as excinfo:
-        client.call_with_retries(raise_unretryable, context)
+        client._call_with_retries(raise_unretryable, context)
     assert tries == 0
     assert context['calls'] == 1
     assert excinfo.value.response['Error']['Code'] == 'FooError'
@@ -200,7 +200,7 @@ def test_call_with_retries(session, client_error):
     # Fails on first call, no retries
     tries, context = 0, {'calls': 0}
     with pytest.raises(ValueError):
-        client.call_with_retries(raise_non_botocore, context)
+        client._call_with_retries(raise_non_botocore, context)
     assert tries == 0
     assert context['calls'] == 1
 

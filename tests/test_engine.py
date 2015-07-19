@@ -190,6 +190,40 @@ def test_save_condition(User, engine):
     engine.save(user, condition=condition)
 
 
+def test_save_atomic_update_condition(User, engine):
+    user_id = uuid.uuid4()
+    user = User(id=user_id)
+    # Manually force a tracking update so we think age is persisted
+    bloop.tracking.update_current(user, engine)
+
+    user.name = 'foo'
+
+    condition = (
+        '((((((attribute_not_exists(#n2)) AND (attribute_not_exists(#n3))) AND'
+        ' (#n4 = :v5)) AND (attribute_not_exists(#n6))) AND'
+        ' (attribute_not_exists(#n0))) AND (#n0 = :v7))')
+    expected = {
+        'ExpressionAttributeNames': {'#n4': 'id', '#n2': 'age', '#n3': 'email',
+                                     '#n0': 'name', '#n6': 'joined'},
+        'TableName': 'User',
+        'ExpressionAttributeValues': {':v7': {'S': 'foo'}, ':v1': {'S': 'foo'},
+                                      ':v5': {'S': str(user_id)}},
+        'ConditionExpression': condition,
+        'UpdateExpression': 'SET #n0=:v1',
+        'Key': {'id': {'S': str(user_id)}}}
+    called = False
+
+    def validate(item):
+        nonlocal called
+        called = True
+        print(item)
+        assert item == expected
+    engine.client.update_item = validate
+    engine.config["atomic"] = True
+    engine.save(user, condition=User.name == 'foo')
+    assert called
+
+
 def test_save_multiple(User, engine):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())

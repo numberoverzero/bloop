@@ -194,7 +194,7 @@ def test_select_all_invalid_gsi(engine, local_bind):
 
 def test_select_strict_lsi(engine, ComplexModel):
     ''' Select all/specific on LSI without 'all' projection in strict mode '''
-    engine.config.strict = True
+    engine.config["strict"] = True
     q = engine.query(ComplexModel.by_joined)
 
     with pytest.raises(ValueError):

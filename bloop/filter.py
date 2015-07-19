@@ -210,7 +210,7 @@ class Filter(object):
 
         is_gsi = bloop.index.is_global_index(self.index)
         is_lsi = bloop.index.is_local_index(self.index)
-        strict = self.engine.config.strict
+        strict = self.engine.config["strict"]
         requires_exact = (is_gsi or (is_lsi and strict))
 
         if select == "count":
@@ -294,7 +294,7 @@ class Filter(object):
         print(results.count, results.scanned_count)
         '''
         if prefetch is None:
-            prefetch = self.engine.config.prefetch
+            prefetch = self.engine.config["prefetch"]
         # dynamo.client.query or dynamo.client.scan
         call = getattr(self.engine.client, self.filter_type)
         renderer = bloop.condition.ConditionRenderer(self.engine)

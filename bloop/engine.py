@@ -1,6 +1,5 @@
 import bloop.client
 import bloop.condition
-import bloop.config
 import bloop.filter
 import bloop.index
 import bloop.model
@@ -11,6 +10,13 @@ import collections.abc
 import contextlib
 import declare
 MISSING = bloop.util.Sentinel('MISSING')
+DEFAULT_CONFIG = {
+    'strict': False,
+    'prefetch': 0,
+    'consistent': False,
+    'persist': 'update',
+    'atomic': False
+}
 
 
 class ObjectsNotFound(Exception):
@@ -65,7 +71,8 @@ class Engine:
         self.model = bloop.model.BaseModel(self)
         self.unbound_models = set()
         self.models = set()
-        self.config = bloop.config.EngineConfig(**config)
+        self.config = dict(DEFAULT_CONFIG)
+        self.config.update(config)
 
     def register(self, model):
         if model not in self.models:
@@ -166,7 +173,7 @@ class Engine:
         engine.load(hash_only, hash_and_range)
         '''
         if consistent is None:
-            consistent = self.config.consistent
+            consistent = self.config["consistent"]
 
         objs = list_of(objs)
         # The RequestItems dictionary of table:Key(list) that will be
@@ -215,7 +222,7 @@ class Engine:
 
     def save(self, objs, *, condition=None):
         objs = list_of(objs)
-        mode = self.config.persist
+        mode = self.config["persist"]
         if mode == "update":
             func = self._save_update
         elif mode == "overwrite":
@@ -295,7 +302,8 @@ class Engine:
 class EngineView(Engine):
     def __init__(self, engine, **config):
         self.client = engine.client
-        self.config = engine.config.copy(**config)
+        self.config = dict(engine.config)
+        self.config.update(config)
         self.model = engine.model
         self.type_engine = engine.type_engine
 

@@ -541,10 +541,10 @@ def test_query_scan(User, client):
     ]
 
     for index, expected in enumerate(expecteds):
-        actual = client.query(index=index)
+        actual = client.query({"index": index})
         assert actual == expected
 
-        actual = client.scan(index=index)
+        actual = client.scan({"index": index})
         assert actual == expected
 
 

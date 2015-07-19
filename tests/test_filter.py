@@ -299,7 +299,7 @@ def test_count(engine, User):
                 'Select': 'COUNT',
                 'ScanIndexForward': True}
 
-    def respond(**request):
+    def respond(request):
         assert request == expected
         item = User(id=user_id, age=5)
         return {
@@ -321,7 +321,7 @@ def test_first(engine, User):
                 'ExpressionAttributeNames': {'#n0': 'email'},
                 'ExpressionAttributeValues': {':v1': {'S': 'foo@domain.com'}}}
 
-    def respond(**request):
+    def respond(request):
         assert request == expected
         item = User(email="foo@domain.com")
         return {
@@ -343,7 +343,7 @@ def test_iter(engine, User):
                 'ExpressionAttributeNames': {'#n0': 'email'},
                 'ExpressionAttributeValues': {':v1': {'S': 'foo@domain.com'}}}
 
-    def respond(**request):
+    def respond(request):
         assert request == expected
         item = User(email="foo@domain.com")
         return {
@@ -415,7 +415,7 @@ def test_results_incomplete(User, engine):
     q = engine.query(User).key(User.id == uuid.uuid4())
     calls = 0
 
-    def respond(**request):
+    def respond(request):
         nonlocal calls
         calls += 1
         return {"Count": 1, "ScannedCount": 2}
@@ -454,7 +454,7 @@ def test_first_no_prefetch(User, engine):
                 'ScanIndexForward': True}
     continue_tokens = {None: "first", "first": "second", "second": None}
 
-    def respond(**request):
+    def respond(request):
         token = request.pop("ExclusiveStartKey", None)
         assert request == expected
         item = User(id=user_id, name=None)
@@ -483,7 +483,7 @@ def test_first_no_results(User, engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
 
-    def respond(**request):
+    def respond(request):
         return {
             "Count": 1,
             "ScannedCount": 2
@@ -512,7 +512,7 @@ def test_prefetch_all(User, engine):
                 'ScanIndexForward': True}
     continue_tokens = {None: "first", "first": "second", "second": None}
 
-    def respond(**request):
+    def respond(request):
         nonlocal calls
         calls += 1
 
@@ -560,7 +560,7 @@ def test_prefetch_first(User, engine):
                 'ScanIndexForward': True}
     continue_tokens = {None: "first", "first": None}
 
-    def respond(**request):
+    def respond(request):
         nonlocal calls
         calls += 1
 
@@ -603,7 +603,7 @@ def test_prefetch_iter(User, engine):
                 'ScanIndexForward': True}
     continue_tokens = {None: "first", "first": "second", "second": None}
 
-    def respond(**request):
+    def respond(request):
         nonlocal calls
         calls += 1
 

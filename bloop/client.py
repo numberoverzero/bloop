@@ -68,7 +68,6 @@ class Client(object):
     def __init__(self, session=None, backoff_func=None,
                  batch_size=MAX_BATCH_SIZE):
         '''
-
         backoff_func is an optional function with signature
         (dynamo operation name, attempts so far) that should either:
             - return the number of seconds to sleep
@@ -100,7 +99,7 @@ class Client(object):
             time.sleep(delay)
             attempts += 1
 
-    def _filter(self, client_func, **request):
+    def _filter(self, client_func, request):
         # Wrap client function in retries
         response = self._call_with_retries(client_func, **request)
 
@@ -153,7 +152,6 @@ class Client(object):
                 # list which will break the while loop, moving to the next
                 # batch of items
                 request_batch = batch_response.get("UnprocessedKeys",  None)
-
         return response
 
     def create_table(self, model):
@@ -211,11 +209,11 @@ class Client(object):
     def put_item(self, item):
         self._modify_item(self.client.put_item, "put", item)
 
-    def query(self, **request):
-        return self._filter(self.client.query, **request)
+    def query(self, request):
+        return self._filter(self.client.query, request)
 
-    def scan(self, **request):
-        return self._filter(self.client.scan, **request)
+    def scan(self, request):
+        return self._filter(self.client.scan, request)
 
     def update_item(self, item):
         self._modify_item(self.client.update_item, "update", item)

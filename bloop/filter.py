@@ -509,7 +509,7 @@ class FilterResult(object):
         ''' Single call, advancing ExclusiveStartKey if necessary. '''
         if self._continue:
             self.request["ExclusiveStartKey"] = self._continue
-        response = self._call(**self.request)
+        response = self._call(self.request)
         self._continue = response.get("LastEvaluatedKey", None)
 
         self.count += response["Count"]

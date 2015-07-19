@@ -104,6 +104,7 @@ class Engine:
         return self.__load__(model, {})
 
     def __update__(self, obj, attrs, expected):
+        bloop.tracking.update(obj, attrs, expected)
         for column in expected:
             value = attrs.get(column.dynamo_name, MISSING)
             # Missing expected column - try to remove the existing
@@ -118,7 +119,6 @@ class Engine:
             else:
                 value = self.__load__(column.typedef, value)
                 setattr(obj, column.model_name, value)
-        bloop.tracking.update(obj, attrs, expected)
 
     def bind(self):
         ''' Create tables for all models that have been registered '''

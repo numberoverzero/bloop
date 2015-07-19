@@ -260,15 +260,20 @@ class Engine:
 
     def delete(self, objs, *, condition=None):
         objs = list_of(objs)
-        additional = {}
-        if condition:
-            renderer = bloop.condition.ConditionRenderer(self)
-            renderer.render(condition, 'condition')
-            additional.update(renderer.rendered)
+        rendering = self.config['atomic'] or condition
+
         for obj in objs:
             item = {"TableName": obj.Meta.table_name,
                     "Key": dump_key(self, obj)}
-            item.update(additional)
+            if rendering:
+                renderer = bloop.condition.ConditionRenderer(self)
+                item_condition = bloop.condition.Condition()
+                if self.config['atomic']:
+                    item_condition &= bloop.tracking.atomic_condition(obj)
+                if condition:
+                    item_condition &= condition
+                renderer.render(item_condition, 'condition')
+                item.update(renderer.rendered)
             self.client.delete_item(item)
             bloop.tracking.clear(obj)
 

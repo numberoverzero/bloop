@@ -180,7 +180,10 @@ def atomic_condition(obj):
     '''
     atomic = bloop.condition.Condition()
     tracking = _get_tracking(obj)
-    for column in obj.Meta.columns:
+
+    # While sorting isn't required, it allows us some sanity in testing.
+    # The overhead to do so will rarely be significant.
+    for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
         value = tracking.get(column.dynamo_name, None)
         condition = column.is_(value)
         condition.dumped = True

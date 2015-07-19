@@ -87,19 +87,16 @@ def test_atomic_condition(ComplexModel, engine):
     atomic_condition = bloop.tracking.atomic_condition(obj)
     renderer = bloop.condition.ConditionRenderer(engine)
     renderer.render(atomic_condition, 'condition')
-    output = renderer.rendered
+    condition = (
+        '(((((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1))) AND'
+        ' (#n2 = :v3)) AND (#n4 = :v5)) AND (attribute_not_exists(#n6)))')
+    expected = {
+        'ExpressionAttributeNames': {'#n2': 'joined', '#n4': 'name',
+                                     '#n0': 'date', '#n1': 'email',
+                                     '#n6': 'not_projected'},
+        'ExpressionAttributeValues': {':v3': {'S': 'now'},
+                                      ':v5': {'S': str(name)}},
+        'ConditionExpression': condition}
 
-    # Because obj.Meta.columns is a set, the order that they're rendered in the
-    # ConditionExpression is unknown, as well as the name and value refs that
-    # they'll have when rendered (#n0 or #n1 or #n2 depending on set iter)
-
-    # Instead of checking literal expression, make sure the expected names and
-    # values are present.  Rendering multiple AND is checked in test_condition
-    expected_names = ['name', 'email', 'not_projected', 'joined', 'date']
-    actual_names = output['ExpressionAttributeNames'].values()
-    assert set(actual_names) == set(expected_names)
-
-    ordered = bloop.util.ordered
-    expected_values = [{'S': 'now'}, {'S': str(name)}]
-    actual_values = list(output['ExpressionAttributeValues'].values())
-    assert ordered(actual_values) == ordered(expected_values)
+    print(renderer.rendered)
+    assert renderer.rendered == expected

@@ -236,7 +236,6 @@ def test_save_update_condition(User, engine):
                 'UpdateExpression': 'SET #n0=:v1'}
 
     def validate(item):
-        print(item)
         assert item == expected
     engine.client.update_item = validate
     engine.save(user, condition=condition)
@@ -311,7 +310,6 @@ def test_save_update_del_field(User, engine):
                 'UpdateExpression': "DELETE #n0"}
 
     def validate(item):
-        print(item)
         assert item == expected
     engine.client.update_item = validate
     engine.save(user)
@@ -328,7 +326,6 @@ def test_delete_multiple_condition(User, engine):
     calls = 0
 
     def validate(item):
-        print(item)
         assert item in expected
         nonlocal calls
         calls += 1
@@ -369,6 +366,62 @@ def test_delete_multiple(User, engine):
     engine.client.delete_item = validate
     engine.delete((user1, user2))
     assert calls == 2
+
+
+def test_delete_atomic(User, engine):
+    user_id = uuid.uuid4()
+    user = User(id=user_id)
+
+    condition = (
+        '(((((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1))) AND'
+        ' (attribute_not_exists(#n2))) AND (attribute_not_exists(#n3))) AND'
+        ' (attribute_not_exists(#n4)))')
+    expected = {
+        'ExpressionAttributeNames': {'#n1': 'email', '#n4': 'name',
+                                     '#n3': 'joined', '#n2': 'id',
+                                     '#n0': 'age'},
+        'Key': {'id': {'S': str(user_id)}},
+        'TableName': 'User',
+        'ConditionExpression': condition}
+    called = False
+
+    def validate(item):
+        nonlocal called
+        called = True
+        assert item == expected
+    engine.client.delete_item = validate
+    engine.config['atomic'] = True
+    engine.delete(user)
+    assert called
+
+
+def test_delete_atomic_condition(User, engine):
+    user_id = uuid.uuid4()
+    user = User(id=user_id)
+    condition = (
+        '((((((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1))) AND'
+        ' (attribute_not_exists(#n2))) AND (attribute_not_exists(#n3))) AND'
+        ' (attribute_not_exists(#n4))) AND (#n4 = :v5))')
+
+    expected = {
+        'Key': {'id': {'S': str(user_id)}},
+        'ConditionExpression': condition,
+        'ExpressionAttributeNames': {'#n3': 'joined', '#n4': 'name',
+                                     '#n0': 'age', '#n2': 'id',
+                                     '#n1': 'email'},
+        'ExpressionAttributeValues': {':v5': {'S': 'foo'}},
+        'TableName': 'User'}
+    called = False
+
+    def validate(item):
+        print(item)
+        nonlocal called
+        called = True
+        assert item == expected
+    engine.client.delete_item = validate
+    engine.config['atomic'] = True
+    engine.delete(user, condition=User.name.is_('foo'))
+    assert called
 
 
 def test_query(User, engine):

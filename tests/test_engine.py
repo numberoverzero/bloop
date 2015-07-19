@@ -391,3 +391,30 @@ def test_scan(User, engine):
     model_scan = engine.scan(User)
     assert model_scan.model is User
     assert model_scan.index is None
+
+
+def test_context(User, engine):
+    engine.config["persist"] = "overwrite"
+    user_id = uuid.uuid4()
+    user = User(id=user_id, name='foo')
+
+    expected = {'TableName': 'User',
+                'UpdateExpression': 'SET #n0=:v1',
+                'ExpressionAttributeValues': {':v1': {'S': 'foo'}},
+                'ExpressionAttributeNames': {'#n0': 'name'},
+                'Key': {'id': {'S': str(user_id)}}}
+
+    def validate(item):
+        assert item == expected
+    engine.client.update_item = validate
+
+    with engine.context(persist="update") as eng:
+        eng.save(user)
+
+    with pytest.raises(RuntimeError):
+        with engine.context() as eng:
+            eng.bind()
+
+    with pytest.raises(RuntimeError):
+        with engine.context() as eng:
+            eng.register(User)

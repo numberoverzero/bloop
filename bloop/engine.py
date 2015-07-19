@@ -307,8 +307,8 @@ class EngineView(Engine):
         self.model = engine.model
         self.type_engine = engine.type_engine
 
-    def register(self, model):
+    def bind(self):
         raise RuntimeError("EngineViews can't modify engine types or bindings")
 
-    def bind(self, model):
+    def register(self, model):
         raise RuntimeError("EngineViews can't modify engine types or bindings")

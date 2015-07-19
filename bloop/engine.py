@@ -62,7 +62,8 @@ def dump_key(engine, obj):
 class Engine(object):
     model = None
 
-    def __init__(self, session=None, prefetch=0, persist_mode="update"):
+    def __init__(self, session=None, prefetch=0, persist_mode="update",
+                 strict_queries=False):
         self.client = bloop.client.Client(session=session)
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
@@ -84,6 +85,8 @@ class Engine(object):
         # clear all non-key attributes.
         self.persist_mode = persist_mode
 
+        self.strict_queries = strict_queries
+
     @property
     def prefetch(self):
         return self._prefetch
@@ -91,6 +94,14 @@ class Engine(object):
     @prefetch.setter
     def prefetch(self, value):
         self._prefetch = bloop.filter.validate_prefetch(value)
+
+    @property
+    def strict_queries(self):
+        return self._strict_queries
+
+    @strict_queries.setter
+    def strict_queries(self, value):
+        self._strict_queries = bool(value)
 
     @property
     def persist_mode(self):

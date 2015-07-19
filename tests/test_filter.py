@@ -192,29 +192,32 @@ def test_select_all_invalid_gsi(engine, local_bind):
         q.select('all')
 
 
-def test_select_all_gsi(engine, local_bind):
-    '''
-    Select all query on GSI wit "all" projection
-    '''
-    class Visit(engine.model):
-        page = bloop.Column(bloop.String, hash_key=True)
-        visitor = bloop.Column(bloop.Integer, range_key=True)
-        date = bloop.Column(bloop.String)
+def test_select_strict_lsi(engine, ComplexModel):
+    ''' Select all/specific on LSI without 'all' projection in strict mode '''
+    engine.strict_queries = True
+    q = engine.query(ComplexModel.by_joined)
 
-        by_date = bloop.GlobalSecondaryIndex(hash_key='date',
-                                             projection='all')
-    engine.bind()
+    with pytest.raises(ValueError):
+        q.select('all')
 
-    q = engine.query(Visit.by_date).key(Visit.date == "now")
+    with pytest.raises(ValueError):
+        q.select([ComplexModel.not_projected])
+
+
+def test_select_all_gsi(engine, ComplexModel):
+    '''
+    Select all query on GSI with "all" projection
+    '''
+    q = engine.query(ComplexModel.by_email).key(ComplexModel.email == "foo")
     result = q.select('all').all()
     expected = {'ScanIndexForward': True,
-                'IndexName': 'by_date',
+                'IndexName': 'by_email',
                 'KeyConditionExpression': '(#n0 = :v1)',
                 'ConsistentRead': False,
                 'Select': 'ALL_ATTRIBUTES',
-                'ExpressionAttributeValues': {':v1': {'S': 'now'}},
-                'TableName': 'Visit',
-                'ExpressionAttributeNames': {'#n0': 'date'}}
+                'ExpressionAttributeValues': {':v1': {'S': 'foo'}},
+                'TableName': 'CustomTableName',
+                'ExpressionAttributeNames': {'#n0': 'email'}}
     assert result.request == expected
 
 
@@ -252,7 +255,7 @@ def test_select_specific_gsi_projection(engine, local_bind):
 
     q = engine.query(Visit.by_date).key(Visit.date == 'now')
 
-    # Invalid select because `visitor` isn't projected into the index
+    # Invalid select because `not_projected` isn't projected into the index
     with pytest.raises(ValueError):
         q.select([Visit.not_projected])
 
@@ -269,7 +272,7 @@ def test_select_specific_gsi_projection(engine, local_bind):
     assert result.request == expected
 
 
-def test_select_specific_lsi(ComplexModel, engine, local_bind):
+def test_select_specific_lsi(ComplexModel, engine):
     key_condition = ComplexModel.name == "name"
     key_condition &= (ComplexModel.joined == "now")
     q = engine.query(ComplexModel.by_joined).key(key_condition)

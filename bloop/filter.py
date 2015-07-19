@@ -189,16 +189,17 @@ class Filter(object):
         # ('projected', no index) -> Invalid, must specify an index
 
         # ('all', no index) -> Valid
-        # ('all', LSI, ['all', 'key', 'select']) -> Valid*
+        # ('all', LSI, ['all', 'projected', 'select']) -> Valid*
         # ('all', GSI, 'all') -> Valid
-        # ('all', GSI, 'key') -> Invalid: key-only GSI can't load all attrs
+        # ('all', GSI, 'projected') -> Invalid: projected-only GSI can't
+        #                                       load all attrs
         # ('all', GSI, 'select') -> Invalid: even if GSI projection contains
         #                                    all attributes of the table
 
         # ('specific', no index) -> Valid
-        # ('specific', LSI, ['all', 'key', 'select']) -> Valid*
+        # ('specific', LSI, ['all', 'projected', 'select']) -> Valid*
         # ('specific', GSI, 'all') -> Valid
-        # ('specific', GSI, 'key') -> IFF all attrs in GSI's keys
+        # ('specific', GSI, 'projected') -> IFF all attrs in GSI's keys
         # ('specific', GSI, 'select') -> IFF all attrs in GSI's projected attrs
 
         # *: Any queries against an LSI whose set of requested attributes are
@@ -208,6 +209,9 @@ class Filter(object):
         select = validate_select_mode(columns)
 
         is_gsi = bloop.index.is_global_index(self.index)
+        is_lsi = bloop.index.is_local_index(self.index)
+        strict = self.engine.strict_queries
+        requires_exact = (is_gsi or (is_lsi and strict))
 
         if select == "count":
             other = self.copy()
@@ -225,9 +229,10 @@ class Filter(object):
             return other
 
         elif select == 'all':
-            if is_gsi and self.index.projection != "ALL":
+            if requires_exact and self.index.projection != "ALL":
                 raise ValueError("Cannot select 'all' attributes from a GSI"
-                                 " unless the GSI's projection is 'ALL'")
+                                 " (or an LSI in strict mode) unless the"
+                                 " index's projection is 'ALL'")
             other = self.copy()
             other._select = select
             other._select_columns.clear()
@@ -241,13 +246,16 @@ class Filter(object):
             other._select = 'specific'
             other._select_columns.extend(select)
 
-            if is_gsi and not self.index.projection == "ALL":
+            if requires_exact and self.index.projection != "ALL":
                 projected = self.index.projection_attributes
                 missing_attrs = set(other._select_columns) - projected
+
                 if missing_attrs:
-                    msg = "Projection is missing the following attributes: {}"
-                    msg_attrs = [attr.model_name for attr in missing_attrs]
-                    raise ValueError(msg.format(msg_attrs))
+                    msg = ("Index projection is missing the following expected"
+                           " attributes, and is either a GSI or an LSI and"
+                           " strict mode is enabled: {}").format(
+                        [attr.model_name for attr in missing_attrs])
+                    raise ValueError(msg)
             return other
 
     def count(self):

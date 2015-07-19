@@ -1,4 +1,6 @@
+import bloop.condition
 import bloop.tracking
+import bloop.util
 import uuid
 
 
@@ -71,3 +73,33 @@ def test_diff_del(ComplexModel, engine):
     expected = {"DELETE": [ComplexModel.joined]}
     diff = bloop.tracking.diff_obj(obj, engine)
     assert diff == expected
+
+
+def test_atomic_condition(ComplexModel, engine):
+    ''' rendered condition uses last loaded values, not current '''
+    name = uuid.uuid4()
+    obj = ComplexModel(name=name, joined="now")
+    bloop.tracking.update_current(obj, engine)
+
+    # Shouldn't see 'then' in expression values
+    obj.joined = "then"
+
+    atomic_condition = bloop.tracking.atomic_condition(obj)
+    renderer = bloop.condition.ConditionRenderer(engine)
+    renderer.render(atomic_condition, 'condition')
+    output = renderer.rendered
+
+    # Because obj.Meta.columns is a set, the order that they're rendered in the
+    # ConditionExpression is unknown, as well as the name and value refs that
+    # they'll have when rendered (#n0 or #n1 or #n2 depending on set iter)
+
+    # Instead of checking literal expression, make sure the expected names and
+    # values are present.  Rendering multiple AND is checked in test_condition
+    expected_names = ['name', 'email', 'not_projected', 'joined', 'date']
+    actual_names = output['ExpressionAttributeNames'].values()
+    assert set(actual_names) == set(expected_names)
+
+    ordered = bloop.util.ordered
+    expected_values = [{'S': 'now'}, {'S': str(name)}]
+    actual_values = list(output['ExpressionAttributeValues'].values())
+    assert ordered(actual_values) == ordered(expected_values)

@@ -279,7 +279,7 @@ def test_select_specific_lsi(ComplexModel, engine):
 
     # Unprojected attributes expect a full load
     result = q.select([ComplexModel.not_projected]).all()
-    assert set(result.expected) == ComplexModel.Meta.columns
+    assert set(result.expected) == set(ComplexModel.Meta.columns)
 
     # All attributes projected
     result = q.select([ComplexModel.email]).all()

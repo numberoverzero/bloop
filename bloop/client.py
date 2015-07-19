@@ -255,8 +255,6 @@ def key_schema(*, index=None, model=None):
 
 def attribute_definitions(model):
     ''' Only include table and index hash/range keys '''
-    columns = model.Meta.columns
-    indexes = model.Meta.indexes
     dedupe_attrs = set()
     attrs = []
 
@@ -269,10 +267,10 @@ def attribute_definitions(model):
             'AttributeName': column.dynamo_name
         }
 
-    for column in filter(has_key, columns):
+    for column in filter(has_key, model.Meta.columns):
         dedupe_attrs.add(column)
         attrs.append(attribute_def(column))
-    for index in filter(has_key, indexes):
+    for index in filter(has_key, model.Meta.indexes):
         hash_column = index.hash_key
         if hash_column and hash_column not in dedupe_attrs:
             dedupe_attrs.add(hash_column)

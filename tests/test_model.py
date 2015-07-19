@@ -120,8 +120,8 @@ def test_meta_read_write_units(engine):
 
 def test_meta_indexes_columns(User):
     ''' An index should not be considered a Column, even if it subclasses '''
-    assert User.by_email not in User.Meta.columns
-    assert User.by_email in User.Meta.indexes
+    assert User.by_email not in set(User.Meta.columns)
+    assert User.by_email in set(User.Meta.indexes)
 
 
 def test_meta_indexed_columns_indexes(engine):

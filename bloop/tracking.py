@@ -1,3 +1,4 @@
+import bloop.condition
 import bloop.util
 import enum
 
@@ -170,3 +171,18 @@ def update_current(obj, engine):
 def clear(obj):
     ''' Clear all tracking for an object.  Usually after a delete. '''
     update(obj, {}, obj.Meta.columns)
+
+
+def atomic_condition(obj):
+    '''
+    Generate a condition to expect the last loaded state of an object.
+    Missing fields will expect `is_(None)`
+    '''
+    atomic = bloop.condition.Condition()
+    tracking = _get_tracking(obj)
+    for column in obj.Meta.columns:
+        value = tracking.get(column.dynamo_name, None)
+        condition = column.is_(value)
+        condition.dumped = True
+        atomic &= condition
+    return atomic

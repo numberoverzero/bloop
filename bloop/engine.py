@@ -136,8 +136,7 @@ class Engine:
             # If the call above didn't throw, everything's good to go.
 
             self.type_engine.register(model)
-            columns = model.Meta.columns
-            for column in columns:
+            for column in model.Meta.columns:
                 self.type_engine.register(column.typedef)
             self.type_engine.bind()
             # If nothing above threw, we can mark this model bound

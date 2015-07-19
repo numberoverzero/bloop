@@ -41,9 +41,8 @@ class __BaseModel(object):
     def __dump__(cls, obj):
         ''' obj -> dict '''
         attrs = {}
-        columns = cls.Meta.columns
         engine = cls.Meta.bloop_engine.type_engine
-        for column in columns:
+        for column in cls.Meta.columns:
             value = getattr(obj, column.model_name, MISSING)
             # Missing expected column
             if value is not MISSING:
@@ -51,13 +50,10 @@ class __BaseModel(object):
         return attrs
 
     def __str__(self):  # pragma: no cover
-        cls_name = self.__class__.__name__
-        columns = self.Meta.columns
-
         def _attr(attr):
             return "{}={}".format(attr, repr(getattr(self, attr, None)))
-        attrs = ", ".join(_attr(c.model_name) for c in columns)
-        return "{}({})".format(cls_name, attrs)
+        attrs = ", ".join(_attr(c.model_name) for c in self.Meta.columns)
+        return "{}({})".format(self.__class__.__name__, attrs)
     __repr__ = __str__
 
     def __hash__(self):  # pragma: no cover

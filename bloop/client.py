@@ -84,7 +84,7 @@ class Client(object):
         self.backoff_func = backoff_func or default_backoff_func
         self.batch_size = batch_size
 
-    def batch_get_items(self, request):
+    def batch_get_items(self, items):
         '''
         Takes the "RequestItems" dict and returns the "Responses" dict
         documented here:
@@ -95,27 +95,22 @@ class Client(object):
         '''
         response = {}
 
-        def iterate_response(batch):
-            for table_name, table_items in batch.get("Responses", {}).items():
-                for item in table_items:
-                    yield (table_name, item)
-
-        # Bound ref to batch_get for retries
         get_batch = functools.partial(self.call_with_retries,
                                       self.client.batch_get_item)
+        request_batches = partition_batch_get_input(self.batch_size, items)
 
-        for request_batch in partition_batch_get_input(self.batch_size,
-                                                       request):
+        for request_batch in request_batches:
             # After the first call, request_batch is the
             # UnprocessedKeys from the first call
             while request_batch:
                 batch_response = get_batch(RequestItems=request_batch)
 
                 # Add batch results to the full results table
-                for table_name, item in iterate_response(batch_response):
+                items = batch_response.get("Responses", {}).items()
+                for table_name, table_items in items:
                     if table_name not in response:
                         response[table_name] = []
-                    response[table_name].append(item)
+                    response[table_name].extend(table_items)
 
                 # If there are no unprocessed keys, this will be an empty
                 # list which will break the while loop, moving to the next

@@ -63,24 +63,6 @@ def validate_select_mode(select):
 class Filter(object):
     '''
     Base class for Scan and Query.
-
-    The functions key, filter, select, ascending, descending,
-    and consistent all return copies of the Filter object with the
-    expected modifications.
-
-    Example:
-        f = Filter(engine, model)
-        f2 = f.descending
-        f3 = f.consistent
-
-        assert not f._consistent
-        assert not f2._consistent
-        assert f3._consistent
-
-        assert f._forward
-        assert not f2._forward
-        assert f3._forward
-
     '''
     # Scan -> 'scan', Query -> 'query'
     filter_type = None
@@ -116,18 +98,6 @@ class Filter(object):
     def _expected(self):
         '''
         Return a list of Columns that are expected for the current options.
-
-        No index:
-          if select(all): all columns
-          else: set(selected)
-        GSI:
-          if select(projected): all projected columns
-          else: set(selected)
-        LSI:
-          if select(all) : all columns
-          if select(projected): all projected columns
-          if set(selected) > set(projected): all columns
-          else: set(selected)
         '''
         if self._select == 'all':
             return self.model.Meta.columns
@@ -160,27 +130,22 @@ class Filter(object):
 
     def all(self, prefetch=None):
         '''
-        Unless prefetch is < 0, simply creates the FilterResult that will
-        lazy load the results of the scan/query.  Unlike `iter(self)` this
-        returns the FilterResult object, which allows inspection of the
-        `count` and `scanned_count` attributes.  Iterating over the result
-        object will not trigger a new scan/query, while iterating over a
-        scan/query will ALWAYS result in a new scan/query being executed.
+        Creates the FilterResult that will lazy load the results of the
+        scan/query.
 
         Usage:
+            base_query = engine.query(Model).key(id='foo')
+            query = base_query.consistent.ascending
 
-        base_query = engine.query(Model).key(id='foo')
-        query = base_query.consistent.ascending
+            # Iterate results directly, discarding query metadata
+            for result in query:
+                ...
 
-        # Iterate results directly, discarding query metadata
-        for result in query:
-            ...
-
-        # Save reference to FilterResult instance
-        results = query.all()
-        for result in results:
-            ...
-        print(results.count, results.scanned_count)
+            # Save reference to FilterResult instance
+            results = query.all()
+            for result in results:
+                ...
+            print(results.count, results.scanned_count)
         '''
         if prefetch is None:
             prefetch = self.engine.config["prefetch"]
@@ -234,17 +199,7 @@ class Filter(object):
         return other
 
     def first(self):
-        '''
-        Returns the first result that matches the filter.
-
-        Forces prefetch=0 for the fastest return - continuation tokens will
-        only be followed until a page with at least one result is returned.
-
-        Faster than `Filter.all().first` unless:
-        - prefetch = 0
-        - prefetch > 0 AND first result is on page x, where x % (prefetch) == 0
-        If either is true, Filter.all().first will have comparable performance.
-        '''
+        ''' Returns the first result that matches the filter. '''
         result = self.all(prefetch=0)
         return result.first
 
@@ -301,39 +256,7 @@ class Filter(object):
         '''
         columns must be 'all', 'projected', or a list of `bloop.Column` objects
         '''
-
-        # Rules for select are a bit convoluted, and easy to get wrong.
-        # While it's easy to want to guess at intent -- such as
-        # transforming 'all' with a GSI into 'projected' -- that can
-        # easily result in cases where more or less attributes are returned
-        # than were expected.  Instead, we'll carefully validate the index
-        # projection, the select mode, and the list of attributes requested.
-
-        # Combinations:
-        # key: (select mode, index, index projection)
-        # ('projected', [LSI, GSI]) -> Valid
-        # ('projected', no index) -> Invalid, must specify an index
-
-        # ('all', no index) -> Valid
-        # ('all', LSI, ['all', 'projected', 'select']) -> Valid*
-        # ('all', GSI, 'all') -> Valid
-        # ('all', GSI, 'projected') -> Invalid: projected-only GSI can't
-        #                                       load all attrs
-        # ('all', GSI, 'select') -> Invalid: even if GSI projection contains
-        #                                    all attributes of the table
-
-        # ('specific', no index) -> Valid
-        # ('specific', LSI, ['all', 'projected', 'select']) -> Valid*
-        # ('specific', GSI, 'all') -> Valid
-        # ('specific', GSI, 'projected') -> IFF all attrs in GSI's keys
-        # ('specific', GSI, 'select') -> IFF all attrs in GSI's projected attrs
-
-        # *: Any queries against an LSI whose set of requested attributes are
-        #    a superset of the LSI's projected attributes will incure extra
-        #    reads against the table.  While these are valid, it may be worth
-        #    introducing a config variable to strictly disallow extra reads.
         select = validate_select_mode(columns)
-
         is_gsi = isinstance(self.index, bloop.index.GlobalSecondaryIndex)
         is_lsi = isinstance(self.index, bloop.index.LocalSecondaryIndex)
         strict = self.engine.config["strict"]
@@ -424,7 +347,6 @@ class FilterResult(object):
         self.count = 0
         self.scanned_count = 0
         self._results = []
-
         self._continue = None
         self._complete = False
 
@@ -450,11 +372,6 @@ class FilterResult(object):
                 except StopIteration:
                     # The step above exhausted the results, nothing left
                     break
-
-        # Either:
-        # - filter was already complete
-        # - filter is complete after above stepping
-        # - filter is incomplete but there are some results
         if not self._results:
             raise ValueError("No results found.")
         return self._results[0]

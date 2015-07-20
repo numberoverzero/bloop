@@ -1,4 +1,5 @@
 import bloop.client
+import bloop.exceptions
 import bloop.util
 import botocore
 import copy
@@ -336,7 +337,7 @@ def test_delete_item_condition_failed(User, client, client_error):
         raise client_error('ConditionalCheckFailedException')
     client.client.delete_item = delete_item
 
-    with pytest.raises(bloop.client.ConstraintViolation) as excinfo:
+    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
         client.delete_item(request)
     assert excinfo.value.obj == request
     assert called
@@ -395,7 +396,7 @@ def test_put_item_condition_failed(User, client, client_error):
         raise client_error('ConditionalCheckFailedException')
     client.client.put_item = put_item
 
-    with pytest.raises(bloop.client.ConstraintViolation) as excinfo:
+    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
         client.put_item(request)
     assert excinfo.value.obj == request
     assert called
@@ -454,7 +455,7 @@ def test_update_item_condition_failed(User, client, client_error):
         raise client_error('ConditionalCheckFailedException')
     client.client.update_item = update_item
 
-    with pytest.raises(bloop.client.ConstraintViolation) as excinfo:
+    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
         client.update_item(request)
     assert excinfo.value.obj == request
     assert called

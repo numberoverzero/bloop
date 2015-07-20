@@ -1,4 +1,5 @@
 import bloop.column
+import bloop.exceptions
 import bloop.index
 import bloop.util
 import boto3
@@ -18,13 +19,6 @@ RETRYABLE_ERRORS = [
 ]
 TABLE_MISMATCH = ("Existing table does not match expected fields."
                   "  EXPECTED: {} ACTUAL: {}")
-
-
-class ConstraintViolation(Exception):
-    ''' Thrown when a condition is not met during save/delete '''
-    def __init__(self, message, obj):
-        super().__init__(message)
-        self.obj = obj
 
 
 def default_backoff_func(operation, attempts):
@@ -117,9 +111,7 @@ class Client(object):
         except botocore.exceptions.ClientError as error:
             error_code = error.response['Error']['Code']
             if error_code == 'ConditionalCheckFailedException':
-                raise ConstraintViolation(
-                    "Failed to meet condition during {}: {}".format(
-                        name, item), item)
+                raise bloop.exceptions.ConstraintViolation(name, item)
             else:
                 raise error
 

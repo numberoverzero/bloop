@@ -1,7 +1,7 @@
-from bloop.client import ConstraintViolation
 from bloop.column import Column
 from bloop.condition import Condition
-from bloop.engine import Engine, ObjectsNotFound
+from bloop.engine import Engine
+from bloop.exceptions import ConstraintViolation, NotModified
 from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.types import (
     Boolean, Binary, BinarySet, DateTime, Float, FloatSet, Integer,
@@ -12,7 +12,7 @@ __all__ = [
     'Boolean', 'Binary', 'BinarySet', 'Column', 'Condition',
     'ConstraintViolation', 'DateTime', 'Engine', 'Float', 'FloatSet',
     'GlobalSecondaryIndex', 'Integer', 'IntegerSet', 'List',
-    'LocalSecondaryIndex', 'Map', 'Null', 'ObjectsNotFound', 'String',
+    'LocalSecondaryIndex', 'Map', 'Null', 'NotModified', 'String',
     'StringSet', 'UUID'
 ]
-__version__ = '0.7.1'
+__version__ = '0.7.2'

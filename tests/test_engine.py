@@ -1,5 +1,6 @@
 import bloop
 import bloop.engine
+import bloop.exceptions
 import bloop.tracking
 import bloop.util
 import pytest
@@ -16,10 +17,10 @@ def test_missing_objects(User, engine):
 
     users = [User(id=uuid.uuid4()) for _ in range(3)]
 
-    with pytest.raises(bloop.engine.ObjectsNotFound) as excinfo:
+    with pytest.raises(bloop.exceptions.NotModified) as excinfo:
         engine.load(users)
 
-    assert set(excinfo.value.missing) == set(users)
+    assert set(excinfo.value.objects) == set(users)
 
 
 def test_register_bound_model(User, engine):

@@ -1,5 +1,6 @@
 import bloop.client
 import bloop.condition
+import bloop.exceptions
 import bloop.filter
 import bloop.index
 import bloop.model
@@ -17,13 +18,6 @@ DEFAULT_CONFIG = {
     'persist': 'update',
     'atomic': False
 }
-
-
-class ObjectsNotFound(Exception):
-    ''' Thrown when batch_get fails to find some objects '''
-    def __init__(self, message, objs):
-        super().__init__(message)
-        self.missing = list(objs)
 
 
 def list_of(objs):
@@ -216,8 +210,7 @@ class Engine:
 
         # If there are still objects, they weren't found
         if objs_by_key:
-            raise ObjectsNotFound("Failed to load some objects",
-                                  objs_by_key.values())
+            raise bloop.exceptions.NotModified("load", objs_by_key.values())
 
     def save(self, objs, *, condition=None):
         objs = list_of(objs)

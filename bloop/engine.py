@@ -68,16 +68,6 @@ class Engine:
         self.config = dict(DEFAULT_CONFIG)
         self.config.update(config)
 
-    def __load__(self, model, value):
-        try:
-            return self.type_engine.load(model, value)
-        except declare.DeclareException:
-            if model in self.unbound_models:
-                raise bloop.exceptions.UnboundModel("load", model, None)
-            else:
-                raise ValueError(
-                    "Failed to load unknown model {}".format(model))
-
     def __dump__(self, model, obj):
         ''' Return a dict of the obj in DynamoDB format '''
         try:
@@ -92,6 +82,16 @@ class Engine:
     def __instance__(self, model):
         ''' Return an instance of a given model '''
         return self.__load__(model, {})
+
+    def __load__(self, model, value):
+        try:
+            return self.type_engine.load(model, value)
+        except declare.DeclareException:
+            if model in self.unbound_models:
+                raise bloop.exceptions.UnboundModel("load", model, None)
+            else:
+                raise ValueError(
+                    "Failed to load unknown model {}".format(model))
 
     def __update__(self, obj, attrs, expected):
         bloop.tracking.update(obj, attrs, expected)
@@ -133,6 +133,35 @@ class Engine:
 
             self.unbound_models.remove(model)
             self.models.add(model)
+
+    @contextlib.contextmanager
+    def context(self, **config):
+        '''
+        with engine.context(atomic=True, consistent=True) as atomic:
+            atomic.load(obj)
+            del obj.foo
+            obj.bar += 1
+            atomic.save(obj)
+        '''
+        yield EngineView(self, **config)
+
+    def delete(self, objs, *, condition=None):
+        objs = list_of(objs)
+        rendering = self.config['atomic'] or condition
+        for obj in objs:
+            item = {"TableName": obj.Meta.table_name,
+                    "Key": dump_key(self, obj)}
+            if rendering:
+                renderer = bloop.condition.ConditionRenderer(self)
+                item_condition = bloop.condition.Condition()
+                if self.config['atomic']:
+                    item_condition &= bloop.tracking.atomic_condition(obj)
+                if condition:
+                    item_condition &= condition
+                renderer.render(item_condition, 'condition')
+                item.update(renderer.rendered)
+            self.client.delete_item(item)
+            bloop.tracking.clear(obj)
 
     def load(self, objs, *, consistent=None):
         '''
@@ -208,6 +237,13 @@ class Engine:
         if objs_by_key:
             raise bloop.exceptions.NotModified("load", objs_by_key.values())
 
+    def query(self, obj):
+        if isinstance(obj, bloop.index.Index):
+            model, index = obj.model, obj
+        else:
+            model, index = obj, None
+        return bloop.filter.Query(engine=self, model=model, index=index)
+
     def save(self, objs, *, condition=None):
         objs = list_of(objs)
         atomic = self.config["atomic"]
@@ -242,48 +278,12 @@ class Engine:
             func(item)
             bloop.tracking.update_current(obj, self)
 
-    def delete(self, objs, *, condition=None):
-        objs = list_of(objs)
-        rendering = self.config['atomic'] or condition
-        for obj in objs:
-            item = {"TableName": obj.Meta.table_name,
-                    "Key": dump_key(self, obj)}
-            if rendering:
-                renderer = bloop.condition.ConditionRenderer(self)
-                item_condition = bloop.condition.Condition()
-                if self.config['atomic']:
-                    item_condition &= bloop.tracking.atomic_condition(obj)
-                if condition:
-                    item_condition &= condition
-                renderer.render(item_condition, 'condition')
-                item.update(renderer.rendered)
-            self.client.delete_item(item)
-            bloop.tracking.clear(obj)
-
-    def query(self, obj):
-        if isinstance(obj, bloop.index.Index):
-            model, index = obj.model, obj
-        else:
-            model, index = obj, None
-        return bloop.filter.Query(engine=self, model=model, index=index)
-
     def scan(self, obj):
         if isinstance(obj, bloop.index.Index):
                 model, index = obj.model, obj
         else:
             model, index = obj, None
         return bloop.filter.Scan(engine=self, model=model, index=index)
-
-    @contextlib.contextmanager
-    def context(self, **config):
-        '''
-        with engine.context(atomic=True, consistent=True) as atomic:
-            atomic.load(obj)
-            del obj.foo
-            obj.bar += 1
-            atomic.save(obj)
-        '''
-        yield EngineView(self, **config)
 
 
 class EngineView(Engine):
@@ -295,7 +295,4 @@ class EngineView(Engine):
         self.type_engine = engine.type_engine
 
     def bind(self):
-        raise RuntimeError("EngineViews can't modify engine types or bindings")
-
-    def register(self, model):
         raise RuntimeError("EngineViews can't modify engine types or bindings")

@@ -508,7 +508,3 @@ def test_context(User, engine):
     with pytest.raises(RuntimeError):
         with engine.context() as eng:
             eng.bind()
-
-    with pytest.raises(RuntimeError):
-        with engine.context() as eng:
-            eng.register(User)

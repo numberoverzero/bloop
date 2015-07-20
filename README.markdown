@@ -386,7 +386,8 @@ with engine.context(persist='overwrite', atomic=True) as tmp:
 
 # Atomic overwrite save
 {
-'ConditionExpression': '(((((#n0 = :v1) AND (attribute_not_exists(#n2))) AND (#n3 = :v4)) AND (#n5 = :v6)) AND (attribute_not_exists(#n7)))',
+'ConditionExpression':
+    '(((((#n0 = :v1) AND (attribute_not_exists(#n2))) AND (#n3 = :v4)) AND (#n5 = :v6)) AND (attribute_not_exists(#n7)))',
 'ExpressionAttributeNames': {
     '#n2': 'email', '#n5': 'name', '#n0': 'date',
     '#n7': 'not_projected', '#n3': 'joined'},
@@ -424,19 +425,19 @@ now = arrow.get('2015-07-20T09:05:57.463255+00:00')
 
 # Base query
 q = engine.query(Model).key((Model.name == name) & (Model.date == now))
-q.first()
+list(q)
 
 # Descending, Consistent
 q = q.descending.consistent
-q.first()
+list(q)
 
 # Filter non-key condition
 q = q.filter(Model.joined == "today")
-q.first()
+list(q)
 
 # Select non-key attributes
 q = q.select([Model.not_projected])
-q.first()
+list(q)
 ```
 
 ```python

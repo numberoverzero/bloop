@@ -101,26 +101,24 @@ def BaseModel(engine):
             Meta.write_units = getattr(Meta, "write_units", 1)
             Meta.read_units = getattr(Meta, "read_units", 1)
 
-            # column.model_name is set by `declare.ModelMetaclass.__new__`
-
-            # Load columns, indexes, hash_key, range_key
-            # ----------------------------------------------------------
             # These are sets instead of lists, because set uses __hash__
             # while some list operations uses __eq__ which will break
             # with the ComparisonMixin
-            columns = set(filter(lambda f: isinstance(f, bloop.column.Column),
-                                 Meta.fields))
-            indexes = set(filter(lambda f: isinstance(f, bloop.index.Index),
-                                 Meta.fields))
+            Meta.columns = set(filter(
+                lambda f: isinstance(f, bloop.column.Column),
+                Meta.fields))
+            Meta.indexes = set(filter(
+                lambda f: isinstance(f, bloop.index.Index),
+                Meta.fields))
 
-            Meta.indexes = indexes
-            Meta.columns = columns
-            Meta.columns_by_model_name = declare.index(columns, 'model_name')
-            Meta.columns_by_dynamo_name = declare.index(columns, 'dynamo_name')
+            Meta.columns_by_model_name = declare.index(
+                Meta.columns, 'model_name')
+            Meta.columns_by_dynamo_name = declare.index(
+                Meta.columns, 'dynamo_name')
 
             Meta.hash_key = None
             Meta.range_key = None
-            for column in columns:
+            for column in Meta.columns:
                 if column.hash_key:
                     if Meta.hash_key:
                         raise ValueError("Model hash_key over-specified")
@@ -130,12 +128,11 @@ def BaseModel(engine):
                         raise ValueError("Model range_key over-specified")
                     Meta.range_key = column
 
-            # Can't do this as part of the above loop since we index after
-            # mutating the columns set.  Look up the current hash key
-            # -- which is specified by model_name, not dynamo_name --
-            # in indexed columns and the relate proper `bloop.Column` object
+            # Look up the current hash key -- which is specified by
+            # model_name, not dynamo_name -- in indexed columns and relate
+            # the proper `bloop.Column` object
             cols = Meta.columns_by_model_name
-            for index in indexes:
+            for index in Meta.indexes:
                 index.model = model
                 if isinstance(index, bloop.index.GlobalSecondaryIndex):
                     index.hash_key = cols[index.hash_key]
@@ -153,13 +150,10 @@ def BaseModel(engine):
                 if index.range_key:
                     index.range_key = cols[index.range_key]
 
-                # Determine projected attributes for the index, including
-                # table hash/range keys, index hash/range keys, and any
-                # non-key projected attributes.
                 projected = index.projection_attributes = set()
 
                 if index.projection == "ALL":
-                    projected.update(columns)
+                    projected.update(Meta.columns)
                 elif index.projection == "KEYS_ONLY":
                     keys = (Meta.hash_key, Meta.range_key,
                             index.hash_key, index.range_key)
@@ -176,10 +170,9 @@ def BaseModel(engine):
                     index.projection = "INCLUDE"
 
             # Entry point for model population. By default this is the
-            # model class. Custom subclasses of the engine's
-            # base model should specify the Meta attr `bloop_init`,
-            # which should be a function taking a **kwarg of name:value
-            # pairs corresponding to modeled columns.
+            # model class. Custom models can specify the Meta
+            # attr `bloop_init`, which should be a function taking a
+            # **kwarg of name:value pairs corresponding to modeled columns.
             Meta.bloop_init = getattr(Meta, "bloop_init", model)
             Meta.bloop_engine = engine
 

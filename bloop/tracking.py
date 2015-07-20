@@ -70,7 +70,7 @@ def _get_current(obj, engine):
     Returns a dict of {dynamo_name: value} for a given object.  Attributes not
     set on the object are not included.
     """
-    attrs = engine.__dump__(obj.__class__, obj)
+    attrs = engine._dump(obj.__class__, obj)
     return attrs
 
 

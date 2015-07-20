@@ -30,7 +30,7 @@ DYNAMODB_CONTEXT = decimal.Context(
 
 
 class Type(declare.TypeDefinition):
-    def __load__(self, value):
+    def _load(self, value):
         """
         take a {type: value} dictionary from dynamo and return a python value
         """
@@ -45,7 +45,7 @@ class Type(declare.TypeDefinition):
         backing_type = next(iter(value.keys()))
         return backing_type == self.backing_type
 
-    def __dump__(self, value):
+    def _dump(self, value):
         """
         dump a python value to a {type: value} dictionary for dynamo storage
         """
@@ -300,13 +300,13 @@ class DefaultSerializer:
         """ value is a dictionary {dynamo_type: value} """
         for typedef in self.types:
             if typedef.can_load(value):
-                return typedef.__load__(value)
+                return typedef._load(value)
         raise TypeError("Don't know how to load " + str(value))
 
     def dump(self, value):
         for typedef in self.types:
             if typedef.can_dump(value):
-                return typedef.__dump__(value)
+                return typedef._dump(value)
         raise TypeError("Don't know how to dump " + str(value))
 
 # Have to set default serializers for Map, List after all Types have been

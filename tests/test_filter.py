@@ -305,7 +305,7 @@ def test_count(engine, User):
         return {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine.__dump__(User, item)]
+            "Items": [engine._dump(User, item)]
         }
     engine.client.query = respond
 
@@ -327,7 +327,7 @@ def test_first(engine, User):
         return {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine.__dump__(User, item)]
+            "Items": [engine._dump(User, item)]
         }
     engine.client.scan = respond
 
@@ -349,7 +349,7 @@ def test_iter(engine, User):
         return {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine.__dump__(User, item)]
+            "Items": [engine._dump(User, item)]
         }
     engine.client.scan = respond
 
@@ -461,7 +461,7 @@ def test_first_no_prefetch(User, engine):
         return {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine.__dump__(User, item)],
+            "Items": [engine._dump(User, item)],
             "LastEvaluatedKey": continue_tokens[token]
         }
     engine.client.query = respond
@@ -523,7 +523,7 @@ def test_prefetch_all(User, engine):
         result = {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine.__dump__(User, item)],
+            "Items": [engine._dump(User, item)],
             "LastEvaluatedKey": continue_tokens[token]
         }
         next_token = continue_tokens.get(token, None)
@@ -571,7 +571,7 @@ def test_prefetch_first(User, engine):
         result = {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine.__dump__(User, item)],
+            "Items": [engine._dump(User, item)],
             "LastEvaluatedKey": continue_tokens[token]
         }
         next_token = continue_tokens.get(token, None)
@@ -614,7 +614,7 @@ def test_prefetch_iter(User, engine):
         result = {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine.__dump__(User, item)],
+            "Items": [engine._dump(User, item)],
             "LastEvaluatedKey": continue_tokens[token]
         }
         next_token = continue_tokens.get(token, None)

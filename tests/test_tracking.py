@@ -45,7 +45,7 @@ def test_update_set(User, engine):
     bloop.tracking.clear(user)
     assert "age" not in user.__tracking__
 
-    age = engine.__dump__(User, user)["age"]
+    age = engine._dump(User, user)["age"]
     expected = {"N": "4"}
 
     # Update with no fields, but expect age to be present

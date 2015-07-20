@@ -33,8 +33,8 @@ def test_load_dump_best_effort():
         python_type = float
 
     typedef = MyType()
-    assert typedef.__load__({"NOT_FOO": "not_a_float"}) == "not_a_float"
-    assert typedef.__dump__("not_a_float") == {"FOO": "not_a_float"}
+    assert typedef._load({"NOT_FOO": "not_a_float"}) == "not_a_float"
+    assert typedef._dump("not_a_float") == {"FOO": "not_a_float"}
 
 
 def test_string():

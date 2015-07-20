@@ -109,12 +109,12 @@ def test_load_dump_unbound(UnboundUser, engine):
                        "id": {"S": str(user_id)}}]}
 
     with pytest.raises(bloop.exceptions.UnboundModel) as excinfo:
-        engine.__load__(UnboundUser, value)
+        engine._load(UnboundUser, value)
     assert excinfo.value.model is UnboundUser
     assert excinfo.value.obj is None
 
     with pytest.raises(bloop.exceptions.UnboundModel) as excinfo:
-        engine.__dump__(UnboundUser, user)
+        engine._dump(UnboundUser, user)
     assert excinfo.value.model is UnboundUser
     assert excinfo.value.obj is user
 
@@ -129,9 +129,9 @@ def test_load_dump_unknown(engine):
                        "id": {"S": str(user_id)}}]}
 
     with pytest.raises(ValueError):
-        engine.__load__(NotModeled, value)
+        engine._load(NotModeled, value)
     with pytest.raises(ValueError):
-        engine.__dump__(NotModeled, obj)
+        engine._dump(NotModeled, obj)
 
 
 def test_save_unknown_mode(engine, User):

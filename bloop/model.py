@@ -30,15 +30,15 @@ class __BaseModel(object):
                 setattr(self, column.model_name, value)
 
     @classmethod
-    def __load__(cls, attrs):
+    def _load(cls, attrs):
         """ dict -> obj """
         obj = cls.Meta.bloop_init()
         # Expect all columns on load
-        cls.Meta.bloop_engine.__update__(obj, attrs, cls.Meta.columns)
+        cls.Meta.bloop_engine._update(obj, attrs, cls.Meta.columns)
         return obj
 
     @classmethod
-    def __dump__(cls, obj):
+    def _dump(cls, obj):
         """ obj -> dict """
         attrs = {}
         engine = cls.Meta.bloop_engine.type_engine

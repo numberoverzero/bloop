@@ -31,7 +31,7 @@ class ConditionRenderer:
         self.__ref_index += 1
 
         if not dumped:
-            value = self.engine.__dump__(column.typedef, value)
+            value = self.engine._dump(column.typedef, value)
         self.attr_values[ref] = value
 
         return ref

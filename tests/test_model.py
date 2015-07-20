@@ -44,7 +44,7 @@ def test_load_default_init(engine, local_bind):
         "extra_field": {"N": "0.125"}
     }
 
-    loaded_user = CustomUser.__load__(user)
+    loaded_user = CustomUser._load(user)
     assert loader_calls == 1
     assert loaded_user.id == user_id
     assert loaded_user.admin is False
@@ -54,7 +54,7 @@ def test_load_default_init(engine, local_bind):
 
 
 def test_load_dump(User):
-    """ __load__ and __dump__ should be symmetric """
+    """ _load and _dump should be symmetric """
 
     user_id = uuid.uuid4()
     user = User(id=user_id, name="name", email="user@domain.com", age=25)
@@ -65,8 +65,8 @@ def test_load_dump(User):
         "email": {"S": "user@domain.com"}
     }
 
-    assert User.__load__(serialized_user) == user
-    assert User.__dump__(user) == serialized_user
+    assert User._load(serialized_user) == user
+    assert User._dump(user) == serialized_user
 
 
 def test_equality(User):

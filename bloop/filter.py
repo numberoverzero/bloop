@@ -433,7 +433,7 @@ class FilterResult(object):
 
         results = response.get("Items", [])
         for result in results:
-            obj = self.engine.__instance__(self.model)
-            self.engine.__update__(obj, result, self.expected)
+            obj = self.engine._instance(self.model)
+            self.engine._update(obj, result, self.expected)
             self._results.append(obj)
             yield obj

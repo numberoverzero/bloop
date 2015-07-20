@@ -46,10 +46,10 @@ def dump_key(engine, obj):
     hash_key, range_key = meta.hash_key, meta.range_key
     hash_value = getattr(obj, hash_key.model_name)
     key = {
-        hash_key.dynamo_name: engine.__dump__(hash_key.typedef, hash_value)}
+        hash_key.dynamo_name: engine._dump(hash_key.typedef, hash_value)}
     if range_key:
         range_value = getattr(obj, range_key.model_name)
-        key[range_key.dynamo_name] = engine.__dump__(
+        key[range_key.dynamo_name] = engine._dump(
             range_key.typedef, range_value)
     return key
 
@@ -68,7 +68,7 @@ class Engine:
         self.config = dict(DEFAULT_CONFIG)
         self.config.update(config)
 
-    def __dump__(self, model, obj):
+    def _dump(self, model, obj):
         """ Return a dict of the obj in DynamoDB format """
         try:
             return self.type_engine.dump(model, obj)
@@ -79,11 +79,11 @@ class Engine:
                 raise ValueError(
                     "Failed to dump unknown model {}".format(model))
 
-    def __instance__(self, model):
+    def _instance(self, model):
         """ Return an instance of a given model """
-        return self.__load__(model, {})
+        return self._load(model, {})
 
-    def __load__(self, model, value):
+    def _load(self, model, value):
         try:
             return self.type_engine.load(model, value)
         except declare.DeclareException:
@@ -93,7 +93,7 @@ class Engine:
                 raise ValueError(
                     "Failed to load unknown model {}".format(model))
 
-    def __update__(self, obj, attrs, expected):
+    def _update(self, obj, attrs, expected):
         bloop.tracking.update(obj, attrs, expected)
         for column in expected:
             value = attrs.get(column.dynamo_name, MISSING)
@@ -107,7 +107,7 @@ class Engine:
                     pass
             # Load the value through the column's typedef into the obj
             else:
-                value = self.__load__(column.typedef, value)
+                value = self._load(column.typedef, value)
                 setattr(obj, column.model_name, value)
 
     def bind(self):
@@ -231,7 +231,7 @@ class Engine:
                 index = (table_name,
                          tuple(value_of(item[n]) for n in key_shape))
                 obj = objs_by_key.pop(index)
-                self.__update__(obj, item, obj.Meta.columns)
+                self._update(obj, item, obj.Meta.columns)
 
         # If there are still objects, they weren't found
         if objs_by_key:
@@ -258,7 +258,7 @@ class Engine:
         for obj in objs:
             if mode == "overwrite":
                 item = {"TableName": obj.Meta.table_name,
-                        "Item": self.__dump__(obj.__class__, obj)}
+                        "Item": self._dump(obj.__class__, obj)}
             if mode == "update":
                 item = {"TableName": obj.Meta.table_name,
                         "Key": dump_key(self, obj)}

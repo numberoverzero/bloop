@@ -1,5 +1,5 @@
 """
-Combined source from the README's "Custom Object Loading" section.
+Combined source from the README "Custom Object Loading" section.
 """
 from bloop import (Engine, Column, DateTime, Boolean, String, UUID)
 import arrow

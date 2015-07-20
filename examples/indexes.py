@@ -1,5 +1,5 @@
 """
-Combined source from the README's "Local and Global Secondary Indexes" section.
+Combined source from the README "Local and Global Secondary Indexes" section.
 """
 from bloop import (Engine, Column, DateTime, GlobalSecondaryIndex,
                    LocalSecondaryIndex, Integer, String, UUID)
@@ -14,12 +14,12 @@ class IndexPost(engine.model):
     date = Column(DateTime)
     views = Column(Integer)
 
-    by_user = GlobalSecondaryIndex(hash_key='user',
-                                   projection='keys_only',
+    by_user = GlobalSecondaryIndex(hash_key="user",
+                                   projection="keys_only",
                                    write_units=1, read_units=10)
 
-    by_date = LocalSecondaryIndex(range_key='date',
-                                  projection=['views'])
+    by_date = LocalSecondaryIndex(range_key="date",
+                                  projection=["views"])
 engine.bind()
 
 

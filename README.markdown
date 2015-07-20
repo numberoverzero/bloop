@@ -192,6 +192,9 @@ def delete_old_profile(profile_id):
             pass
 ```
 
+If a condition is passed with multiple objects, it will be applied to each
+object individually (there are no batch operations that support conditions).
+
 ### atomic
 
 By constructing a set of conditions for all attributes of an object using the
@@ -249,3 +252,46 @@ def delete_old_profile(profile_id):
             # loaded it.
             pass
 ```
+
+### update vs overwrite
+
+By default, bloop uses `UpdateItem` when you call `engine.save`.  This can be
+changed through the `engine.config['persist']` setting -- either "update" or
+"overwrite".
+
+overwrite uses `PutItem`, which will overwrite **all** attributes of the
+object - if no value is provided, the existing value will simply be deleted.
+
+update uses `UpdateItem` and will only overwrite attributes that have changed
+since they were last loaded from a `load`, `query`, or `scan`.  Setting a value
+to `None` will not delete it, as None may have its own meaning for the type.
+Instead, you should explicitly `del obj.attribute` to remove it on next update.
+
+Most users will want to use "update" unless intentionally overwriting existing
+values with (possibly) partial results.  Remember that queries on an index may
+not return all attributes, depending on the index projection.  For example,
+loading from a GlobalSecondaryIndex with projection 'keys_only' and immediately
+saving it with overwrite will immediately blank out all non-key attributes, as
+they were not loaded into the object from the query.
+
+#### update overhead
+
+Creating the diff for an object when saving with "update" requires tracking the
+values last loaded against the current values.  There are many ways to
+accomplish this - commonly, the `Column` equivalent in an ORM will set a flag
+when the column value is `set` or `del'd` to indicate its mutation.  Tracking
+nested changes (eg. dicts and custom classes) require even more work.
+
+Instead, bloop tracks the values loaded from a call, along with the expected
+columns that such a load **should** have seen.  If a column was expected but
+not loaded, its value is empty in DynamoDB.  If it was expected and seen,
+the value is tracked as having been seen.  When creating a diff, any value that
+was seen but is no longer in the object (`del obj.attr`) is added to the set
+of DELETE signals for update.  Any value that was seen and is not equal to the
+current, or that was not seen and now has a value, is added tot he set of SET
+signals for update.
+
+In this way, a small amount of overhead is added to load an object from a
+DynamoDB response; otherwise, there is no performance impact.  Space is
+minimally impacted, as the dumped (serialized-ish) representation of values is
+copied when tracking, which is usually very small (even for arbitrary types).

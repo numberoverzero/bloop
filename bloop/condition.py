@@ -7,8 +7,6 @@ EXPRESSION_KEYS = {
     "filter": "FilterExpression",
     "key": "KeyConditionExpression"
 }
-ATTR_NAMES = "ExpressionAttributeNames"
-ATTR_VALUES = "ExpressionAttributeValues"
 
 
 class ConditionRenderer:
@@ -86,9 +84,9 @@ class ConditionRenderer:
     def rendered(self):
         expressions = dict(self.expressions)
         if self.attr_names:
-            expressions[ATTR_NAMES] = self.attr_names
+            expressions['ExpressionAttributeNames'] = self.attr_names
         if self.attr_values:
-            expressions[ATTR_VALUES] = self.attr_values
+            expressions['ExpressionAttributeValues'] = self.attr_values
         return expressions
 
 

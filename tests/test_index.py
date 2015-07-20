@@ -4,19 +4,19 @@ import pytest
 
 def test_dynamo_name():
     """ Returns model name unless dynamo name is specified """
-    index = bloop.index.Index(bloop.Integer)
+    index = bloop.index._Index(bloop.Integer)
     # Normally set when a class is defined
     index.model_name = "foo"
     assert index.dynamo_name == "foo"
 
-    index = bloop.index.Index(bloop.Integer, name="foo")
+    index = bloop.index._Index(bloop.Integer, name="foo")
     index.model_name = "bar"
     assert index.dynamo_name == "foo"
 
 
 def test_projection_validation():
     """ should be all, keys_only, or a list of column model names """
-    Index = bloop.index.Index
+    Index = bloop.index._Index
 
     with pytest.raises(ValueError):
         Index(projection="foo")

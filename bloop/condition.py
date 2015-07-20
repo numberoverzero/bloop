@@ -90,7 +90,7 @@ class ConditionRenderer:
         return expressions
 
 
-class BaseCondition:
+class _BaseCondition:
     dumped = False
 
     def __and__(self, other):
@@ -109,7 +109,7 @@ class BaseCondition:
         return 1
 
 
-class Condition(BaseCondition):
+class Condition(_BaseCondition):
     """
     Empty condition that can be used as an initial value for iteratively
     building conditions.
@@ -142,7 +142,7 @@ class Condition(BaseCondition):
         raise RuntimeError("Can't render empty condition")
 
 
-class MultiCondition(BaseCondition):
+class MultiCondition(_BaseCondition):
     def __init__(self, *conditions):
         self.conditions = list(conditions)
 
@@ -180,7 +180,7 @@ class Or(MultiCondition):
         return self
 
 
-class Not(BaseCondition):
+class Not(_BaseCondition):
     def __init__(self, condition):
         self.condition = condition
 
@@ -195,7 +195,7 @@ class Not(BaseCondition):
         return "(NOT {})".format(self.condition.render(renderer))
 
 
-class Comparison(BaseCondition):
+class Comparison(_BaseCondition):
     comparator_strings = {
         operator.eq: "=",
         operator.ne: "<>",
@@ -225,7 +225,7 @@ class Comparison(BaseCondition):
         return "({} {} {})".format(nref, comparator, vref)
 
 
-class AttributeExists(BaseCondition):
+class AttributeExists(_BaseCondition):
     def __init__(self, column, negate):
         self.column = column
         self.negate = negate
@@ -241,7 +241,7 @@ class AttributeExists(BaseCondition):
         return "({}({}))".format(name, nref)
 
 
-class BeginsWith(BaseCondition):
+class BeginsWith(_BaseCondition):
     def __init__(self, column, value):
         self.column = column
         self.value = value
@@ -256,7 +256,7 @@ class BeginsWith(BaseCondition):
         return "(begins_with({}, {}))".format(nref, vref)
 
 
-class Contains(BaseCondition):
+class Contains(_BaseCondition):
     def __init__(self, column, value):
         self.column = column
         self.value = value
@@ -271,7 +271,7 @@ class Contains(BaseCondition):
         return "(contains({}, {}))".format(nref, vref)
 
 
-class Between(BaseCondition):
+class Between(_BaseCondition):
     def __init__(self, column, lower, upper):
         self.column = column
         self.lower = lower
@@ -292,7 +292,7 @@ class Between(BaseCondition):
             nref, vref_lower, vref_upper)
 
 
-class In(BaseCondition):
+class In(_BaseCondition):
     def __init__(self, column, values):
         self.column = column
         self.values = values

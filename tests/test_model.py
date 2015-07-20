@@ -216,7 +216,7 @@ def test_abstract_index(engine):
         class Model(engine.model):
             id = Column(UUID, hash_key=True)
             another = Column(UUID)
-            by_another = bloop.index.Index(hash_key="another")
+            by_another = bloop.index._Index(hash_key="another")
 
 
 def test_index_projections(engine):

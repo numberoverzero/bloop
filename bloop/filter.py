@@ -11,12 +11,12 @@ SELECT_MODES = {
 }
 
 
-def consume(iter):
+def _consume(iter):
     for _ in iter:
         pass
 
 
-def validate_key_condition(condition):
+def _validate_key_condition(condition):
     if isinstance(condition, (bloop.condition.BeginsWith,
                               bloop.condition.Between)):
         return True
@@ -27,7 +27,7 @@ def validate_key_condition(condition):
     raise ValueError("Invalid KeyCondition {}".format(condition))
 
 
-def validate_prefetch(value):
+def _validate_prefetch(value):
     invalid = ValueError("prefetch must be 'all' or a non-negative int")
     if value != "all":
         try:
@@ -40,7 +40,7 @@ def validate_prefetch(value):
     return value
 
 
-def validate_select_mode(select):
+def _validate_select_mode(select):
     invalid = ValueError("Must specify 'all', 'projected', 'count', or"
                          " a list of column objects to select")
     if isinstance(select, str):
@@ -60,7 +60,7 @@ def validate_select_mode(select):
     return select
 
 
-class Filter(object):
+class _Filter(object):
     """
     Base class for Scan and Query.
     """
@@ -227,7 +227,7 @@ class Filter(object):
             # KeyConditions can only use the following:
             # EQ | LE | LT | GE | GT | BEGINS_WITH | BETWEEN
             for subcond in condition.conditions:
-                validate_key_condition(subcond)
+                _validate_key_condition(subcond)
 
             columns = set(subcond.column for subcond in condition.conditions)
             # Duplicate column in AND
@@ -244,7 +244,7 @@ class Filter(object):
 
         # Simply validate all other conditions
         else:
-            validate_key_condition(condition)
+            _validate_key_condition(condition)
             if condition.column is not hash_column:
                 raise ValueError("Must specify a hash key")
 
@@ -256,7 +256,7 @@ class Filter(object):
         """
         columns must be "all", "projected", or a list of `bloop.Column` objects
         """
-        select = validate_select_mode(columns)
+        select = _validate_select_mode(columns)
         is_gsi = isinstance(self.index, bloop.index.GlobalSecondaryIndex)
         is_lsi = isinstance(self.index, bloop.index.LocalSecondaryIndex)
         strict = self.engine.config["strict"]
@@ -311,7 +311,7 @@ class Filter(object):
         return iter(self.all())
 
 
-class Query(Filter):
+class Query(_Filter):
     filter_type = "query"
 
     def _generate_request(self, renderer):
@@ -326,7 +326,7 @@ class Query(Filter):
         return request
 
 
-class Scan(Filter):
+class Scan(_Filter):
     filter_type = "scan"
 
 
@@ -338,7 +338,7 @@ class FilterResult(object):
     """
     def __init__(self, prefetch, call, request, engine, model, expected):
         self._call = call
-        self._prefetch = validate_prefetch(prefetch)
+        self._prefetch = _validate_prefetch(prefetch)
         self.request = request
         self.engine = engine
         self.model = model
@@ -352,7 +352,7 @@ class FilterResult(object):
 
         # Kick off the full execution
         if prefetch == "all":
-            consume(self)
+            _consume(self)
 
     @property
     def complete(self):
@@ -389,9 +389,9 @@ class FilterResult(object):
         # Fully exhaust the filter before returning an iterator
         elif self._prefetch == "all":
             # Give self._continue a chance to be not None
-            consume(self._step())
+            _consume(self._step())
             while self._continue:
-                consume(self._step())
+                _consume(self._step())
             self._complete = True
             return iter(self.results)
         # Lazy load, prefetching as necessary

@@ -3,7 +3,7 @@ import declare
 import operator
 
 
-class ComparisonMixin(object):
+class _ComparisonMixin(object):
     def __hash__(self):
         # With single inheritance this looks stupid, but as a Mixin this
         # ensures we kick hashing back to the other base class so things
@@ -63,7 +63,7 @@ class ComparisonMixin(object):
         return bloop.condition.Contains(self, value)
 
 
-class Column(declare.Field, ComparisonMixin):
+class Column(declare.Field, _ComparisonMixin):
     def __init__(self, *args, hash_key=None, range_key=None,
                  name=None, **kwargs):
         self.hash_key = hash_key

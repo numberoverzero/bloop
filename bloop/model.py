@@ -5,7 +5,7 @@ import declare
 MISSING = bloop.util.Sentinel("MISSING")
 
 
-class __BaseModel(object):
+class _BaseModel(object):
     """
     DO NOT SUBCLASS DIRECTLY.
 
@@ -108,7 +108,7 @@ def BaseModel(engine):
                 lambda f: isinstance(f, bloop.column.Column),
                 Meta.fields))
             Meta.indexes = set(filter(
-                lambda f: isinstance(f, bloop.index.Index),
+                lambda f: isinstance(f, bloop.index._Index),
                 Meta.fields))
 
             Meta.columns_by_model_name = declare.index(
@@ -183,4 +183,4 @@ def BaseModel(engine):
             if engine.model:
                 engine.unbound_models.add(model)
             return model
-    return ModelMetaclass("Model", (__BaseModel,), {})
+    return ModelMetaclass("Model", (_BaseModel,), {})

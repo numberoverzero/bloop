@@ -188,7 +188,7 @@ class Binary(Type):
         return base64.b64encode(value).decode("utf-8")
 
 
-def set_type(typename, typedef, dynamo_type):
+def _set_type(typename, typedef, dynamo_type):
     class Set(Type):
         """ Adapter for sets of objects """
         python_type = collections.abc.Set
@@ -214,10 +214,10 @@ def set_type(typename, typedef, dynamo_type):
     return type(typename, (Set,), {})
 
 
-StringSet = set_type("StringSet", String, STRING_SET)
-FloatSet = set_type("FloatSet", Float, NUMBER_SET)
-IntegerSet = set_type("IntegerSet", Integer, NUMBER_SET)
-BinarySet = set_type("BinarySet", Binary, BINARY_SET)
+StringSet = _set_type("StringSet", String, STRING_SET)
+FloatSet = _set_type("FloatSet", Float, NUMBER_SET)
+IntegerSet = _set_type("IntegerSet", Integer, NUMBER_SET)
+BinarySet = _set_type("BinarySet", Binary, BINARY_SET)
 
 
 class Null(Type):

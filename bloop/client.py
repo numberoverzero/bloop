@@ -9,7 +9,7 @@ import functools
 import time
 
 
-TableStatus = enum.Enum("TableStatus", ["Busy", "Ready"])
+TABLE_STATUS = enum.Enum("TABLE_STATUS", ["Busy", "Ready"])
 DEFAULT_BACKOFF_COEFF = 50.0
 DEFAULT_MAX_ATTEMPTS = 4
 MAX_BATCH_SIZE = 25
@@ -19,7 +19,7 @@ RETRYABLE_ERRORS = [
 ]
 
 
-def default_backoff_func(operation, attempts):
+def _default_backoff_func(operation, attempts):
     """
     Exponential backoff helper.
 
@@ -31,7 +31,7 @@ def default_backoff_func(operation, attempts):
     return (DEFAULT_BACKOFF_COEFF * (2 ** attempts)) / 1000.0
 
 
-def partition_batch_get_input(batch_size, items):
+def _partition_batch_get_input(batch_size, items):
     """ Takes a batch_get input and partitions into 25 object chunks """
     chunk = {}
     count = 0
@@ -67,7 +67,7 @@ class Client(object):
         """
         # Fall back to the global session
         self.client = (session or boto3).client("dynamodb")
-        self.backoff_func = backoff_func or default_backoff_func
+        self.backoff_func = backoff_func or _default_backoff_func
         self.batch_size = batch_size
 
     def _call_with_retries(self, func, *args, **kwargs):
@@ -125,7 +125,7 @@ class Client(object):
         response = {}
         get_batch = functools.partial(self._call_with_retries,
                                       self.client.batch_get_item)
-        request_batches = partition_batch_get_input(self.batch_size, items)
+        request_batches = _partition_batch_get_input(self.batch_size, items)
 
         for request_batch in request_batches:
             # After the first call, request_batch is the
@@ -215,8 +215,8 @@ class Client(object):
         doesn't match expected
         """
         expected = table_for_model(model)
-        status = TableStatus.Busy
-        while status is TableStatus.Busy:
+        status = TABLE_STATUS.Busy
+        while status is TABLE_STATUS.Busy:
             actual = self.describe_table(model)
             status = table_status(actual)
         if bloop.util.ordered(actual) != bloop.util.ordered(expected):
@@ -345,10 +345,10 @@ def table_status(table):
 
     mutates table - pops status entries
     """
-    status = TableStatus.Ready
+    status = TABLE_STATUS.Ready
     if table.pop("TableStatus", "ACTIVE") != "ACTIVE":
-        status = TableStatus.Busy
+        status = TABLE_STATUS.Busy
     for index in table.get("GlobalSecondaryIndexes", []):
         if index.pop("IndexStatus", "ACTIVE") != "ACTIVE":
-            status = TableStatus.Busy
+            status = TABLE_STATUS.Busy
     return status

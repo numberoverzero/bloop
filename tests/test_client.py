@@ -212,11 +212,11 @@ def test_default_backoff():
     durations = [(50.0 * (2 ** x)) / 1000.0 for x in attempts]
 
     for (attempts, expected) in zip(attempts, durations):
-        actual = bloop.client.default_backoff_func(operation, attempts)
+        actual = bloop.client._default_backoff_func(operation, attempts)
         assert actual == expected
 
     with pytest.raises(RuntimeError):
-        bloop.client.default_backoff_func(
+        bloop.client._default_backoff_func(
             operation, bloop.client.DEFAULT_MAX_ATTEMPTS)
 
 

@@ -2,7 +2,7 @@ import collections.abc
 import declare
 
 
-def validate_projection(projection):
+def _validate_projection(projection):
     invalid = ValueError("Index projections must be either 'keys_only', 'all',"
                          " or an iterable of model attributes to include.")
     # String check first since it is also an Iterable
@@ -20,7 +20,7 @@ def validate_projection(projection):
     return projection
 
 
-class Index(declare.Field):
+class _Index(declare.Field):
     def __init__(self, *args, hash_key=None, range_key=None,
                  name=None, projection="KEYS_ONLY", **kwargs):
         self.hash_key = hash_key
@@ -29,7 +29,7 @@ class Index(declare.Field):
         super().__init__(*args, **kwargs)
 
         # projection_attributes will be set up by `bloop.model.ModelMetaclass`
-        self.projection = validate_projection(projection)
+        self.projection = _validate_projection(projection)
 
     @property
     def dynamo_name(self):
@@ -38,7 +38,7 @@ class Index(declare.Field):
         return self._dynamo_name
 
 
-class GlobalSecondaryIndex(Index):
+class GlobalSecondaryIndex(_Index):
     def __init__(self, *args, write_units=1, read_units=1, **kwargs):
         if "hash_key" not in kwargs:
             raise ValueError(
@@ -48,7 +48,7 @@ class GlobalSecondaryIndex(Index):
         self.read_units = read_units
 
 
-class LocalSecondaryIndex(Index):
+class LocalSecondaryIndex(_Index):
     """ LSIs don"t have individual read/write units """
     def __init__(self, *args, **kwargs):
         # Hash key MUST be the table hash, pop any other values

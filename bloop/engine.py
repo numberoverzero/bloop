@@ -20,7 +20,7 @@ DEFAULT_CONFIG = {
 }
 
 
-def list_of(objs):
+def _list_of(objs):
     """ wrap single elements in a list """
     if isinstance(objs, str):  # pragma: no cover
         return [objs]
@@ -30,12 +30,12 @@ def list_of(objs):
         return [objs]
 
 
-def value_of(column):
-    """ value_of({"S": "Space Invaders"}) -> "Space Invaders" """
+def _value_of(column):
+    """ _value_of({"S": "Space Invaders"}) -> "Space Invaders" """
     return next(iter(column.values()))
 
 
-def dump_key(engine, obj):
+def _dump_key(engine, obj):
     """
     dump the hash (and range, if there is one) key(s) of an object into
     a dynamo-friendly format.
@@ -146,11 +146,11 @@ class Engine:
         yield EngineView(self, **config)
 
     def delete(self, objs, *, condition=None):
-        objs = list_of(objs)
+        objs = _list_of(objs)
         rendering = self.config["atomic"] or condition
         for obj in objs:
             item = {"TableName": obj.Meta.table_name,
-                    "Key": dump_key(self, obj)}
+                    "Key": _dump_key(self, obj)}
             if rendering:
                 renderer = bloop.condition.ConditionRenderer(self)
                 item_condition = bloop.condition.Condition()
@@ -193,7 +193,7 @@ class Engine:
         if consistent is None:
             consistent = self.config["consistent"]
 
-        objs = list_of(objs)
+        objs = _list_of(objs)
         # The RequestItems dictionary of table:Key(list) that will be
         # passed to client
         request_items = {}
@@ -201,7 +201,7 @@ class Engine:
         # that is used to pull the correct attributes from result items
         # when mapping fields back to the input models
         table_key_shapes = {}
-        # Index objects by the (table_name, dump_key) tuple that
+        # Index objects by the (table_name, _dump_key) tuple that
         # can be used to find their attributes in the results map
         objs_by_key = {}
 
@@ -211,14 +211,14 @@ class Engine:
             if table_name not in request_items:
                 request_items[table_name] = {"Keys": [],
                                              "ConsistentRead": consistent}
-            key = dump_key(self, obj)
+            key = _dump_key(self, obj)
             request_items[table_name]["Keys"].append(key)
             # Make sure we can find the key shape for this table and index
             # the object by its table name and key values for quickly loading
             # from results
             key_shape = table_key_shapes[table_name] = list(key)
             index = (table_name,
-                     tuple(value_of(key[n]) for n in key_shape))
+                     tuple(_value_of(key[n]) for n in key_shape))
             objs_by_key[index] = obj
 
         results = self.client.batch_get_items(request_items)
@@ -229,7 +229,7 @@ class Engine:
             for item in items:
                 # Find the instance by key in the index above O(1)
                 index = (table_name,
-                         tuple(value_of(item[n]) for n in key_shape))
+                         tuple(_value_of(item[n]) for n in key_shape))
                 obj = objs_by_key.pop(index)
                 self._update(obj, item, obj.Meta.columns)
 
@@ -238,14 +238,14 @@ class Engine:
             raise bloop.exceptions.NotModified("load", objs_by_key.values())
 
     def query(self, obj):
-        if isinstance(obj, bloop.index.Index):
+        if isinstance(obj, bloop.index._Index):
             model, index = obj.model, obj
         else:
             model, index = obj, None
         return bloop.filter.Query(engine=self, model=model, index=index)
 
     def save(self, objs, *, condition=None):
-        objs = list_of(objs)
+        objs = _list_of(objs)
         atomic = self.config["atomic"]
         mode = self.config["persist"]
         update = mode == "update"
@@ -261,7 +261,7 @@ class Engine:
                         "Item": self._dump(obj.__class__, obj)}
             if mode == "update":
                 item = {"TableName": obj.Meta.table_name,
-                        "Key": dump_key(self, obj)}
+                        "Key": _dump_key(self, obj)}
             if rendering:
                 renderer = bloop.condition.ConditionRenderer(self)
                 item_condition = bloop.condition.Condition()
@@ -279,7 +279,7 @@ class Engine:
             bloop.tracking.update_current(obj, self)
 
     def scan(self, obj):
-        if isinstance(obj, bloop.index.Index):
+        if isinstance(obj, bloop.index._Index):
                 model, index = obj.model, obj
         else:
             model, index = obj, None

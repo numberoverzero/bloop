@@ -1,6 +1,6 @@
-from bloop import (Column, ConstraintViolation, DateTime, Engine, Integer,
-                   String, UUID, GlobalSecondaryIndex,
-                   LocalSecondaryIndex)
+from bloop import (Column, ConstraintViolation,
+                   DateTime, Engine, Integer,
+                   String)
 import arrow
 engine = Engine()
 

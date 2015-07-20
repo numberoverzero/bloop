@@ -55,7 +55,7 @@ def validate_select_mode(select):
         if not select:
             raise invalid
         for column in select:
-            if not bloop.column.is_column(column):
+            if not isinstance(column, bloop.column.Column):
                 raise invalid
     return select
 
@@ -208,8 +208,8 @@ class Filter(object):
         #    introducing a config variable to strictly disallow extra reads.
         select = validate_select_mode(columns)
 
-        is_gsi = bloop.index.is_global_index(self.index)
-        is_lsi = bloop.index.is_local_index(self.index)
+        is_gsi = isinstance(self.index, bloop.index.GlobalSecondaryIndex)
+        is_lsi = isinstance(self.index, bloop.index.LocalSecondaryIndex)
         strict = self.engine.config["strict"]
         requires_exact = (is_gsi or (is_lsi and strict))
 
@@ -328,7 +328,7 @@ class Filter(object):
         else:
             # If more are requested than a LSI supports, all will be loaded.
             # In all other cases, just the selected columns will be.
-            if bloop.index.is_local_index(self.index):
+            if isinstance(self.index, bloop.index.LocalSecondaryIndex):
                 selected = set(self._select_columns)
                 available = self.index.projection_attributes
                 if not selected.issubset(available):
@@ -367,7 +367,7 @@ class Filter(object):
 
     @property
     def consistent(self):
-        if bloop.index.is_global_index(self.index):
+        if isinstance(self.index, bloop.index.GlobalSecondaryIndex):
             raise ValueError(
                 "Cannot use ConsistentRead with a GlobalSecondaryIndex")
         other = self.copy()

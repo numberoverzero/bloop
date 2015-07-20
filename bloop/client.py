@@ -223,26 +223,6 @@ class Client(object):
             raise bloop.exceptions.TableMismatch(model, expected, actual)
 
 
-def key_schema(*, index=None, model=None):
-    if index:
-        hash_key = index.hash_key
-        range_key = index.range_key
-    # model
-    else:
-        hash_key = model.Meta.hash_key
-        range_key = model.Meta.range_key
-    schema = [{
-        'AttributeName': hash_key.dynamo_name,
-        'KeyType': 'HASH'
-    }]
-    if range_key:
-        schema.append({
-            'AttributeName': range_key.dynamo_name,
-            'KeyType': 'RANGE'
-        })
-    return schema
-
-
 def attribute_definitions(model):
     ''' Only include table and index hash/range keys '''
     dedupe_attrs = set()
@@ -272,22 +252,11 @@ def attribute_definitions(model):
     return attrs
 
 
-def index_projection(index):
-    projection = {
-        'ProjectionType': index.projection,
-        'NonKeyAttributes': [
-            column.dynamo_name for column in index.projection_attributes
-        ]
-    }
-    if index.projection != 'INCLUDE' or not projection['NonKeyAttributes']:
-        projection.pop('NonKeyAttributes')
-    return projection
-
-
 def global_secondary_indexes(model):
     gsis = []
-    for index in filter(bloop.index.is_global_index,
-                        model.Meta.indexes):
+    for index in filter(
+        lambda i: isinstance(i, bloop.index.GlobalSecondaryIndex),
+            model.Meta.indexes):
         gsi_key_schema = key_schema(index=index)
         provisioned_throughput = {
             'WriteCapacityUnits': index.write_units,
@@ -303,10 +272,43 @@ def global_secondary_indexes(model):
     return gsis
 
 
+def index_projection(index):
+    projection = {
+        'ProjectionType': index.projection,
+        'NonKeyAttributes': [
+            column.dynamo_name for column in index.projection_attributes
+        ]
+    }
+    if index.projection != 'INCLUDE' or not projection['NonKeyAttributes']:
+        projection.pop('NonKeyAttributes')
+    return projection
+
+
+def key_schema(*, index=None, model=None):
+    if index:
+        hash_key = index.hash_key
+        range_key = index.range_key
+    # model
+    else:
+        hash_key = model.Meta.hash_key
+        range_key = model.Meta.range_key
+    schema = [{
+        'AttributeName': hash_key.dynamo_name,
+        'KeyType': 'HASH'
+    }]
+    if range_key:
+        schema.append({
+            'AttributeName': range_key.dynamo_name,
+            'KeyType': 'RANGE'
+        })
+    return schema
+
+
 def local_secondary_indexes(model):
     lsis = []
-    for index in filter(bloop.index.is_local_index,
-                        model.Meta.indexes):
+    for index in filter(
+        lambda i: isinstance(i, bloop.index.LocalSecondaryIndex),
+            model.Meta.indexes):
         lsi_key_schema = key_schema(index=index)
 
         lsis.append({

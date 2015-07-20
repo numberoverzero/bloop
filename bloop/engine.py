@@ -261,14 +261,14 @@ class Engine:
             bloop.tracking.clear(obj)
 
     def query(self, obj):
-        if bloop.index.is_index(obj):
+        if isinstance(obj, bloop.index.Index):
             model, index = obj.model, obj
         else:
             model, index = obj, None
         return bloop.filter.Query(engine=self, model=model, index=index)
 
     def scan(self, obj):
-        if bloop.index.is_index(obj):
+        if isinstance(obj, bloop.index.Index):
                 model, index = obj.model, obj
         else:
             model, index = obj, None

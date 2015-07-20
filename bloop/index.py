@@ -62,15 +62,3 @@ class LocalSecondaryIndex(Index):
             raise ValueError(
                 "A LocalSecondaryIndex does not have its own read/write units")
         super().__init__(*args, **kwargs)
-
-
-def is_index(field):
-    return isinstance(field, Index)
-
-
-def is_local_index(index):
-    return isinstance(index, LocalSecondaryIndex)
-
-
-def is_global_index(index):
-    return isinstance(index, GlobalSecondaryIndex)

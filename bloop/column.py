@@ -85,7 +85,3 @@ class Column(declare.Field, ComparisonMixin):
         if self._dynamo_name is None:
             return self.model_name
         return self._dynamo_name
-
-
-def is_column(field):
-    return isinstance(field, Column)

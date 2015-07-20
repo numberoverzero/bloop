@@ -108,8 +108,10 @@ def BaseModel(engine):
             # These are sets instead of lists, because set uses __hash__
             # while some list operations uses __eq__ which will break
             # with the ComparisonMixin
-            columns = set(filter(bloop.column.is_column, Meta.fields))
-            indexes = set(filter(bloop.index.is_index, Meta.fields))
+            columns = set(filter(lambda f: isinstance(f, bloop.column.Column),
+                                 Meta.fields))
+            indexes = set(filter(lambda f: isinstance(f, bloop.index.Index),
+                                 Meta.fields))
 
             Meta.indexes = indexes
             Meta.columns = columns
@@ -135,9 +137,9 @@ def BaseModel(engine):
             cols = Meta.columns_by_model_name
             for index in indexes:
                 index.model = model
-                if bloop.index.is_global_index(index):
+                if isinstance(index, bloop.index.GlobalSecondaryIndex):
                     index.hash_key = cols[index.hash_key]
-                elif bloop.index.is_local_index(index):
+                elif isinstance(index, bloop.index.LocalSecondaryIndex):
                     if not Meta.range_key:
                         raise ValueError(
                             "Cannot specify a LocalSecondaryIndex " +

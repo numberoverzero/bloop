@@ -60,7 +60,7 @@ def explore_query(q):
     for result in q:
         print(result.name)
 
-# By the 'by_email' index
+# Query the 'by_email' index
 q = engine.query(Post.by_user).key(Post.user == some_uuid)
 explore_query(q)
 
@@ -69,7 +69,7 @@ q = q.consistent.descending
 q = q.filter(Post.content.contains('#yolo'))
 explore_query(q)
 
-# By the model hash and range keys
+# Scan the model hash and range keys
 date_condition = Post.date >= arrow.now().replace(years=-1)
 q = engine.scan(Post).select(date_condition)
 explore_query(q)
@@ -82,12 +82,12 @@ import arrow
 obj = Model(name=uuid.uuid4(), date=arrow.now(), joined='today!')
 another = Model(name=uuid.uuid4(), date=arrow.now().replace(days=-1),
                 email='another@example.com')
-
 engine.save([obj, another])
 
 same_obj = Model(name=obj.name, date=obj.date)
 engine.load(same_obj)
 print(same_obj.joined)
+
 engine.delete([obj, another])
 ```
 
@@ -176,7 +176,6 @@ a user profile, as long as it hasn't logged in in the last two years.
 ```python
 def delete_old_profile(profile_id):
     two_years_ago = arrow.now().replace(years=-2)
-
     profile = UserProfile(id=profile_id)
     engine.load(profile)
     if profile.last_login <= two_years_ago:
@@ -206,15 +205,15 @@ attach a condition based on the last loaded values.  Now, we can simplify the
 
 ```python
 engine.config['atomic'] = True
+
+
 def delete_old_profile(profile_id):
     two_years_ago = arrow.now().replace(years=-2)
-
     profile = UserProfile(id=profile_id)
     engine.load(profile)
     if profile.last_login <= two_years_ago:
-        # WARNING: without a condition, someone could log in after we enter
-        # this block and we'd delete their account immediately after they
-        # logged in.
+        # Because we're using an atomic delete, this will ensure the object
+        # is exactly as we read it on the third line of the function
         try:
             engine.delete(profile)
         except bloop.ConstraintViolation:
@@ -237,13 +236,11 @@ explicitly modified.
 ```python
 def delete_old_profile(profile_id):
     two_years_ago = arrow.now().replace(years=-2)
-
     profile = UserProfile(id=profile_id)
     engine.load(profile)
     if profile.last_login <= two_years_ago:
-        # WARNING: without a condition, someone could log in after we enter
-        # this block and we'd delete their account immediately after they
-        # logged in.
+        # We're only using an atomic load within the try/except,
+        # and the engine 'atomic' setting is unchanged for other callers.
         try:
             with engine.context(atomic=True) as atomic:
                 atomic.delete(profile)
@@ -274,7 +271,9 @@ loading from a GlobalSecondaryIndex with projection 'keys_only' and immediately
 saving it with overwrite will immediately blank out all non-key attributes, as
 they were not loaded into the object from the query.
 
-#### update overhead
+# Appendix
+
+## update overhead
 
 Creating the diff for an object when saving with "update" requires tracking the
 values last loaded against the current values.  There are many ways to
@@ -295,3 +294,208 @@ In this way, a small amount of overhead is added to load an object from a
 DynamoDB response; otherwise, there is no performance impact.  Space is
 minimally impacted, as the dumped (serialized-ish) representation of values is
 copied when tracking, which is usually very small (even for arbitrary types).
+
+## sample dynamodb calls
+
+Here are the expanded constructs sent to boto3 while performing
+various operations.
+
+### model creation
+
+```python
+class Model(engine.model):
+    class Meta:
+        write_units = 2
+        read_units = 3
+        table_name = 'CustomTableName'
+    name = Column(UUID, hash_key=True)
+    date = Column(DateTime, range_key=True)
+    email = Column(String)
+    joined = Column(String)
+    not_projected = Column(Integer)
+
+    by_email = GlobalSecondaryIndex(hash_key='email', read_units=4,
+                                    projection='all', write_units=5)
+    by_joined = LocalSecondaryIndex(range_key='joined',
+                                    projection=['email'])
+```
+
+```python
+{
+'AttributeDefinitions': [
+    {'AttributeName': 'date', 'AttributeType': 'S'},
+    {'AttributeName': 'name', 'AttributeType': 'S'},
+    {'AttributeName': 'joined', 'AttributeType': 'S'},
+    {'AttributeName': 'email', 'AttributeType': 'S'}],
+'GlobalSecondaryIndexes': [{
+    'Projection': {'ProjectionType': 'ALL'},
+    'KeySchema': [{'AttributeName': 'email', 'KeyType': 'HASH'}],
+    'ProvisionedThroughput': {
+        'WriteCapacityUnits': 5, 'ReadCapacityUnits': 4},
+    'IndexName': 'by_email'}],
+'KeySchema': [
+    {'AttributeName': 'name', 'KeyType': 'HASH'},
+    {'AttributeName': 'date', 'KeyType': 'RANGE'}],
+'LocalSecondaryIndexes': [{
+    'Projection': {
+        'ProjectionType': 'INCLUDE',
+        'NonKeyAttributes': ['joined', 'email', 'date', 'name']},
+    'KeySchema': [
+        {'AttributeName': 'name', 'KeyType': 'HASH'},
+        {'AttributeName': 'joined', 'KeyType': 'RANGE'}],
+    'IndexName': 'by_joined'}],
+'ProvisionedThroughput': {'WriteCapacityUnits': 2, 'ReadCapacityUnits': 3},
+'TableName': 'CustomTableName'
+}
+```
+
+### save
+
+```python
+model = Model(name=uuid.uuid4(), date=arrow.now())
+engine.save(model)
+
+with engine.context(persist='update', atomic=False) as tmp:
+    tmp.joined = "today"
+    tmp.save(model)
+
+with engine.context(persist='overwrite', atomic=True) as tmp:
+    model.joined = "yesterday"
+    tmp.save(model)
+```
+
+```python
+# Intial save
+{
+'Key': {
+    'date': {'S': '2015-07-20T09:05:57.463255+00:00'},
+    'name': {'S': 'faa30039-bbe6-4397-895d-f430fe35c231'}},
+'TableName': 'CustomTableName'
+}
+
+# After setting joined = "today"
+{
+'ExpressionAttributeNames': {'#n0': 'joined'},
+'ExpressionAttributeValues': {':v1': {'S': 'today'}},
+'Key': {
+    'date': {'S': '2015-07-20T09:05:57.463255+00:00'},
+    'name': {'S': 'faa30039-bbe6-4397-895d-f430fe35c231'}},
+'TableName': 'CustomTableName',
+'UpdateExpression': 'SET #n0=:v1'
+}
+
+# Atomic overwrite save
+{
+'ConditionExpression': '(((((#n0 = :v1) AND (attribute_not_exists(#n2))) AND (#n3 = :v4)) AND (#n5 = :v6)) AND (attribute_not_exists(#n7)))',
+'ExpressionAttributeNames': {
+    '#n2': 'email', '#n5': 'name', '#n0': 'date',
+    '#n7': 'not_projected', '#n3': 'joined'},
+'ExpressionAttributeValues': {
+    ':v6': {'S': 'faa30039-bbe6-4397-895d-f430fe35c231'},
+    ':v4': {'S': 'today'},
+    ':v1': {'S': '2015-07-20T09:05:57.463255+00:00'}}},
+'Item': {
+    'date': {'S': '2015-07-20T09:05:57.463255+00:00'},
+    'joined': {'S': 'yesterday'},
+    'name': {'S': 'faa30039-bbe6-4397-895d-f430fe35c231'}},
+'TableName': 'CustomTableName'
+```
+
+### delete
+
+```python
+engine.delete(model)
+```
+
+```python
+{
+'Key': {
+    'name': {'S': 'faa30039-bbe6-4397-895d-f430fe35c231'},
+    'date': {'S': '2015-07-20T09:05:57.463255+00:00'}},
+'TableName': 'CustomTableName'
+}
+```
+
+### query
+
+```python
+name = uuid.UUID('faa30039-bbe6-4397-895d-f430fe35c231')
+now = arrow.get('2015-07-20T09:05:57.463255+00:00')
+
+# Base query
+q = engine.query(Model).key((Model.name == name) & (Model.date == now))
+q.first()
+
+# Descending, Consistent
+q = q.descending.consistent
+q.first()
+
+# Filter non-key condition
+q = q.filter(Model.joined == "today")
+q.first()
+
+# Select non-key attributes
+q = q.select([Model.not_projected])
+q.first()
+```
+
+```python
+# Base query
+{
+'ConsistentRead': False,
+'ExpressionAttributeNames': {'#n0': 'name', '#n2': 'date'},
+'ExpressionAttributeValues': {
+        ':v3': {'S': '2015-07-20T09:05:57.463255+00:00'},
+        ':v1': {'S': 'faa30039-bbe6-4397-895d-f430fe35c231'}},
+'KeyConditionExpression': '((#n0 = :v1) AND (#n2 = :v3))',
+'ScanIndexForward': True,
+'Select': 'ALL_ATTRIBUTES',
+'TableName': 'CustomTableName'
+}
+
+
+# Descending, Consistent
+{
+'ConsistentRead': True,
+'ExpressionAttributeNames': {'#n0': 'name', '#n2': 'date'},
+'ExpressionAttributeValues': {
+    ':v3': {'S': '2015-07-20T09:05:57.463255+00:00'},
+    ':v1': {'S': 'faa30039-bbe6-4397-895d-f430fe35c231'}},
+'KeyConditionExpression': '((#n0 = :v1) AND (#n2 = :v3))',
+'ScanIndexForward': False,
+'Select': 'ALL_ATTRIBUTES',
+'TableName': 'CustomTableName'
+}
+
+# Filter non-key condition
+{
+'ConsistentRead': True,
+'ExpressionAttributeNames': {'#n0': 'joined', '#n2': 'name', '#n4': 'date'},
+'ExpressionAttributeValues': {
+    ':v5': {'S': '2015-07-20T09:05:57.463255+00:00'},
+    ':v3': {'S': 'faa30039-bbe6-4397-895d-f430fe35c231'},
+    ':v1': {'S': 'today'}},
+'FilterExpression': '(#n0 = :v1)',
+'KeyConditionExpression': '((#n2 = :v3) AND (#n4 = :v5))',
+'ScanIndexForward': False,
+'Select': 'ALL_ATTRIBUTES',
+'TableName': 'CustomTableName'
+}
+
+# Select non-key attributes
+{
+'ConsistentRead': False,
+'ExpressionAttributeNames': {
+    '#n0': 'joined', '#n2': 'not_projected', '#n3': 'name', '#n5': 'date'},
+'ExpressionAttributeValues': {
+    ':v4': {'S': 'faa30039-bbe6-4397-895d-f430fe35c231'},
+    ':v6': {'S': '2015-07-20T09:05:57.463255+00:00'},
+    ':v1': {'S': 'today'}},
+'FilterExpression': '(#n0 = :v1)',
+'KeyConditionExpression': '((#n3 = :v4) AND (#n5 = :v6))',
+'ProjectionExpression': '#n2',
+'ScanIndexForward': True,
+'Select': 'SPECIFIC_ATTRIBUTES',
+'TableName': 'CustomTableName'
+}
+```

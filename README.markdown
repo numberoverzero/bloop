@@ -78,7 +78,6 @@ explore_query(q)
 # Load, Save, Delete
 
 ```python
-import arrow
 obj = Model(name=uuid.uuid4(), date=arrow.now(), joined='today!')
 another = Model(name=uuid.uuid4(), date=arrow.now().replace(days=-1),
                 email='another@example.com')
@@ -91,8 +90,8 @@ print(same_obj.joined)
 engine.delete([obj, another])
 ```
 
-`load`, `save`, and `delete` can take a single instance of a model, or an iterable
-of model instances.
+`load`, `save`, and `delete` can take a single instance of a model, or an
+iterable of model instances.
 
 # Meta and Table Creation
 
@@ -153,13 +152,9 @@ The equivalent table definition (that you'd pass to dynamodb.create_table):
 }
 ```
 
-`engine.bind()` is doing more work than constructing the above - it also
-handles retries with exponential backoff on create/describe calls, and polls
-until the table reaches the expected state (ACTIVE).
-
-Without using any addtional features, bloop is great for modeling your tables
-and ensuring they are ready for use, simply by declaring classes and calling
-`engine.bind`.
+`engine.bind()` is also verifying existing tables against the expected table
+for a model, and throwing on a mismatch.  It then busy polls until the table
+(and any GSIs) are in an active state.
 
 ## Additional features
 
@@ -253,23 +248,46 @@ def delete_old_profile(profile_id):
 ### update vs overwrite
 
 By default, bloop uses `UpdateItem` when you call `engine.save`.  This can be
-changed through the `engine.config['persist']` setting -- either "update" or
-"overwrite".
+changed through `engine.config['persist']` - either `update` or
+`overwrite`.
 
-overwrite uses `PutItem`, which will overwrite **all** attributes of the
+`overwrite` uses `PutItem`, which will overwrite **all** attributes of the
 object - if no value is provided, the existing value will simply be deleted.
 
-update uses `UpdateItem` and will only overwrite attributes that have changed
+`update` uses `UpdateItem` and will only overwrite attributes that have changed
 since they were last loaded from a `load`, `query`, or `scan`.  Setting a value
 to `None` will not delete it, as None may have its own meaning for the type.
 Instead, you should explicitly `del obj.attribute` to remove it on next update.
 
-Most users will want to use "update" unless intentionally overwriting existing
-values with (possibly) partial results.  Remember that queries on an index may
-not return all attributes, depending on the index projection.  For example,
-loading from a GlobalSecondaryIndex with projection 'keys_only' and immediately
-saving it with overwrite will immediately blank out all non-key attributes, as
-they were not loaded into the object from the query.
+Remember that queries on an index may not return all attributes, depending on
+the index projection.  For example, loading from a GlobalSecondaryIndex with
+projection 'keys_only' and immediately saving it with overwrite will
+immediately blank out all non-key attributes, as they were not loaded into the
+object from the query.
+
+# Versioning
+
+* bloop follows semver for its **public** API.
+
+  * You should not rely on the internal api staying the same between minor
+    versions.
+  * Over time, private apis may be raised to become public.  The reverse
+    will never occur.
+
+# Contributing
+Contributions welcome!  Please make sure `tox` passes (including flake8)
+before submitting a PR.
+
+### Development
+bloop uses `tox`, `pytest` and `flake8`.  To get everything set up:
+
+```
+# RECOMMENDED: create a virtualenv with:
+#     pyenv virtualenv 3.4.3 bloop
+git clone https://github.com/numberoverzero/bloop.git
+pip install tox
+tox
+```
 
 # Appendix
 

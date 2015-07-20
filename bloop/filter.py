@@ -82,8 +82,8 @@ class Filter(object):
         assert f3._forward
 
     '''
-    # Scan -> 'scan, Query -> 'query'
-    filter_type = "filter"
+    # Scan -> 'scan', Query -> 'query'
+    filter_type = None
 
     def __init__(self, engine, *, model=None, index=None):
         self.engine = engine
@@ -101,7 +101,7 @@ class Filter(object):
 
         self._select_columns = []
 
-    def copy(self):
+    def _copy(self):
         cls = self.__class__
         other = cls(engine=self.engine, model=self.model, index=self.index)
 
@@ -111,8 +111,142 @@ class Filter(object):
 
         other._select_columns = list(self._select_columns)
         other._key_condition = self._key_condition
-
         return other
+
+    def _expected(self):
+        '''
+        Return a list of Columns that are expected for the current options.
+
+        No index:
+          if select(all): all columns
+          else: set(selected)
+        GSI:
+          if select(projected): all projected columns
+          else: set(selected)
+        LSI:
+          if select(all) : all columns
+          if select(projected): all projected columns
+          if set(selected) > set(projected): all columns
+          else: set(selected)
+        '''
+        if self._select == 'all':
+            return self.model.Meta.columns
+        elif self._select == 'projected':
+            return self.index.projection_attributes
+        # specific
+        else:
+            # If more are requested than a LSI supports, all will be loaded.
+            # In all other cases, just the selected columns will be.
+            if isinstance(self.index, bloop.index.LocalSecondaryIndex):
+                selected = set(self._select_columns)
+                available = self.index.projection_attributes
+                if not selected.issubset(available):
+                    return self.model.Meta.columns
+            return self._select_columns
+
+    def _generate_request(self, renderer):
+        request = {
+            'TableName': self.model.Meta.table_name,
+            'Select': SELECT_MODES[self._select]
+        }
+        if self.index:
+            request['IndexName'] = self.index.dynamo_name
+        if self._filter_condition:
+            renderer.render(self._filter_condition, mode="filter")
+        if self._select == "specific":
+            renderer.projection(self._select_columns)
+        request.update(renderer.rendered)
+        return request
+
+    def all(self, prefetch=None):
+        '''
+        Unless prefetch is < 0, simply creates the FilterResult that will
+        lazy load the results of the scan/query.  Unlike `iter(self)` this
+        returns the FilterResult object, which allows inspection of the
+        `count` and `scanned_count` attributes.  Iterating over the result
+        object will not trigger a new scan/query, while iterating over a
+        scan/query will ALWAYS result in a new scan/query being executed.
+
+        Usage:
+
+        base_query = engine.query(Model).key(id='foo')
+        query = base_query.consistent.ascending
+
+        # Iterate results directly, discarding query metadata
+        for result in query:
+            ...
+
+        # Save reference to FilterResult instance
+        results = query.all()
+        for result in results:
+            ...
+        print(results.count, results.scanned_count)
+        '''
+        if prefetch is None:
+            prefetch = self.engine.config["prefetch"]
+        # dynamo.client.query or dynamo.client.scan
+        call = getattr(self.engine.client, self.filter_type)
+        renderer = bloop.condition.ConditionRenderer(self.engine)
+        request = self._generate_request(renderer)
+
+        expected = self._expected()
+        return FilterResult(prefetch, call, request, self.engine,
+                            self.model, expected)
+
+    @property
+    def ascending(self):
+        other = self._copy()
+        other._forward = True
+        return other
+
+    @property
+    def consistent(self):
+        if isinstance(self.index, bloop.index.GlobalSecondaryIndex):
+            raise ValueError(
+                "Cannot use ConsistentRead with a GlobalSecondaryIndex")
+        other = self._copy()
+        other._consistent = True
+        return other
+
+    def count(self):
+        other = self._copy()
+        other._select = "count"
+        other._select_columns.clear()
+        # Force fetch all
+        result = other.all(prefetch="all")
+        return {
+            "count": result.count,
+            "scanned_count": result.scanned_count
+        }
+
+    @property
+    def descending(self):
+        other = self._copy()
+        other._forward = False
+        return other
+
+    def filter(self, condition):
+        other = self._copy()
+        # AND multiple filters
+        if other._filter_condition:
+            condition &= other._filter_condition
+        other._filter_condition = condition
+        return other
+
+    def first(self):
+        '''
+        Returns the first result that matches the filter.
+
+        Forces prefetch=0 for the fastest return - continuation tokens will
+        only be followed until a page with at least one result is returned.
+
+        Faster than `Filter.all().first` unless:
+        - prefetch = 0
+        - prefetch > 0 AND first result is on page x, where x % (prefetch) == 0
+        If either is true, Filter.all().first will have comparable performance.
+        '''
+        result = self.all(prefetch=0)
+        return result.first
 
     def key(self, condition):
         # AND multiple conditions
@@ -159,16 +293,8 @@ class Filter(object):
             if condition.column is not hash_column:
                 raise ValueError("Must specify a hash key")
 
-        other = self.copy()
+        other = self._copy()
         other._key_condition = condition
-        return other
-
-    def filter(self, condition):
-        other = self.copy()
-        # AND multiple filters
-        if other._filter_condition:
-            condition &= other._filter_condition
-        other._filter_condition = condition
         return other
 
     def select(self, columns):
@@ -214,7 +340,7 @@ class Filter(object):
         requires_exact = (is_gsi or (is_lsi and strict))
 
         if select == "count":
-            other = self.copy()
+            other = self._copy()
             other._select = select
             other._select_columns.clear()
             return other
@@ -223,7 +349,7 @@ class Filter(object):
             if not self.index:
                 raise ValueError("Cannot select 'projected' attributes"
                                  " without an index")
-            other = self.copy()
+            other = self._copy()
             other._select = select
             other._select_columns.clear()
             return other
@@ -233,7 +359,7 @@ class Filter(object):
                 raise ValueError("Cannot select 'all' attributes from a GSI"
                                  " (or an LSI in strict mode) unless the"
                                  " index's projection is 'ALL'")
-            other = self.copy()
+            other = self._copy()
             other._select = select
             other._select_columns.clear()
             return other
@@ -242,7 +368,7 @@ class Filter(object):
         else:
             # Combine before validation, since the total set may no longer
             # be valid for the index.
-            other = self.copy()
+            other = self._copy()
             other._select = 'specific'
             other._select_columns.extend(select)
 
@@ -258,142 +384,15 @@ class Filter(object):
                     raise ValueError(msg)
             return other
 
-    def count(self):
-        other = self.copy()
-        other._select = "count"
-        other._select_columns.clear()
-        # Force fetch all
-        result = other.all(prefetch="all")
-        return {
-            "count": result.count,
-            "scanned_count": result.scanned_count
-        }
-
-    def all(self, prefetch=None):
-        '''
-        Unless prefetch is < 0, simply creates the FilterResult that will
-        lazy load the results of the scan/query.  Unlike `iter(self)` this
-        returns the FilterResult object, which allows inspection of the
-        `count` and `scanned_count` attributes.  Iterating over the result
-        object will not trigger a new scan/query, while iterating over a
-        scan/query will ALWAYS result in a new scan/query being executed.
-
-        Usage:
-
-        base_query = engine.query(Model).key(id='foo')
-        query = base_query.consistent.ascending
-
-        # Iterate results directly, discarding query metadata
-        for result in query:
-            ...
-
-        # Save reference to FilterResult instance
-        results = query.all()
-        for result in results:
-            ...
-        print(results.count, results.scanned_count)
-        '''
-        if prefetch is None:
-            prefetch = self.engine.config["prefetch"]
-        # dynamo.client.query or dynamo.client.scan
-        call = getattr(self.engine.client, self.filter_type)
-        renderer = bloop.condition.ConditionRenderer(self.engine)
-        request = self.generate_request(renderer)
-
-        expected = self._expected()
-        return FilterResult(prefetch, call, request, self.engine,
-                            self.model, expected)
-
-    def _expected(self):
-        '''
-        Return a list of Columns that are expected for the current options.
-
-        No index:
-          if select(all): all columns
-          else: set(selected)
-        GSI:
-          if select(projected): all projected columns
-          else: set(selected)
-        LSI:
-          if select(all) : all columns
-          if select(projected): all projected columns
-          if set(selected) > set(projected): all columns
-          else: set(selected)
-        '''
-        if self._select == 'all':
-            return self.model.Meta.columns
-        elif self._select == 'projected':
-            return self.index.projection_attributes
-        # specific
-        else:
-            # If more are requested than a LSI supports, all will be loaded.
-            # In all other cases, just the selected columns will be.
-            if isinstance(self.index, bloop.index.LocalSecondaryIndex):
-                selected = set(self._select_columns)
-                available = self.index.projection_attributes
-                if not selected.issubset(available):
-                    return self.model.Meta.columns
-            return self._select_columns
-
-    def first(self):
-        '''
-        Returns the first result that matches the filter.
-
-        Forces prefetch=0 for the fastest return - continuation tokens will
-        only be followed until a page with at least one result is returned.
-
-        Faster than `Filter.all().first` unless:
-        - prefetch = 0
-        - prefetch > 0 AND first result is on page x, where x % (prefetch) == 0
-        If either is true, Filter.all().first will have comparable performance.
-        '''
-        result = self.all(prefetch=0)
-        return result.first
-
     def __iter__(self):
         return iter(self.all())
-
-    @property
-    def ascending(self):
-        other = self.copy()
-        other._forward = True
-        return other
-
-    @property
-    def descending(self):
-        other = self.copy()
-        other._forward = False
-        return other
-
-    @property
-    def consistent(self):
-        if isinstance(self.index, bloop.index.GlobalSecondaryIndex):
-            raise ValueError(
-                "Cannot use ConsistentRead with a GlobalSecondaryIndex")
-        other = self.copy()
-        other._consistent = True
-        return other
-
-    def generate_request(self, renderer):
-        request = {
-            'TableName': self.model.Meta.table_name,
-            'Select': SELECT_MODES[self._select]
-        }
-        if self.index:
-            request['IndexName'] = self.index.dynamo_name
-        if self._filter_condition:
-            renderer.render(self._filter_condition, mode="filter")
-        if self._select == "specific":
-            renderer.projection(self._select_columns)
-        request.update(renderer.rendered)
-        return request
 
 
 class Query(Filter):
     filter_type = "query"
 
-    def generate_request(self, renderer):
-        request = super().generate_request(renderer)
+    def _generate_request(self, renderer):
+        request = super()._generate_request(renderer)
         request['ScanIndexForward'] = self._forward
         request['ConsistentRead'] = self._consistent
 
@@ -434,12 +433,6 @@ class FilterResult(object):
             consume(self)
 
     @property
-    def results(self):
-        if not self.complete:
-            raise RuntimeError("Can't access results until request exhausted")
-        return self._results
-
-    @property
     def complete(self):
         return self._complete
 
@@ -465,6 +458,12 @@ class FilterResult(object):
         if not self._results:
             raise ValueError("No results found.")
         return self._results[0]
+
+    @property
+    def results(self):
+        if not self.complete:
+            raise RuntimeError("Can't access results until request exhausted")
+        return self._results
 
     def __iter__(self):
         # Already finished, iterate existing list

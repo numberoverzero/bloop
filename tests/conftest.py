@@ -49,8 +49,8 @@ def UnboundUser(engine):
         email = bloop.Column(bloop.String)
         joined = bloop.Column(bloop.DateTime)
 
-        by_email = bloop.GlobalSecondaryIndex(hash_key='email',
-                                              projection='all')
+        by_email = bloop.GlobalSecondaryIndex(hash_key="email",
+                                              projection="all")
     return User
 
 
@@ -66,17 +66,17 @@ def ComplexModel(engine, local_bind):
         class Meta:
             write_units = 2
             read_units = 3
-            table_name = 'CustomTableName'
+            table_name = "CustomTableName"
         name = bloop.Column(bloop.UUID, hash_key=True)
         date = bloop.Column(bloop.String, range_key=True)
         email = bloop.Column(bloop.String)
         joined = bloop.Column(bloop.String)
         not_projected = bloop.Column(bloop.Integer)
 
-        by_email = bloop.GlobalSecondaryIndex(hash_key='email', read_units=4,
-                                              projection='all', write_units=5)
-        by_joined = bloop.LocalSecondaryIndex(range_key='joined',
-                                              projection=['email'])
+        by_email = bloop.GlobalSecondaryIndex(hash_key="email", read_units=4,
+                                              projection="all", write_units=5)
+        by_joined = bloop.LocalSecondaryIndex(range_key="joined",
+                                              projection=["email"])
     engine.bind()
     return Model
 
@@ -92,9 +92,9 @@ def SimpleModel(engine, local_bind):
 @pytest.fixture
 def client_error():
     def ClientError(code):
-        error_response = {'Error': {
-            'Code': code,
-            'Message': 'FooMessage'}}
-        operation_name = 'OperationName'
+        error_response = {"Error": {
+            "Code": code,
+            "Message": "FooMessage"}}
+        operation_name = "OperationName"
         return botocore.exceptions.ClientError(error_response, operation_name)
     return ClientError

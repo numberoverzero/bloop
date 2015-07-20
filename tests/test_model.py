@@ -10,14 +10,14 @@ missing = object()
 
 
 def test_default_model_init(User):
-    ''' Missing attributes aren't set to `None` or any other placeholder '''
-    user = User(id=uuid.uuid4(), email='user@domain.com')
-    assert user.email == 'user@domain.com'
-    assert getattr(user, 'name', missing) is missing
+    """ Missing attributes aren't set to `None` or any other placeholder """
+    user = User(id=uuid.uuid4(), email="user@domain.com")
+    assert user.email == "user@domain.com"
+    assert getattr(user, "name", missing) is missing
 
 
 def test_load_default_init(engine, local_bind):
-    ''' The default model loader uses the model's __init__ method '''
+    """ The default model loader uses the model"s __init__ method """
     loader_calls = 0
 
     class CustomUser(engine.model):
@@ -39,9 +39,9 @@ def test_load_default_init(engine, local_bind):
     user_id = uuid.uuid4()
 
     user = {
-        'id': {'S': str(user_id)},
-        'admin': {'BOOL': False},
-        'extra_field': {'N': '0.125'}
+        "id": {"S": str(user_id)},
+        "admin": {"BOOL": False},
+        "extra_field": {"N": "0.125"}
     }
 
     loaded_user = CustomUser.__load__(user)
@@ -50,19 +50,19 @@ def test_load_default_init(engine, local_bind):
     assert loaded_user.admin is False
     # Values that aren't explicitly described by the model aren't passed to
     # the custom loader
-    assert getattr(loaded_user, 'extra_field', missing) is missing
+    assert getattr(loaded_user, "extra_field", missing) is missing
 
 
 def test_load_dump(User):
-    ''' __load__ and __dump__ should be symmetric '''
+    """ __load__ and __dump__ should be symmetric """
 
     user_id = uuid.uuid4()
-    user = User(id=user_id, name='name', email='user@domain.com', age=25)
+    user = User(id=user_id, name="name", email="user@domain.com", age=25)
     serialized_user = {
-        'id': {'S': str(user_id)},
-        'age': {'N': '25'},
-        'name': {'S': 'name'},
-        'email': {'S': 'user@domain.com'}
+        "id": {"S": str(user_id)},
+        "age": {"N": "25"},
+        "name": {"S": "name"},
+        "email": {"S": "user@domain.com"}
     }
 
     assert User.__load__(serialized_user) == user
@@ -71,14 +71,14 @@ def test_load_dump(User):
 
 def test_equality(User):
     user_id = uuid.uuid4()
-    user = User(id=user_id, name='name', email='user@domain.com', age=25)
-    same = User(id=user_id, name='name', email='user@domain.com', age=25)
-    other = User(id=user_id, name='wrong', email='user@domain.com', age=25)
-    another = User(id=user_id, email='user@domain.com', age=25)
+    user = User(id=user_id, name="name", email="user@domain.com", age=25)
+    same = User(id=user_id, name="name", email="user@domain.com", age=25)
+    other = User(id=user_id, name="wrong", email="user@domain.com", age=25)
+    another = User(id=user_id, email="user@domain.com", age=25)
 
     # Wrong type
-    assert not(user == 'foo')
-    assert user != 'foo'
+    assert not(user == "foo")
+    assert user != "foo"
 
     # Attr with different value
     assert not(user == other)
@@ -92,16 +92,16 @@ def test_equality(User):
 
 
 def test_multiple_base_models(engine):
-    ''' Once an engine has a `model` attr, BaseModel should always throw '''
+    """ Once an engine has a `model` attr, BaseModel should always throw """
     with pytest.raises(ValueError):
         bloop.model.BaseModel(engine)
 
 
 def test_meta_read_write_units(engine):
-    '''
+    """
     If `read_units` or `write_units` is missing from a model's Meta,
     it defaults to 1
-    '''
+    """
     class Model(engine.model):
         id = Column(UUID, hash_key=True)
 
@@ -119,23 +119,23 @@ def test_meta_read_write_units(engine):
 
 
 def test_meta_indexes_columns(User):
-    ''' An index should not be considered a Column, even if it subclasses '''
+    """ An index should not be considered a Column, even if it subclasses """
     assert User.by_email not in set(User.Meta.columns)
     assert User.by_email in set(User.Meta.indexes)
 
 
 def test_meta_indexed_columns_indexes(engine):
-    column = Column(UUID, hash_key=True, name='dynamo_name')
+    column = Column(UUID, hash_key=True, name="dynamo_name")
 
     class Model(engine.model):
         model_name = column
 
-    assert Model.Meta.columns_by_model_name == {'model_name': column}
-    assert Model.Meta.columns_by_dynamo_name == {'dynamo_name': column}
+    assert Model.Meta.columns_by_model_name == {"model_name": column}
+    assert Model.Meta.columns_by_dynamo_name == {"dynamo_name": column}
 
 
 def test_meta_keys(engine):
-    ''' Various combinations of hash and range keys (some impossible) '''
+    """ Various combinations of hash and range keys (some impossible) """
     hash_column = lambda: Column(UUID, hash_key=True)
     range_column = lambda: Column(UUID, range_key=True)
 
@@ -180,19 +180,19 @@ def test_invalid_local_index(engine):
     with pytest.raises(ValueError):
         class InvalidIndex(engine.model):
             id = Column(UUID, hash_key=True)
-            index = LocalSecondaryIndex(range_key='id')
+            index = LocalSecondaryIndex(range_key="id")
 
 
 def test_index_keys(engine):
-    ''' Make sure index hash and range keys are objects, not strings '''
+    """ Make sure index hash and range keys are objects, not strings """
     class Model(engine.model):
         id = Column(UUID, hash_key=True)
         other = Column(DateTime, range_key=True)
         another = Column(UUID)
         last = Column(String)
 
-        by_last = GlobalSecondaryIndex(hash_key='another', range_key='last')
-        by_another = LocalSecondaryIndex(range_key='last')
+        by_last = GlobalSecondaryIndex(hash_key="another", range_key="last")
+        by_another = LocalSecondaryIndex(range_key="last")
 
     assert Model.by_last.hash_key is Model.another
     assert Model.by_last.range_key is Model.last
@@ -202,25 +202,25 @@ def test_index_keys(engine):
 
 
 def test_local_index_no_range_key(engine):
-    ''' A table range_key is required to specify a LocalSecondaryIndex '''
+    """ A table range_key is required to specify a LocalSecondaryIndex """
     with pytest.raises(ValueError):
         class Model(engine.model):
             id = Column(UUID, hash_key=True)
             another = Column(UUID)
-            by_another = LocalSecondaryIndex(range_key='another')
+            by_another = LocalSecondaryIndex(range_key="another")
 
 
 def test_abstract_index(engine):
-    ''' Can't use a direct Index, since it's abstract '''
+    """ Can"t use a direct Index, since it's abstract """
     with pytest.raises(ValueError):
         class Model(engine.model):
             id = Column(UUID, hash_key=True)
             another = Column(UUID)
-            by_another = bloop.index.Index(hash_key='another')
+            by_another = bloop.index.Index(hash_key="another")
 
 
 def test_index_projections(engine):
-    ''' Make sure index projections are calculated to include table keys '''
+    """ Make sure index projections are calculated to include table keys """
     Global, Local = GlobalSecondaryIndex, LocalSecondaryIndex
 
     class Model(engine.model):
@@ -230,13 +230,13 @@ def test_index_projections(engine):
         date = Column(DateTime)
         boolean = Column(Boolean)
 
-        g_all = Global(hash_key='another', range_key='date', projection='all')
-        g_key = Global(hash_key='another', projection='keys_only')
-        g_inc = Global(hash_key='other', projection=['another', 'date'])
+        g_all = Global(hash_key="another", range_key="date", projection="all")
+        g_key = Global(hash_key="another", projection="keys_only")
+        g_inc = Global(hash_key="other", projection=["another", "date"])
 
-        l_all = Local(range_key='another', projection='all')
-        l_key = Local(range_key='another', projection='keys_only')
-        l_inc = Local(range_key='another', projection=['date'])
+        l_all = Local(range_key="another", projection="all")
+        l_key = Local(range_key="another", projection="keys_only")
+        l_inc = Local(range_key="another", projection=["date"])
 
     uuids = set([Model.id, Model.other, Model.another])
     no_boolean = set(Model.Meta.columns)
@@ -258,18 +258,18 @@ def test_index_projections(engine):
 
 
 def test_meta_table_name(engine):
-    '''
+    """
     If table_name is missing from a model's Meta, use the model's __name__
-    '''
+    """
     class Model(engine.model):
         id = Column(UUID, hash_key=True)
 
-    assert Model.Meta.table_name == 'Model'
+    assert Model.Meta.table_name == "Model"
 
     class Other(engine.model):
         class Meta:
-            table_name = 'table_name'
+            table_name = "table_name"
             write_units = 3
         id = Column(UUID, hash_key=True)
 
-    assert Other.Meta.table_name == 'table_name'
+    assert Other.Meta.table_name == "table_name"

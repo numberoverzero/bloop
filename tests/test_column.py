@@ -4,10 +4,10 @@ import operator
 
 
 def test_equals_alias_exists():
-    '''
+    """
     == and != should map to attribute_not_exists and attribute_exists
     when compared to None
-    '''
+    """
     column = bloop.Column(bloop.Integer)
 
     condition = column.is_(None)
@@ -75,12 +75,12 @@ def test_contains():
 
 
 def test_dynamo_name():
-    ''' Returns model name unless dynamo name is specified '''
+    """ Returns model name unless dynamo name is specified """
     column = bloop.Column(bloop.Integer)
     # Normally set when a class is defined
-    column.model_name = 'foo'
-    assert column.dynamo_name == 'foo'
+    column.model_name = "foo"
+    assert column.dynamo_name == "foo"
 
-    column = bloop.Column(bloop.Integer, name='foo')
-    column.model_name = 'bar'
-    assert column.dynamo_name == 'foo'
+    column = bloop.Column(bloop.Integer, name="foo")
+    column.model_name = "bar"
+    assert column.dynamo_name == "foo"

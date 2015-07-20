@@ -4,46 +4,46 @@ import uuid
 
 
 def test_invalid_key(engine, local_bind):
-    '''
+    """
     filter.key should only accept BeginsWith, Between, and Comparators
     (excluding NE)
-    '''
+    """
     class Visit(engine.model):
         page = bloop.Column(bloop.String, hash_key=True)
         visitor = bloop.Column(bloop.Integer, range_key=True)
         date = bloop.Column(bloop.DateTime)
 
-        by_date = bloop.GlobalSecondaryIndex(hash_key='date')
+        by_date = bloop.GlobalSecondaryIndex(hash_key="date")
     engine.bind()
 
     q = engine.query(Visit)
 
     invalid_conditions = [
         # operator.net
-        (Visit.page != 'foo'),
+        (Visit.page != "foo"),
         # OR
-        ((Visit.page == 'foo') | (Visit.page == 'bar')),
+        ((Visit.page == "foo") | (Visit.page == "bar")),
         # NOT
-        (~(Visit.page == 'foo')),
+        (~(Visit.page == "foo")),
         # AttributeNotExists
         (Visit.page.is_(None)),
         # AttributeExists
         (Visit.page.is_not(None)),
         # CONTAINS
-        (Visit.page.contains('foo')),
+        (Visit.page.contains("foo")),
         # IN
-        (Visit.page.in_(['foo', 'bar'])),
+        (Visit.page.in_(["foo", "bar"])),
 
         # No hash key
-        (Visit.date.begins_with('foo')),
+        (Visit.date.begins_with("foo")),
 
         # None
         None,
 
         # Same column twice in AND
-        ((Visit.page.begins_with('f')) & (Visit.page == 'foo')),
+        ((Visit.page.begins_with("f")) & (Visit.page == "foo")),
         # Too many conditions
-        ((Visit.page == 'a') & (Visit.page == 'b') & (Visit.page == 'c')),
+        ((Visit.page == "a") & (Visit.page == "b") & (Visit.page == "c")),
         # AND without hash key
         ((Visit.visitor == 0) & (Visit.date == 1))
     ]
@@ -54,70 +54,70 @@ def test_invalid_key(engine, local_bind):
 
 
 def test_iterative_key(engine, local_bind):
-    ''' iterative .key should AND arguments '''
+    """ iterative .key should AND arguments """
     class Visit(engine.model):
         page = bloop.Column(bloop.String, hash_key=True)
         visitor = bloop.Column(bloop.Integer, range_key=True)
         date = bloop.Column(bloop.DateTime)
 
-        by_date = bloop.GlobalSecondaryIndex(hash_key='date')
+        by_date = bloop.GlobalSecondaryIndex(hash_key="date")
     engine.bind()
 
     q = engine.query(Visit)
 
-    pcondition = Visit.page == 'foo'
+    pcondition = Visit.page == "foo"
     vcondition = Visit.visitor == 0
 
     result = q.key(pcondition).key(vcondition).all()
 
-    expected = {'Select': 'ALL_ATTRIBUTES',
-                'KeyConditionExpression': '((#n0 = :v1) AND (#n2 = :v3))',
-                'TableName': 'Visit',
-                'ExpressionAttributeValues': {':v3': {'S': 'foo'},
-                                              ':v1': {'N': '0'}},
-                'ScanIndexForward': True,
-                'ExpressionAttributeNames': {'#n2': 'page', '#n0': 'visitor'},
-                'ConsistentRead': False}
+    expected = {"Select": "ALL_ATTRIBUTES",
+                "KeyConditionExpression": "((#n0 = :v1) AND (#n2 = :v3))",
+                "TableName": "Visit",
+                "ExpressionAttributeValues": {":v3": {"S": "foo"},
+                                              ":v1": {"N": "0"}},
+                "ScanIndexForward": True,
+                "ExpressionAttributeNames": {"#n2": "page", "#n0": "visitor"},
+                "ConsistentRead": False}
     assert result.request == expected
 
 
 def test_filter(engine, User):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
-    condition = User.email == 'foo@domain.com'
+    condition = User.email == "foo@domain.com"
 
     result = q.filter(condition).all()
-    expected = {'ScanIndexForward': True,
-                'ConsistentRead': False,
-                'Select': 'ALL_ATTRIBUTES',
-                'TableName': 'User',
-                'ExpressionAttributeValues': {':v1': {'S': 'foo@domain.com'},
-                                              ':v3': {'S': str(user_id)}},
-                'ExpressionAttributeNames': {'#n2': 'id', '#n0': 'email'},
-                'KeyConditionExpression': '(#n2 = :v3)',
-                'FilterExpression': '(#n0 = :v1)'}
+    expected = {"ScanIndexForward": True,
+                "ConsistentRead": False,
+                "Select": "ALL_ATTRIBUTES",
+                "TableName": "User",
+                "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"},
+                                              ":v3": {"S": str(user_id)}},
+                "ExpressionAttributeNames": {"#n2": "id", "#n0": "email"},
+                "KeyConditionExpression": "(#n2 = :v3)",
+                "FilterExpression": "(#n0 = :v1)"}
     assert result.request == expected
 
 
 def test_iterative_filter(engine, User):
-    ''' iterative .filter should AND arguents '''
+    """ iterative .filter should AND arguents """
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
-    pcondition = User.email == 'foo@domain.com'
+    pcondition = User.email == "foo@domain.com"
     vcondition = User.age == 100
 
     result = q.filter(pcondition).filter(vcondition).all()
-    expected = {'ExpressionAttributeNames': {'#n2': 'email', '#n0': 'age',
-                                             '#n4': 'id'},
-                'FilterExpression': '((#n0 = :v1) AND (#n2 = :v3))',
-                'ConsistentRead': False,
-                'TableName': 'User',
-                'KeyConditionExpression': '(#n4 = :v5)',
-                'Select': 'ALL_ATTRIBUTES',
-                'ScanIndexForward': True,
-                'ExpressionAttributeValues': {':v5': {'S': str(user_id)},
-                                              ':v3': {'S': 'foo@domain.com'},
-                                              ':v1': {'N': '100'}}}
+    expected = {"ExpressionAttributeNames": {"#n2": "email", "#n0": "age",
+                                             "#n4": "id"},
+                "FilterExpression": "((#n0 = :v1) AND (#n2 = :v3))",
+                "ConsistentRead": False,
+                "TableName": "User",
+                "KeyConditionExpression": "(#n4 = :v5)",
+                "Select": "ALL_ATTRIBUTES",
+                "ScanIndexForward": True,
+                "ExpressionAttributeValues": {":v5": {"S": str(user_id)},
+                                              ":v3": {"S": "foo@domain.com"},
+                                              ":v1": {"N": "100"}}}
     assert result.request == expected
 
 
@@ -127,7 +127,7 @@ def test_invalid_select(engine, User):
     invalid = [
         "all_",
         None,
-        set(['foo', User.email]),
+        set(["foo", User.email]),
         set()
     ]
 
@@ -141,13 +141,13 @@ def test_select_count(engine, User):
     q = engine.query(User).key(User.id == user_id)
 
     result = q.select("count").all()
-    expected = {'ConsistentRead': False,
-                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'TableName': 'User',
-                'Select': 'COUNT',
-                'ExpressionAttributeNames': {'#n0': 'id'},
-                'ScanIndexForward': True}
+    expected = {"ConsistentRead": False,
+                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "TableName": "User",
+                "Select": "COUNT",
+                "ExpressionAttributeNames": {"#n0": "id"},
+                "ScanIndexForward": True}
     assert result.request == expected
 
 
@@ -162,62 +162,62 @@ def test_select_projected(engine, User):
 
     # Index query sets Select -> ALL_PROJECTED_ATTRIBUTES
     results = iq.select("projected").all()
-    expected = {'ExpressionAttributeNames': {'#n0': 'email'},
-                'Select': 'ALL_PROJECTED_ATTRIBUTES',
-                'ScanIndexForward': True,
-                'TableName': 'User',
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'IndexName': 'by_email',
-                'ExpressionAttributeValues': {':v1': {'S': 'foo@domain.com'}},
-                'ConsistentRead': False}
+    expected = {"ExpressionAttributeNames": {"#n0": "email"},
+                "Select": "ALL_PROJECTED_ATTRIBUTES",
+                "ScanIndexForward": True,
+                "TableName": "User",
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "IndexName": "by_email",
+                "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}},
+                "ConsistentRead": False}
     assert results.request == expected
 
 
 def test_select_all_invalid_gsi(engine, local_bind):
-    '''
+    """
     Select all query on GSI without "all" projection
-    '''
+    """
     class Visit(engine.model):
         page = bloop.Column(bloop.String, hash_key=True)
         visitor = bloop.Column(bloop.Integer)
         date = bloop.Column(bloop.DateTime)
 
-        by_date = bloop.GlobalSecondaryIndex(hash_key='date',
-                                             projection=['visitor'])
+        by_date = bloop.GlobalSecondaryIndex(hash_key="date",
+                                             projection=["visitor"])
     engine.bind()
 
     q = engine.query(Visit.by_date)
 
     with pytest.raises(ValueError):
-        q.select('all')
+        q.select("all")
 
 
 def test_select_strict_lsi(engine, ComplexModel):
-    ''' Select all/specific on LSI without 'all' projection in strict mode '''
+    """ Select all/specific on LSI without "all" projection in strict mode """
     engine.config["strict"] = True
     q = engine.query(ComplexModel.by_joined)
 
     with pytest.raises(ValueError):
-        q.select('all')
+        q.select("all")
 
     with pytest.raises(ValueError):
         q.select([ComplexModel.not_projected])
 
 
 def test_select_all_gsi(engine, ComplexModel):
-    '''
+    """
     Select all query on GSI with "all" projection
-    '''
+    """
     q = engine.query(ComplexModel.by_email).key(ComplexModel.email == "foo")
-    result = q.select('all').all()
-    expected = {'ScanIndexForward': True,
-                'IndexName': 'by_email',
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'ConsistentRead': False,
-                'Select': 'ALL_ATTRIBUTES',
-                'ExpressionAttributeValues': {':v1': {'S': 'foo'}},
-                'TableName': 'CustomTableName',
-                'ExpressionAttributeNames': {'#n0': 'email'}}
+    result = q.select("all").all()
+    expected = {"ScanIndexForward": True,
+                "IndexName": "by_email",
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "ConsistentRead": False,
+                "Select": "ALL_ATTRIBUTES",
+                "ExpressionAttributeValues": {":v1": {"S": "foo"}},
+                "TableName": "CustomTableName",
+                "ExpressionAttributeNames": {"#n0": "email"}}
     assert result.request == expected
 
 
@@ -226,49 +226,49 @@ def test_select_specific(engine, User):
     q = engine.query(User).key(User.id == user_id)
 
     result = q.select([User.email, User.joined]).all()
-    expected = {'Select': 'SPECIFIC_ATTRIBUTES',
-                'ExpressionAttributeNames': {'#n0': 'email', '#n1': 'joined',
-                                             '#n2': 'id'},
-                'ScanIndexForward': True,
-                'ExpressionAttributeValues': {':v3': {'S': str(user_id)}},
-                'TableName': 'User',
-                'KeyConditionExpression': '(#n2 = :v3)',
-                'ProjectionExpression': '#n0, #n1',
-                'ConsistentRead': False}
+    expected = {"Select": "SPECIFIC_ATTRIBUTES",
+                "ExpressionAttributeNames": {"#n0": "email", "#n1": "joined",
+                                             "#n2": "id"},
+                "ScanIndexForward": True,
+                "ExpressionAttributeValues": {":v3": {"S": str(user_id)}},
+                "TableName": "User",
+                "KeyConditionExpression": "(#n2 = :v3)",
+                "ProjectionExpression": "#n0, #n1",
+                "ConsistentRead": False}
     assert result.request == expected
 
 
 def test_select_specific_gsi_projection(engine, local_bind):
-    '''
+    """
     When specific attrs are requested on a GSI without all attrs projected,
     validate that the specific attrs are available through the GSI
-    '''
+    """
     class Visit(engine.model):
         page = bloop.Column(bloop.String, hash_key=True)
         visitor = bloop.Column(bloop.Integer)
         date = bloop.Column(bloop.String)
         not_projected = bloop.Column(bloop.Integer)
 
-        by_date = bloop.GlobalSecondaryIndex(hash_key='date',
-                                             projection=['visitor'])
+        by_date = bloop.GlobalSecondaryIndex(hash_key="date",
+                                             projection=["visitor"])
     engine.bind()
 
-    q = engine.query(Visit.by_date).key(Visit.date == 'now')
+    q = engine.query(Visit.by_date).key(Visit.date == "now")
 
     # Invalid select because `not_projected` isn't projected into the index
     with pytest.raises(ValueError):
         q.select([Visit.not_projected])
 
     result = q.select([Visit.visitor]).all()
-    expected = {'ExpressionAttributeNames': {'#n0': 'visitor', '#n1': 'date'},
-                'TableName': 'Visit',
-                'IndexName': 'by_date',
-                'KeyConditionExpression': '(#n1 = :v2)',
-                'ConsistentRead': False,
-                'Select': 'SPECIFIC_ATTRIBUTES',
-                'ScanIndexForward': True,
-                'ExpressionAttributeValues': {':v2': {'S': 'now'}},
-                'ProjectionExpression': '#n0'}
+    expected = {"ExpressionAttributeNames": {"#n0": "visitor", "#n1": "date"},
+                "TableName": "Visit",
+                "IndexName": "by_date",
+                "KeyConditionExpression": "(#n1 = :v2)",
+                "ConsistentRead": False,
+                "Select": "SPECIFIC_ATTRIBUTES",
+                "ScanIndexForward": True,
+                "ExpressionAttributeValues": {":v2": {"S": "now"}},
+                "ProjectionExpression": "#n0"}
     assert result.request == expected
 
 
@@ -291,13 +291,13 @@ def test_count(engine, User):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
 
-    expected = {'TableName': 'User',
-                'ConsistentRead': False,
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
-                'ExpressionAttributeNames': {'#n0': 'id'},
-                'Select': 'COUNT',
-                'ScanIndexForward': True}
+    expected = {"TableName": "User",
+                "ConsistentRead": False,
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+                "ExpressionAttributeNames": {"#n0": "id"},
+                "Select": "COUNT",
+                "ScanIndexForward": True}
 
     def respond(request):
         assert request == expected
@@ -315,11 +315,11 @@ def test_count(engine, User):
 
 def test_first(engine, User):
     q = engine.scan(User).filter(User.email == "foo@domain.com")
-    expected = {'Select': 'ALL_ATTRIBUTES',
-                'TableName': 'User',
-                'FilterExpression': '(#n0 = :v1)',
-                'ExpressionAttributeNames': {'#n0': 'email'},
-                'ExpressionAttributeValues': {':v1': {'S': 'foo@domain.com'}}}
+    expected = {"Select": "ALL_ATTRIBUTES",
+                "TableName": "User",
+                "FilterExpression": "(#n0 = :v1)",
+                "ExpressionAttributeNames": {"#n0": "email"},
+                "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
 
     def respond(request):
         assert request == expected
@@ -337,11 +337,11 @@ def test_first(engine, User):
 
 def test_iter(engine, User):
     q = engine.scan(User).filter(User.email == "foo@domain.com")
-    expected = {'Select': 'ALL_ATTRIBUTES',
-                'TableName': 'User',
-                'FilterExpression': '(#n0 = :v1)',
-                'ExpressionAttributeNames': {'#n0': 'email'},
-                'ExpressionAttributeValues': {':v1': {'S': 'foo@domain.com'}}}
+    expected = {"Select": "ALL_ATTRIBUTES",
+                "TableName": "User",
+                "FilterExpression": "(#n0 = :v1)",
+                "ExpressionAttributeNames": {"#n0": "email"},
+                "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
 
     def respond(request):
         assert request == expected
@@ -359,41 +359,41 @@ def test_iter(engine, User):
 
 
 def test_properties(engine, User):
-    ''' ascending, descending, consistent '''
+    """ ascending, descending, consistent """
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
 
     # ascending
     result = q.ascending.all()
-    expected = {'Select': 'ALL_ATTRIBUTES',
-                'ExpressionAttributeNames': {'#n0': 'id'},
-                'ScanIndexForward': True,
-                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
-                'TableName': 'User',
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'ConsistentRead': False}
+    expected = {"Select": "ALL_ATTRIBUTES",
+                "ExpressionAttributeNames": {"#n0": "id"},
+                "ScanIndexForward": True,
+                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+                "TableName": "User",
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "ConsistentRead": False}
     assert result.request == expected
 
     # descending
     result = q.descending.all()
-    expected = {'Select': 'ALL_ATTRIBUTES',
-                'ExpressionAttributeNames': {'#n0': 'id'},
-                'ScanIndexForward': False,
-                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
-                'TableName': 'User',
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'ConsistentRead': False}
+    expected = {"Select": "ALL_ATTRIBUTES",
+                "ExpressionAttributeNames": {"#n0": "id"},
+                "ScanIndexForward": False,
+                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+                "TableName": "User",
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "ConsistentRead": False}
     assert result.request == expected
 
     # consistent
     result = q.consistent.all()
-    expected = {'Select': 'ALL_ATTRIBUTES',
-                'ExpressionAttributeNames': {'#n0': 'id'},
-                'ScanIndexForward': True,
-                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
-                'TableName': 'User',
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'ConsistentRead': True}
+    expected = {"Select": "ALL_ATTRIBUTES",
+                "ExpressionAttributeNames": {"#n0": "id"},
+                "ScanIndexForward": True,
+                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+                "TableName": "User",
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "ConsistentRead": True}
     assert result.request == expected
 
 
@@ -405,7 +405,7 @@ def test_query_no_key(User, engine):
 
 
 def test_query_consistent_gsi(User, engine):
-    q = engine.query(User.by_email).key(User.email == 'foo')
+    q = engine.query(User.by_email).key(User.email == "foo")
 
     with pytest.raises(ValueError):
         q.consistent
@@ -437,21 +437,21 @@ def test_results_incomplete(User, engine):
 
 
 def test_first_no_prefetch(User, engine):
-    '''
+    """
     When there's no prefetch and a pagination token is presented,
     .first should return a result from the first page, without being marked
     complete.
-    '''
+    """
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
 
-    expected = {'TableName': 'User',
-                'ConsistentRead': False,
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
-                'ExpressionAttributeNames': {'#n0': 'id'},
-                'Select': 'ALL_ATTRIBUTES',
-                'ScanIndexForward': True}
+    expected = {"TableName": "User",
+                "ConsistentRead": False,
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+                "ExpressionAttributeNames": {"#n0": "id"},
+                "Select": "ALL_ATTRIBUTES",
+                "ScanIndexForward": True}
     continue_tokens = {None: "first", "first": "second", "second": None}
 
     def respond(request):
@@ -475,11 +475,11 @@ def test_first_no_prefetch(User, engine):
 
 
 def test_first_no_results(User, engine):
-    '''
+    """
     When there's no prefetch and a pagination token is presented,
     .first should return a result from the first page, without being marked
     complete.
-    '''
+    """
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
 
@@ -503,13 +503,13 @@ def test_prefetch_all(User, engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
     calls = 0
-    expected = {'TableName': 'User',
-                'ConsistentRead': False,
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
-                'ExpressionAttributeNames': {'#n0': 'id'},
-                'Select': 'ALL_ATTRIBUTES',
-                'ScanIndexForward': True}
+    expected = {"TableName": "User",
+                "ConsistentRead": False,
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+                "ExpressionAttributeNames": {"#n0": "id"},
+                "Select": "ALL_ATTRIBUTES",
+                "ScanIndexForward": True}
     continue_tokens = {None: "first", "first": "second", "second": None}
 
     def respond(request):
@@ -551,13 +551,13 @@ def test_prefetch_first(User, engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
     calls = 0
-    expected = {'TableName': 'User',
-                'ConsistentRead': False,
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
-                'ExpressionAttributeNames': {'#n0': 'id'},
-                'Select': 'ALL_ATTRIBUTES',
-                'ScanIndexForward': True}
+    expected = {"TableName": "User",
+                "ConsistentRead": False,
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+                "ExpressionAttributeNames": {"#n0": "id"},
+                "Select": "ALL_ATTRIBUTES",
+                "ScanIndexForward": True}
     continue_tokens = {None: "first", "first": None}
 
     def respond(request):
@@ -594,13 +594,13 @@ def test_prefetch_iter(User, engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
     calls = 0
-    expected = {'TableName': 'User',
-                'ConsistentRead': False,
-                'KeyConditionExpression': '(#n0 = :v1)',
-                'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
-                'ExpressionAttributeNames': {'#n0': 'id'},
-                'Select': 'ALL_ATTRIBUTES',
-                'ScanIndexForward': True}
+    expected = {"TableName": "User",
+                "ConsistentRead": False,
+                "KeyConditionExpression": "(#n0 = :v1)",
+                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+                "ExpressionAttributeNames": {"#n0": "id"},
+                "Select": "ALL_ATTRIBUTES",
+                "ScanIndexForward": True}
     continue_tokens = {None: "first", "first": "second", "second": None}
 
     def respond(request):

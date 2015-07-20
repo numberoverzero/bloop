@@ -33,7 +33,7 @@ if __name__ == "__main__":
         description="ORM for DynamoDB",
         long_description=README,
         classifiers=[
-            'Development Status :: 2 - Pre-Alpha',
+            'Development Status :: 4 - Beta',
             'Intended Audience :: Developers',
             'License :: OSI Approved :: MIT License',
             'Operating System :: OS Independent',

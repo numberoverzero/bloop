@@ -48,26 +48,53 @@ post = Post(forum='DynamoDB', id=uuid.uuid4(), user=user.id,
             date=arrow.now(), views=0, content='Hello, World!')
 engine.save((user, post))
 
-
-def user_posts(user_id):
-    return engine.query(Post.by_user).key(Post.user == user_id).all()
-
-
-def forum_posts(forum):
-    return engine.query(Post).key(Post.forum == forum).all()
-
-for post in user_posts(user.id):
-    print(post)
-for post in forum_posts('DynamoDB'):
-    print(post)
+same_post = Post(forum=post.forum, id=post.id)
+engine.load(same_post)
+assert post.date == same_post.date
 ```
 
-# Complex Models
+# Query, Scan
 
-## Meta and Table Creation
+```
+def explore_query(q):
+    for result in q:
+        print(result.name)
 
-Here we're going to use a custom table name, custom read/write units, as well
-as specifying a custom projection for a GSI, and shortened attribute names.
+# By the 'by_email' index
+q = engine.query(Post.by_user).key(Post.user == some_uuid)
+explore_query(q)
+
+# We can iteratively build a query's parameters
+q = q.consistent.descending
+q = q.filter(Post.content.contains('#yolo'))
+explore_query(q)
+
+# By the model hash and range keys
+date_condition = Post.date >= arrow.now().replace(years=-1)
+q = engine.scan(Post).select(date_condition)
+explore_query(q)
+```
+
+# Load, Save, Delete
+
+```python
+import arrow
+obj = Model(name=uuid.uuid4(), date=arrow.now(), joined='today!')
+another = Model(name=uuid.uuid4(), date=arrow.now().replace(days=-1),
+                email='another@example.com')
+
+engine.save([obj, another])
+
+same_obj = Model(name=obj.name, date=obj.date)
+engine.load(same_obj)
+print(same_obj.joined)
+engine.delete([obj, another])
+```
+
+`load`, `save`, and `delete` can take a single instance of a model, or an iterable
+of model instances.
+
+# Meta and Table Creation
 
 ```python
 from bloop import (Column, DateTime, Engine, Integer, String, UUID,
@@ -132,31 +159,11 @@ until the table reaches the expected state (ACTIVE).
 
 Without using any addtional features, bloop is great for modeling your tables
 and ensuring they are ready for use, simply by declaring classes and calling
-engine.bind.
+`engine.bind`.
 
+## Additional features
 
-## Load, Save, Delete
-
-```python
-import arrow
-obj = Model(name=uuid.uuid4(), date=arrow.now(), joined='today!')
-another = Model(name=uuid.uuid4(), date=arrow.now().replace(days=-1),
-                email='another@example.com')
-
-engine.save([obj, another])
-
-same_obj = Model(name=obj.name, date=obj.date)
-engine.load(same_obj)
-print(same_obj.joined)
-engine.delete([obj, another])
-```
-
-`load`, `save`, and `delete` can take a single instance of a model, or an iterable
-of model instances.  The instances do not need to be of the same model, and
-any number can be loaded, saved, or deleted.  Loads will be optimally packed
-into batches of 25 (the maximum number for BatchGetItem).
-
-## Save & Delete: Conditions and Atomicity
+### conditions
 
 DynamoDB offers powerful features to ease working with objects in a distributed
 manner, and bloop works hard to expose those options simply and transparently.
@@ -241,30 +248,4 @@ def delete_old_profile(profile_id):
             # We caught a race condition!  The profile changed since we last
             # loaded it.
             pass
-```
-
-## Query & Scan
-
-Taking after sqlalchemy where possible, we can query on models or their
-indexes:
-
-```
-def explore_query(q):
-    for result in q:
-        print(result.name)
-
-# By the 'by_email' index
-q = engine.query(Model.by_email).key(Model.email == 'foo@domain.com')
-explore_query(q)
-
-# We can iteratively build a query's parameters
-q = q.consistent.descending
-q = q.filter(Model.email.contains('@domain.com'))
-explore_query(q)
-
-# By the model hash and range keys
-name_condition = Model.name == uuid.uuid4()
-date_condition = Model.date >= arrow.now().replace(years=-1)
-q = engine.query(Model).key(name_condition & date_condition)
-explore_query(q)
 ```

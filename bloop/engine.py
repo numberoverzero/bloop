@@ -68,16 +68,12 @@ class Engine:
         self.config = dict(DEFAULT_CONFIG)
         self.config.update(config)
 
-    def register(self, model):
-        if model not in self.models:
-            self.unbound_models.add(model)
-
     def __load__(self, model, value):
         try:
             return self.type_engine.load(model, value)
         except declare.DeclareException:
             if model in self.unbound_models:
-                raise RuntimeError("Must call `engine.bind()` before loading")
+                raise bloop.exceptions.UnboundModel("load", model, None)
             else:
                 raise ValueError(
                     "Failed to load unknown model {}".format(model))
@@ -88,7 +84,7 @@ class Engine:
             return self.type_engine.dump(model, obj)
         except declare.DeclareException:
             if model in self.unbound_models:
-                raise RuntimeError("Must call `engine.bind()` before dumping")
+                raise bloop.exceptions.UnboundModel("load", model, obj)
             else:
                 raise ValueError(
                     "Failed to dump unknown model {}".format(model))

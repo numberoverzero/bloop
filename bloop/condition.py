@@ -141,7 +141,7 @@ class Condition(BaseCondition):
     __repr__ = __str__
 
     def render(self, renderer):
-        raise ValueError("Can't render empty condition")
+        raise RuntimeError("Can't render empty condition")
 
 
 class MultiCondition(BaseCondition):

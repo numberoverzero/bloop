@@ -650,9 +650,41 @@ def test_validate_fails(ComplexModel, client):
     def describe_table(TableName):
         assert TableName == "CustomTableName"
         return {"Table": {}}
+
+    expected = {
+        'KeySchema': [
+            {'AttributeName': 'name', 'KeyType': 'HASH'},
+            {'AttributeName': 'date', 'KeyType': 'RANGE'}],
+        'TableName': 'CustomTableName',
+        'ProvisionedThroughput':
+            {'ReadCapacityUnits': 3, 'WriteCapacityUnits': 2},
+        'LocalSecondaryIndexes': [{
+            'KeySchema': [
+                {'AttributeName': 'name', 'KeyType': 'HASH'},
+                {'AttributeName': 'joined', 'KeyType': 'RANGE'}],
+            'Projection': {
+                'ProjectionType': 'INCLUDE',
+                'NonKeyAttributes': ['joined', 'email', 'name', 'date']},
+            'IndexName': 'by_joined'}],
+        'GlobalSecondaryIndexes': [{
+            'KeySchema': [{'AttributeName': 'email', 'KeyType': 'HASH'}],
+            'Projection': {'ProjectionType': 'ALL'},
+            'ProvisionedThroughput':
+                {'ReadCapacityUnits': 4, 'WriteCapacityUnits': 5},
+            'IndexName': 'by_email'}],
+        'AttributeDefinitions': [
+            {'AttributeName': 'name', 'AttributeType': 'S'},
+            {'AttributeName': 'date', 'AttributeType': 'S'},
+            {'AttributeName': 'email', 'AttributeType': 'S'},
+            {'AttributeName': 'joined', 'AttributeType': 'S'}]}
+    actual = {}
+    ordered = bloop.util.ordered
     client.client.describe_table = describe_table
-    with pytest.raises(ValueError):
+    with pytest.raises(bloop.exceptions.TableMismatch) as excinfo:
         client.validate_table(ComplexModel)
+    assert excinfo.value.model is ComplexModel
+    assert ordered(excinfo.value.expected) == ordered(expected)
+    assert excinfo.value.actual == actual
 
 
 def test_validate_simple_model(SimpleModel, client):

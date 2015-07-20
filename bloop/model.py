@@ -186,6 +186,6 @@ def BaseModel(engine):
             # If the engine already has a base, register this model.
             # Otherwise, this probably IS the engine's base model
             if engine.model:
-                engine.register(model)
+                engine.unbound_models.add(model)
             return model
     return ModelMetaclass("Model", (__BaseModel,), {})

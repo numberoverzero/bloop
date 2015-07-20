@@ -17,8 +17,6 @@ RETRYABLE_ERRORS = [
     "InternalServerError",
     "ProvisionedThroughputExceededException"
 ]
-TABLE_MISMATCH = ("Existing table does not match expected fields."
-                  "  EXPECTED: {} ACTUAL: {}")
 
 
 def default_backoff_func(operation, attempts):
@@ -213,7 +211,8 @@ class Client(object):
     def validate_table(self, model):
         '''
         Poll table status until Table and all GSIs are ACTIVE.
-        Raise ValueError if actual table doesn't match expected
+        Raise bloop.exceptions.TableMismatch if actual table
+        doesn't match expected
         '''
         expected = table_for_model(model)
         status = TableStatus.Busy
@@ -221,8 +220,7 @@ class Client(object):
             actual = self.describe_table(model)
             status = table_status(actual)
         if bloop.util.ordered(actual) != bloop.util.ordered(expected):
-            raise ValueError(
-                TABLE_MISMATCH.format(expected, actual))
+            raise bloop.exceptions.TableMismatch(model, expected, actual)
 
 
 def key_schema(*, index=None, model=None):

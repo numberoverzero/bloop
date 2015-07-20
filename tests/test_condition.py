@@ -161,5 +161,5 @@ def test_base_condition(User):
     assert (~base) is base
     assert len(base) == 0
 
-    with pytest.raises(ValueError):
+    with pytest.raises(RuntimeError):
         base.render(None)

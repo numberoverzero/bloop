@@ -23,12 +23,6 @@ def test_missing_objects(User, engine):
     assert set(excinfo.value.objects) == set(users)
 
 
-def test_register_bound_model(User, engine):
-    assert User in engine.models
-    engine.register(User)
-    assert User not in engine.unbound_models
-
-
 def test_dump_key(User, engine, local_bind):
     class HashAndRange(engine.model):
         foo = bloop.Column(bloop.Integer, hash_key=True)
@@ -114,10 +108,15 @@ def test_load_dump_unbound(UnboundUser, engine):
                        'name': {'S': 'foo'},
                        'id': {'S': str(user_id)}}]}
 
-    with pytest.raises(RuntimeError):
+    with pytest.raises(bloop.exceptions.UnboundModel) as excinfo:
         engine.__load__(UnboundUser, value)
-    with pytest.raises(RuntimeError):
+    assert excinfo.value.model is UnboundUser
+    assert excinfo.value.obj is None
+
+    with pytest.raises(bloop.exceptions.UnboundModel) as excinfo:
         engine.__dump__(UnboundUser, user)
+    assert excinfo.value.model is UnboundUser
+    assert excinfo.value.obj is user
 
 
 def test_load_dump_unknown(engine):

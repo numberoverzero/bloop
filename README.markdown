@@ -156,7 +156,7 @@ of model instances.  The instances do not need to be of the same model, and
 any number can be loaded, saved, or deleted.  Loads will be optimally packed
 into batches of 25 (the maximum number for BatchGetItem).
 
-## Save & Delete: conditions and atomicity
+## Save & Delete: Conditions and Atomicity
 
 DynamoDB offers powerful features to ease working with objects in a distributed
 manner, and bloop works hard to expose those options simply and transparently.
@@ -213,12 +213,16 @@ def delete_old_profile(profile_id):
             pass
 ```
 
-### engine contexts
+However this sets the engine to be atomic for all operations - to temporarily
+set the engine to atomic we'd have to store its last value, set it atomic, and
+revert it after the function.  There's a simpler option:
+
+### context
 
 Finally, engine also offers a `context` helper that can be used to temporarily
-adjust config without modifying the underlying engine.  We can now simplify the
-above code to temporarily use atomic deletes, without changing the engine's
-default atomic setting:
+adjust config without modifying the underlying engine.  Within that context,
+the engine will behave according to its original config, except those
+explicitly modified.
 
 ```python
 def delete_old_profile(profile_id):
@@ -237,4 +241,30 @@ def delete_old_profile(profile_id):
             # We caught a race condition!  The profile changed since we last
             # loaded it.
             pass
+```
+
+## Query & Scan
+
+Taking after sqlalchemy where possible, we can query on models or their
+indexes:
+
+```
+def explore_query(q):
+    for result in q:
+        print(result.name)
+
+# By the 'by_email' index
+q = engine.query(Model.by_email).key(Model.email == 'foo@domain.com')
+explore_query(q)
+
+# We can iteratively build a query's parameters
+q = q.consistent.descending
+q = q.filter(Model.email.contains('@domain.com'))
+explore_query(q)
+
+# By the model hash and range keys
+name_condition = Model.name == uuid.uuid4()
+date_condition = Model.date >= arrow.now().replace(years=-1)
+q = engine.query(Model).key(name_condition & date_condition)
+explore_query(q)
 ```

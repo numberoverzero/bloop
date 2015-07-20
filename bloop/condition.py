@@ -23,10 +23,10 @@ class ConditionRenderer:
         self.__ref_index = 0
 
     def value_ref(self, column, value, *, dumped=False):
-        '''
+        """
         Dumped controls whether the value is already in a dynamo format (True),
         or needs to be dumped through the engine (False).
-        '''
+        """
         ref = ":v{}".format(self.__ref_index)
         self.__ref_index += 1
 
@@ -49,7 +49,7 @@ class ConditionRenderer:
         return ref
 
     def refs(self, pair):
-        ''' Return (#n0, #v1) tuple for a given (column, value) pair '''
+        """ Return (#n0, #v1) tuple for a given (column, value) pair """
         column, value = pair
         return self.name_ref(column), self.value_ref(column, value)
 
@@ -60,13 +60,13 @@ class ConditionRenderer:
 
     def projection(self, columns):
         names = map(self.name_ref, columns)
-        self.expressions['ProjectionExpression'] = ", ".join(names)
+        self.expressions["ProjectionExpression"] = ", ".join(names)
 
     def update(self, attrs):
         if not attrs:
             return
         set_fmt = "{}={}"
-        expression = ''
+        expression = ""
         if attrs.get("SET", None):
             expression += "SET "
             pairs = map(self.refs, attrs["SET"])
@@ -78,15 +78,15 @@ class ConditionRenderer:
             names = map(self.name_ref, attrs["DELETE"])
             names = ", ".join(names)
             expression += names
-        self.expressions['UpdateExpression'] = expression.strip()
+        self.expressions["UpdateExpression"] = expression.strip()
 
     @property
     def rendered(self):
         expressions = dict(self.expressions)
         if self.attr_names:
-            expressions['ExpressionAttributeNames'] = self.attr_names
+            expressions["ExpressionAttributeNames"] = self.attr_names
         if self.attr_values:
-            expressions['ExpressionAttributeValues'] = self.attr_values
+            expressions["ExpressionAttributeValues"] = self.attr_values
         return expressions
 
 
@@ -110,7 +110,7 @@ class BaseCondition:
 
 
 class Condition(BaseCondition):
-    '''
+    """
     Empty condition that can be used as an initial value for iteratively
     building conditions.
 
@@ -118,7 +118,7 @@ class Condition(BaseCondition):
         condition = Condition()
         for foo in bar:
             condition &= Model.field == foo
-    '''
+    """
     def __and__(self, other):
         return other
     __iand__ = __and__

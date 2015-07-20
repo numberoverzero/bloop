@@ -2,16 +2,16 @@ import bloop.condition
 import bloop.util
 import enum
 
-_DIFF = enum.Enum('DIFF', ['SET', 'DEL', 'NOOP'])
-_MISSING = bloop.util.Sentinel('MISSING')
-_TRACKING_ATTR_NAME = '__tracking__'
+_DIFF = enum.Enum("DIFF", ["SET", "DEL", "NOOP"])
+_MISSING = bloop.util.Sentinel("MISSING")
+_TRACKING_ATTR_NAME = "__tracking__"
 
 
 def _tracking_dict(obj):
-    '''
+    """
     Returns the dict used to track changes for a given object.
     If the obj does not have a tracking dict, sets one up and returns it.
-    '''
+    """
     tracking = getattr(obj, _TRACKING_ATTR_NAME, None)
     if tracking is None:
         tracking = {}
@@ -20,42 +20,42 @@ def _tracking_dict(obj):
 
 
 def _set_value(obj, name, value):
-    '''
+    """
     Store the value of an attr in the obj's tracking dict, overwriting
     any existing value.  This marks the attr as having been loaded from
     DynamoDB.
 
     TODO: Should this use copy.deepcopy()?  Why would someone mutate the value
-    before it is passed to the column's typedef for loading?
-    '''
+    before it is passed to the column"s typedef for loading?
+    """
     tracking = _tracking_dict(obj)
     tracking[name] = value
 
 
 def _del_value(obj, name):
-    '''
+    """
     Delete the value of an attr from the obj's tracking dict.  This marks
     the attr as having not been loaded from DynamoDB, and should only be used
     when the attribute was EXPECTED to be returned, but DID NOT return because
     it was empty.  This should NOT be used when the attribute was NOT loaded,
     such as a query against an Index that does not project all attributes.
-    '''
+    """
     _tracking_dict(obj).pop(name, None)
 
 
 def _get_value(obj, name):
-    '''
+    """
     Returns the value for an attr from the obj's tracking dict.  Raises
     KeyError if there is no value.
-    '''
+    """
     return _tracking_dict(obj)[name]
 
 
 def _get_tracking(obj):
-    '''
+    """
     Returns a dict of {dynamo_name: value} for a given object.  Attributes not
     set when the object was last loaded are not returned.
-    '''
+    """
     attrs = {}
     for column in obj.Meta.columns:
         try:
@@ -66,16 +66,16 @@ def _get_tracking(obj):
 
 
 def _get_current(obj, engine):
-    '''
+    """
     Returns a dict of {dynamo_name: value} for a given object.  Attributes not
     set on the object are not included.
-    '''
+    """
     attrs = engine.__dump__(obj.__class__, obj)
     return attrs
 
 
 def _diff_value(current, loaded):
-    '''
+    """
     _DIFF of two values, where either, neither, or both can be MISSING.
     Returns the _DIFF value that should be applied to the attribute when
     saving back to DynamoDB.
@@ -87,7 +87,7 @@ def _diff_value(current, loaded):
       MISSING | bar     | _DIFF.DEL
       foo     |    bar  | _DIFF.SET
       foo     | MISSING | _DIFF.SET
-    '''
+    """
     if bloop.util.ordered(current) == bloop.util.ordered(loaded):
         return _DIFF.NOOP
     elif current is _MISSING:
@@ -97,7 +97,7 @@ def _diff_value(current, loaded):
 
 
 def diff_obj(obj, engine):
-    '''
+    """
     Returns a dict of changes to make for a given object, comparing its
     current values to its tracking (last loaded) values.
 
@@ -107,13 +107,13 @@ def diff_obj(obj, engine):
         "SET": [(Column<Foo>, obj.Foo), (Column<Bar>, obj.Bar), ...],
         "DELETE": [Column<Baz>, ...]
     }
-    '''
+    """
     hash_key, range_key = obj.Meta.hash_key, obj.Meta.range_key
     current = _get_current(obj, engine)
     tracking = _get_tracking(obj)
     diff = {"SET": [], "DELETE": []}
     for column in obj.Meta.columns:
-        # hash and range keys can't be updated
+        # hash and range keys can"t be updated
         if (column is hash_key) or (column is range_key):
             continue
         name = column.dynamo_name
@@ -124,7 +124,7 @@ def diff_obj(obj, engine):
             diff["SET"].append((column, getattr(obj, column.model_name)))
         elif change is _DIFF.DEL:
             diff["DELETE"].append(column)
-        # Don't do anything if it's _DIFF.NOOP
+        # Don"t do anything if it's _DIFF.NOOP
     if not diff["SET"]:
         diff.pop("SET")
     if not diff["DELETE"]:
@@ -133,7 +133,7 @@ def diff_obj(obj, engine):
 
 
 def update(obj, attrs, expected):
-    '''
+    """
     Loading an object by table should expect all columns.
     Loading an object by index should expect all projected columns*.
 
@@ -152,7 +152,7 @@ def update(obj, attrs, expected):
      True     | True    | SET
      True     | False   | DEL
      False    | Either  | NOOP
-    '''
+    """
     for column in expected:
         name = column.dynamo_name
         value = attrs.get(name, _MISSING)
@@ -163,21 +163,21 @@ def update(obj, attrs, expected):
 
 
 def update_current(obj, engine):
-    ''' Set an object's tracking to match the current state. '''
+    """ Set an object's tracking to match the current state. """
     attrs = _get_current(obj, engine)
     update(obj, attrs, obj.Meta.columns)
 
 
 def clear(obj):
-    ''' Clear all tracking for an object.  Usually after a delete. '''
+    """ Clear all tracking for an object.  Usually after a delete. """
     update(obj, {}, obj.Meta.columns)
 
 
 def atomic_condition(obj):
-    '''
+    """
     Generate a condition to expect the last loaded state of an object.
     Missing fields will expect `is_(None)`
-    '''
+    """
     atomic = bloop.condition.Condition()
     tracking = _get_tracking(obj)
 

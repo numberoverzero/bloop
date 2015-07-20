@@ -28,7 +28,7 @@ def validate_key_condition(condition):
 
 
 def validate_prefetch(value):
-    invalid = ValueError("prefetch must be `all` or a non-negative int")
+    invalid = ValueError("prefetch must be 'all' or a non-negative int")
     if value != "all":
         try:
             value = int(value)
@@ -61,10 +61,10 @@ def validate_select_mode(select):
 
 
 class Filter(object):
-    '''
+    """
     Base class for Scan and Query.
-    '''
-    # Scan -> 'scan', Query -> 'query'
+    """
+    # Scan -> "scan", Query -> "query"
     filter_type = None
 
     def __init__(self, engine, *, model=None, index=None):
@@ -96,12 +96,12 @@ class Filter(object):
         return other
 
     def _expected(self):
-        '''
+        """
         Return a list of Columns that are expected for the current options.
-        '''
-        if self._select == 'all':
+        """
+        if self._select == "all":
             return self.model.Meta.columns
-        elif self._select == 'projected':
+        elif self._select == "projected":
             return self.index.projection_attributes
         # specific
         else:
@@ -116,11 +116,11 @@ class Filter(object):
 
     def _generate_request(self, renderer):
         request = {
-            'TableName': self.model.Meta.table_name,
-            'Select': SELECT_MODES[self._select]
+            "TableName": self.model.Meta.table_name,
+            "Select": SELECT_MODES[self._select]
         }
         if self.index:
-            request['IndexName'] = self.index.dynamo_name
+            request["IndexName"] = self.index.dynamo_name
         if self._filter_condition:
             renderer.render(self._filter_condition, mode="filter")
         if self._select == "specific":
@@ -129,12 +129,12 @@ class Filter(object):
         return request
 
     def all(self, prefetch=None):
-        '''
+        """
         Creates the FilterResult that will lazy load the results of the
         scan/query.
 
         Usage:
-            base_query = engine.query(Model).key(id='foo')
+            base_query = engine.query(Model).key(id="foo")
             query = base_query.consistent.ascending
 
             # Iterate results directly, discarding query metadata
@@ -146,7 +146,7 @@ class Filter(object):
             for result in results:
                 ...
             print(results.count, results.scanned_count)
-        '''
+        """
         if prefetch is None:
             prefetch = self.engine.config["prefetch"]
         # dynamo.client.query or dynamo.client.scan
@@ -199,7 +199,7 @@ class Filter(object):
         return other
 
     def first(self):
-        ''' Returns the first result that matches the filter. '''
+        """ Returns the first result that matches the filter. """
         result = self.all(prefetch=0)
         return result.first
 
@@ -217,7 +217,7 @@ class Filter(object):
         if not condition:
             raise ValueError("At least one key condition (hash) is required")
 
-        # AND is allowed so long as the index we're using allows hash + range
+        # AND is allowed so long as the index we"re using allows hash + range
         if isinstance(condition, bloop.condition.And):
             if max_conditions < len(condition):
                 msg = ("Model or Index only allows {} condition(s) but"
@@ -253,9 +253,9 @@ class Filter(object):
         return other
 
     def select(self, columns):
-        '''
-        columns must be 'all', 'projected', or a list of `bloop.Column` objects
-        '''
+        """
+        columns must be "all", "projected", or a list of `bloop.Column` objects
+        """
         select = validate_select_mode(columns)
         is_gsi = isinstance(self.index, bloop.index.GlobalSecondaryIndex)
         is_lsi = isinstance(self.index, bloop.index.LocalSecondaryIndex)
@@ -268,7 +268,7 @@ class Filter(object):
             other._select_columns.clear()
             return other
 
-        elif select == 'projected':
+        elif select == "projected":
             if not self.index:
                 raise ValueError("Cannot select 'projected' attributes"
                                  " without an index")
@@ -277,7 +277,7 @@ class Filter(object):
             other._select_columns.clear()
             return other
 
-        elif select == 'all':
+        elif select == "all":
             if requires_exact and self.index.projection != "ALL":
                 raise ValueError("Cannot select 'all' attributes from a GSI"
                                  " (or an LSI in strict mode) unless the"
@@ -287,12 +287,12 @@ class Filter(object):
             other._select_columns.clear()
             return other
 
-        # select is a list of model names, use 'specific'
+        # select is a list of model names, use "specific"
         else:
             # Combine before validation, since the total set may no longer
             # be valid for the index.
             other = self._copy()
-            other._select = 'specific'
+            other._select = "specific"
             other._select_columns.extend(select)
 
             if requires_exact and self.index.projection != "ALL":
@@ -316,8 +316,8 @@ class Query(Filter):
 
     def _generate_request(self, renderer):
         request = super()._generate_request(renderer)
-        request['ScanIndexForward'] = self._forward
-        request['ConsistentRead'] = self._consistent
+        request["ScanIndexForward"] = self._forward
+        request["ConsistentRead"] = self._consistent
 
         if not self._key_condition:
             raise ValueError("Must specify at least a hash key condition")
@@ -331,11 +331,11 @@ class Scan(Filter):
 
 
 class FilterResult(object):
-    '''
+    """
     Result from a scan or query.  Usually lazy loaded, iterate to execute.
 
     Uses engine.prefetch to control call batching
-    '''
+    """
     def __init__(self, prefetch, call, request, engine, model, expected):
         self._call = call
         self._prefetch = validate_prefetch(prefetch)
@@ -399,11 +399,11 @@ class FilterResult(object):
             return self.__prefetch_iter__()
 
     def __prefetch_iter__(self):
-        '''
+        """
         Separate function because the `yield` statement would turn __iter__
         into a generator when we want to return existing iterators in some
         cases.
-        '''
+        """
         while not self.complete:
             prefetch = self._prefetch
 
@@ -422,7 +422,7 @@ class FilterResult(object):
                 self._complete = True
 
     def _step(self):
-        ''' Single call, advancing ExclusiveStartKey if necessary. '''
+        """ Single call, advancing ExclusiveStartKey if necessary. """
         if self._continue:
             self.request["ExclusiveStartKey"] = self._continue
         response = self._call(self.request)

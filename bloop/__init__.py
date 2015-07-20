@@ -11,10 +11,10 @@ from bloop.types import (
 )
 
 __all__ = [
-    'Boolean', 'Binary', 'BinarySet', 'Column', 'Condition',
-    'ConstraintViolation', 'DateTime', 'Engine', 'Float', 'FloatSet',
-    'GlobalSecondaryIndex', 'Integer', 'IntegerSet', 'List',
-    'LocalSecondaryIndex', 'Map', 'Null', 'NotModified', 'String',
-    'StringSet', 'TableMismatch', 'UnboundModel', 'UUID'
+    "Boolean", "Binary", "BinarySet", "Column", "Condition",
+    "ConstraintViolation", "DateTime", "Engine", "Float", "FloatSet",
+    "GlobalSecondaryIndex", "Integer", "IntegerSet", "List",
+    "LocalSecondaryIndex", "Map", "Null", "NotModified", "String",
+    "StringSet", "TableMismatch", "UnboundModel", "UUID"
 ]
-__version__ = '0.7.4'
+__version__ = "0.7.4"

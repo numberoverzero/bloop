@@ -22,7 +22,7 @@ def validate_projection(projection):
 
 class Index(declare.Field):
     def __init__(self, *args, hash_key=None, range_key=None,
-                 name=None, projection='KEYS_ONLY', **kwargs):
+                 name=None, projection="KEYS_ONLY", **kwargs):
         self.hash_key = hash_key
         self.range_key = range_key
         self._dynamo_name = name
@@ -40,7 +40,7 @@ class Index(declare.Field):
 
 class GlobalSecondaryIndex(Index):
     def __init__(self, *args, write_units=1, read_units=1, **kwargs):
-        if 'hash_key' not in kwargs:
+        if "hash_key" not in kwargs:
             raise ValueError(
                 "Must specify a hash_key for a GlobalSecondaryIndex")
         super().__init__(*args, **kwargs)
@@ -49,16 +49,16 @@ class GlobalSecondaryIndex(Index):
 
 
 class LocalSecondaryIndex(Index):
-    ''' LSIs don't have individual read/write units '''
+    """ LSIs don"t have individual read/write units """
     def __init__(self, *args, **kwargs):
         # Hash key MUST be the table hash, pop any other values
-        if 'hash_key' in kwargs:
+        if "hash_key" in kwargs:
             raise ValueError(
                 "Can't specify the hash_key of a LocalSecondaryIndex")
-        if 'range_key' not in kwargs:
+        if "range_key" not in kwargs:
             raise ValueError(
                 "Must specify a range_key for a LocalSecondaryIndex")
-        if ('write_units' in kwargs) or ('read_units' in kwargs):
+        if ("write_units" in kwargs) or ("read_units" in kwargs):
             raise ValueError(
                 "A LocalSecondaryIndex does not have its own read/write units")
         super().__init__(*args, **kwargs)

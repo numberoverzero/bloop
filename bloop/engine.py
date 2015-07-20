@@ -10,18 +10,18 @@ import collections
 import collections.abc
 import contextlib
 import declare
-MISSING = bloop.util.Sentinel('MISSING')
+MISSING = bloop.util.Sentinel("MISSING")
 DEFAULT_CONFIG = {
-    'strict': False,
-    'prefetch': 0,
-    'consistent': False,
-    'persist': 'update',
-    'atomic': False
+    "strict": False,
+    "prefetch": 0,
+    "consistent": False,
+    "persist": "update",
+    "atomic": False
 }
 
 
 def list_of(objs):
-    ''' wrap single elements in a list '''
+    """ wrap single elements in a list """
     if isinstance(objs, str):  # pragma: no cover
         return [objs]
     elif isinstance(objs, collections.abc.Iterable):
@@ -31,17 +31,17 @@ def list_of(objs):
 
 
 def value_of(column):
-    ''' value_of({'S': 'Space Invaders'}) -> 'Space Invaders' '''
+    """ value_of({"S": "Space Invaders"}) -> "Space Invaders" """
     return next(iter(column.values()))
 
 
 def dump_key(engine, obj):
-    '''
+    """
     dump the hash (and range, if there is one) key(s) of an object into
     a dynamo-friendly format.
 
     returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
-    '''
+    """
     meta = obj.Meta
     hash_key, range_key = meta.hash_key, meta.range_key
     hash_value = getattr(obj, hash_key.model_name)
@@ -69,7 +69,7 @@ class Engine:
         self.config.update(config)
 
     def __dump__(self, model, obj):
-        ''' Return a dict of the obj in DynamoDB format '''
+        """ Return a dict of the obj in DynamoDB format """
         try:
             return self.type_engine.dump(model, obj)
         except declare.DeclareException:
@@ -80,7 +80,7 @@ class Engine:
                     "Failed to dump unknown model {}".format(model))
 
     def __instance__(self, model):
-        ''' Return an instance of a given model '''
+        """ Return an instance of a given model """
         return self.__load__(model, {})
 
     def __load__(self, model, value):
@@ -111,7 +111,7 @@ class Engine:
                 setattr(obj, column.model_name, value)
 
     def bind(self):
-        ''' Create tables for all models that have been registered '''
+        """ Create tables for all models that have been registered """
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
@@ -136,35 +136,35 @@ class Engine:
 
     @contextlib.contextmanager
     def context(self, **config):
-        '''
+        """
         with engine.context(atomic=True, consistent=True) as atomic:
             atomic.load(obj)
             del obj.foo
             obj.bar += 1
             atomic.save(obj)
-        '''
+        """
         yield EngineView(self, **config)
 
     def delete(self, objs, *, condition=None):
         objs = list_of(objs)
-        rendering = self.config['atomic'] or condition
+        rendering = self.config["atomic"] or condition
         for obj in objs:
             item = {"TableName": obj.Meta.table_name,
                     "Key": dump_key(self, obj)}
             if rendering:
                 renderer = bloop.condition.ConditionRenderer(self)
                 item_condition = bloop.condition.Condition()
-                if self.config['atomic']:
+                if self.config["atomic"]:
                     item_condition &= bloop.tracking.atomic_condition(obj)
                 if condition:
                     item_condition &= condition
-                renderer.render(item_condition, 'condition')
+                renderer.render(item_condition, "condition")
                 item.update(renderer.rendered)
             self.client.delete_item(item)
             bloop.tracking.clear(obj)
 
     def load(self, objs, *, consistent=None):
-        '''
+        """
         Populate objects from dynamodb, optionally using consistent reads.
 
         If any objects are not found, throws ObjectsNotFound with the attribute
@@ -182,14 +182,14 @@ class Engine:
             game_title = Column(StringType, range_key=True)
 
         hash_only = HashOnly(user_id=101)
-        hash_and_range = HashAndRange(user_id=101, game_title='Starship X')
+        hash_and_range = HashAndRange(user_id=101, game_title="Starship X")
 
         # Load only one instance, with consistent reads
         engine.load(hash_only, consistent=True)
 
         # Load multiple instances
         engine.load(hash_only, hash_and_range)
-        '''
+        """
         if consistent is None:
             consistent = self.config["consistent"]
 
@@ -248,18 +248,18 @@ class Engine:
         objs = list_of(objs)
         atomic = self.config["atomic"]
         mode = self.config["persist"]
-        update = mode == 'update'
+        update = mode == "update"
         rendering = atomic or condition or update
         try:
-            func = {'overwrite': self.client.put_item,
-                    'update': self.client.update_item}[mode]
+            func = {"overwrite": self.client.put_item,
+                    "update": self.client.update_item}[mode]
         except KeyError:
-            raise ValueError('Unknown persist mode {}'.format(mode))
+            raise ValueError("Unknown persist mode {}".format(mode))
         for obj in objs:
-            if mode == 'overwrite':
+            if mode == "overwrite":
                 item = {"TableName": obj.Meta.table_name,
                         "Item": self.__dump__(obj.__class__, obj)}
-            if mode == 'update':
+            if mode == "update":
                 item = {"TableName": obj.Meta.table_name,
                         "Key": dump_key(self, obj)}
             if rendering:
@@ -273,7 +273,7 @@ class Engine:
                 if condition:
                     item_condition &= condition
                 if item_condition:
-                    renderer.render(item_condition, 'condition')
+                    renderer.render(item_condition, "condition")
                 item.update(renderer.rendered)
             func(item)
             bloop.tracking.update_current(obj, self)

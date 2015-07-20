@@ -7,17 +7,17 @@ import numbers
 import uuid
 
 TYPES = []
-ENCODING = 'utf-8'
-STRING = 'S'
-NUMBER = 'N'
-BINARY = 'B'
-STRING_SET = 'SS'
-NUMBER_SET = 'NS'
-BINARY_SET = 'BS'
-NULL = 'NULL'
-BOOLEAN = 'BOOL'
-MAP = 'M'
-LIST = 'L'
+ENCODING = "utf-8"
+STRING = "S"
+NUMBER = "N"
+BINARY = "B"
+STRING_SET = "SS"
+NUMBER_SET = "NS"
+BINARY_SET = "BS"
+NULL = "NULL"
+BOOLEAN = "BOOL"
+MAP = "M"
+LIST = "L"
 
 # Dynamo takes numbers as strings to reduce inter-language problems
 DYNAMODB_CONTEXT = decimal.Context(
@@ -31,24 +31,24 @@ DYNAMODB_CONTEXT = decimal.Context(
 
 class Type(declare.TypeDefinition):
     def __load__(self, value):
-        '''
+        """
         take a {type: value} dictionary from dynamo and return a python value
-        '''
+        """
         value = next(iter(value.values()))
         return self.dynamo_load(value)
 
     def can_load(self, value):
-        '''
+        """
         whether this type can load the given
         {type: value} dictionary from dynamo
-        '''
+        """
         backing_type = next(iter(value.keys()))
         return backing_type == self.backing_type
 
     def __dump__(self, value):
-        '''
+        """
         dump a python value to a {type: value} dictionary for dynamo storage
-        '''
+        """
         return {self.backing_type: self.dynamo_dump(value)}
 
     def dynamo_load(self, value):
@@ -58,7 +58,7 @@ class Type(declare.TypeDefinition):
         return value
 
     def can_dump(self, value):
-        ''' whether this type can dump the given value to dynamo '''
+        """ whether this type can dump the given value to dynamo """
         return isinstance(value, self.python_type)
 
     def __repr__(self, *a, **kw):  # pragma: no cover
@@ -87,7 +87,7 @@ class UUID(String):
 
 
 class DateTime(String):
-    '''
+    """
     DateTimes are ALWAYS stored in UTC, but can be handled transparently as any
     timezone, by specifying one when (optionally) initializing the type.
 
@@ -96,13 +96,13 @@ class DateTime(String):
 
         class Model(engine.model):
             id = Column(Integer, hash_key=True)
-            date = Column(DateTime(timezone='US/Pacific'))
+            date = Column(DateTime(timezone="US/Pacific"))
         engine.bind()
 
-        obj = Model(id=1, date=arrow.now().to('US/Pacific'))
+        obj = Model(id=1, date=arrow.now().to("US/Pacific"))
         engine.save(obj)
 
-        paris_one_day_ago = arrow.now().to('Europe/Paris').replace(days=-1)
+        paris_one_day_ago = arrow.now().to("Europe/Paris").replace(days=-1)
 
         query = (engine.query(Model)
                        .key(Model.id==1)
@@ -110,9 +110,9 @@ class DateTime(String):
 
         results = list(query)
         print(results[0].date)
-    '''
+    """
     python_type = arrow.Arrow
-    default_timezone = 'UTC'
+    default_timezone = "UTC"
 
     def __init__(self, timezone=None):
         self.timezone = timezone or DateTime.default_timezone
@@ -130,7 +130,7 @@ class DateTime(String):
         if value is None:
             return None
         # ALWAYS store in UTC - we can manipulate the timezone on load
-        iso8601_string = value.to('utc').isoformat()
+        iso8601_string = value.to("utc").isoformat()
         return super().dynamo_dump(iso8601_string)
 
 
@@ -147,12 +147,12 @@ class Float(Type):
         if value is None:
             return None
         n = str(DYNAMODB_CONTEXT.create_decimal(value))
-        if any(filter(lambda x: x in n, ('Infinity', 'NaN'))):
-            raise TypeError('Infinity and NaN not supported')
+        if any(filter(lambda x: x in n, ("Infinity", "NaN"))):
+            raise TypeError("Infinity and NaN not supported")
         return n
 
     def can_dump(self, value):
-        ''' explicitly disallow bool and subclasses '''
+        """ explicitly disallow bool and subclasses """
         return (isinstance(value, self.python_type) and not
                 isinstance(value, bool))
 
@@ -185,12 +185,12 @@ class Binary(Type):
     def dynamo_dump(self, value):
         if value is None:
             return None
-        return base64.b64encode(value).decode('utf-8')
+        return base64.b64encode(value).decode("utf-8")
 
 
 def set_type(typename, typedef, dynamo_type):
     class Set(Type):
-        ''' Adapter for sets of objects '''
+        """ Adapter for sets of objects """
         python_type = collections.abc.Set
         backing_type = dynamo_type
 
@@ -214,19 +214,19 @@ def set_type(typename, typedef, dynamo_type):
     return type(typename, (Set,), {})
 
 
-StringSet = set_type('StringSet', String, STRING_SET)
-FloatSet = set_type('FloatSet', Float, NUMBER_SET)
-IntegerSet = set_type('IntegerSet', Integer, NUMBER_SET)
-BinarySet = set_type('BinarySet', Binary, BINARY_SET)
+StringSet = set_type("StringSet", String, STRING_SET)
+FloatSet = set_type("FloatSet", Float, NUMBER_SET)
+IntegerSet = set_type("IntegerSet", Integer, NUMBER_SET)
+BinarySet = set_type("BinarySet", Binary, BINARY_SET)
 
 
 class Null(Type):
-    '''
+    """
     Load/dump are taken from the boto3 TypeSerializer/TypeDeserializer
 
     https://github.com/boto/boto3/blob/545fa5120137bbdc3d4e493012c97d6ad35df9af/boto3/dynamodb/types.py#L197
     https://github.com/boto/boto3/blob/545fa5120137bbdc3d4e493012c97d6ad35df9af/boto3/dynamodb/types.py#L269
-    '''
+    """
     python_type = type(None)
     backing_type = NULL
 
@@ -289,7 +289,7 @@ TYPES.extend([
 
 
 class DefaultSerializer:
-    ''' Default load/dump for Maps and Lists. '''
+    """ Default load/dump for Maps and Lists. """
 
     def __init__(self, types=None):
         self.types = []
@@ -297,7 +297,7 @@ class DefaultSerializer:
             self.types.append(typedef())
 
     def load(self, value):
-        ''' value is a dictionary {dynamo_type: value} '''
+        """ value is a dictionary {dynamo_type: value} """
         for typedef in self.types:
             if typedef.can_load(value):
                 return typedef.__load__(value)

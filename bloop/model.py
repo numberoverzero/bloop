@@ -2,11 +2,11 @@ import bloop.column
 import bloop.index
 import bloop.util
 import declare
-MISSING = bloop.util.Sentinel('MISSING')
+MISSING = bloop.util.Sentinel("MISSING")
 
 
 class __BaseModel(object):
-    '''
+    """
     DO NOT SUBCLASS DIRECTLY.
 
     Instead, subclass the `model` attribute of an engine.  This ensures the
@@ -20,7 +20,7 @@ class __BaseModel(object):
 
         class CustomBaseModel(BaseModel):
             # ... cross-model code goes here
-    '''
+    """
     def __init__(self, **attrs):
         # Only set values from **attrs if there's a
         # corresponding `model_name` for a column in the model
@@ -31,7 +31,7 @@ class __BaseModel(object):
 
     @classmethod
     def __load__(cls, attrs):
-        ''' dict -> obj '''
+        """ dict -> obj """
         obj = cls.Meta.bloop_init()
         # Expect all columns on load
         cls.Meta.bloop_engine.__update__(obj, attrs, cls.Meta.columns)
@@ -39,7 +39,7 @@ class __BaseModel(object):
 
     @classmethod
     def __dump__(cls, obj):
-        ''' obj -> dict '''
+        """ obj -> dict """
         attrs = {}
         engine = cls.Meta.bloop_engine.type_engine
         for column in cls.Meta.columns:
@@ -60,7 +60,7 @@ class __BaseModel(object):
         return super().__hash__()
 
     def __eq__(self, other):
-        ''' Only checks defined columns. '''
+        """ Only checks defined columns. """
         cls = self.__class__
         if not isinstance(other, cls):
             return False
@@ -76,7 +76,7 @@ class __BaseModel(object):
 
 
 def BaseModel(engine):
-    '''
+    """
     Although this returns a class, you should NOT call this function to create
     a base model class.  Instead, subclass the `model` attribute of an engine.
     Doing this ensures the proper metaclass setup has been performed,
@@ -89,7 +89,7 @@ def BaseModel(engine):
 
         class CustomBaseModel(BaseModel):
             # ... cross-model code goes here
-    '''
+    """
     if engine.model:
         raise ValueError("BaseModel already exists for engine")
 
@@ -112,9 +112,9 @@ def BaseModel(engine):
                 Meta.fields))
 
             Meta.columns_by_model_name = declare.index(
-                Meta.columns, 'model_name')
+                Meta.columns, "model_name")
             Meta.columns_by_dynamo_name = declare.index(
-                Meta.columns, 'dynamo_name')
+                Meta.columns, "dynamo_name")
 
             Meta.hash_key = None
             Meta.range_key = None

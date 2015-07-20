@@ -41,19 +41,19 @@ class ComparisonMixin(object):
         return bloop.condition.Comparison(self, comparator, value)
 
     def is_(self, value):
-        ''' alias for == '''
+        """ alias for == """
         return self == value
 
     def is_not(self, value):
-        ''' alias for != '''
+        """ alias for != """
         return self != value
 
     def between(self, lower, upper):
-        ''' lower <= column.value <= upper '''
+        """ lower <= column.value <= upper """
         return bloop.condition.Between(self, lower, upper)
 
     def in_(self, values):
-        ''' column.value in [3, 4, 5] '''
+        """ column.value in [3, 4, 5] """
         return bloop.condition.In(self, values)
 
     def begins_with(self, value):

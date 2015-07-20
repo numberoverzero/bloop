@@ -9,7 +9,7 @@ import functools
 import time
 
 
-TableStatus = enum.Enum('TableStatus', ['Busy', 'Ready'])
+TableStatus = enum.Enum("TableStatus", ["Busy", "Ready"])
 DEFAULT_BACKOFF_COEFF = 50.0
 DEFAULT_MAX_ATTEMPTS = 4
 MAX_BATCH_SIZE = 25
@@ -20,11 +20,11 @@ RETRYABLE_ERRORS = [
 
 
 def default_backoff_func(operation, attempts):
-    '''
+    """
     Exponential backoff helper.
 
     attempts is the number of calls so far that have failed
-    '''
+    """
     if attempts == DEFAULT_MAX_ATTEMPTS:
         raise RuntimeError("Failed {} after {} attempts".format(
             operation, attempts))
@@ -32,7 +32,7 @@ def default_backoff_func(operation, attempts):
 
 
 def partition_batch_get_input(batch_size, items):
-    ''' Takes a batch_get input and partitions into 25 object chunks '''
+    """ Takes a batch_get input and partitions into 25 object chunks """
     chunk = {}
     count = 0
     for table_name, table_attrs in items.items():
@@ -59,26 +59,26 @@ def partition_batch_get_input(batch_size, items):
 class Client(object):
     def __init__(self, session=None, backoff_func=None,
                  batch_size=MAX_BATCH_SIZE):
-        '''
+        """
         backoff_func is an optional function with signature
         (dynamo operation name, attempts so far) that should either:
             - return the number of seconds to sleep
             - raise to stop
-        '''
+        """
         # Fall back to the global session
         self.client = (session or boto3).client("dynamodb")
         self.backoff_func = backoff_func or default_backoff_func
         self.batch_size = batch_size
 
     def _call_with_retries(self, func, *args, **kwargs):
-        ''' Uses `self.backoff_func` to handle retries '''
+        """ Uses `self.backoff_func` to handle retries """
         operation = func.__name__
         attempts = 1
         while True:
             try:
                 output = func(*args, **kwargs)
             except botocore.exceptions.ClientError as error:
-                error_code = error.response['Error']['Code']
+                error_code = error.response["Error"]["Code"]
                 if error_code not in RETRYABLE_ERRORS:
                     raise error
             else:
@@ -107,21 +107,21 @@ class Client(object):
         try:
             self._call_with_retries(client_func, **item)
         except botocore.exceptions.ClientError as error:
-            error_code = error.response['Error']['Code']
-            if error_code == 'ConditionalCheckFailedException':
+            error_code = error.response["Error"]["Code"]
+            if error_code == "ConditionalCheckFailedException":
                 raise bloop.exceptions.ConstraintViolation(name, item)
             else:
                 raise error
 
     def batch_get_items(self, items):
-        '''
+        """
         Takes the "RequestItems" dict and returns the "Responses" dict
         documented here:
             http://docs.aws.amazon.com/amazondynamodb/latest/ \
                 APIReference/API_BatchGetItem.html
 
         Handles batching and throttling/retry with backoff
-        '''
+        """
         response = {}
         get_batch = functools.partial(self._call_with_retries,
                                       self.client.batch_get_item)
@@ -145,13 +145,13 @@ class Client(object):
         return response
 
     def create_table(self, model):
-        '''
+        """
         Suppress ResourceInUseException (table already exists)
 
         Does not wait for table to be ACTIVE, or validate schema.  This allows
         multiple CreateTable calls to kick off at once, and busy polling can
         block afterwards.
-        '''
+        """
         table = table_for_model(model)
         create = functools.partial(self._call_with_retries,
                                    self.client.create_table)
@@ -159,8 +159,8 @@ class Client(object):
             create(**table)
         except botocore.exceptions.ClientError as error:
             # Raise unless the table already exists
-            error_code = error.response['Error']['Code']
-            if error_code != 'ResourceInUseException':
+            error_code = error.response["Error"]["Code"]
+            if error_code != "ResourceInUseException":
                 raise error
 
     def delete_item(self, item):
@@ -186,12 +186,12 @@ class Client(object):
         table.get("ProvisionedThroughput", {}).pop(
             "NumberOfDecreasesToday", None)
 
-        for index in table.get('GlobalSecondaryIndexes', []):
+        for index in table.get("GlobalSecondaryIndexes", []):
             for field in junk_index_fields:
                 index.pop(field, None)
             index.get("ProvisionedThroughput", {}).pop(
                 "NumberOfDecreasesToday", None)
-        for index in table.get('LocalSecondaryIndexes', []):
+        for index in table.get("LocalSecondaryIndexes", []):
             for field in junk_index_fields:
                 index.pop(field, None)
         return table
@@ -209,11 +209,11 @@ class Client(object):
         self._modify_item(self.client.update_item, "update", item)
 
     def validate_table(self, model):
-        '''
+        """
         Poll table status until Table and all GSIs are ACTIVE.
         Raise bloop.exceptions.TableMismatch if actual table
         doesn't match expected
-        '''
+        """
         expected = table_for_model(model)
         status = TableStatus.Busy
         while status is TableStatus.Busy:
@@ -224,7 +224,7 @@ class Client(object):
 
 
 def attribute_definitions(model):
-    ''' Only include table and index hash/range keys '''
+    """ Only include table and index hash/range keys """
     dedupe_attrs = set()
     attrs = []
 
@@ -233,8 +233,8 @@ def attribute_definitions(model):
 
     def attribute_def(column):
         return {
-            'AttributeType': column.typedef.backing_type,
-            'AttributeName': column.dynamo_name
+            "AttributeType": column.typedef.backing_type,
+            "AttributeName": column.dynamo_name
         }
 
     for column in filter(has_key, model.Meta.columns):
@@ -259,28 +259,28 @@ def global_secondary_indexes(model):
             model.Meta.indexes):
         gsi_key_schema = key_schema(index=index)
         provisioned_throughput = {
-            'WriteCapacityUnits': index.write_units,
-            'ReadCapacityUnits': index.read_units
+            "WriteCapacityUnits": index.write_units,
+            "ReadCapacityUnits": index.read_units
         }
 
         gsis.append({
-            'ProvisionedThroughput': provisioned_throughput,
-            'Projection': index_projection(index),
-            'IndexName': index.dynamo_name,
-            'KeySchema': gsi_key_schema
+            "ProvisionedThroughput": provisioned_throughput,
+            "Projection": index_projection(index),
+            "IndexName": index.dynamo_name,
+            "KeySchema": gsi_key_schema
         })
     return gsis
 
 
 def index_projection(index):
     projection = {
-        'ProjectionType': index.projection,
-        'NonKeyAttributes': [
+        "ProjectionType": index.projection,
+        "NonKeyAttributes": [
             column.dynamo_name for column in index.projection_attributes
         ]
     }
-    if index.projection != 'INCLUDE' or not projection['NonKeyAttributes']:
-        projection.pop('NonKeyAttributes')
+    if index.projection != "INCLUDE" or not projection["NonKeyAttributes"]:
+        projection.pop("NonKeyAttributes")
     return projection
 
 
@@ -293,13 +293,13 @@ def key_schema(*, index=None, model=None):
         hash_key = model.Meta.hash_key
         range_key = model.Meta.range_key
     schema = [{
-        'AttributeName': hash_key.dynamo_name,
-        'KeyType': 'HASH'
+        "AttributeName": hash_key.dynamo_name,
+        "KeyType": "HASH"
     }]
     if range_key:
         schema.append({
-            'AttributeName': range_key.dynamo_name,
-            'KeyType': 'RANGE'
+            "AttributeName": range_key.dynamo_name,
+            "KeyType": "RANGE"
         })
     return schema
 
@@ -312,9 +312,9 @@ def local_secondary_indexes(model):
         lsi_key_schema = key_schema(index=index)
 
         lsis.append({
-            'Projection': index_projection(index),
-            'IndexName': index.dynamo_name,
-            'KeySchema': lsi_key_schema
+            "Projection": index_projection(index),
+            "IndexName": index.dynamo_name,
+            "KeySchema": lsi_key_schema
         })
     return lsis
 
@@ -324,31 +324,31 @@ def table_for_model(model):
     table = {
         "TableName": model.Meta.table_name,
         "ProvisionedThroughput": {
-            'WriteCapacityUnits': model.Meta.write_units,
-            'ReadCapacityUnits': model.Meta.read_units
+            "WriteCapacityUnits": model.Meta.write_units,
+            "ReadCapacityUnits": model.Meta.read_units
         },
         "KeySchema": key_schema(model=model),
         "AttributeDefinitions": attribute_definitions(model),
         "GlobalSecondaryIndexes": global_secondary_indexes(model),
         "LocalSecondaryIndexes": local_secondary_indexes(model)
     }
-    if not table['GlobalSecondaryIndexes']:
-        table.pop('GlobalSecondaryIndexes')
-    if not table['LocalSecondaryIndexes']:
-        table.pop('LocalSecondaryIndexes')
+    if not table["GlobalSecondaryIndexes"]:
+        table.pop("GlobalSecondaryIndexes")
+    if not table["LocalSecondaryIndexes"]:
+        table.pop("LocalSecondaryIndexes")
     return table
 
 
 def table_status(table):
-    '''
+    """
     Returns BUSY if table or any GSI is not ACTIVE, otherwise READY
 
     mutates table - pops status entries
-    '''
+    """
     status = TableStatus.Ready
     if table.pop("TableStatus", "ACTIVE") != "ACTIVE":
         status = TableStatus.Busy
-    for index in table.get('GlobalSecondaryIndexes', []):
+    for index in table.get("GlobalSecondaryIndexes", []):
         if index.pop("IndexStatus", "ACTIVE") != "ACTIVE":
             status = TableStatus.Busy
     return status

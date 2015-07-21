@@ -4,7 +4,7 @@ import enum
 
 _DIFF = enum.Enum("DIFF", ["SET", "DEL", "NOOP"])
 _MISSING = bloop.util.Sentinel("MISSING")
-_TRACKING_ATTR_NAME = "__tracking__"
+_TRACKING_ATTR_NAME = "__tracking"
 
 
 def _tracking_dict(obj):
@@ -14,7 +14,7 @@ def _tracking_dict(obj):
     """
     tracking = getattr(obj, _TRACKING_ATTR_NAME, None)
     if tracking is None:
-        tracking = {}
+        tracking = {"values": {}, "loaded": set()}
         setattr(obj, _TRACKING_ATTR_NAME, tracking)
     return tracking
 
@@ -34,11 +34,11 @@ def _set_value(obj, name, value):
 
 def _del_value(obj, name):
     """
-    Delete the value of an attr from the obj's tracking dict.  This marks
-    the attr as having not been loaded from DynamoDB, and should only be used
-    when the attribute was EXPECTED to be returned, but DID NOT return because
-    it was empty.  This should NOT be used when the attribute was NOT loaded,
-    such as a query against an Index that does not project all attributes.
+    Delete the value of an attr from the obj's tracking dict.  This should only
+    be called when the attribute was EXPECTED to be returned, but DID NOT
+    return because it was empty.  This should NOT be used when the attribute
+    was NOT loaded, such as a query against an Index that does not project
+    all attributes.
     """
     _tracking_dict(obj).pop(name, None)
 
@@ -49,6 +49,22 @@ def _get_value(obj, name):
     KeyError if there is no value.
     """
     return _tracking_dict(obj)[name]
+
+
+def _set_loaded(obj, loaded):
+    """
+    Set the expected columns for the object.  This is used when constructing
+    atomic conditions, so that only loaded columns have conditions generated.
+
+    Otherwise, there would be a ``attribute_not_exists`` for every missing
+    column, even those not loaded.
+    """
+    _tracking_dict(obj)["loaded"] = set(loaded)
+
+
+def _get_loaded(obj):
+    """Return the loaded columns for the object."""
+    return _tracking_dict(obj)["loaded"]
 
 
 def _get_tracking(obj):
@@ -169,6 +185,7 @@ def update(obj, attrs, expected):
             _del_value(obj, name)
         else:
             _set_value(obj, name, value)
+    _set_loaded(obj, expected)
 
 
 def update_current(obj, engine):
@@ -195,10 +212,11 @@ def atomic_condition(obj):
     """
     atomic = bloop.condition.Condition()
     tracking = _get_tracking(obj)
+    loaded = _get_loaded(obj)
 
     # While sorting isn't required, it allows us some sanity in testing.
     # The overhead to do so will rarely be significant.
-    for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
+    for column in sorted(loaded, key=lambda col: col.dynamo_name):
         value = tracking.get(column.dynamo_name, None)
         condition = column.is_(value)
         condition.dumped = True

@@ -25,14 +25,14 @@ def test_update_del_on_missing(User, engine):
     for a model with a loaded value, the loaded value should be deleted
     on the next update call where that column is expected but not present
     """
-    # Set age in the object's __tracking__ so we can ensure it's cleared
+    # Set age in the object's __tracking so we can ensure it's cleared
     user = User(id=uuid.uuid4(), age=4)
     bloop.tracking.update_current(user, engine)
-    assert "age" in user.__tracking__
+    assert "age" in user.__tracking
 
     # Update with no fields, but expect age to be present
     bloop.tracking.update(user, {}, [User.age])
-    assert "age" not in user.__tracking__
+    assert "age" not in user.__tracking
 
 
 def test_update_set(User, engine):
@@ -40,25 +40,25 @@ def test_update_set(User, engine):
     when an expected value is present, it should be added to the loaded values
     during an update.
     """
-    # Ensure __tracking__ is clear to start
+    # Ensure __tracking is clear to start
     user = User(id=uuid.uuid4(), age=4)
     bloop.tracking.clear(user)
-    assert "age" not in user.__tracking__
+    assert "age" not in user.__tracking
 
     age = engine._dump(User, user)["age"]
     expected = {"N": "4"}
 
     # Update with no fields, but expect age to be present
     bloop.tracking.update(user, {"age": age}, [User.age])
-    assert user.__tracking__["age"] == expected
+    assert user.__tracking["age"] == expected
 
 
 def test_keys_not_in_diff(ComplexModel, engine):
     """ key columns should never be part of a diff """
     obj = ComplexModel(name=uuid.uuid4(), date="now")
     bloop.tracking.update_current(obj, engine)
-    assert "name" in obj.__tracking__
-    assert "date" in obj.__tracking__
+    assert "name" in obj.__tracking
+    assert "date" in obj.__tracking
 
     diff = bloop.tracking.diff_obj(obj, engine)
     assert not diff
@@ -79,6 +79,7 @@ def test_atomic_condition(ComplexModel, engine):
     """ rendered condition uses last loaded values, not current """
     name = uuid.uuid4()
     obj = ComplexModel(name=name, joined="now")
+    # Expect all columns (except name, joined) to not exist
     bloop.tracking.update_current(obj, engine)
 
     # Shouldn't see "then" in expression values
@@ -98,5 +99,25 @@ def test_atomic_condition(ComplexModel, engine):
                                       ":v5": {"S": str(name)}},
         "ConditionExpression": condition}
 
-    print(renderer.rendered)
+    assert renderer.rendered == expected
+
+
+def test_atomic_partial_load(ComplexModel, engine):
+    """
+    When only some columns are loaded, an atomic condition should only build
+    conditions on those columns - not on all columns of the model.
+    """
+    obj = ComplexModel(name=uuid.uuid4(), joined="now")
+    attrs = engine._dump(ComplexModel, obj)
+    expected = [ComplexModel.name, ComplexModel.joined]
+    bloop.tracking.update(obj, attrs, expected)
+
+    atomic_condition = bloop.tracking.atomic_condition(obj)
+    renderer = bloop.condition.ConditionRenderer(engine)
+    renderer.render(atomic_condition, "condition")
+    expected = {
+        'ExpressionAttributeValues': {
+            ':v3': {'S': str(obj.name)}, ':v1': {'S': 'now'}},
+        'ExpressionAttributeNames': {'#n0': 'joined', '#n2': 'name'},
+        'ConditionExpression': '((#n0 = :v1) AND (#n2 = :v3))'}
     assert renderer.rendered == expected

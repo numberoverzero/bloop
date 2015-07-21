@@ -190,6 +190,22 @@ def test_save_condition(User, engine):
     engine.save(user, condition=condition)
 
 
+def test_save_atomic_new(User, engine):
+    """
+    When an object is first created, an atomic save should not expect any
+    columns to not exist, since it has never been loaded.
+    """
+    user_id = uuid.uuid4()
+    user = User(id=user_id)
+    expected = {'TableName': 'User', 'Key': {'id': {'S': str(user_id)}}}
+
+    def validate(item):
+        assert item == expected
+    engine.client.update_item = validate
+    engine.config["atomic"] = True
+    engine.save(user)
+
+
 def test_save_atomic_update_condition(User, engine):
     user_id = uuid.uuid4()
     user = User(id=user_id)
@@ -216,7 +232,6 @@ def test_save_atomic_update_condition(User, engine):
     def validate(item):
         nonlocal called
         called = True
-        print(item)
         assert item == expected
     engine.client.update_item = validate
     engine.config["atomic"] = True
@@ -412,18 +427,17 @@ def test_delete_multiple(User, engine):
 def test_delete_atomic(User, engine):
     user_id = uuid.uuid4()
     user = User(id=user_id)
+    # Force tracking to think we loaded only the column id
+    attrs = engine._dump(User, user)
+    expected = [User.id]
+    bloop.tracking.update(user, attrs, expected)
 
-    condition = (
-        "(((((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1))) AND"
-        " (attribute_not_exists(#n2))) AND (attribute_not_exists(#n3))) AND"
-        " (attribute_not_exists(#n4)))")
     expected = {
-        "ExpressionAttributeNames": {"#n1": "email", "#n4": "name",
-                                     "#n3": "joined", "#n2": "id",
-                                     "#n0": "age"},
-        "Key": {"id": {"S": str(user_id)}},
-        "TableName": "User",
-        "ConditionExpression": condition}
+        'ConditionExpression': '(#n0 = :v1)',
+        'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
+        'TableName': 'User',
+        'Key': {'id': {'S': str(user_id)}},
+        'ExpressionAttributeNames': {'#n0': 'id'}}
     called = False
 
     def validate(item):
@@ -436,26 +450,44 @@ def test_delete_atomic(User, engine):
     assert called
 
 
-def test_delete_atomic_condition(User, engine):
+def test_delete_atomic_new(User, engine):
+    """
+    When an object is first created, an atomic delete should not expect any
+    columns to not exist, since it has never been loaded.
+    """
     user_id = uuid.uuid4()
     user = User(id=user_id)
-    condition = (
-        "((((((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1))) AND"
-        " (attribute_not_exists(#n2))) AND (attribute_not_exists(#n3))) AND"
-        " (attribute_not_exists(#n4))) AND (#n4 = :v5))")
-
-    expected = {
-        "Key": {"id": {"S": str(user_id)}},
-        "ConditionExpression": condition,
-        "ExpressionAttributeNames": {"#n3": "joined", "#n4": "name",
-                                     "#n0": "age", "#n2": "id",
-                                     "#n1": "email"},
-        "ExpressionAttributeValues": {":v5": {"S": "foo"}},
-        "TableName": "User"}
-    called = False
+    expected = {'TableName': 'User', 'Key': {'id': {'S': str(user_id)}}}
 
     def validate(item):
         print(item)
+        assert item == expected
+    engine.client.delete_item = validate
+    engine.config["atomic"] = True
+    engine.delete(user)
+
+
+def test_delete_atomic_condition(User, engine):
+    user_id = uuid.uuid4()
+    user = User(id=user_id, email='foo@bar.com')
+    # Force tracking to think we loaded only the columns id and email
+    attrs = engine._dump(User, user)
+    expected = [User.id, User.email]
+    bloop.tracking.update(user, attrs, expected)
+
+    expected = {
+        'ExpressionAttributeNames': {
+            '#n2': 'id', '#n4': 'name', '#n0': 'email'},
+        'ConditionExpression':
+            '(((#n0 = :v1) AND (#n2 = :v3)) AND (#n4 = :v5))',
+        'TableName': 'User',
+        'ExpressionAttributeValues': {
+            ':v5': {'S': 'foo'}, ':v1': {'S': 'foo@bar.com'},
+            ':v3': {'S': str(user_id)}},
+        'Key': {'id': {'S': str(user_id)}}}
+    called = False
+
+    def validate(item):
         nonlocal called
         called = True
         assert item == expected

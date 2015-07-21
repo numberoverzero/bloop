@@ -17,10 +17,10 @@ Create a Model
 
 engine.bind()
 
-Save and Delete Objects
--------------------------
+Load, Save, and Delete
+----------------------
 
-engine.save, engine.delete
+engine.load, engine.save, engine.delete
 
 Query and Scan
 --------------

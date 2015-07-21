@@ -57,6 +57,33 @@ def _partition_batch_get_input(batch_size, items):
 
 
 class Client(object):
+    """Intermediate client that wraps a `boto3.client('dynamodb')`.
+
+    Client simplifies the particularly tedious and low-level tasks when
+    interfacing with DynamoDB, such as retries with exponential backoff,
+    batching requests, and following continuation tokens.
+
+    Except where model classes are taken as arguments, the function signatures
+    match those of their boto3 client counterparts.
+
+    Attributes:
+        client (boto3.client): Low-level client to communicate with DynamoDB
+        backoff_func (func<str, int>): Calculates the duration to wait between
+            retries.  By default, an exponential backoff function is used.
+        batch_size (int): The maximum number of items to include in a batch
+            request to DynamoDB.  The default value is 25, the maximum upper
+            limit imposed by DynamoDB.  A lower limit may be useful to
+            constrain per-request sizes.
+
+    See Also:
+        `boto3 DynamoDB Client`_
+        `DynamoDB API Reference`_
+
+    .. _boto3 DynamoDB Client:
+        http://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#client
+    .. _DynamoDB API Reference:
+        http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Operations.html
+    """
     def __init__(self, session=None, backoff_func=None,
                  batch_size=MAX_BATCH_SIZE):
         """
@@ -114,13 +141,41 @@ class Client(object):
                 raise error
 
     def batch_get_items(self, items):
-        """
-        Takes the "RequestItems" dict and returns the "Responses" dict
-        documented here:
-            http://docs.aws.amazon.com/amazondynamodb/latest/ \
-                APIReference/API_BatchGetItem.html
+        """Load objects in batches from DynamoDB.
 
-        Handles batching and throttling/retry with backoff
+        The dict structure is identical to the boto3 client's counterpart.
+        It also handles partitioning inputs larger than 25 items (default
+        DynamoDB batch size) into batches, retrying failed requests, and
+        following UnprocessedKeys for each batch.
+
+        Args:
+            items (dict): See `batch_get_item (DynamoDB Client)`_
+
+        Returns:
+            dict: {table_name: [], ...}
+                Where each key is a table name, and its value is the list of
+                the objects loaded from that table.
+
+        Note:
+            Order between request and response lists within a table IS NOT
+            preserved.  There are numerous factors that will influence ordering
+            including retries, unprocessed items, and batch boundaries.
+
+            Instead you should keep an indexable reference to each key passed
+            in and look up items in the return list using it.  For performance,
+            it's likely better to pop each item from the result and retrieve
+            the model instance to load into from a dict, using the hashable
+            representation of the item key as the dict key.
+
+        See Also:
+            `BatchGetItem (DynamoDB API Reference)`_
+            `batch_get_item (DynamoDB Client)`_
+
+        .. _BatchGetItem (DynamoDB API Reference):
+            http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchGetItem.html
+        .. _batch_get_item (DynamoDB Client):
+            http://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.batch_get_item
+
         """
         response = {}
         get_batch = functools.partial(self._call_with_retries,
@@ -145,14 +200,28 @@ class Client(object):
         return response
 
     def create_table(self, model):
-        """
-        Suppress ResourceInUseException (table already exists)
+        """Create a new table from the model.
 
-        Does not wait for table to be ACTIVE, or validate schema.  This allows
-        multiple CreateTable calls to kick off at once, and busy polling can
-        block afterwards.
+        If the table already exists, 'ResourceInUseException' is suppressed.
+        This operation does not wait for the table to be in the ACTIVE state,
+        nor does it ensure an existing table matches the expected schema.
+
+        To verify the table exists, is ACTIVE, and has a matching schema, use
+        :meth:`~Client.validate_table`.
+
+        Args:
+            model: subclass of an :attr:`~Engine.model`
+
+        See Also:
+            `CreateTable (DynamoDB API Reference)`_
+            `create_table (DynamoDB Client)`_
+
+        .. _CreateTable (DynamoDB API Reference):
+            http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html
+        .. create_table (DynamoDB Client):
+            https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.create_table
         """
-        table = table_for_model(model)
+        table = _table_for_model(model)
         create = functools.partial(self._call_with_retries,
                                    self.client.create_table)
         try:
@@ -164,15 +233,71 @@ class Client(object):
                 raise error
 
     def delete_item(self, item):
+        """Delete an item from DynamoDB.
+
+        The dict structure is identical to the boto3 client's counterpart.
+        It also handles retrying failed requests.
+
+        Args:
+            item (dict): See `delete_item (DynamoDB Client)`_
+
+        See Also:
+            `DeleteItem (DynamoDB API Reference)`_
+            `delete_item (DynamoDB Client)`_
+
+        .. _DeleteItem (DynamoDB API Reference):
+            http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html
+        .. _delete_item (DynamoDB Client):
+            https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.delete_item
+        """
         self._modify_item(self.client.delete_item, "delete", item)
 
     def describe_table(self, model):
+        """Load the schema for a model's table, stripping out useless metadata.
+
+        The following attributes are not included:
+            * TableName
+            * ProvisionedThroughput
+            * KeySchema
+            * AttributeDefinitions
+            * GlobalSecondaryIndexes
+            * LocalSecondaryIndexes
+            * TableStatus
+            * The following attributes of a GSI/LSI:
+              * ItemCount
+              * IndexSizeBytes
+              * IndexArn
+              * ProvisionedThroughput > NumberOfDecreasesToday
+
+        Args:
+            model: subclass of an :attr:`~Engine.model`
+
+        Returns:
+            dict: The same return value from boto3.client with the above
+                fields stripped out.
+
+        Raises:
+            :class:`~TableMismatch`: If the actual schema doesn't match
+                the required schema for the model.
+
+        See Also:
+            :meth:`~Client.create_table`
+            :meth:`~Client.describe_table`
+            `DescribeTable (DynamoDB API Reference)`_
+            `describe_table (DynamoDB Client)`_
+
+        .. _DescribeTable (DynamoDB API Reference):
+            http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DescribeTable.html
+        .. _describe_table (DynamoDB Client):
+            https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.describe_table
+
+        """
         description = self._call_with_retries(
             self.client.describe_table,
             TableName=model.Meta.table_name)["Table"]
 
         # We don't care about a bunch of the returned attributes, and want to
-        # massage the returned value to match `table_for_model` that's passed
+        # massage the returned value to match `_table_for_model` that's passed
         # to `Client.create_table` so we can compare them with `ordered`
         fields = ["TableName", "ProvisionedThroughput", "KeySchema",
                   "AttributeDefinitions", "GlobalSecondaryIndexes",
@@ -197,6 +322,27 @@ class Client(object):
         return table
 
     def put_item(self, item):
+        """Put an item into DynamoDB.  Overwrite existing columns for the row.
+
+        The dict structure is identical to the boto3 client's counterpart.
+        It also handles retrying failed requests.
+
+        Args:
+            item (dict): See `put_item (DynamoDB Client)`_
+
+                Where the 'Item' value is the dumped representation of the
+                item's columns, and Expression key/value pairs are likely
+                the output of :attr:`~ConditionRenderer.rendered`.
+
+        See Also:
+            `PutItem (DynamoDB API Reference)`_
+            `put_item (DynamoDB Client)`_
+
+        .. _PutItem (DynamoDB API Reference):
+            http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html
+        .. _put_item (DynamoDB Client):
+            https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.put_item
+        """
         self._modify_item(self.client.put_item, "put", item)
 
     def query(self, request):
@@ -206,24 +352,53 @@ class Client(object):
         return self._filter(self.client.scan, request)
 
     def update_item(self, item):
+        """Update an item in DynamoDB.  Only modify given values.
+
+        The dict structure is identical to the boto3 client's counterpart.
+        It also handles retrying failed requests.
+
+        Args:
+            item (dict): See `update_item (DynamoDB Client)`_
+
+        See Also:
+            `UpdateItem (DynamoDB API Reference)`_
+            `update_item (DynamoDB Client)`
+
+        .. _UpdateItem (DynamoDB API Reference):
+            http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
+        .. _update_item (DynamoDB Client):
+            https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.update_item
+        """
         self._modify_item(self.client.update_item, "update", item)
 
     def validate_table(self, model):
+        """Busy poll until table is ACTIVE.  Raises on schema mismatch.
+
+        The table and all GSIs must be ACTIVE before the schemas will be
+        compared.  If the required schema for a model doesn't match the
+        existing table's schema, :class:`~TableMismatch` is raised.
+
+        Args:
+            model: subclass of an :attr:`~Engine.model`
+
+        Raises:
+            :class:`~.TableMismatch`: If the actual schema doesn't
+                match the required schema for the model.
+
+        See Also:
+            :meth:`~Client.create_table`
+            :meth:`~Client.describe_table`
         """
-        Poll table status until Table and all GSIs are ACTIVE.
-        Raise bloop.exceptions.TableMismatch if actual table
-        doesn't match expected
-        """
-        expected = table_for_model(model)
+        expected = _table_for_model(model)
         status = TABLE_STATUS.Busy
         while status is TABLE_STATUS.Busy:
             actual = self.describe_table(model)
-            status = table_status(actual)
+            status = _table_status(actual)
         if bloop.util.ordered(actual) != bloop.util.ordered(expected):
             raise bloop.exceptions.TableMismatch(model, expected, actual)
 
 
-def attribute_definitions(model):
+def _attribute_definitions(model):
     """ Only include table and index hash/range keys """
     dedupe_attrs = set()
     attrs = []
@@ -252,12 +427,12 @@ def attribute_definitions(model):
     return attrs
 
 
-def global_secondary_indexes(model):
+def _global_secondary_indexes(model):
     gsis = []
     for index in filter(
         lambda i: isinstance(i, bloop.index.GlobalSecondaryIndex),
             model.Meta.indexes):
-        gsi_key_schema = key_schema(index=index)
+        gsi_key_schema = _key_schema(index=index)
         provisioned_throughput = {
             "WriteCapacityUnits": index.write_units,
             "ReadCapacityUnits": index.read_units
@@ -265,14 +440,14 @@ def global_secondary_indexes(model):
 
         gsis.append({
             "ProvisionedThroughput": provisioned_throughput,
-            "Projection": index_projection(index),
+            "Projection": _index_projection(index),
             "IndexName": index.dynamo_name,
             "KeySchema": gsi_key_schema
         })
     return gsis
 
 
-def index_projection(index):
+def _index_projection(index):
     projection = {
         "ProjectionType": index.projection,
         "NonKeyAttributes": [
@@ -284,7 +459,7 @@ def index_projection(index):
     return projection
 
 
-def key_schema(*, index=None, model=None):
+def _key_schema(*, index=None, model=None):
     if index:
         hash_key = index.hash_key
         range_key = index.range_key
@@ -304,22 +479,22 @@ def key_schema(*, index=None, model=None):
     return schema
 
 
-def local_secondary_indexes(model):
+def _local_secondary_indexes(model):
     lsis = []
     for index in filter(
         lambda i: isinstance(i, bloop.index.LocalSecondaryIndex),
             model.Meta.indexes):
-        lsi_key_schema = key_schema(index=index)
+        lsi_key_schema = _key_schema(index=index)
 
         lsis.append({
-            "Projection": index_projection(index),
+            "Projection": _index_projection(index),
             "IndexName": index.dynamo_name,
             "KeySchema": lsi_key_schema
         })
     return lsis
 
 
-def table_for_model(model):
+def _table_for_model(model):
     """ Return the expected table dict for a given model. """
     table = {
         "TableName": model.Meta.table_name,
@@ -327,10 +502,10 @@ def table_for_model(model):
             "WriteCapacityUnits": model.Meta.write_units,
             "ReadCapacityUnits": model.Meta.read_units
         },
-        "KeySchema": key_schema(model=model),
-        "AttributeDefinitions": attribute_definitions(model),
-        "GlobalSecondaryIndexes": global_secondary_indexes(model),
-        "LocalSecondaryIndexes": local_secondary_indexes(model)
+        "KeySchema": _key_schema(model=model),
+        "AttributeDefinitions": _attribute_definitions(model),
+        "GlobalSecondaryIndexes": _global_secondary_indexes(model),
+        "LocalSecondaryIndexes": _local_secondary_indexes(model)
     }
     if not table["GlobalSecondaryIndexes"]:
         table.pop("GlobalSecondaryIndexes")
@@ -339,7 +514,7 @@ def table_for_model(model):
     return table
 
 
-def table_status(table):
+def _table_status(table):
     """
     Returns BUSY if table or any GSI is not ACTIVE, otherwise READY
 

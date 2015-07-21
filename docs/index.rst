@@ -33,7 +33,7 @@ User Guide
 
    user/installation
    user/getting_started
-   user/advanced_customization
+   user/advanced
 
 API Documentation
 -----------------

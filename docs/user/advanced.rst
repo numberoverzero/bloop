@@ -1,5 +1,5 @@
-Advanced Features and Customization
-===================================
+Advanced Features
+=================
 
 Prefetch and Strict
 -------------------

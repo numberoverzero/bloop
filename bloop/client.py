@@ -57,7 +57,7 @@ def _partition_batch_get_input(batch_size, items):
 
 
 class Client(object):
-    """Intermediate client that wraps a `boto3.client('dynamodb')`.
+    """Intermediate client that wraps a ``boto3.client('dynamodb')``.
 
     Client simplifies the particularly tedious and low-level tasks when
     interfacing with DynamoDB, such as retries with exponential backoff,
@@ -76,8 +76,8 @@ class Client(object):
             constrain per-request sizes.
 
     See Also:
-        `boto3 DynamoDB Client`_
-        `DynamoDB API Reference`_
+        * `boto3 DynamoDB Client`_
+        * `DynamoDB API Reference`_
 
     .. _boto3 DynamoDB Client:
         http://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#client
@@ -98,7 +98,6 @@ class Client(object):
         self.batch_size = batch_size
 
     def _call_with_retries(self, func, *args, **kwargs):
-        """ Uses `self.backoff_func` to handle retries """
         operation = func.__name__
         attempts = 1
         while True:
@@ -168,8 +167,8 @@ class Client(object):
             representation of the item key as the dict key.
 
         See Also:
-            `BatchGetItem (DynamoDB API Reference)`_
-            `batch_get_item (DynamoDB Client)`_
+            * `BatchGetItem (DynamoDB API Reference)`_
+            * `batch_get_item (DynamoDB Client)`_
 
         .. _BatchGetItem (DynamoDB API Reference):
             http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_BatchGetItem.html
@@ -213,8 +212,10 @@ class Client(object):
             model: subclass of an :attr:`~Engine.model`
 
         See Also:
-            `CreateTable (DynamoDB API Reference)`_
-            `create_table (DynamoDB Client)`_
+            * :meth:`~Client.describe_table`
+            * :meth:`~Client.validate_table`
+            * `CreateTable (DynamoDB API Reference)`_
+            * `create_table (DynamoDB Client)`_
 
         .. _CreateTable (DynamoDB API Reference):
             http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html
@@ -242,8 +243,8 @@ class Client(object):
             item (dict): See `delete_item (DynamoDB Client)`_
 
         See Also:
-            `DeleteItem (DynamoDB API Reference)`_
-            `delete_item (DynamoDB Client)`_
+            * `DeleteItem (DynamoDB API Reference)`_
+            * `delete_item (DynamoDB Client)`_
 
         .. _DeleteItem (DynamoDB API Reference):
             http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html
@@ -281,10 +282,10 @@ class Client(object):
                 the required schema for the model.
 
         See Also:
-            :meth:`~Client.create_table`
-            :meth:`~Client.describe_table`
-            `DescribeTable (DynamoDB API Reference)`_
-            `describe_table (DynamoDB Client)`_
+            * :meth:`~Client.create_table`
+            * :meth:`~Client.validate_table`
+            * `DescribeTable (DynamoDB API Reference)`_
+            * `describe_table (DynamoDB Client)`_
 
         .. _DescribeTable (DynamoDB API Reference):
             http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DescribeTable.html
@@ -335,8 +336,8 @@ class Client(object):
                 the output of :attr:`~ConditionRenderer.rendered`.
 
         See Also:
-            `PutItem (DynamoDB API Reference)`_
-            `put_item (DynamoDB Client)`_
+            * `PutItem (DynamoDB API Reference)`_
+            * `put_item (DynamoDB Client)`_
 
         .. _PutItem (DynamoDB API Reference):
             http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html
@@ -361,8 +362,8 @@ class Client(object):
             item (dict): See `update_item (DynamoDB Client)`_
 
         See Also:
-            `UpdateItem (DynamoDB API Reference)`_
-            `update_item (DynamoDB Client)`
+            * `UpdateItem (DynamoDB API Reference)`_
+            * `update_item (DynamoDB Client)`
 
         .. _UpdateItem (DynamoDB API Reference):
             http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
@@ -386,8 +387,8 @@ class Client(object):
                 match the required schema for the model.
 
         See Also:
-            :meth:`~Client.create_table`
-            :meth:`~Client.describe_table`
+            * :meth:`~Client.create_table`
+            * :meth:`~Client.describe_table`
         """
         expected = _table_for_model(model)
         status = TABLE_STATUS.Busy

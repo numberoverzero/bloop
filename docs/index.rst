@@ -9,8 +9,11 @@ Welcome to bloop's documentation!
 Contents:
 
 .. toctree::
-   :maxdepth: 4
+   :maxdepth: 2
 
+   installation
+   using_bloop
+   advanced_customization
    bloop
 
 

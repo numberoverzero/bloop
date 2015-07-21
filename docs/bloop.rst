@@ -1,13 +1,10 @@
-bloop package
+bloop API
 =============
 
-Submodules
-----------
-
-bloop.client module
+:class:`bloop.Client`
 -------------------
 
-.. automodule:: bloop.client
+.. autoclass:: bloop.client.Client
     :members:
     :undoc-members:
     :show-inheritance:

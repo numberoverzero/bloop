@@ -11,81 +11,68 @@ Public API
     their implementation or even class can change between minor releases.
     You SHOULD NOT rely on their type or internal members to be stable.
 
-:class:`bloop.Column`
+Engine
+---------------------
+
+.. autoclass:: bloop.engine.Engine
+    :members:
+    :undoc-members:
+
+Column
 ---------------------
 
 .. autoclass:: bloop.column.Column
     :members:
     :undoc-members:
 
-bloop.condition module
-----------------------
+GlobalSecondaryIndex
+-----------------------------------
 
-.. automodule:: bloop.condition
+.. autoclass:: bloop.GlobalSecondaryIndex
     :members:
     :undoc-members:
-    :show-inheritance:
 
-bloop.engine module
--------------------
+LocalSecondaryIndex
+----------------------------------------
 
-.. automodule:: bloop.engine
+.. autoclass:: bloop.index.LocalSecondaryIndex
     :members:
     :undoc-members:
-    :show-inheritance:
 
-bloop.exceptions module
------------------------
+Query
+---------------------------
 
-.. automodule:: bloop.exceptions
+.. autoclass:: bloop.filter.Query
     :members:
     :undoc-members:
-    :show-inheritance:
 
-bloop.filter module
--------------------
+Scan
+--------------------------
 
-.. automodule:: bloop.filter
+.. autoclass:: bloop.filter.Scan
     :members:
     :undoc-members:
-    :show-inheritance:
 
-bloop.index module
-------------------
+Condition
+------------------------
 
-.. automodule:: bloop.index
+.. autoclass:: bloop.condition.Condition
     :members:
     :undoc-members:
-    :show-inheritance:
 
-bloop.model module
-------------------
-
-.. automodule:: bloop.model
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-bloop.tracking module
----------------------
-
-.. automodule:: bloop.tracking
-    :members:
-    :undoc-members:
-    :show-inheritance:
-
-bloop.types module
+Types
 ------------------
 
 .. automodule:: bloop.types
     :members:
     :undoc-members:
+    :exclude-members: DefaultSerializer
     :show-inheritance:
 
-bloop.util module
------------------
+Exceptions
+-----------------------
 
-.. automodule:: bloop.util
+.. automodule:: bloop.exceptions
     :members:
     :undoc-members:
     :show-inheritance:

@@ -61,9 +61,7 @@ def _validate_select_mode(select):
 
 
 class _Filter(object):
-    """
-    Base class for Scan and Query.
-    """
+    """Base class for Scan and Query."""
     # Scan -> "scan", Query -> "query"
     filter_type = None
 
@@ -129,23 +127,25 @@ class _Filter(object):
         return request
 
     def all(self, prefetch=None):
-        """
-        Creates the FilterResult that will lazy load the results of the
+        """Creates the FilterResult that will lazy load the results of the
         scan/query.
 
         Usage:
-            base_query = engine.query(Model).key(id="foo")
-            query = base_query.consistent.ascending
+            Building a query iteratively::
 
-            # Iterate results directly, discarding query metadata
-            for result in query:
-                ...
+                base_query = engine.query(Model).key(id="foo")
+                query = base_query.consistent.ascending
 
-            # Save reference to FilterResult instance
-            results = query.all()
-            for result in results:
-                ...
-            print(results.count, results.scanned_count)
+                # Iterate results directly, discarding query metadata
+                for result in query:
+                    ...
+
+                # Save reference to FilterResult instance
+                results = query.all()
+                for result in results:
+                    ...
+                print(results.count, results.scanned_count)
+
         """
         if prefetch is None:
             prefetch = self.engine.config["prefetch"]

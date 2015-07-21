@@ -49,7 +49,7 @@ class GlobalSecondaryIndex(_Index):
 
 
 class LocalSecondaryIndex(_Index):
-    """ LSIs don"t have individual read/write units """
+    """ LSIs don't have individual read/write units """
     def __init__(self, *args, **kwargs):
         # Hash key MUST be the table hash, pop any other values
         if "hash_key" in kwargs:

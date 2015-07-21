@@ -80,13 +80,16 @@ def _diff_value(current, loaded):
     Returns the _DIFF value that should be applied to the attribute when
     saving back to DynamoDB.
 
-     current  | loaded  | _DIFF
-    ----------|---------|-----------
-      foo     |    foo  | _DIFF.NOOP
-      MISSING | MISSING | _DIFF.NOOP
-      MISSING | bar     | _DIFF.DEL
-      foo     |    bar  | _DIFF.SET
-      foo     | MISSING | _DIFF.SET
+    =======  =======  ==========
+    current  loaded   _DIFF
+    =======  =======  ==========
+    foo      foo      _DIFF.NOOP
+    MISSING  MISSING  _DIFF.NOOP
+    MISSING  bar      _DIFF.DEL
+    foo      bar      _DIFF.SET
+    foo      MISSING  _DIFF.SET
+    =======  =======  ==========
+
     """
     if bloop.util.ordered(current) == bloop.util.ordered(loaded):
         return _DIFF.NOOP

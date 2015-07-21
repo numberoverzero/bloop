@@ -28,11 +28,11 @@ def test_update_del_on_missing(User, engine):
     # Set age in the object's __tracking so we can ensure it's cleared
     user = User(id=uuid.uuid4(), age=4)
     bloop.tracking.update_current(user, engine)
-    assert "age" in user.__tracking
+    assert "age" in user.__tracking["values"]
 
     # Update with no fields, but expect age to be present
     bloop.tracking.update(user, {}, [User.age])
-    assert "age" not in user.__tracking
+    assert "age" not in user.__tracking["values"]
 
 
 def test_update_set(User, engine):
@@ -43,22 +43,22 @@ def test_update_set(User, engine):
     # Ensure __tracking is clear to start
     user = User(id=uuid.uuid4(), age=4)
     bloop.tracking.clear(user)
-    assert "age" not in user.__tracking
+    assert "age" not in user.__tracking["values"]
 
     age = engine._dump(User, user)["age"]
     expected = {"N": "4"}
 
     # Update with no fields, but expect age to be present
     bloop.tracking.update(user, {"age": age}, [User.age])
-    assert user.__tracking["age"] == expected
+    assert user.__tracking["values"]["age"] == expected
 
 
 def test_keys_not_in_diff(ComplexModel, engine):
     """ key columns should never be part of a diff """
     obj = ComplexModel(name=uuid.uuid4(), date="now")
     bloop.tracking.update_current(obj, engine)
-    assert "name" in obj.__tracking
-    assert "date" in obj.__tracking
+    assert "name" in obj.__tracking["values"]
+    assert "date" in obj.__tracking["values"]
 
     diff = bloop.tracking.diff_obj(obj, engine)
     assert not diff

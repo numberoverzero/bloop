@@ -28,8 +28,7 @@ def _set_value(obj, name, value):
     TODO: Should this use copy.deepcopy()?  Why would someone mutate the value
     before it is passed to the column"s typedef for loading?
     """
-    tracking = _tracking_dict(obj)
-    tracking[name] = value
+    _tracking_dict(obj)["values"][name] = value
 
 
 def _del_value(obj, name):
@@ -40,7 +39,7 @@ def _del_value(obj, name):
     was NOT loaded, such as a query against an Index that does not project
     all attributes.
     """
-    _tracking_dict(obj).pop(name, None)
+    _tracking_dict(obj)["values"].pop(name, None)
 
 
 def _get_value(obj, name):
@@ -48,7 +47,7 @@ def _get_value(obj, name):
     Returns the value for an attr from the obj's tracking dict.  Raises
     KeyError if there is no value.
     """
-    return _tracking_dict(obj)[name]
+    return _tracking_dict(obj)["values"][name]
 
 
 def _set_loaded(obj, loaded):

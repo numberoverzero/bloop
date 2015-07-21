@@ -12,9 +12,10 @@ Contents:
    :maxdepth: 2
 
    installation
-   using_bloop
+   getting_started
    advanced_customization
-   bloop
+   public_api
+   internal_api
 
 
 Indices and tables

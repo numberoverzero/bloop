@@ -290,7 +290,7 @@ TYPES.extend([
 ])
 
 
-class DefaultSerializer:
+class _DefaultSerializer:
     """ Default load/dump for Maps and Lists. """
 
     def __init__(self, types=None):
@@ -314,4 +314,4 @@ class DefaultSerializer:
 # Have to set default serializers for Map, List after all Types have been
 # defined
 
-Map.serializer = List.serializer = DefaultSerializer()
+Map.serializer = List.serializer = _DefaultSerializer()

@@ -66,7 +66,6 @@ Types
 .. automodule:: bloop.types
     :members:
     :undoc-members:
-    :exclude-members: DefaultSerializer
     :show-inheritance:
 
 Exceptions

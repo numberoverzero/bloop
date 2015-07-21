@@ -59,8 +59,8 @@ Contributing
 
 .. _DynamoDB: http://aws.amazon.com/dynamodb/
 .. _boto3 client: http://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html
-.. _significant amount of code: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-boto3-py
-.. _should be simple: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-bloop-py
+.. _significant amount of code: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-query_boto3-py
+.. _should be simple: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-query_bloop-py
 .. _conditional saves: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-conditional_save-py
 .. _atomic updates: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-atomic_update-py
 .. _data types: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DataModel.html#DataModel.DataTypes

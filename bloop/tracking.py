@@ -186,6 +186,12 @@ def atomic_condition(obj):
     """
     Generate a condition to expect the last loaded state of an object.
     Missing fields will expect `is_(None)`
+
+    TODO: this will expect attribute_not_exists for columns that haven't been
+          loaded, even if they did exist on last load (for instance, loading)
+          through a key_only projection would give us no non-key attributes,
+          but this would produce an expectation that those attributes were
+          actually not set.
     """
     atomic = bloop.condition.Condition()
     tracking = _get_tracking(obj)

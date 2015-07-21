@@ -1,19 +1,29 @@
-CONSTRAINT_FAILURE = "Failed to meet expected condition during {}"
-NOT_MODIFIED = "Failed to modify some obects during {}"
-TABLE_MISMATCH = "Existing table for model {} does not match expected"
-UNBOUND = "Failed to {} unbound model.  Did you forget to call engine.bind()?"
+"""
+Exceptions raised during normal use of bloop which can be programatically
+responded to.
+
+There are no exceptions for things like specifying an invalid
+key when constructing a Query, for example, because there is no way to
+automatically recover from that failure.
+
+"""
+
+_CONSTRAINT_FAILURE = "Failed to meet expected condition during {}"
+_NOT_MODIFIED = "Failed to modify some obects during {}"
+_TABLE_MISMATCH = "Existing table for model {} does not match expected"
+_UNBOUND = "Failed to {} unbound model.  Did you forget to call engine.bind()?"
 
 
 class ConstraintViolation(Exception):
     """Raised when a condition is not met during put/update/delete.
 
     Attributes:
-        obj: The dict that was sent to dynamodb and failed some conditional
-             operation
+        obj (dict): The dict that was sent to dynamodb and failed some
+            conditional operation
 
     """
     def __init__(self, operation, obj):
-        super().__init__(CONSTRAINT_FAILURE.format(operation))
+        super().__init__(_CONSTRAINT_FAILURE.format(operation))
         self.obj = obj
 
 
@@ -25,7 +35,7 @@ class NotModified(Exception):
 
     """
     def __init__(self, operation, objects):
-        super().__init__(NOT_MODIFIED.format(operation))
+        super().__init__(_NOT_MODIFIED.format(operation))
         self.objects = objects
 
 
@@ -38,7 +48,7 @@ class TableMismatch(Exception):
         actual (dict): The actual schema of the table
     """
     def __init__(self, model, expected, actual):
-        super().__init__(TABLE_MISMATCH.format(model))
+        super().__init__(_TABLE_MISMATCH.format(model))
         self.model = model
         self.expected = expected
         self.actual = actual
@@ -56,6 +66,6 @@ class UnboundModel(Exception):
 
     """
     def __init__(self, operation, model, obj):
-        super().__init__(UNBOUND.format(operation))
+        super().__init__(_UNBOUND.format(operation))
         self.model = model
         self.obj = obj

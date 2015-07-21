@@ -110,14 +110,15 @@ class _BaseCondition:
 
 
 class Condition(_BaseCondition):
-    """
-    Empty condition that can be used as an initial value for iteratively
-    building conditions.
+    """Empty condition for iteratively building up conditions.
 
-    Usage:
-        condition = Condition()
-        for foo in bar:
-            condition &= Model.field == foo
+    Example:
+        Constructing an AND condition with 3 sub-conditions::
+
+            condition = Condition()
+            for value in [1, 2, 3]:
+                condition &= Model.field == value
+
     """
     def __and__(self, other):
         return other

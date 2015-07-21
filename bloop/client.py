@@ -218,7 +218,7 @@ class Client(object):
 
         .. _CreateTable (DynamoDB API Reference):
             http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_CreateTable.html
-        .. create_table (DynamoDB Client):
+        .. _create_table (DynamoDB Client):
             https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.create_table
         """
         table = _table_for_model(model)

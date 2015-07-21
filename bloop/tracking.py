@@ -97,16 +97,18 @@ def _diff_value(current, loaded):
 
 
 def diff_obj(obj, engine):
-    """
-    Returns a dict of changes to make for a given object, comparing its
-    current values to its tracking (last loaded) values.
+    """Creates a dict of changes to make for a given object.
 
-    The return dict is:
+    Returns:
+        dict: A dict with two keys "SET" and "DELETE".
 
-    {
-        "SET": [(Column<Foo>, obj.Foo), (Column<Bar>, obj.Bar), ...],
-        "DELETE": [Column<Baz>, ...]
-    }
+        The dict has the following format::
+
+            {
+                "SET": [(Column<Foo>, obj.Foo), (Column<Bar>, obj.Bar), ...],
+                "DELETE": [Column<Baz>, ...]
+            }
+
     """
     hash_key, range_key = obj.Meta.hash_key, obj.Meta.range_key
     current = _get_current(obj, engine)
@@ -133,11 +135,14 @@ def diff_obj(obj, engine):
 
 
 def update(obj, attrs, expected):
-    """
-    Loading an object by table should expect all columns.
-    Loading an object by index should expect all projected columns*.
+    """Update the object's tracking dict.
 
-    * Except when using an LSI and selecting more than the projected columns,
+    The updates are created by the intersection of attrs and expected.
+
+    Loading an object by table should expect all columns.
+    Loading an object by index should expect all projected columns\*.
+
+    \* Except when using an LSI and selecting more than the projected columns,
     in which case all should be expected (LSIs will fetch from the table).
 
     attrs should be a dict {dynamo_name: dumped value}
@@ -145,13 +150,14 @@ def update(obj, attrs, expected):
 
     set or del attributes from the obj's tracking dict, depending on whether
     they were expected in the return value, and whether they are actually
-    present.
+    present::
 
-     expected | present | change
-    ----------|---------|--------
-     True     | True    | SET
-     True     | False   | DEL
-     False    | Either  | NOOP
+         expected | present | change
+        ----------|---------|--------
+         True     | True    | SET
+         True     | False   | DEL
+         False    | Either  | NOOP
+
     """
     for column in expected:
         name = column.dynamo_name

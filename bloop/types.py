@@ -87,12 +87,13 @@ class UUID(String):
 
 
 class DateTime(String):
-    """
-    DateTimes are ALWAYS stored in UTC, but can be handled transparently as any
-    timezone, by specifying one when (optionally) initializing the type.
+    """DateTimes are ALWAYS stored in UTC, backed by arrow.Arrow instances.
+
+    A local timezone may be specified when initializing the type - otherwise
+    UTC is used.
 
     For example, comparisons can be done in any timezone since they
-    will all be converted to UTC on request and from UTC on response:
+    will all be converted to UTC on request and from UTC on response::
 
         class Model(engine.model):
             id = Column(Integer, hash_key=True)
@@ -110,6 +111,7 @@ class DateTime(String):
 
         results = list(query)
         print(results[0].date)
+
     """
     python_type = arrow.Arrow
     default_timezone = "UTC"

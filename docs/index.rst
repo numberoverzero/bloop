@@ -23,7 +23,7 @@ Bloop supports the latest DynamoDB features, including:
   and UUID
 * Local and Global `Secondary Indexes`_
 * `Conditional Writes`_ for Save and Delete operations
-* `Expressions`_, allowing the use of reserved words for attribute names
+* `Expressions`_ which allow the use of reserved words for attribute names
 
 User Guide
 ----------

@@ -1,5 +1,5 @@
-bloop Internal API
-==================
+Internal API
+============
 
 .. warning::
 

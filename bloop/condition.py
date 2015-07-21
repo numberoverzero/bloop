@@ -143,7 +143,7 @@ class Condition(_BaseCondition):
         raise RuntimeError("Can't render empty condition")
 
 
-class MultiCondition(_BaseCondition):
+class _MultiCondition(_BaseCondition):
     def __init__(self, *conditions):
         self.conditions = list(conditions)
 
@@ -163,7 +163,7 @@ class MultiCondition(_BaseCondition):
         return "(" + conjunction.join(rendered_conditions) + ")"
 
 
-class And(MultiCondition):
+class And(_MultiCondition):
     name = "And"
     uname = "AND"
 
@@ -172,7 +172,7 @@ class And(MultiCondition):
         return self
 
 
-class Or(MultiCondition):
+class Or(_MultiCondition):
     name = "Or"
     uname = "OR"
 

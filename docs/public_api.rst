@@ -1,5 +1,5 @@
-bloop Public API
-================
+Public API
+==========
 
 .. note::
 

@@ -31,9 +31,9 @@ User Guide
 .. toctree::
    :maxdepth: 2
 
-   installation
-   getting_started
-   advanced_customization
+   user/installation
+   user/getting_started
+   user/advanced_customization
 
 API Documentation
 -----------------
@@ -46,8 +46,8 @@ developers.
 .. toctree::
    :maxdepth: 2
 
-   public_api
-   internal_api
+   api/public
+   api/internal
 
 Contributing
 ------------
@@ -55,7 +55,7 @@ Contributing
 .. toctree::
     :maxdepth: 1
 
-    contributing
+    dev/contributing
 
 .. _DynamoDB: http://aws.amazon.com/dynamodb/
 .. _boto3 client: http://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html

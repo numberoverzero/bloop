@@ -89,12 +89,3 @@ bloop.util module
     :members:
     :undoc-members:
     :show-inheritance:
-
-
-Module contents
----------------
-
-.. automodule:: bloop
-    :members:
-    :undoc-members:
-    :show-inheritance:

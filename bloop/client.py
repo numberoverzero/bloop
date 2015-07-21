@@ -66,18 +66,17 @@ class Client(object):
     Except where model classes are taken as arguments, the function signatures
     match those of their boto3 client counterparts.
 
+    See Also:
+        * `boto3 DynamoDB Client`_
+        * `DynamoDB API Reference`_
+
     Attributes:
         client (boto3.client): Low-level client to communicate with DynamoDB
         backoff_func (func<str, int>): Calculates the duration to wait between
             retries.  By default, an exponential backoff function is used.
         batch_size (int): The maximum number of items to include in a batch
-            request to DynamoDB.  The default value is 25, the maximum upper
-            limit imposed by DynamoDB.  A lower limit may be useful to
-            constrain per-request sizes.
-
-    See Also:
-        * `boto3 DynamoDB Client`_
-        * `DynamoDB API Reference`_
+            request to DynamoDB.  Default value is 25, a lower limit may be
+            useful to constrain per-request sizes.
 
     .. _boto3 DynamoDB Client:
         http://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#client
@@ -206,14 +205,14 @@ class Client(object):
         nor does it ensure an existing table matches the expected schema.
 
         To verify the table exists, is ACTIVE, and has a matching schema, use
-        :meth:`~Client.validate_table`.
+        :meth:`.validate_table`.
 
         Args:
-            model: subclass of an :attr:`~Engine.model`
+            model: subclass of an :attr:`bloop.Engine.model`
 
         See Also:
-            * :meth:`~Client.describe_table`
-            * :meth:`~Client.validate_table`
+            * :meth:`.describe_table`
+            * :meth:`.validate_table`
             * `CreateTable (DynamoDB API Reference)`_
             * `create_table (DynamoDB Client)`_
 
@@ -241,6 +240,10 @@ class Client(object):
 
         Args:
             item (dict): See `delete_item (DynamoDB Client)`_
+
+        Raises:
+            bloop.ConstraintViolation: If the update contains a condition that
+                fails on update.
 
         See Also:
             * `DeleteItem (DynamoDB API Reference)`_
@@ -271,19 +274,15 @@ class Client(object):
               * ProvisionedThroughput > NumberOfDecreasesToday
 
         Args:
-            model: subclass of an :attr:`~Engine.model`
+            model: subclass of an :attr:`bloop.Engine.model`
 
         Returns:
-            dict: The same return value from boto3.client with the above
+            dict: The same return value from a ``boto3.client`` with the above
                 fields stripped out.
 
-        Raises:
-            :class:`~TableMismatch`: If the actual schema doesn't match
-                the required schema for the model.
-
         See Also:
-            * :meth:`~Client.create_table`
-            * :meth:`~Client.validate_table`
+            * :meth:`.create_table`
+            * :meth:`.validate_table`
             * `DescribeTable (DynamoDB API Reference)`_
             * `describe_table (DynamoDB Client)`_
 
@@ -331,9 +330,9 @@ class Client(object):
         Args:
             item (dict): See `put_item (DynamoDB Client)`_
 
-                Where the 'Item' value is the dumped representation of the
-                item's columns, and Expression key/value pairs are likely
-                the output of :attr:`~ConditionRenderer.rendered`.
+        Raises:
+            bloop.ConstraintViolation: If the update contains a condition that
+                fails on update.
 
         See Also:
             * `PutItem (DynamoDB API Reference)`_
@@ -361,9 +360,13 @@ class Client(object):
         Args:
             item (dict): See `update_item (DynamoDB Client)`_
 
+        Raises:
+            bloop.ConstraintViolation: If the update contains a condition that
+                fails on update.
+
         See Also:
             * `UpdateItem (DynamoDB API Reference)`_
-            * `update_item (DynamoDB Client)`
+            * `update_item (DynamoDB Client)`_
 
         .. _UpdateItem (DynamoDB API Reference):
             http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
@@ -377,18 +380,18 @@ class Client(object):
 
         The table and all GSIs must be ACTIVE before the schemas will be
         compared.  If the required schema for a model doesn't match the
-        existing table's schema, :class:`~TableMismatch` is raised.
+        existing table's schema, :exc:`bloop.TableMismatch` is raised.
 
         Args:
-            model: subclass of an :attr:`~Engine.model`
+            model: subclass of an :attr:`bloop.Engine.model`
 
         Raises:
-            :class:`~.TableMismatch`: If the actual schema doesn't
+            bloop.TableMismatch: If the actual schema doesn't
                 match the required schema for the model.
 
         See Also:
-            * :meth:`~Client.create_table`
-            * :meth:`~Client.describe_table`
+            * :meth:`.create_table`
+            * :meth:`.describe_table`
         """
         expected = _table_for_model(model)
         status = TABLE_STATUS.Busy

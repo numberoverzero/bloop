@@ -2,20 +2,18 @@ bloop API
 =============
 
 :class:`bloop.Client`
--------------------
+---------------------
 
 .. autoclass:: bloop.client.Client
     :members:
     :undoc-members:
-    :show-inheritance:
 
-bloop.column module
--------------------
+:class:`bloop.Column`
+---------------------
 
-.. automodule:: bloop.column
+.. autoclass:: bloop.column.Column
     :members:
     :undoc-members:
-    :show-inheritance:
 
 bloop.condition module
 ----------------------

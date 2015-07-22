@@ -70,7 +70,7 @@ def test_diff_del(ComplexModel, engine):
     bloop.tracking.update_current(obj, engine)
 
     del obj.joined
-    expected = {"DELETE": [ComplexModel.joined]}
+    expected = {"REMOVE": [ComplexModel.joined]}
     diff = bloop.tracking.diff_obj(obj, engine)
     assert diff == expected
 

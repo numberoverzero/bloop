@@ -327,21 +327,21 @@ def test_save_update_multiple(User, engine):
 
 
 def test_save_set_del_field(User, engine):
-    """ UpdateItem can DELETE fields as well as SET """
+    """ UpdateItem can REMOVE fields as well as SET """
     engine.config["persist"] = "update"
     user = User(id=uuid.uuid4(), age=4)
 
     # Manually force a tracking update so we think age is persisted
     bloop.tracking.update_current(user, engine)
 
-    # Expect to see a DELETE on age, and a SET on email
+    # Expect to see a REMOVE on age, and a SET on email
     del user.age
     user.email = "foo@domain.com"
 
     expected = {"Key": {"id": {"S": str(user.id)}},
                 "ExpressionAttributeNames": {"#n0": "email", "#n2": "age"},
                 "TableName": "User",
-                "UpdateExpression": "SET #n0=:v1 DELETE #n2",
+                "UpdateExpression": "SET #n0=:v1 REMOVE #n2",
                 "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
 
     def validate(item):
@@ -357,13 +357,13 @@ def test_save_update_del_field(User, engine):
     # Manually force a tracking update so we think age is persisted
     bloop.tracking.update_current(user, engine)
 
-    # Expect to see a DELETE on age, and a SET on email
+    # Expect to see a REMOVE on age, and a SET on email
     del user.age
 
     expected = {"Key": {"id": {"S": str(user.id)}},
                 "ExpressionAttributeNames": {"#n0": "age"},
                 "TableName": "User",
-                "UpdateExpression": "DELETE #n0"}
+                "UpdateExpression": "REMOVE #n0"}
 
     def validate(item):
         assert item == expected

@@ -73,9 +73,9 @@ class ConditionRenderer:
             pairs = (set_fmt.format(*pair) for pair in pairs)
             pairs = ", ".join(pairs)
             expression += pairs
-        if attrs.get("DELETE", None):
-            expression += " DELETE "
-            names = map(self.name_ref, attrs["DELETE"])
+        if attrs.get("REMOVE", None):
+            expression += " REMOVE "
+            names = map(self.name_ref, attrs["REMOVE"])
             names = ", ".join(names)
             expression += names
         self.expressions["UpdateExpression"] = expression.strip()

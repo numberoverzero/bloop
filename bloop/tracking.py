@@ -2,7 +2,7 @@ import bloop.condition
 import bloop.util
 import enum
 
-_DIFF = enum.Enum("DIFF", ["SET", "DEL", "NOOP"])
+_DIFF = enum.Enum("DIFF", ["SET", "REM", "NOOP"])
 _MISSING = bloop.util.Sentinel("MISSING")
 _TRACKING_ATTR_NAME = "__tracking"
 
@@ -100,7 +100,7 @@ def _diff_value(current, loaded):
     =======  =======  ==========
     foo      foo      _DIFF.NOOP
     MISSING  MISSING  _DIFF.NOOP
-    MISSING  bar      _DIFF.DEL
+    MISSING  bar      _DIFF.REM
     foo      bar      _DIFF.SET
     foo      MISSING  _DIFF.SET
     =======  =======  ==========
@@ -109,7 +109,7 @@ def _diff_value(current, loaded):
     if bloop.util.ordered(current) == bloop.util.ordered(loaded):
         return _DIFF.NOOP
     elif current is _MISSING:
-        return _DIFF.DEL
+        return _DIFF.REM
     else:
         return _DIFF.SET
 
@@ -118,20 +118,20 @@ def diff_obj(obj, engine):
     """Creates a dict of changes to make for a given object.
 
     Returns:
-        dict: A dict with two keys "SET" and "DELETE".
+        dict: A dict with two keys "SET" and "REMOVE".
 
         The dict has the following format::
 
             {
                 "SET": [(Column<Foo>, obj.Foo), (Column<Bar>, obj.Bar), ...],
-                "DELETE": [Column<Baz>, ...]
+                "REMOVE": [Column<Baz>, ...]
             }
 
     """
     hash_key, range_key = obj.Meta.hash_key, obj.Meta.range_key
     current = _get_current(obj, engine)
     tracking = _get_tracking(obj)
-    diff = {"SET": [], "DELETE": []}
+    diff = {"SET": [], "REMOVE": []}
     for column in obj.Meta.columns:
         # hash and range keys can"t be updated
         if (column is hash_key) or (column is range_key):
@@ -142,13 +142,13 @@ def diff_obj(obj, engine):
         change = _diff_value(current_value, tracking_value)
         if change is _DIFF.SET:
             diff["SET"].append((column, getattr(obj, column.model_name)))
-        elif change is _DIFF.DEL:
-            diff["DELETE"].append(column)
+        elif change is _DIFF.REM:
+            diff["REMOVE"].append(column)
         # Don"t do anything if it's _DIFF.NOOP
     if not diff["SET"]:
         diff.pop("SET")
-    if not diff["DELETE"]:
-        diff.pop("DELETE")
+    if not diff["REMOVE"]:
+        diff.pop("REMOVE")
     return diff
 
 
@@ -173,7 +173,7 @@ def update(obj, attrs, expected):
          expected | present | change
         ----------|---------|--------
          True     | True    | SET
-         True     | False   | DEL
+         True     | False   | REM
          False    | Either  | NOOP
 
     """

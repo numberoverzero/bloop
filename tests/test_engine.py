@@ -460,7 +460,6 @@ def test_delete_atomic_new(User, engine):
     expected = {'TableName': 'User', 'Key': {'id': {'S': str(user_id)}}}
 
     def validate(item):
-        print(item)
         assert item == expected
     engine.client.delete_item = validate
     engine.config["atomic"] = True

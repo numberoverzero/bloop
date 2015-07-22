@@ -1,0 +1,9 @@
+>>> from user import *
+>>> richard, *others = create_users()
+>>> richard.uid
+UUID('127093a0-e099-4c2e-b9cd-574f321e2710')
+>>> # Load the same object
+... also_richard = User(first="Richard", last="Pryor")
+>>> engine.load(also_richard)
+>>> richard.uid == also_richard.uuid
+True

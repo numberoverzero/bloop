@@ -36,7 +36,7 @@ class NotModified(Exception):
     """
     def __init__(self, operation, objects):
         super().__init__(_NOT_MODIFIED.format(operation))
-        self.objects = objects
+        self.objects = list(objects)
 
 
 class TableMismatch(Exception):

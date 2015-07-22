@@ -50,9 +50,13 @@ class _BaseModel(object):
         return attrs
 
     def __str__(self):  # pragma: no cover
-        def _attr(attr):
-            return "{}={}".format(attr, repr(getattr(self, attr, None)))
-        attrs = ", ".join(_attr(c.model_name) for c in self.Meta.columns)
+        attrs = []
+        for column in self.Meta.columns:
+            name = column.model_name
+            value = getattr(self, name, MISSING)
+            if value is not MISSING:
+                attrs.append("{}={}".format(name, value))
+        attrs = ", ".join(attrs)
         return "{}({})".format(self.__class__.__name__, attrs)
     __repr__ = __str__
 

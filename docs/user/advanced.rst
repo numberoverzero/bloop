@@ -6,6 +6,8 @@ Prefetch and Strict
 
 engine.config['prefetch'] = 'all'
 
+.. _engine-contexts:
+
 Engine Contexts
 ---------------
 

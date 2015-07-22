@@ -52,6 +52,10 @@ developers.
 Contributing
 ------------
 
+Found a bug?  Docs suck?  Opinions on how to expose new DynamoDB features?
+
+Contributions of any kind welcome!
+
 .. toctree::
     :maxdepth: 1
 

@@ -3,7 +3,7 @@ Getting Started
 
 It's recommended that you copy the `user model code`_ below and follow along.
 
-.. _user model code: https://github.com/numberoverzero/bloop/docs/user/code/user.py
+.. _user model code: https://github.com/numberoverzero/bloop/blob/master/docs/user/code/user.py
 
 Create a Model
 --------------

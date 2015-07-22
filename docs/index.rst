@@ -28,6 +28,11 @@ Bloop supports the latest DynamoDB features, including:
 User Guide
 ----------
 
+Familiarity with declarative modeling in frameworks like SQLAlchemy will make
+things easier to pick up, but is not required.  The Getting Started will guide
+you through creating a model and interacting with instances through an engine,
+including the various conditions that can be used for optimistic updating.
+
 .. toctree::
    :maxdepth: 2
 

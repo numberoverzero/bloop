@@ -33,10 +33,13 @@ things easier to pick up, but is not required.  The Getting Started will guide
 you through creating a model and interacting with instances through an engine,
 including the various conditions that can be used for optimistic updating.
 
+For a faster tour of features, try the :ref:`quickstart`.
+
 .. toctree::
    :maxdepth: 2
 
    user/installation
+   user/quickstart
    user/getting_started
    user/advanced
 

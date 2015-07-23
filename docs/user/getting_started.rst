@@ -70,6 +70,8 @@ Query and Scan
 
 engine.query, engine.scan
 
+.. _conditions:
+
 Conditions
 ----------
 
@@ -83,6 +85,8 @@ Atomic
 ------
 
 ensure no changes since load
+
+.. _types:
 
 Types
 -----

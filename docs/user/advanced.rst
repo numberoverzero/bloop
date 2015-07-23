@@ -1,10 +1,19 @@
 Advanced Features
 =================
 
+.. _prefetch-strict:
+
 Prefetch and Strict
 -------------------
 
 engine.config['prefetch'] = 'all'
+
+.. _persist:
+
+Persist Mode
+------------
+
+update vs overwrite
 
 .. _engine-contexts:
 

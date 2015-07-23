@@ -41,11 +41,11 @@ def _validate_prefetch(value):
 
 
 def _validate_select_mode(select):
-    invalid = ValueError("Must specify 'all', 'projected', 'count', or"
+    invalid = ValueError("Must specify 'all', 'projected', or"
                          " a list of column objects to select")
     if isinstance(select, str):
         select = select.lower()
-        if select not in ["all", "projected", "count"]:
+        if select not in ["all", "projected"]:
             raise invalid
     else:
         try:
@@ -262,13 +262,7 @@ class _Filter(object):
         strict = self.engine.config["strict"]
         requires_exact = (is_gsi or (is_lsi and strict))
 
-        if select == "count":
-            other = self._copy()
-            other._select = select
-            other._select_columns.clear()
-            return other
-
-        elif select == "projected":
+        if select == "projected":
             if not self.index:
                 raise ValueError("Cannot select 'projected' attributes"
                                  " without an index")

@@ -136,21 +136,6 @@ def test_invalid_select(engine, User):
             q.select(select)
 
 
-def test_select_count(engine, User):
-    user_id = uuid.uuid4()
-    q = engine.query(User).key(User.id == user_id)
-
-    result = q.select("count").all()
-    expected = {"ConsistentRead": False,
-                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "TableName": "User",
-                "Select": "COUNT",
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "ScanIndexForward": True}
-    assert result.request == expected
-
-
 def test_select_projected(engine, User):
     # Can't use "projected" on query against table
     user_id = uuid.uuid4()

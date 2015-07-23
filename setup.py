@@ -20,6 +20,7 @@ REQUIREMENTS = [
 ]
 
 TEST_REQUIREMENTS = [
+    "alabaster",
     "coverage",
     "flake8",
     "pytest",

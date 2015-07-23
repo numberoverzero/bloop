@@ -1,4 +1,5 @@
-from bloop import Engine, Column, Integer, GlobalSecondaryIndex, String
+from bloop import (Engine, Column, Integer,
+                   GlobalSecondaryIndex, String)
 
 engine = Engine()
 

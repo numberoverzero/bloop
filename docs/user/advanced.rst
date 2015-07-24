@@ -2,7 +2,7 @@ Advanced Features
 =================
 
 Custom Loading
----------------------
+--------------
 
 bloop_init
 as a mixin
@@ -23,6 +23,6 @@ subclass bloop.column.Column
 validation
 
 Manual tracking
-------------------
+---------------
 
 see also: Engine-> Config-> save

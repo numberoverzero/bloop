@@ -31,7 +31,7 @@ Query or scan by column values:
 
 .. toctree::
     :hidden:
-    :titlesonly:
+    :maxdepth: 2
 
     user/installation
     user/quickstart

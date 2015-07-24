@@ -17,11 +17,11 @@ exposing advanced DynamoDB features like `conditional saves`_ and
 Define some models:
 
 .. literalinclude:: code/models.py
-    :lines: 1-26
 
 Create an instance::
 
-    account = Account(id=0, name='@garybernhardt', email='foo@bar.com')
+    account = Account(id=uuid.uuid4(), name='@garybernhardt',
+                      email='foo@bar.com')
     tweet = Tweet(
         account=account.id, id='600783770925420546', date=arrow.now(),
         content=(

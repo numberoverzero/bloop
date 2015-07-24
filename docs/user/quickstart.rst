@@ -1,4 +1,4 @@
-.. _quickstart:
+.. _quick-start:
 
 Quickstart
 ==========
@@ -69,6 +69,3 @@ for other callers.
 For more details about constructing conditions, see :ref:`conditions`.
 
 For more details about available types, see :ref:`types`.
-
-For details about other config settings, see :ref:`prefetch-strict` and
-:ref:`persist`.

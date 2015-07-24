@@ -1,48 +1,28 @@
 Advanced Features
 =================
 
-.. _prefetch-strict:
+Custom Loading
+---------------------
 
-Prefetch and Strict
--------------------
+bloop_init
+as a mixin
 
-engine.config['prefetch'] = 'all'
-
-.. _persist:
-
-Persist Mode
-------------
-
-update vs overwrite
-
-.. _engine-contexts:
-
-Engine Contexts
----------------
-
-with engine.context(atomic=True, persist='overwrite') as atomic:
-
-Session Profiles
-----------------
-
-Pass a session to an Engine to use a named profile, change the region, etc.
+see also: Engine-> model, Models-> define
 
 Custom Types
 ------------
 
 subclass bloop.types.Type
+warning with List/Map
 
 Custom Columns
 --------------
 
 subclass bloop.column.Column
 
-Custom Object Loading
----------------------
+validation
 
-bloop_init
-
-Declarative Models
+Manual tracking
 ------------------
 
-Models don't support inheritance
+see also: Engine-> Config-> save

@@ -1,3 +1,5 @@
+.. _getting-started:
+
 Getting Started
 ===============
 
@@ -50,9 +52,6 @@ use an overwrite instead of an update, since that object still thinks it has
 the latest version:
 
 .. literalinclude:: code/save_repl.txt
-
-(Don't worry about the ``engine.context`` for now - this is covered later in
-:ref:`engine-contexts`)
 
 Note that we saved two users at once.  ``load``, ``save``, and ``delete`` take
 either a single instance of a model, or an iterable of models.  It's safe
@@ -129,9 +128,6 @@ or a list of Column objects::
 Results can be collected from ``.all(prefetch=None)`` or ``.first()`` or
 by iterating the query.  To re-execute the query, user the iterator.  To
 iterate over the results of a single execution, use ``.all``.
-
-For more information about ``prefetch`` and strict mode, see
-:ref:`prefetch-strict`.
 
 .. _conditions:
 

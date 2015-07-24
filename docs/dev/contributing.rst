@@ -1,13 +1,10 @@
 Contributing
 ============
 
-Contributions welcome!  Please make sure ``tox`` passes before submitting a PR.
-In addition to the test suite, this does require both flake8 and the docs build
-to pass without warnings.
+Contributions welcome!  Please make sure ``tox`` passes (including flake8 and
+docs build) before submitting a PR.
 
-In general, pull requests that decrease coverage, do not include new unit
-tests will not be accepted as-is.  New feature work is expected to include
-additional documentation - especially for Public API changes.
+Pull requests that decrease coverage will not be merged.
 
 Development
 -----------
@@ -24,13 +21,11 @@ bloop uses `tox`, `pytest` and `flake8`.  To get everything set up with pyenv_:
 Documentation
 -------------
 
-Documentation improvements are especially appreciated.  If there's an area you
-feel is lacking and will require more than a small change, `open an issue`_ to
-discuss the problem - there are probably others that share your opinion and
-have suggestions to improve the guide or docstring!
-
-Because ``tox`` runs both the test suite and the doc build, it is still
-required to pass for any documentation changes to be merged.
+Documentation improvements are especially appreciated.  For small changes, open
+a `pull request`_! If there's an area you feel is lacking and will require more
+than a small change, `open an issue`_ to discuss the problem - others are
+probably also confused, and may have suggestions to improve the same area!
 
 .. _pyenv: https://github.com/yyuu/pyenv
+.. _pull request: https://github.com/numberoverzero/bloop/pulls
 .. _open an issue: https://github.com/numberoverzero/bloop/issues/new

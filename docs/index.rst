@@ -57,7 +57,7 @@ Query or scan by column values::
     user/advanced
     dev/contributing
 
-.. _tricky code: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-query_boto3-py
-.. _simpler code: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-query_bloop-py
-.. _conditional saves: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-conditional_save-py
-.. _atomic updates: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-atomic_update-py
+.. _tricky code: https://gist.github.com/numberoverzero/f0633e71a6b0f3f6132e
+.. _simpler code: https://gist.github.com/numberoverzero/94c939b4106e88b13e83
+.. _conditional saves: https://gist.github.com/numberoverzero/91f15c041a94b66e9365
+.. _atomic updates: https://gist.github.com/numberoverzero/cc004d93055cfa224569

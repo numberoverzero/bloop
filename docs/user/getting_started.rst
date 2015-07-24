@@ -1,23 +1,17 @@
 Getting Started
 ===============
 
-It's recommended that you copy the `user model code`_ below and follow along.
-
-.. _user model code: https://github.com/numberoverzero/bloop/blob/master/docs/user/code/user.py
-
 Create a Model
 --------------
 
-We'll be using this model throughout this and later guides to demonstrate all
+We'll be using the same models throughout the various guides to demonstrate all
 of the available options, and how they affect the core engine functions.  By
 the end it should be easy to follow, and be a fair improvement over the
-`boto3 equivalent`_ to generate this table.
+`boto3 equivalent`_ to generate these tables.
 
-.. _boto3 equivalent: https://gist.github.com/numberoverzero/c0fb8c521cac7bb4abe7#file-getting_started_raw-py
+.. _boto3 equivalent: https://gist.github.com/numberoverzero/31abe4e651af7622a954
 
-.. literalinclude:: code/user.py
-    :language: python
-    :lines: 1-32
+.. literalinclude:: ../code/models.py
 
 We'll compare the generated code when using atomic updates, using ``overwrite``
 vs ``update``, and when querying different Indexes.

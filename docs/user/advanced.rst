@@ -1,6 +1,8 @@
 Advanced Features
 =================
 
+.. _loading:
+
 Custom Loading
 --------------
 

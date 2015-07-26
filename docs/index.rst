@@ -51,9 +51,9 @@ Query or scan by column values::
 
     user/installation
     user/quickstart
-    user/getting_started
-    user/engine
     user/models
+    user/engine
+    user/types
     user/advanced
     dev/contributing
 

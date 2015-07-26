@@ -22,7 +22,7 @@ We can create, save, and load multiple objects at once, even different models:
 
 .. literalinclude:: ../code/quick.py
     :language: python
-    :lines: 16-22
+    :lines: 16-21
 
 Both save and delete take optional conditions, which can be used to ensure
 certain attributes have expected values (or lack of values) before the given
@@ -30,14 +30,14 @@ changes are persisted:
 
 .. literalinclude:: ../code/quick.py
     :language: python
-    :lines: 24-27
+    :lines: 23-26
 
 What about making sure ALL of the loaded values are the same?  We'd have to
 construct a condition for every attribute, and then AND them together:
 
 .. literalinclude:: ../code/quick.py
     :language: python
-    :lines: 29-34
+    :lines: 28-33
 
 Don't forget we need to handle cases where the tweet doesn't have any content,
 and building the condition gets more complex.  What about if the tweet's
@@ -49,18 +49,18 @@ There's an easier way:
 
 .. literalinclude:: ../code/quick.py
     :language: python
-    :lines: 36-37
+    :lines: 35-36
 
 We can also set the engine to always use atomic conditions, with:
 
 .. literalinclude:: ../code/quick.py
     :language: python
-    :lines: 39
+    :lines: 38
 
 The context version allows us to temporarily talk through the engine as if it
 had the given config values, without changing the engine's actual config values
 for other callers.
 
-For more details about constructing conditions, see :ref:`conditions`.
-
-For more details about available types, see :ref:`types`.
+.. seealso::
+    * For more details about constructing conditions, see :ref:`conditions`.
+    * For more details about available types, see :ref:`types`.

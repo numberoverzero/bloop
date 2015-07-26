@@ -19,7 +19,6 @@ tweet = Tweet(
     favorites=9)
 
 engine.save([account, tweet])
-engine.delete(account)
 
 # Don't delete the tweet if it's been
 # favorited enough for people to notice

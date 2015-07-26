@@ -1,8 +1,0 @@
->>> george = others.pop(0)
->>> with engine.context(persist="overwrite") as overwrite:
-...     overwrite.save([also_richard, george])
-...
->>> # Make sure they're both persisted
-... engine.load([george, richard])
->>> richard.uid == also_richard.uid
-True

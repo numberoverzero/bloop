@@ -37,6 +37,8 @@ load
 
 see: Models->load
 
+.. _model:
+
 model
 -----
 

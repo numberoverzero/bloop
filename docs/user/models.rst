@@ -135,23 +135,86 @@ changed since the last load or save::
 
     engine.save(tweet)
 
-There is minimal overhead to
+Alternatively, `PutItem`_ can be used for full-overwrite saves.  This will
+replace any existing attributes for the object, including deleting existing
+values if the new version has no value for them.  To use this mode::
 
+    engine.config['save'] = 'overwrite'
+
+.. warning::
+
+    Using ``overwrite`` saves can have unintented results when you load objects
+    from a SecondaryIndex that doesn't project all attributes.
+
+To demonstrate, consider the following::
+
+    class Account(engine.model):
+        id = Column(UUID, hash_key=True)
+        name = Column(String)
+        email = Column(String)
+        by_email = GlobalSecondaryIndex(
+            hash_key='email', projection='keys_only',
+            write_units=1, read_units=5)
+
+    account = Account(id=uuid.uuid4(), name='name',
+                      email='foo@domain.com')
+    engine.save(account)
+    account = (engine.query(Account.by_email)
+                     .key(email=='foo@domain.com')
+                     .first())
+
+At this point, ``account`` only has the attributes ``id`` and ``email`` because
+the GSI ``by_email`` has a 'keys_only' projection.  Saving with overwrite::
+
+    engine.config['save'] = 'overwrite'
+    account.email = 'bar@domain.com'
+    engine.save(account)
+
+Loading the account again would show that the name is missing::
+
+    engine.load(account)
+    print(account.name)  # AttributeError
+
+Described below, :ref:`conditions` can be used to ensure attributes have
+expected values before persisting a change.  When a condition is provided with
+a list of objects, the condition is applied to every object individually.
 
 .. seealso::
-    * The ``save`` and ``atomic`` options in :ref:`config` to control how objects
-      are saved.
-    * To manually adjust the current tracking for an object, see
-      :ref:`tracking`.
+    * :ref:`config` to adjust ``save`` and ``atomic`` options
+    * :ref:`tracking` to manually adjust the current tracking for an object
+    * :ref:`conditions` for using conditions with save and delete
+    * :ref:`atomic` for using atomic updates
 
 .. _UpdateItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
+.. _PutItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html
 .. _Secondary Indexes: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SecondaryIndexes.html
 
 Delete
 ------
 
+Like ``load`` and ``save``, one or more objects can be deleted at a time::
+
+    account = Account(id=uuid.uuid4(), name='@garybernhardt',
+                      email='foo@bar.com')
+    tweet = Tweet(
+        account=account.id, id='600783770925420546', date=arrow.now(),
+        content=(
+            'Consulting service: you bring your big data problems'
+            ' to me, I say "your data set fits in RAM", you pay me'
+            ' $10,000 for saving you $500,000.'))
+
+    engine.delete(account)
+    engine.delete([account, tweet])
+
+Described below, :ref:`conditions` can be used to ensure attributes have
+expected values before persisting a change.  When a condition is provided with
+a list of objects, the condition is applied to every object individually.
+
 .. seealso::
-    The ``atomic`` option in :ref:`config` to control how objects are deleted.
+    * :ref:`config` to adjust the ``atomic`` option
+    * :ref:`tracking` to manually adjust the current tracking for an object
+    * :ref:`conditions` for using conditions with save and delete
+    * :ref:`atomic` for using atomic updates
 
 .. _conditions:
 

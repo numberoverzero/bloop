@@ -73,6 +73,8 @@ subclass bloop.column.Column
 
 validation
 
+.. _tracking:
+
 Manual tracking
 ---------------
 

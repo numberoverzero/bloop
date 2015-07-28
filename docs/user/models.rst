@@ -98,9 +98,54 @@ objects that were not loaded::
 Save
 ----
 
+Like ``load``, one or more objects can be saved at a time::
+
+    account = Account(id=uuid.uuid4(), name='@garybernhardt',
+                      email='foo@bar.com')
+    tweet = Tweet(
+        account=account.id, id='600783770925420546', date=arrow.now(),
+        content=(
+            'Consulting service: you bring your big data problems'
+            ' to me, I say "your data set fits in RAM", you pay me'
+            ' $10,000 for saving you $500,000.'))
+
+    engine.save(account)
+    engine.save([account, tweet])
+
+By default bloop uses `UpdateItem`_ to save objects.  Internally, the last
+loaded state of an object is tracked.  When an object is saved, its current
+values are diffed against the tracked values - only those that have changed
+are sent in the update.
+
+In the following example, bloop will send the ``content`` attribute to be
+updated, since it was changed from the last loaded (it was never loaded)
+value::
+
+    tweet = Tweet(
+        account=account.id, id='600783770925420546', date=arrow.now(),
+        content=(
+            'Consulting service: you bring your big data problems'
+            ' to me, I say "your data set fits in RAM", you pay me'
+            ' $10,000 for saving you $500,000.'))
+
+    engine.save(tweet)
+
+The following line will trigger an empty update, since none of the fields have
+changed since the last load or save::
+
+    engine.save(tweet)
+
+There is minimal overhead to
+
+
 .. seealso::
-    The ``save`` and ``atomic`` options in :ref:`config` to control how objects
-    are saved.
+    * The ``save`` and ``atomic`` options in :ref:`config` to control how objects
+      are saved.
+    * To manually adjust the current tracking for an object, see
+      :ref:`tracking`.
+
+.. _UpdateItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
+.. _Secondary Indexes: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SecondaryIndexes.html
 
 Delete
 ------
@@ -112,6 +157,91 @@ Delete
 
 Conditions
 ----------
+
+
+.. _atomic:
+
+Atomic
+------
+
+With ``atomic`` you can ensure there have been no changes to the persisted
+object between the last load and the current save/delete operation.  This is
+useful in highly concurrent systems - without this setting, here's what an
+atomic update looks like::
+
+    instance = Model(hash=0, range=1)
+    engine.load(instance)
+
+    previous_foo = instance.foo
+    previous_bar = instance.bar
+    condition = ((Model.foo == previous_foo) &
+                 (Model.bar == previous_bar))
+
+    instance.foo = 'new foo'
+    try:
+        engine.save(instance, condition=condition)
+    except bloop.ConstraintViolation:
+        # Modified between load and save!
+        ...
+
+With atomic updates::
+
+    instance = Model(hash=0, range=1)
+    engine.load(instance)
+
+    instance.foo = 'new foo'
+    try:
+        engine.save(instance)
+    except bloop.ConstraintViolation:
+        # Modified between load and save!
+        ...
+
+Additionally, we don't need to keep track of which attributes were loaded by
+the operation that generated the object.  Because a query may not return all
+attributes of the object, we would erroneously expect an empty value when the
+operation could never populate those attributes.  For example, say the
+following only loads the ``hash`` and ``range`` attributes of the model::
+
+    instance = (engine.query(Model.some_index)
+                      .key(Model.range == 1)
+                      .first())
+
+This instance hasn't loaded the ``foo`` attribute, even though there's a value
+persisted in dynamo.  If we naively build a condition, we'd have something like
+the following::
+
+    condition = bloop.Condition()
+    if hasattr(instance, 'foo'):
+        condition &= Model.foo == instance.foo
+    else:
+        condition &= Model.foo.is_(None)
+
+This would fail even if there were no changes, since the persisted row has a
+value for ``foo``; we just didn't load it!
+
+bloop takes care of this tracking for us.  Internally, the last persisted state
+of an object is stored.  When querying an index, the projected attributes that
+are available to the index are used to differentiate which attributes were
+expected but missing, and which were not loaded.
+
+Finally, conditions can be used with atomic updates - this allows you to
+constrain operations on attributes that may not have been loaded.  Using the
+same model above where ``foo`` is a non-key attribute that's not loaded from a
+query::
+
+    instance = (engine.query(Model.some_index)
+                      .key(Model.range == 1)
+                      .first())
+
+    with engine.context(atomic=True) as atomic:
+        big_foo = Model.foo >= 500
+        atomic.save(instance, condition=big_foo)
+
+.. seealso::
+    * :ref:`tracking` for details on the tracking algorithm, as well as ways to
+      manually change what is considered tracked.
+    * The ``atomic`` option in :ref:`config` to enable/disable atomic
+      conditions for save and delete.
 
 Query
 -----

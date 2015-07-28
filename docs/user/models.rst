@@ -432,21 +432,189 @@ query::
     * The ``atomic`` option in :ref:`config` to enable/disable atomic
       conditions for save and delete.
 
+.. _query:
+
 Query
 -----
+
+Queries can be constructed against tables or an index of the table using the
+same syntax::
+
+    table_query = engine.query(Model)
+    index_query = engine.query(Model.some_index)
+
+Queries are constructed by chaining methods together- including key conditions,
+filter conditions, select methods, and properties to enable consistent reads
+and control query order.
+
+Because each chained call returns a copy of the query, it's possible to create
+re-usable base queries::
+
+    base_query = engine.query(Model).consistent.ascending
+
+    for obj in base_query.key(Model.hash == 1).all():
+        ...
+    for obj in base_query.key(Model.hash == 2).all():
+        ...
+
+The ``key`` method takes a condition on the hash key.  You may optionally
+include a range key condition.  Not all operators are supported for key
+conditions.  Valid conditions are::
+
+    ==, <=, <, >=, >, begins_with, between
+
+To include a range key condition, use the bitwise AND operator::
+
+    hash_condition = Model.hash == 1
+    range_condition = Model.range == 2
+
+    query = base_query.key(hash_condition & range_condition)
+
+You may also construct the key condition in two pieces, with the hash condition
+first::
+
+    query = base_query.key(hash_condition)
+    query = query.key(range_condition)
+
+With the ``filter`` method you can construct a `FilterExpression`_ using the
+same :ref:`conditions` that you use everywhere else.  Unlike the ``key``
+method, you may use any condition type.
+
+When chaining ``filter`` calls together, the conditions will be ANDed together.
+From the API reference: `A filter expression lets you apply conditions to the
+data after it is queried or scanned, but before it is returned to you. Only the
+items that meet your conditions are returned.`
+
+A few examples::
+
+    query = base_query.filter(Model.foo >= 100)
+    query = base_query.filter(Model.bar.contains('hello'))
+
+    # (foo is None) AND (bar in [1, 2])
+    query = base_query.filter(Model.foo.is_(None))\
+                      .filter(Model.bar.in_([1, 2]))
+
+    # equivalent filter with explicit AND
+    query = base_query.filter(Model.foo.is_(None) &
+                              Model.bar.in_([1, 2]))
+
+By default, **projected** attributes are loaded for a query against a
+SecondaryIndex and **all** attributes are loaded for a table query.  You can
+change the set of attributes to be loaded with the ``select`` method::
+
+    projected = base_query.select('projected')
+    everything = base_query.select('all')
+
+You may specify a set of attributes to load by passing a list of
+column objects::
+
+    specific = base_query.select([Model.foo, Model,bar])
+
+There are a few combinations of ``select`` options and table/index
+configurations that are invalid.  All of the following will raise an exception:
+
+* ``projected`` for a non-index query
+* ``all`` against a GlobalSecondaryIndex whose projection is not ``all``
+* list of columns against a GSI where the requested columns are not projected
+* ``all`` against a LSI **and the strict option is enabled**
+* list of columns against a LSI where the requested columns are not projected
+  **and the strict option is enabled**
+
+The first should be obvious - only a SecondaryIndex has a projection.
+
+While it's possible for a GSI with a key-only projection to include all
+attributes, this is not guaranteed to be true forever.  Instead of behavior
+subtly changing when a column is added, bloop refuses to assume.
+
+When a query against a GSI requests attributes that are not projected into the
+index, the Dynamo will raise.  Because GSIs have their own read units, a
+second read against the table is not performed for you.
+
+When strict is enabled, LSIs perform the same checks as GSIs.  Without strict,
+**Dynamo will incur an additional read per item** to load the requested
+attributes.
+
+.. tip::
+
+    Currently ``strict`` defaults to ``False``, matching Dynamo's default
+    behavior.  It is **HIGHLY** recommended to set ``strict=True`` at all
+    times, as it can be hard to plan which LSI queries will incur additional
+    reads - an inconspicuous code change that adds a new attribute to a query's
+    ``select`` may suddenly cause a critical-path query to double in consumed
+    read units.
+
+To execute a query, either iterate the query object or use the ``all`` method::
+
+    for result in query:
+        print(result.foo)
+
+    # Keep a reference to the result container
+    results = query.all()
+    for result in results:
+        ...
+
+Each iteration of the query will result in a new set of calls to Dynamo;
+whereas iterating over the return from ``all()`` will iterate over a cached
+set of calls to Dynamo.  Additionally, the object returned from ``all``
+provides metadata about the query, including ``count`` and ``scanned_count``
+attributes::
+
+    results = query.all()
+
+    # Raises, since the query is not fully iterated
+    results.count
+
+    # exhaust the query
+    list(results)
+    print(results.count, results.scanned_count)
+
+    # iterating the results object will iterate the
+    # cached results, NOT re-issue the query to Dynamo
+    for result in results:
+        ...
+
+You may optionally specify a ``prefetch`` value when calling ``all``, that
+controls how paginated results are loaded.  The default prefetch is 0, which
+means pages are only loaded as the previous results are consumed from the
+iterator.  This is useful when you are only interested in the first result of
+a query, or otherwise may not need the full set of results::
+
+    results = query.all(prefetch=0)
+
+If you know you need all results, and the set of results is small, you may want
+to pre-load all values from Dynamo before continuing::
+
+    results = query.all(prefetch='all')
+
+Finally, you may want to load a certain number of pages in advance::
+
+    results = query.all(prefetch=3)
+    results = query.all(prefetch=10)
+
+
+You can also fetch the first result from a query directly, or from the return
+from ``all``::
+
+    first = base_query.first()
+
+    results = query.all(prefetch=0)
+    first = results.first
 
 .. seealso::
     * The ``strict`` option in :ref:`config` to prevent double reads on LSIs
     * The ``prefetch`` option in :ref:`config` to control how lazily results
       are loaded.
+
+.. _FilterExpression: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#FilteringResults
 
 Scan
 ----
 
-.. seealso::
-    * The ``strict`` option in :ref:`config` to prevent double reads on LSIs
-    * The ``prefetch`` option in :ref:`config` to control how lazily results
-      are loaded.
+Scan has the same interface as :ref:`query` above, with the following
+differences:
+
+* Any ``key`` conditions are ignored completely when constructing the request.
+* The ``ascending``, ``consistent``, and ``descending`` properties are ignored.
 
 .. _meta:
 

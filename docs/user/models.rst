@@ -58,22 +58,55 @@ example) you must set the model's ``Meta.bloop_init`` to a function that takes
 custom loading in the advanced section.
 
 .. seealso::
-    * :ref:`loading` to customize the entry point for model creation.
+    :ref:`loading` to customize the entry point for model creation.
 
 Load
 ----
 
-see also: Engine-> config-> consistent
+bloop loads data into existing models, instead of returning new instances.
+This makes it easier to refresh instance data, as well as simplifying the
+process for loading multiple objects at once.
+
+Objects are loaded through an engine - either one at a time, or as a list::
+
+    account = Account(id=uuid.uuid4())
+    tweet = Tweet(account=account.id,
+                  id='616102582239399936')
+
+    engine.load(account)
+    engine.load([account, tweet])
+    engine.load(account, consistent=True)
+
+    with engine.context(consistent=True) as consistent:
+        consistent.load(account)
+
+If any objects fail to load, a ``NotModified`` exception is raised with the
+objects that were not loaded::
+
+    try:
+        engine.load([account, tweet])
+    except bloop.NotModified as missing:
+        if account in missing.objects:
+            print("Account not loaded")
+        if tweet in missing.objects:
+            print("Tweet not loaded")
+
+.. seealso::
+    By default, consistent reads are not used.  You can read more about the
+    ``consistent`` option in :ref:`config`.
 
 Save
 ----
 
-see also: Engine-> config-> save, atomic
+.. seealso::
+    The ``save`` and ``atomic`` options in :ref:`config` to control how objects
+    are saved.
 
 Delete
 ------
 
-see also: Engine-> config-> atomic
+.. seealso::
+    The ``atomic`` option in :ref:`config` to control how objects are deleted.
 
 .. _conditions:
 
@@ -83,12 +116,18 @@ Conditions
 Query
 -----
 
-see also: Engine->config-> strict, prefetch
+.. seealso::
+    * The ``strict`` option in :ref:`config` to prevent double reads on LSIs
+    * The ``prefetch`` option in :ref:`config` to control how lazily results
+      are loaded.
 
 Scan
 ----
 
-see also: Engine->config-> strict, prefetch
+.. seealso::
+    * The ``strict`` option in :ref:`config` to prevent double reads on LSIs
+    * The ``prefetch`` option in :ref:`config` to control how lazily results
+      are loaded.
 
 .. _meta:
 

@@ -13,6 +13,8 @@ client
 
 boto3 sessions, named profiles
 
+.. _config:
+
 config
 ------
 

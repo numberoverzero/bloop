@@ -70,8 +70,8 @@ class _Filter(object):
         self.model = model
         self.index = index
 
-        self._key_condition = None
-        self._filter_condition = None
+        self._key_condition = bloop.condition.Condition()
+        self._filter_condition = bloop.condition.Condition()
         if self.index:
             self._select = "projected"
         else:
@@ -192,10 +192,7 @@ class _Filter(object):
 
     def filter(self, condition):
         other = self._copy()
-        # AND multiple filters
-        if other._filter_condition:
-            condition &= other._filter_condition
-        other._filter_condition = condition
+        other._filter_condition &= condition
         return other
 
     def first(self):

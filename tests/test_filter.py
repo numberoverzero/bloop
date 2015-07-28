@@ -107,7 +107,7 @@ def test_iterative_filter(engine, User):
     vcondition = User.age == 100
 
     result = q.filter(pcondition).filter(vcondition).all()
-    expected = {"ExpressionAttributeNames": {"#n2": "email", "#n0": "age",
+    expected = {"ExpressionAttributeNames": {"#n2": "age", "#n0": "email",
                                              "#n4": "id"},
                 "FilterExpression": "((#n0 = :v1) AND (#n2 = :v3))",
                 "ConsistentRead": False,
@@ -116,8 +116,8 @@ def test_iterative_filter(engine, User):
                 "Select": "ALL_ATTRIBUTES",
                 "ScanIndexForward": True,
                 "ExpressionAttributeValues": {":v5": {"S": str(user_id)},
-                                              ":v3": {"S": "foo@domain.com"},
-                                              ":v1": {"N": "100"}}}
+                                              ":v1": {"S": "foo@domain.com"},
+                                              ":v3": {"N": "100"}}}
     assert result.request == expected
 
 

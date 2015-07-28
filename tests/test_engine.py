@@ -134,6 +134,32 @@ def test_load_dump_unknown(engine):
         engine._dump(NotModeled, obj)
 
 
+def test_update_noop_save(engine, User):
+    user = User(id=uuid.uuid4(), age=5)
+
+    expected = [
+        {
+            "Key": {"id": {"S": str(user.id)}},
+            "TableName": "User",
+            "ExpressionAttributeNames": {"#n0": "age"},
+            "ExpressionAttributeValues": {":v1": {"N": "5"}},
+            "UpdateExpression": "SET #n0=:v1"},
+        {
+            "Key": {"id": {"S": str(user.id)}},
+            "TableName": "User"}]
+    calls = 0
+
+    def validate(item):
+        assert item == expected[calls]
+        nonlocal calls
+        calls += 1
+
+    engine.client.update_item = validate
+    engine.save(user)
+    engine.save(user)
+    assert calls == 2
+
+
 def test_save_unknown_mode(engine, User):
     user = User(id=uuid.uuid4())
     engine.config["persist"] = "foo"

@@ -12,8 +12,8 @@ can be created and modified locally without binding the model to DynamoDB.
 This allows you to define models and then handle the binding in a try/except
 to handle any failure modes (network failure, model mismatches).
 
-When defining a model, we can specify an optional ``Meta`` attribute within the
-class, which lets us customize properties of the table, as well as holding
+When defining a model, you can specify an optional ``Meta`` attribute within
+the class, which lets you customize properties of the table, as well as holding
 most of the cached data used internally::
 
     class MyModel(engine.model):
@@ -38,7 +38,7 @@ Create Instances
 
 The ``engine.model`` base class provides an \_\_init\_\_ method that takes
 \*\*kwargs and sets those values on the object (if they match a column).  For
-the model above, we could do the following::
+the model above, you could do the following::
 
     instance = MyModel(content=b'hello, world', id=0, unused='not set')
 
@@ -164,13 +164,14 @@ To demonstrate, consider the following::
                      .first())
 
 At this point, ``account`` only has the attributes ``id`` and ``email`` because
-the GSI ``by_email`` has a 'keys_only' projection.  Saving with overwrite::
+the GSI ``by_email`` has a 'keys_only' projection.  If you overwrite the
+account::
 
     engine.config['save'] = 'overwrite'
     account.email = 'bar@domain.com'
     engine.save(account)
 
-Loading the account again would show that the name is missing::
+And then load the account again, the name is missing::
 
     engine.load(account)
     print(account.name)  # AttributeError
@@ -221,6 +222,132 @@ a list of objects, the condition is applied to every object individually.
 Conditions
 ----------
 
+Conditions are a great way to reduce some of the complexities of managing
+highly concurrent modifications.  While Dynamo doesn't have native
+transactions (yet?), conditions let you do a pretty good impression::
+
+    instance = Model(id='unique', counter=0)
+    engine.save(instance)
+
+    instance.counter += 1
+    still_zero = Model.counter == 0
+
+    # Succeeds, because the persisted value is 0
+    engine.save(instance, condition=still_zero)
+
+    # Fails, because the persisted value is 1,
+    # and the condition fails.
+    engine.save(instance, condition=still_zero)
+
+There are a `handful of conditions`_ available, which are cleanly exposed in
+bloop through the ``Column`` class.  To construct a condition that a tweet's
+content contains the word 'secret'::
+
+    has_secrets = Tweet.content.contains("secret")
+
+This condition is independent of any instance of a ``Tweet``, which lets you
+re-use it across queries, as a condition when saving or deleting instances, or
+combining with other conditions.
+
+Conditions can be combined and mutated with bitwise operators::
+
+    no_secrets = ~has_secrets
+    secrets_or_empty = has_secrets | (Tweet.content.is_(None))
+    secrets_and_nsa = hash_secrets & (Tweet.user == '@nsa')
+
+All of the conditions use python objects, so datetime comparisons are easy::
+
+    now = arrow.now()
+    last_week = now.replace(weeks=-1)
+
+    old_tweets = Tweet.date <= last_week
+    tweets = engine.scan(Tweet).filter(old_tweets)
+
+To check between two dates::
+
+    two_days_ago = now.replace(days=-2)
+    one_day_ago = now.replace(days=-1)
+
+    yesterday = Tweet.date.between(
+        two_days_ago, one_day_ago)
+
+    tweets = (engine.query(Tweet)
+                    .key(Tweet.user == '@nsa')
+                    .filter(yesterday)
+                    .all())
+
+In fact, the ``key`` function aboive is using an equality condition.
+
+When saving or deleting an object, you can use conditions to ensure the row's
+data hasn't changed since it was last loaded.  This keeps from racing between
+the load and the save, where another caller could modify the value and make the
+save or delete violate some business logic.
+
+Let's say user accounts are deleted if the last login was over two years ago.
+Without a condition, the following could delete a user right after they logged
+in, which would be pretty terrible::
+
+    user = User(id=some_id)
+    engine.load(user)
+    two_years = arrow.now().replace(years=-2)
+
+    if user.login <= two_years:
+        # If the user logs in AFTER we check the condition but BEFORE
+        # the following delete, the account will
+        # be deleted right after the login!
+        engine.delete(user)
+
+Instead, a simple condition will prevent the race::
+
+    user = User(id=some_id)
+    engine.load(user)
+    two_years = arrow.now().replace(years=-2)
+
+    if user.login <= two_years:
+        # If the user logs in AFTER we check the condition but BEFORE
+        # the following delete, the condition will
+        # fail and the user WON'T be deleted.
+        too_old = User.login <= two_years
+
+        engine.delete(user, condition=two_years)
+
+The following comparison operators are available::
+
+* ``==``
+* ``!=``
+* ``<=``
+* ``>=``
+* ``<``
+* ``>``
+
+Because of how python handles ``__contains__`` internally, you'll need to use
+``Model.column.in_(values)`` instead of a simple ``Model.column in values``;
+the same is true of ``is`` and ``is not``.  The other operators are:
+
+* ``in_(iterable)``
+* ``is_(value)``
+* ``is_not(value)``
+* ``begins_with(value)``
+* ``between(low, high)``
+* ``contains(value)``
+
+Note that ``is_`` and ``is_not`` simply alias ``==`` and ``!=``, mostly so you
+can avoid lint issues with comparisons against True/False/None.
+
+.. warning::
+
+    Because the ``Column`` class overrides the ``__eq__`` method, functions
+    that rely on its return value will almost certainly break.  For example,
+    checking if a list of column instances contains a specific column will fail
+    because the first check will return a Condition, which is Truthy::
+
+        assert Tweet.date in [0, False, 'Nope']
+
+    It is safe to rely on ``__hash__`` which ensures ``object.__hash__`` is
+    used.  Data structures that rely on hash over eq (such as ``set``) are
+    perfectly fine (and are used extensively in the model's :ref:`meta`).
+
+.. _handful of conditions: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Condition.html
 
 .. _atomic:
 
@@ -259,9 +386,9 @@ With atomic updates::
         # Modified between load and save!
         ...
 
-Additionally, we don't need to keep track of which attributes were loaded by
+Additionally, you don't need to keep track of which attributes were loaded by
 the operation that generated the object.  Because a query may not return all
-attributes of the object, we would erroneously expect an empty value when the
+attributes of the object, you would erroneously expect an empty value when the
 operation could never populate those attributes.  For example, say the
 following only loads the ``hash`` and ``range`` attributes of the model::
 
@@ -270,8 +397,7 @@ following only loads the ``hash`` and ``range`` attributes of the model::
                       .first())
 
 This instance hasn't loaded the ``foo`` attribute, even though there's a value
-persisted in dynamo.  If we naively build a condition, we'd have something like
-the following::
+persisted in dynamo.  Naively building a condition, you'd have something like::
 
     condition = bloop.Condition()
     if hasattr(instance, 'foo'):
@@ -280,7 +406,7 @@ the following::
         condition &= Model.foo.is_(None)
 
 This would fail even if there were no changes, since the persisted row has a
-value for ``foo``; we just didn't load it!
+value for ``foo``; it simply wasn't loaded!
 
 bloop takes care of this tracking for us.  Internally, the last persisted state
 of an object is stored.  When querying an index, the projected attributes that

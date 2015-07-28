@@ -18,7 +18,7 @@ are sent):
     :language: python
     :lines: 12-14
 
-We can create, save, and load multiple objects at once, even different models:
+You can create, save, and load multiple objects at once, even different models:
 
 .. literalinclude:: ../code/quick.py
     :language: python
@@ -39,11 +39,11 @@ construct a condition for every attribute, and then AND them together:
     :language: python
     :lines: 28-33
 
-Don't forget we need to handle cases where the tweet doesn't have any content,
-and building the condition gets more complex.  What about if the tweet's
+Don't forget to handle cases where the tweet doesn't have any content, and
+building the condition gets more complex.  What about if the tweet's
 content is empty, but the tweet was loaded from a query against an index that
-doesn't project content?  We shouldn't expect it to be empty or not-empty,
-because we never tried to load it!
+doesn't project content?  There shouldn't be an expectation of empty or
+not-empty, because it was never loaded!
 
 There's an easier way:
 
@@ -51,13 +51,13 @@ There's an easier way:
     :language: python
     :lines: 35-36
 
-We can also set the engine to always use atomic conditions, with:
+You can also set the engine to always use atomic conditions, with:
 
 .. literalinclude:: ../code/quick.py
     :language: python
     :lines: 38
 
-The context version allows us to temporarily talk through the engine as if it
+The context version allows you to temporarily talk through the engine as if it
 had the given config values, without changing the engine's actual config values
 for other callers.
 

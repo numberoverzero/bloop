@@ -162,7 +162,7 @@ def test_update_noop_save(engine, User):
 
 def test_save_unknown_mode(engine, User):
     user = User(id=uuid.uuid4())
-    engine.config["persist"] = "foo"
+    engine.config["save"] = "foo"
     with pytest.raises(ValueError):
         engine.save(user)
 
@@ -196,7 +196,7 @@ def test_save_single_overwrite(User, engine):
     def validate(item):
         assert item == expected
     engine.client.put_item = validate
-    engine.config["persist"] = "overwrite"
+    engine.config["save"] = "overwrite"
     engine.save(user)
 
 
@@ -212,7 +212,7 @@ def test_save_condition(User, engine):
     def validate(item):
         assert item == expected
     engine.client.put_item = validate
-    engine.config["persist"] = "overwrite"
+    engine.config["save"] = "overwrite"
     engine.save(user, condition=condition)
 
 
@@ -279,7 +279,7 @@ def test_save_multiple(User, engine):
         nonlocal calls
         calls += 1
     engine.client.put_item = validate
-    engine.config["persist"] = "overwrite"
+    engine.config["save"] = "overwrite"
     engine.save((user1, user2))
     assert calls == 2
 
@@ -289,7 +289,7 @@ def test_save_update_condition_key_only(User, engine):
     Even when the diff is empty, an UpdateItem should be issued
     (in case this is really a create - the item doesn't exist yet)
     """
-    engine.config["persist"] = "update"
+    engine.config["save"] = "update"
     user = User(id=uuid.uuid4())
     condition = User.id.is_(None)
     expected = {"ConditionExpression": "(attribute_not_exists(#n0))",
@@ -307,7 +307,7 @@ def test_save_update_condition(User, engine):
     """
     Non-empty diff
     """
-    engine.config["persist"] = "update"
+    engine.config["save"] = "update"
     user = User(id=uuid.uuid4(), age=4)
     condition = User.id.is_(None)
     expected = {"ConditionExpression": "(attribute_not_exists(#n2))",
@@ -324,7 +324,7 @@ def test_save_update_condition(User, engine):
 
 
 def test_save_update_multiple(User, engine):
-    engine.config["persist"] = "update"
+    engine.config["save"] = "update"
     user1 = User(id=uuid.uuid4(), age=4)
     user2 = User(id=uuid.uuid4(), age=5)
 
@@ -354,10 +354,10 @@ def test_save_update_multiple(User, engine):
 
 def test_save_set_del_field(User, engine):
     """ UpdateItem can REMOVE fields as well as SET """
-    engine.config["persist"] = "update"
+    engine.config["save"] = "update"
     user = User(id=uuid.uuid4(), age=4)
 
-    # Manually force a tracking update so we think age is persisted
+    # Manually force a tracking update so we think age is saved
     bloop.tracking.update_current(user, engine)
 
     # Expect to see a REMOVE on age, and a SET on email
@@ -377,7 +377,7 @@ def test_save_set_del_field(User, engine):
 
 
 def test_save_update_del_field(User, engine):
-    engine.config["persist"] = "update"
+    engine.config["save"] = "update"
     user = User(id=uuid.uuid4(), age=4)
 
     # Manually force a tracking update so we think age is persisted
@@ -545,7 +545,7 @@ def test_scan(User, engine):
 
 
 def test_context(User, engine):
-    engine.config["persist"] = "overwrite"
+    engine.config["save"] = "overwrite"
     user_id = uuid.uuid4()
     user = User(id=user_id, name="foo")
 
@@ -559,7 +559,7 @@ def test_context(User, engine):
         assert item == expected
     engine.client.update_item = validate
 
-    with engine.context(persist="update") as eng:
+    with engine.context(save="update") as eng:
         eng.save(user)
 
     with pytest.raises(RuntimeError):

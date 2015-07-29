@@ -248,7 +248,7 @@ def delete_old_profile(profile_id):
 ### update vs overwrite
 
 By default, bloop uses `UpdateItem` when you call `engine.save`.  This can be
-changed through `engine.config['persist']` - either `update` or
+changed through `engine.config['save']` - either `update` or
 `overwrite`.
 
 `overwrite` uses `PutItem`, which will overwrite **all** attributes of the

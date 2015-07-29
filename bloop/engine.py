@@ -11,11 +11,11 @@ import collections.abc
 import declare
 MISSING = bloop.util.Sentinel("MISSING")
 DEFAULT_CONFIG = {
-    "strict": False,
-    "prefetch": 0,
+    "atomic": False,
     "consistent": False,
-    "persist": "update",
-    "atomic": False
+    "prefetch": 0,
+    "save": "update",
+    "strict": False,
 }
 
 
@@ -248,14 +248,14 @@ class Engine:
     def save(self, objs, *, condition=None):
         objs = _list_of(objs)
         atomic = self.config["atomic"]
-        mode = self.config["persist"]
+        mode = self.config["save"]
         update = mode == "update"
         rendering = atomic or condition or update
         try:
             func = {"overwrite": self.client.put_item,
                     "update": self.client.update_item}[mode]
         except KeyError:
-            raise ValueError("Unknown persist mode {}".format(mode))
+            raise ValueError("Unknown save mode {}".format(mode))
         for obj in objs:
             if mode == "overwrite":
                 item = {"TableName": obj.Meta.table_name,

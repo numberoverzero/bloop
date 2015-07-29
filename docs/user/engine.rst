@@ -20,8 +20,8 @@ config
 
 atomic
 consistent
-persist
 prefetch
+save
 strict
 
 context

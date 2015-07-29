@@ -11,7 +11,20 @@ engine.bind()
 client
 ------
 
-boto3 sessions, named profiles
+By default bloop will let boto determine what credentials should be used.  When
+you want to use a named profile, or connect to a different region, you can
+provide a `boto3 session`_ to the engine at initialization::
+
+    import boto3
+    import bloop
+
+    session = boto3.session.Session(profile_name='not-default-profile')
+    engine = bloop.Engine(session=session)
+
+You should never need to interact with the engine's client directly; the
+interface exposed does not translate 1:1 to the boto3 client interface.
+
+.. _boto3 session: http://boto3.readthedocs.org/en/latest/reference/core/session.html
 
 .. _config:
 

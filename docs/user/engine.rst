@@ -27,7 +27,21 @@ strict
 context
 -------
 
-temporary config changes
+Sometimes you want to swap config for a batch of calls, without changing the
+engine's config for other callers.  Because models are tied to a single
+engine's base :ref:`model`, a new engine with different config settings would
+not be able to save or load objects from the original engine.
+
+Instead, you can use an engine view::
+
+    with engine.context(atomic=True, consistent=True) as atomic:
+        obj = Model(id='foo')
+        atomic.load(obj)
+        del obj.bar
+        atomic.save(obj)
+
+Any config changes passed to ``context`` are applied to the temporary engine,
+but not the underlying engine.
 
 delete
 ------

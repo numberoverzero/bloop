@@ -8,7 +8,6 @@ import bloop.tracking
 import bloop.util
 import collections
 import collections.abc
-import contextlib
 import declare
 MISSING = bloop.util.Sentinel("MISSING")
 DEFAULT_CONFIG = {
@@ -134,7 +133,6 @@ class Engine:
             self.unbound_models.remove(model)
             self.models.add(model)
 
-    @contextlib.contextmanager
     def context(self, **config):
         """
         with engine.context(atomic=True, consistent=True) as atomic:
@@ -143,7 +141,7 @@ class Engine:
             obj.bar += 1
             atomic.save(obj)
         """
-        yield EngineView(self, **config)
+        return EngineView(self, **config)
 
     def delete(self, objs, *, condition=None):
         objs = _list_of(objs)
@@ -299,3 +297,9 @@ class EngineView(Engine):
 
     def bind(self):
         raise RuntimeError("EngineViews can't modify engine types or bindings")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False

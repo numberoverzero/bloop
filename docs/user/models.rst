@@ -60,6 +60,8 @@ custom loading in the advanced section.
 .. seealso::
     :ref:`loading` to customize the entry point for model creation.
 
+.. _load:
+
 Load
 ----
 
@@ -94,6 +96,8 @@ objects that were not loaded::
 .. seealso::
     By default, consistent reads are not used.  You can read more about the
     ``consistent`` option in :ref:`config`.
+
+.. _save:
 
 Save
 ----
@@ -189,6 +193,8 @@ a list of objects, the condition is applied to every object individually.
 .. _UpdateItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
 .. _PutItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html
 .. _Secondary Indexes: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SecondaryIndexes.html
+
+.. _delete:
 
 Delete
 ------
@@ -606,6 +612,8 @@ from ``all``::
       are loaded.
 
 .. _FilterExpression: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#FilteringResults
+
+.. _scan:
 
 Scan
 ----

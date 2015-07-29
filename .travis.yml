@@ -1,8 +1,11 @@
 language: python
 python: 3.4
 env:
-  - TOXENV=py34
+- TOXENV=py34
 install: pip install tox coveralls
 script: tox -e $TOXENV
 after_success:
-  - coveralls
+- coveralls
+notifications:
+  slack:
+    secure: K8vBgqPOFWyq0bTr/5B7SHsDBDCaiAZbgFMwbEAecGvUEKD89+aZTxaZAMmWyZxJaM/DdPfdMPN2K0COogs4S9Q5zm9qkfVuWpElD2BSqAbSeX7YSJ5NOrZz0ReZEtavV9sADW+FSumKzLIAf9rI8hbZ2gS82uF2Ca3G4DlXEd4=

@@ -542,12 +542,11 @@ attributes.
 
 .. tip::
 
-    Currently ``strict`` defaults to ``False``, matching Dynamo's default
-    behavior.  It is **HIGHLY** recommended to set ``strict=True`` at all
-    times, as it can be hard to plan which LSI queries will incur additional
-    reads - an inconspicuous code change that adds a new attribute to a query's
-    ``select`` may suddenly cause a critical-path query to double in consumed
-    read units.
+    Currently ``strict`` defaults to ``True``, deviating from Dynamo's default
+    behavior.  It is **HIGHLY** recommended to keep ``strict=True``, as it can
+    be hard to plan which LSI queries will incur additional reads - an
+    inconspicuous code change that adds a new attribute to a query's ``select``
+    may suddenly cause a critical-path query to double in consumed read units.
 
 To execute a query, either iterate the query object or use the ``all`` method::
 

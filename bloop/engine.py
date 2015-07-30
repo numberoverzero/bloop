@@ -15,7 +15,7 @@ DEFAULT_CONFIG = {
     "consistent": False,
     "prefetch": 0,
     "save": "update",
-    "strict": False,
+    "strict": True,
 }
 
 

@@ -39,7 +39,7 @@ Engine's config attribute.  By default, the following are set::
         "consistent": False,
         "prefetch": 0,
         "save": "update",
-        "strict": False,
+        "strict": True,
     }
 
 Setting ``atomic`` to ``True`` will append a condition to every save and delete
@@ -64,15 +64,12 @@ always replace the entire row; this includes deleting values that were stored
 in DynamoDB but not set locally.  It is **highly** recommended that you review
 :ref:`save` before changing this option from its default of ``'update'``.
 
-Setting ``strict`` to ``True`` will prevent queries and scans against LSIs from
-consuming additional read units against the table.  By default strict queries
-are not used; if you select 'all' attributes for a query against an LSI, you
-will incur an additional read **per item** against the table.  This is also
-true when selecting specific attributes which are not present in the index's
-projection.  While ``strict`` *currently* defaults to False (matching
-DynamoDB's default behavior) it is **recommended** to always set this value to
-True if a query or scan against an LSI can or will incur additional reads
-against the table.
+Setting ``strict`` to ``False`` will allow queries and scans against LSIs to
+consume additional read units against the table.  By default strict queries
+are used.  If you select 'all' attributes for a query against an LSI without
+strict enabled, you will incur an additional read **per item** against the
+table.  This is also true when selecting specific attributes which are not
+present in the index's projection.
 
 .. _Strongly Consistent Reads: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-ConsistentRead
 

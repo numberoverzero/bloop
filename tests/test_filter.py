@@ -179,7 +179,6 @@ def test_select_all_invalid_gsi(engine, local_bind):
 
 def test_select_strict_lsi(engine, ComplexModel):
     """ Select all/specific on LSI without "all" projection in strict mode """
-    engine.config["strict"] = True
     q = engine.query(ComplexModel.by_joined)
 
     with pytest.raises(ValueError):
@@ -262,7 +261,11 @@ def test_select_specific_lsi(ComplexModel, engine):
     key_condition &= (ComplexModel.joined == "now")
     q = engine.query(ComplexModel.by_joined).key(key_condition)
 
-    # Unprojected attributes expect a full load
+    # Unprojected attributes expect a full load, strict by default
+    with pytest.raises(ValueError):
+        q.select([ComplexModel.not_projected]).all()
+    # Unprojected is fine
+    engine.config["strict"] = False
     result = q.select([ComplexModel.not_projected]).all()
     assert set(result.expected) == set(ComplexModel.Meta.columns)
 

@@ -159,9 +159,54 @@ loading objects, see :ref:`load`.
 model
 -----
 
-Unique per engine, base for all models in the engine
+When an engine is created, a unique base model class is generated for it.  Any
+subclass of that engine's ``model``, once bound, can be loaded or dumped
+through the engine.  The same is true of any individual column, should you ever
+need to partially load or dump values (say, to manually update the tracking
+diff).
 
-see also: Models-> define, Advanced-> Custom Loading
+Models that subclass one engine cannot be loaded through a different engine -
+even if they have identical structures.  This is because an engine represents
+a way to talk to DynamoDB, which means multiple engines can model the same
+table quite differently.
+
+For example, suppose you are migrating a legacy column from an integer-backed
+enum to a string-backed enum.  One engine might handle only writes, while
+another needs to have a custom type that can interpret both for processing::
+
+    class CompatModel(compat_engine.model):
+        id = Column(Integer, hash_key=True)
+        content = Column(CompatEnum)
+
+        class Meta:
+            table_name = 'Model'
+
+    class Model(engine.model):
+        id = Column(Integer, hash_key=True)
+        content = Column(String)
+
+    compat_engine.bind()
+    engine.bind()
+
+    def load_data(key):
+        obj = CompatModel(id=key)
+        compat_engine.load(obj)
+        return obj
+
+    def save_data(key, data):
+        obj = Model(id=key, content=data)
+        engine.save(obj)
+
+.. warning::
+    Only the base ``engine.model`` can be subclassed.  Subclassing a custom
+    model with Columns and Indexes has some opportunities for ambiguity, so
+    instead they are not supported.  Trying to subclass a custom model will
+    result in a class whose ``Meta`` contains empty ``columns`` and ``indexes``
+    attributes.
+
+.. seealso::
+    * :ref:`define` for creating models
+    * :ref:`loading` to customize how bloop loads models
 
 query
 -----

@@ -56,7 +56,7 @@ def _dump_key(engine, obj):
 class Engine:
     model = None
 
-    def __init__(self, session=None, **config):
+    def __init__(self, *, session=None, **config):
         self.client = bloop.client.Client(session=session)
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions

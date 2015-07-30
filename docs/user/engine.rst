@@ -31,11 +31,50 @@ interface exposed does not translate 1:1 to the boto3 client interface.
 config
 ------
 
-atomic
-consistent
-prefetch
-save
-strict
+You can significantly change how you interact with DynamoDB through the
+Engine's config attribute.  By default, the following are set::
+
+    engine.config = {
+        "atomic": False,
+        "consistent": False,
+        "prefetch": 0,
+        "save": "update",
+        "strict": False,
+    }
+
+Setting ``atomic`` to ``True`` will append a condition to every save and delete
+operation that expects the row to still have the values it was last loaded
+with.  THese conditions are ANDed with any optional condition you provide to
+the save or delete operations.  For more information, see :ref:`atomic` and
+:ref:`conditions`.
+
+Setting ``consistent`` to True will make ``load`` and ``query`` use
+`Strongly Consistent Reads`_ instead of eventually consistent reads.
+
+The ``prefetch`` option controls how many pages are fetched at a time during
+queries and scans.  By default each page is loaded as necessary, allowing you
+to stop following continuation tokens if you only need a partial query.  You
+can set this to a positive integer to pre-fetch that number of pages at a time,
+or to ``'all'`` to fully iterate the query in one blocking call.
+
+The ``save`` option controls whether ``UpdateItem`` or ``PutItem`` is used.  By
+default ``'update'`` will use UpdateItem, which only submits partial changes
+for items when saving.  The ``'overwrite'`` option will use PutItem, which will
+always replace the entire row; this includes deleting values that were stored
+in DynamoDB but not set locally.  It is **highly** recommended that you review
+:ref:`save` before changing this option from its default of ``'update'``.
+
+Setting ``strict`` to ``True`` will prevent queries and scans against LSIs from
+consuming additional read units against the table.  By default strict queries
+are not used; if you select 'all' attributes for a query against an LSI, you
+will incur an additional read **per item** against the table.  This is also
+true when selecting specific attributes which are not present in the index's
+projection.  While ``strict`` *currently* defaults to False (matching
+DynamoDB's default behavior) it is **recommended** to always set this value to
+True if a query or scan against an LSI can or will incur additional reads
+against the table.
+
+.. _Strongly Consistent Reads: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-ConsistentRead
 
 context
 -------

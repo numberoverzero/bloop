@@ -77,7 +77,7 @@ class _Filter(object):
         else:
             self._select = "all"
         self._forward = True
-        self._consistent = False
+        self._consistent = engine.config["consistent"]
 
         self._select_columns = []
 

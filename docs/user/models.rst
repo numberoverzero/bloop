@@ -622,7 +622,7 @@ Scan has the same interface as :ref:`query` above, with the following
 differences:
 
 * Any ``key`` conditions are ignored completely when constructing the request.
-* The ``ascending``, ``consistent``, and ``descending`` properties are ignored.
+* The ``ascending`` and ``descending`` properties are ignored.
 
 .. _meta:
 

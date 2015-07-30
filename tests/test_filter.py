@@ -300,7 +300,8 @@ def test_count(engine, User):
 
 def test_first(engine, User):
     q = engine.scan(User).filter(User.email == "foo@domain.com")
-    expected = {"Select": "ALL_ATTRIBUTES",
+    expected = {"ConsistentRead": False,
+                "Select": "ALL_ATTRIBUTES",
                 "TableName": "User",
                 "FilterExpression": "(#n0 = :v1)",
                 "ExpressionAttributeNames": {"#n0": "email"},
@@ -321,8 +322,9 @@ def test_first(engine, User):
 
 
 def test_iter(engine, User):
-    q = engine.scan(User).filter(User.email == "foo@domain.com")
-    expected = {"Select": "ALL_ATTRIBUTES",
+    q = engine.scan(User).filter(User.email == "foo@domain.com").consistent
+    expected = {"ConsistentRead": True,
+                "Select": "ALL_ATTRIBUTES",
                 "TableName": "User",
                 "FilterExpression": "(#n0 = :v1)",
                 "ExpressionAttributeNames": {"#n0": "email"},

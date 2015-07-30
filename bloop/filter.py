@@ -115,7 +115,8 @@ class _Filter(object):
     def _generate_request(self, renderer):
         request = {
             "TableName": self.model.Meta.table_name,
-            "Select": SELECT_MODES[self._select]
+            "Select": SELECT_MODES[self._select],
+            "ConsistentRead": self._consistent
         }
         if self.index:
             request["IndexName"] = self.index.dynamo_name
@@ -308,7 +309,6 @@ class Query(_Filter):
     def _generate_request(self, renderer):
         request = super()._generate_request(renderer)
         request["ScanIndexForward"] = self._forward
-        request["ConsistentRead"] = self._consistent
 
         if not self._key_condition:
             raise ValueError("Must specify at least a hash key condition")

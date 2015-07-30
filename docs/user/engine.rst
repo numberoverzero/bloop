@@ -6,7 +6,49 @@ Engine
 bind
 ----
 
-engine.bind()
+Defining a model does not automatically create a table in DynamoDB with the
+appropriate indexes and attributes.  If it did, catching exceptions would be a
+mess::
+
+    # Each class definition
+    try:
+        class Model(engine.model):
+            id = Column(...)
+            content = Column(...)
+    except botocore.exceptions.ClientError, bloop.TableMismatch:
+        ...
+
+Instead, models are added to the engine's ``unbound_models`` set on creation,
+and the appropriate table create commands are issued the next time ``bind()``
+is called.  After CreateTable calls are issued, the engine will poll with
+DescribeTable until the table and all its GSIs are in the ``ACTIVE`` state.
+Finally, it will verify that the existing table matches the required table for
+the model, or throw an exception.  Now the code above becomes::
+
+    class Model(engine.model):
+        id = Column(...)
+        content = Column(...)
+
+    # Other class definitions
+    ...
+
+    try:
+        engine.bind()
+    except botocore.exceptions.ClientError, bloop.TableMismatch:
+        ...
+
+It is safe to call ``bind()`` multiple times - only unbound models will be
+bound.
+
+.. tip::
+    If a table does not match, bloop will never modify the table to match the
+    model; instead, you will need to manually modify or delete the table.
+
+.. seealso::
+    * :ref:`define` for options when creating models
+    * :ref:`model` for info on the base model class
+    * :ref:`meta` for access to generated metadata (columns, indexes...)
+    * :ref:`loading` to customize how bloop loads models
 
 client
 ------

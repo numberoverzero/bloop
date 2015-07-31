@@ -1,4 +1,4 @@
-bloop 0.7.5
+bloop 0.7.6
 ===========
 
 .. image:: https://readthedocs.org/projects/bloop/badge?style=flat-square

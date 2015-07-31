@@ -8,7 +8,8 @@ Pull requests that decrease coverage will not be merged.
 
 Development
 -----------
-bloop uses `tox`, `pytest` and `flake8`.  To get everything set up with pyenv_:
+bloop uses ``tox``, ``pytest``, ``coverage``, and ``flake8``.  To get
+everything set up with pyenv_:
 
 .. code-block:: python
 

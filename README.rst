@@ -109,10 +109,13 @@ before submitting a PR.
 Development
 -----------
 
-bloop uses ``tox``, ``pytest`` and ``flake8``.  To get everything set up::
+bloop uses ``tox``, ``pytest``, ``coverage``, and ``flake8``.  To get
+everything set up with `pyenv`_::
 
     # RECOMMENDED: create a virtualenv with:
     #     pyenv virtualenv 3.4.3 bloop
     git clone https://github.com/numberoverzero/bloop.git
     pip install tox
     tox
+
+.. _pyenv: https://github.com/yyuu/pyenv

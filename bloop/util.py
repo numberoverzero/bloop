@@ -10,12 +10,3 @@ def ordered(obj):
         return sorted(ordered(x) for x in obj)
     else:
         return obj
-
-
-class Sentinel:
-    def __init__(self, name):
-        self.name = name
-
-    def __str__(self):  # pragma: no cover
-        return "S({})".format(self.name)
-    __repr__ = __str__

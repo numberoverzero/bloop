@@ -5,11 +5,9 @@ import bloop.filter
 import bloop.index
 import bloop.model
 import bloop.tracking
-import bloop.util
 import collections
 import collections.abc
 import declare
-MISSING = bloop.util.Sentinel("MISSING")
 DEFAULT_CONFIG = {
     "atomic": False,
     "consistent": False,

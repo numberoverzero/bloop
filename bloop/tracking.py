@@ -3,7 +3,6 @@ import bloop.util
 import enum
 
 _DIFF = enum.Enum("DIFF", ["SET", "REM", "NOOP"])
-_MISSING = bloop.util.Sentinel("MISSING")
 _TRACKING_ATTR_NAME = "__tracking"
 
 
@@ -26,7 +25,7 @@ def _set_value(obj, name, value):
     DynamoDB.
 
     TODO: Should this use copy.deepcopy()?  Why would someone mutate the value
-    before it is passed to the column"s typedef for loading?
+    before it is passed to the column's typedef for loading?
     """
     _tracking_dict(obj)["values"][name] = value
 
@@ -91,7 +90,7 @@ def _get_current(obj, engine):
 
 def _diff_value(current, loaded):
     """
-    _DIFF of two values, where either, neither, or both can be MISSING.
+    _DIFF of two values, where either, neither, or both can be None.
     Returns the _DIFF value that should be applied to the attribute when
     saving back to DynamoDB.
 
@@ -99,16 +98,16 @@ def _diff_value(current, loaded):
     current  loaded   _DIFF
     =======  =======  ==========
     foo      foo      _DIFF.NOOP
-    MISSING  MISSING  _DIFF.NOOP
-    MISSING  bar      _DIFF.REM
+    None     None     _DIFF.NOOP
+    None     bar      _DIFF.REM
     foo      bar      _DIFF.SET
-    foo      MISSING  _DIFF.SET
+    foo      None     _DIFF.SET
     =======  =======  ==========
 
     """
     if bloop.util.ordered(current) == bloop.util.ordered(loaded):
         return _DIFF.NOOP
-    elif current is _MISSING:
+    elif current is None:
         return _DIFF.REM
     else:
         return _DIFF.SET
@@ -137,8 +136,8 @@ def diff_obj(obj, engine):
         if (column is hash_key) or (column is range_key):
             continue
         name = column.dynamo_name
-        current_value = current.get(name, _MISSING)
-        tracking_value = tracking.get(name, _MISSING)
+        current_value = current.get(name, None)
+        tracking_value = tracking.get(name, None)
         change = _diff_value(current_value, tracking_value)
         if change is _DIFF.SET:
             diff["SET"].append((column, getattr(obj, column.model_name)))
@@ -179,8 +178,8 @@ def update(obj, attrs, expected):
     """
     for column in expected:
         name = column.dynamo_name
-        value = attrs.get(name, _MISSING)
-        if value is _MISSING:
+        value = attrs.get(name, None)
+        if value is None:
             _del_value(obj, name)
         else:
             _set_value(obj, name, value)

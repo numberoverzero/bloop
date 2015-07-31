@@ -10,10 +10,10 @@ missing = object()
 
 
 def test_default_model_init(User):
-    """ Missing attributes aren't set to `None` or any other placeholder """
+    """ Missing attributes are set to `None` """
     user = User(id=uuid.uuid4(), email="user@domain.com")
     assert user.email == "user@domain.com"
-    assert getattr(user, "name", missing) is missing
+    assert user.name is None
 
 
 def test_load_default_init(engine, local_bind):
@@ -50,7 +50,7 @@ def test_load_default_init(engine, local_bind):
     assert loaded_user.admin is False
     # Values that aren't explicitly described by the model aren't passed to
     # the custom loader
-    assert getattr(loaded_user, "extra_field", missing) is missing
+    assert not hasattr(loaded_user, "extra_field")
 
 
 def test_load_dump(User):

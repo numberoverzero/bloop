@@ -98,7 +98,7 @@ def test_load_missing_attrs(User, engine):
     engine.client.batch_get_items = lambda input: response
     engine.load(obj)
     assert obj.age == 5
-    assert not hasattr(obj, "name")
+    assert obj.name is None
 
 
 def test_load_dump_unbound(UnboundUser, engine):

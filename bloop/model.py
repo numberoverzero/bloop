@@ -2,7 +2,6 @@ import bloop.column
 import bloop.index
 import bloop.util
 import declare
-MISSING = bloop.util.Sentinel("MISSING")
 
 
 class _BaseModel(object):
@@ -25,9 +24,8 @@ class _BaseModel(object):
         # Only set values from **attrs if there's a
         # corresponding `model_name` for a column in the model
         for column in self.Meta.columns:
-            value = attrs.get(column.model_name, MISSING)
-            if value is not MISSING:
-                setattr(self, column.model_name, value)
+            value = attrs.get(column.model_name, None)
+            setattr(self, column.model_name, value)
 
     @classmethod
     def _load(cls, attrs):
@@ -43,9 +41,9 @@ class _BaseModel(object):
         attrs = {}
         engine = cls.Meta.bloop_engine.type_engine
         for column in cls.Meta.columns:
-            value = getattr(obj, column.model_name, MISSING)
-            # Missing expected column
-            if value is not MISSING:
+            value = getattr(obj, column.model_name, None)
+            # Missing expected column - None is equivalent to empty
+            if value is not None:
                 attrs[column.dynamo_name] = engine.dump(column.typedef, value)
         return attrs
 
@@ -53,8 +51,8 @@ class _BaseModel(object):
         attrs = []
         for column in self.Meta.columns:
             name = column.model_name
-            value = getattr(self, name, MISSING)
-            if value is not MISSING:
+            value = getattr(self, name, None)
+            if value is not None:
                 attrs.append("{}={}".format(name, value))
         attrs = ", ".join(attrs)
         return "{}({})".format(self.__class__.__name__, attrs)
@@ -69,8 +67,8 @@ class _BaseModel(object):
         if not isinstance(other, cls):
             return False
         for column in cls.Meta.columns:
-            value = getattr(self, column.dynamo_name, MISSING)
-            other_value = getattr(other, column.dynamo_name, MISSING)
+            value = getattr(self, column.dynamo_name, None)
+            other_value = getattr(other, column.dynamo_name, None)
             if value != other_value:
                 return False
         return True

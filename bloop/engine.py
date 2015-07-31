@@ -95,19 +95,10 @@ class Engine:
     def _update(self, obj, attrs, expected):
         bloop.tracking.update(obj, attrs, expected)
         for column in expected:
-            value = attrs.get(column.dynamo_name, MISSING)
-            # Missing expected column - try to remove the existing
-            # value.  If the value didn't exist on the obj, it's
-            # already in the expected state.
-            if value is MISSING:
-                try:
-                    delattr(obj, column.model_name)
-                except AttributeError:
-                    pass
-            # Load the value through the column's typedef into the obj
-            else:
+            value = attrs.get(column.dynamo_name, None)
+            if value is not None:
                 value = self._load(column.typedef, value)
-                setattr(obj, column.model_name, value)
+            setattr(obj, column.model_name, value)
 
     def bind(self):
         """ Create tables for all models that have been registered """

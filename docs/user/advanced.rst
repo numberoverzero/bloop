@@ -258,8 +258,8 @@ And its use::
 
 .. warning::
     When creating your own types, keep in mind that everything is stored in
-    DynamoDB as one of nine basic types.  This means that loading a custom type
-    backed by a string will be indistinguishable from a basic String type.
+    DynamoDB as one of eight basic types.  This means that loading a custom
+    type backed by a string will be indistinguishable from a basic String type.
 
     Normally the model provides the target type, which is unavailable for
     ``Map`` and ``List``. It is not currently possible to use custom types with

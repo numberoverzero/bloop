@@ -1,6 +1,3 @@
-bloop 0.7.6
-===========
-
 .. image:: https://readthedocs.org/projects/bloop/badge?style=flat-square
     :target: http://bloop.readthedocs.org/
 .. image:: https://img.shields.io/travis/numberoverzero/bloop/master.svg?style=flat-square

@@ -113,11 +113,6 @@ def BaseModel(engine):
                 lambda f: isinstance(f, bloop.index._Index),
                 Meta.fields))
 
-            Meta.columns_by_model_name = declare.index(
-                Meta.columns, "model_name")
-            Meta.columns_by_dynamo_name = declare.index(
-                Meta.columns, "dynamo_name")
-
             Meta.hash_key = None
             Meta.range_key = None
             for column in Meta.columns:
@@ -133,7 +128,7 @@ def BaseModel(engine):
             # Look up the current hash key -- which is specified by
             # model_name, not dynamo_name -- in indexed columns and relate
             # the proper `bloop.Column` object
-            cols = Meta.columns_by_model_name
+            cols = declare.index(Meta.columns, "model_name")
             for index in Meta.indexes:
                 index.model = model
                 if isinstance(index, bloop.index.GlobalSecondaryIndex):

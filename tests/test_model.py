@@ -124,16 +124,6 @@ def test_meta_indexes_columns(User):
     assert User.by_email in set(User.Meta.indexes)
 
 
-def test_meta_indexed_columns_indexes(engine):
-    column = Column(UUID, hash_key=True, name="dynamo_name")
-
-    class Model(engine.model):
-        model_name = column
-
-    assert Model.Meta.columns_by_model_name == {"model_name": column}
-    assert Model.Meta.columns_by_dynamo_name == {"dynamo_name": column}
-
-
 def test_meta_keys(engine):
     """ Various combinations of hash and range keys (some impossible) """
     hash_column = lambda: Column(UUID, hash_key=True)

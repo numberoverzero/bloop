@@ -403,13 +403,12 @@ following only loads the ``hash`` and ``range`` attributes of the model::
                       .first())
 
 This instance hasn't loaded the ``foo`` attribute, even though there's a value
-persisted in dynamo.  Naively building a condition, you'd have something like::
+persisted in dynamo.  Naively building a condition, for foo and bar, you'd have
+something like::
 
     condition = bloop.Condition()
-    if hasattr(instance, 'foo'):
-        condition &= Model.foo == instance.foo
-    else:
-        condition &= Model.foo.is_(None)
+    condition &= Model.foo == instance.foo
+    condition &= Model.bar == instance.bar
 
 This would fail even if there were no changes, since the persisted row has a
 value for ``foo``; it simply wasn't loaded!

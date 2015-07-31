@@ -10,12 +10,10 @@ The ``bloop_init`` attribute of a model's ``Meta`` specifies a function that
 can be passed \*\*kwargs and returns instances of the model::
 
     def default_init(**kwargs):
-        missing = object()
         instance = MyModel()
         for column in instance.Meta.columns:
-            value = kwargs.get(column.model_name, _missing)
-            if value is not missing:
-                setattr(instance, column.model_name, value)
+            value = kwargs.get(column.model_name, None)
+            setattr(instance, column.model_name, value)
         return instance
 
 

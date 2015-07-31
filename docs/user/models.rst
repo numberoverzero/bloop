@@ -48,7 +48,7 @@ the model above, you could do the following::
 In this case ``unused`` is not set, since it is not a defined column for the
 model.
 
-It's not necessary to keep the default instantiation signature - for example,
+It's not necessary to keep the default instantiation signature.  For example,
 you may want to only allow setting non-key attributes and let your init method
 take care of generating a unique key for the instance.  If you change the init
 signature, or want bloop to take a different path when instantiating instances
@@ -360,7 +360,7 @@ Atomic
 
 With ``atomic`` you can ensure there have been no changes to the persisted
 object between the last load and the current save/delete operation.  This is
-useful in highly concurrent systems - without this setting, here's what an
+useful in highly concurrent systems.  Without this setting, here's what an
 atomic update looks like::
 
     instance = Model(hash=0, range=1)
@@ -444,9 +444,9 @@ same syntax::
     table_query = engine.query(Model)
     index_query = engine.query(Model.some_index)
 
-Queries are constructed by chaining methods together- including key conditions,
-filter conditions, select methods, and properties to enable consistent reads
-and control query order.
+Queries are constructed by chaining methods together.  This includes key
+conditions, filter conditions, select methods, and properties to enable
+consistent reads and control query order.
 
 Because each chained call returns a copy of the query, it's possible to create
 re-usable base queries::
@@ -510,7 +510,8 @@ configurations that are invalid.  All of the following will raise an exception:
 * list of columns against a LSI where the requested columns are not projected
   **and the strict option is enabled**
 
-The first should be obvious - only a SecondaryIndex has a projection.
+In the first case, only a SecondaryIndex has a projection.  ``projected`` has
+no meaning for a table query.
 
 While it's possible for a GSI with a key-only projection to include all
 attributes, this is not guaranteed to be true forever.  Instead of behavior

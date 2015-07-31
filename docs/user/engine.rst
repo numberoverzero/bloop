@@ -86,7 +86,7 @@ Engine's config attribute.  By default, the following are set::
 
 Setting ``atomic`` to ``True`` will append a condition to every save and delete
 operation that expects the row to still have the values it was last loaded
-with.  THese conditions are ANDed with any optional condition you provide to
+with.  These conditions are ANDed with any optional condition you provide to
 the save or delete operations.  For more information, see :ref:`atomic` and
 :ref:`conditions`.
 

@@ -42,7 +42,8 @@ html_theme_options = {
     'github_repo': 'bloop',
     'github_banner': True,
     'travis_button': True,
-    'show_powered_by': False
+    'show_powered_by': False,
+    'analytics_id': 'UA-65843067-1'
 }
 html_theme_path = [alabaster.get_path()]
 html_static_path = ['_static']

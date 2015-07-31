@@ -28,6 +28,7 @@ Create an instance::
             'Consulting service: you bring your big data problems'
             ' to me, I say "your data set fits in RAM", you pay me'
             ' $10,000 for saving you $500,000.'))
+
     engine.save([account, tweet])
 
 Query or scan by column values::

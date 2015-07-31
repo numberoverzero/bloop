@@ -3,7 +3,7 @@ import os
 from setuptools import setup, find_packages
 
 HERE = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(HERE, "README.markdown")) as f:
+with open(os.path.join(HERE, "README.rst")) as f:
     README = f.read()
 
 

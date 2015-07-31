@@ -53,34 +53,6 @@ def test_invalid_key(engine, local_bind):
             q.key(condition)
 
 
-def test_iterative_key(engine, local_bind):
-    """ iterative .key should AND arguments """
-    class Visit(engine.model):
-        page = bloop.Column(bloop.String, hash_key=True)
-        visitor = bloop.Column(bloop.Integer, range_key=True)
-        date = bloop.Column(bloop.DateTime)
-
-        by_date = bloop.GlobalSecondaryIndex(hash_key="date")
-    engine.bind()
-
-    q = engine.query(Visit)
-
-    pcondition = Visit.page == "foo"
-    vcondition = Visit.visitor == 0
-
-    result = q.key(pcondition).key(vcondition).all()
-
-    expected = {"Select": "ALL_ATTRIBUTES",
-                "KeyConditionExpression": "((#n0 = :v1) AND (#n2 = :v3))",
-                "TableName": "Visit",
-                "ExpressionAttributeValues": {":v3": {"S": "foo"},
-                                              ":v1": {"N": "0"}},
-                "ScanIndexForward": True,
-                "ExpressionAttributeNames": {"#n2": "page", "#n0": "visitor"},
-                "ConsistentRead": False}
-    assert result.request == expected
-
-
 def test_filter(engine, User):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
@@ -100,24 +72,22 @@ def test_filter(engine, User):
 
 
 def test_iterative_filter(engine, User):
-    """ iterative .filter should AND arguents """
+    """ iterative .filter should replace arguents """
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
     pcondition = User.email == "foo@domain.com"
     vcondition = User.age == 100
 
     result = q.filter(pcondition).filter(vcondition).all()
-    expected = {"ExpressionAttributeNames": {"#n2": "age", "#n0": "email",
-                                             "#n4": "id"},
-                "FilterExpression": "((#n0 = :v1) AND (#n2 = :v3))",
+    expected = {"ExpressionAttributeNames": {"#n0": "age", "#n2": "id"},
+                "FilterExpression": "(#n0 = :v1)",
                 "ConsistentRead": False,
                 "TableName": "User",
-                "KeyConditionExpression": "(#n4 = :v5)",
+                "KeyConditionExpression": "(#n2 = :v3)",
                 "Select": "ALL_ATTRIBUTES",
                 "ScanIndexForward": True,
-                "ExpressionAttributeValues": {":v5": {"S": str(user_id)},
-                                              ":v1": {"S": "foo@domain.com"},
-                                              ":v3": {"N": "100"}}}
+                "ExpressionAttributeValues": {":v3": {"S": str(user_id)},
+                                              ":v1": {"N": "100"}}}
     assert result.request == expected
 
 

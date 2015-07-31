@@ -475,17 +475,10 @@ To include a range key condition, use the bitwise AND operator::
 
     query = base_query.key(hash_condition & range_condition)
 
-You may also construct the key condition in two pieces, with the hash condition
-first::
-
-    query = base_query.key(hash_condition)
-    query = query.key(range_condition)
-
 With the ``filter`` method you can construct a `FilterExpression`_ using the
 same :ref:`conditions` that you use everywhere else.  Unlike the ``key``
 method, you may use any condition type.
 
-When chaining ``filter`` calls together, the conditions will be ANDed together.
 From the API reference: `A filter expression lets you apply conditions to the
 data after it is queried or scanned, but before it is returned to you. Only the
 items that meet your conditions are returned.`
@@ -495,11 +488,7 @@ A few examples::
     query = base_query.filter(Model.foo >= 100)
     query = base_query.filter(Model.bar.contains('hello'))
 
-    # (foo is None) AND (bar in [1, 2])
-    query = base_query.filter(Model.foo.is_(None))\
-                      .filter(Model.bar.in_([1, 2]))
-
-    # equivalent filter with explicit AND
+    # AND multiple conditions
     query = base_query.filter(Model.foo.is_(None) &
                               Model.bar.in_([1, 2]))
 

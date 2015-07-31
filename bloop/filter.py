@@ -193,7 +193,7 @@ class _Filter(object):
 
     def filter(self, condition):
         other = self._copy()
-        other._filter_condition &= condition
+        other._filter_condition = condition
         return other
 
     def first(self):
@@ -202,10 +202,6 @@ class _Filter(object):
         return result.first
 
     def key(self, condition):
-        # AND multiple conditions
-        if self._key_condition:
-            condition &= self._key_condition
-
         obj = self.index or self.model.Meta
         hash_column = obj.hash_key
         range_column = obj.range_key
@@ -285,7 +281,7 @@ class _Filter(object):
             # be valid for the index.
             other = self._copy()
             other._select = "specific"
-            other._select_columns.extend(select)
+            other._select_columns = select
 
             if requires_exact and self.index.projection != "ALL":
                 projected = self.index.projection_attributes

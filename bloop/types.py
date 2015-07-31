@@ -192,7 +192,7 @@ class Set(Type):
         return set(self.typedef.dynamo_load(v) for v in value)
 
     def dynamo_dump(self, value):
-        return [self.typedef.dynamo_dump(v) for v in value]
+        return [self.typedef.dynamo_dump(v) for v in sorted(value)]
 
     def can_dump(self, value):
         return (super().can_dump(value) and

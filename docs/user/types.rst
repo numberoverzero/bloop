@@ -59,6 +59,7 @@ String
 String is the base class for most custom classes.
 
 ::
+
     class String(Type):
         python_type = str
         backing_type = STRING
@@ -71,6 +72,7 @@ human-readable format in DynamoDB, whereas the uuid bytes could be stored in
 a Binary format to save space.
 
 ::
+
     class UUID(String):
         python_type = uuid.UUID
 
@@ -215,7 +217,7 @@ is entirely delegated to the instance's typedef::
             return set(self.typedef.dynamo_load(v) for v in value)
 
         def dynamo_dump(self, value):
-            return [self.typedef.dynamo_dump(v) for v in value]
+            return [self.typedef.dynamo_dump(v) for v in sorted(value)]
 
         def can_dump(self, value):
             return (super().can_dump(value) and

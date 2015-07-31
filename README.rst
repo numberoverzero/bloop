@@ -1,15 +1,15 @@
 bloop 0.7.5
 ===========
 
-.. image:: https://img.shields.io/travis/numberoverzero/bloop/master.svg
+.. image:: https://img.shields.io/travis/numberoverzero/bloop/master.svg?style=flat-square
     :target: https://travis-ci.org/numberoverzero/bloop
-.. image:: https://img.shields.io/coveralls/numberoverzero/bloop/master.svg
+.. image:: https://img.shields.io/coveralls/numberoverzero/bloop/master.svg?style=flat-square
     :target: https://coveralls.io/github/numberoverzero/bloop
-.. image:: https://img.shields.io/pypi/v/bloop.svg
+.. image:: https://img.shields.io/pypi/v/bloop.svg?style=flat-square
     :target: https://pypi.python.org/pypi/bloop
-.. image:: https://img.shields.io/github/issues-raw/numberoverzero/bloop.svg
+.. image:: https://img.shields.io/github/issues-raw/numberoverzero/bloop.svg?style=flat-square
     :target: https://github.com/numberoverzero/bloop/issues
-.. image:: https://img.shields.io/pypi/l/bloop.svg
+.. image:: https://img.shields.io/pypi/l/bloop.svg?style=flat-square
     :target: https://github.com/numberoverzero/bloop/blob/master/LICENSE
 
 DynamoDB object mapper for python 3.4+

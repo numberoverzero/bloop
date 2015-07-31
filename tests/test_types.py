@@ -39,14 +39,14 @@ def test_load_dump_best_effort():
 
 def test_string():
     typedef = types.String()
-    symmetric_test(typedef, (None, None), ("foo", "foo"))
+    symmetric_test(typedef, ("foo", "foo"))
 
 
 def test_uuid():
     typedef = types.UUID()
     uuid_obj = uuid.uuid4()
     uuid_str = str(uuid_obj)
-    symmetric_test(typedef, (None, None), (uuid_obj, uuid_str))
+    symmetric_test(typedef, (uuid_obj, uuid_str))
 
 
 def test_datetime():
@@ -56,9 +56,6 @@ def test_datetime():
     now = arrow.now()
 
     # Not a symmetric type
-    assert typedef.dynamo_load(None) is None
-    assert typedef.dynamo_dump(None) is None
-
     assert typedef.dynamo_load(now.isoformat()) == now
     assert typedef.dynamo_dump(now) == now.to("utc").isoformat()
 
@@ -90,7 +87,6 @@ def test_float():
             typedef.dynamo_dump(value)
 
     symmetric_test(typedef,
-                   (None, None),
                    (1.5, "1.5"),
                    (d(4)/d(3), "1.333333333333333333333333333"))
 
@@ -106,7 +102,7 @@ def test_integer():
     """
     typedef = types.Integer()
 
-    symmetric_test(typedef, (None, None), (4, "4"))
+    symmetric_test(typedef, (4, "4"))
 
     assert typedef.dynamo_dump(4.5) == "4"
     assert typedef.dynamo_load("4") == 4
@@ -117,7 +113,7 @@ def test_integer():
 
 def test_binary():
     typedef = types.Binary()
-    symmetric_test(typedef, (None, None), (b"123", "MTIz"), (bytes(1), "AA=="))
+    symmetric_test(typedef, (b"123", "MTIz"), (bytes(1), "AA=="))
 
 
 def test_sets():
@@ -131,11 +127,11 @@ def test_sets():
          set(["Hello", "World"]),
          set(["Hello", "World"])),
         (types.FloatSet(),
-         set([4.5, 3, None]),
-         set(["4.5", "3", None])),
+         set([4.5, 3]),
+         set(["4.5", "3"])),
         (types.IntegerSet(),
-         set([None, 0, -1, 1]),
-         set([None, "0", "-1", "1"])),
+         set([0, -1, 1]),
+         set(["0", "-1", "1"])),
         (types.BinarySet(),
          set([b"123", b"456"]),
          set(["MTIz", "NDU2"]))
@@ -145,11 +141,6 @@ def test_sets():
         dumped = typedef.dynamo_dump(loaded)
         check(dumped, expected)
         assert typedef.dynamo_load(expected) == loaded
-
-    # Any set type will do
-    typedef = types.IntegerSet()
-    assert typedef.dynamo_dump(None) is None
-    assert typedef.dynamo_load(None) is None
 
 
 def test_set_can_dump():
@@ -219,7 +210,7 @@ def test_map_list_single_value():
         "float": {"N": "0.125"},
         "int": {"N": "4"},
         "binary": {"B": binary_str},
-        "null": {"NULL": True},
+        "null": {"NULL": None},
         "boolean": {"BOOL": True},
         "map": {"M": {"map_str": {"S": "map_value"},
                       "map_float": {"N": "0.125"}}},

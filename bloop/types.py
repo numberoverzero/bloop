@@ -35,6 +35,8 @@ class Type(declare.TypeDefinition):
         take a {type: value} dictionary from dynamo and return a python value
         """
         value = next(iter(value.values()))
+        if value is None:
+            return None
         return self.dynamo_load(value)
 
     def can_load(self, value):
@@ -49,6 +51,8 @@ class Type(declare.TypeDefinition):
         """
         dump a python value to a {type: value} dictionary for dynamo storage
         """
+        if value is None:
+            return {self.backing_type: None}
         return {self.backing_type: self.dynamo_dump(value)}
 
     def dynamo_load(self, value):
@@ -76,13 +80,9 @@ class UUID(String):
     python_type = uuid.UUID
 
     def dynamo_load(self, value):
-        if value is None:
-            return None
         return uuid.UUID(value)
 
     def dynamo_dump(self, value):
-        if value is None:
-            return None
         return str(value)
 
 
@@ -121,16 +121,10 @@ class DateTime(String):
         super().__init__()
 
     def dynamo_load(self, value):
-        # arrow.get(None) returns arrow.utcnow();
-        # we want to preserve the lack of value
-        if value is None:
-            return None
         iso8601_string = super().dynamo_load(value)
         return arrow.get(iso8601_string).to(self.timezone)
 
     def dynamo_dump(self, value):
-        if value is None:
-            return None
         # ALWAYS store in UTC - we can manipulate the timezone on load
         iso8601_string = value.to("utc").isoformat()
         return super().dynamo_dump(iso8601_string)
@@ -141,13 +135,9 @@ class Float(Type):
     backing_type = NUMBER
 
     def dynamo_load(self, value):
-        if value is None:
-            return None
         return DYNAMODB_CONTEXT.create_decimal(value)
 
     def dynamo_dump(self, value):
-        if value is None:
-            return None
         n = str(DYNAMODB_CONTEXT.create_decimal(value))
         if any(filter(lambda x: x in n, ("Infinity", "NaN"))):
             raise TypeError("Infinity and NaN not supported")
@@ -163,14 +153,10 @@ class Integer(Float):
     python_type = int
 
     def dynamo_load(self, value):
-        if value is None:
-            return None
         number = super().dynamo_load(value)
         return int(number)
 
     def dynamo_dump(self, value):
-        if value is None:
-            return None
         value = int(value)
         return super().dynamo_dump(value)
 
@@ -180,13 +166,9 @@ class Binary(Type):
     backing_type = BINARY
 
     def dynamo_load(self, value):
-        if value is None:
-            return None
         return base64.b64decode(value)
 
     def dynamo_dump(self, value):
-        if value is None:
-            return None
         return base64.b64encode(value).decode("utf-8")
 
 
@@ -201,13 +183,9 @@ def _set_type(typename, typedef, dynamo_type):
             super().__init__()
 
         def dynamo_load(self, value):
-            if value is None:
-                return None
             return set(self.typedef.dynamo_load(v) for v in value)
 
         def dynamo_dump(self, value):
-            if value is None:
-                return None
             return [self.typedef.dynamo_dump(v) for v in value]
 
         def can_dump(self, value):

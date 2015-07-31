@@ -390,10 +390,3 @@ Usage::
 
     # Raises
     instance = Model(content=4, flag=True)
-
-.. _tracking:
-
-Manual tracking
----------------
-
-see also: Engine-> Config-> save

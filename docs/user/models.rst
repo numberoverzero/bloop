@@ -186,7 +186,6 @@ a list of objects, the condition is applied to every object individually.
 
 .. seealso::
     * :ref:`config` to adjust ``save`` and ``atomic`` options
-    * :ref:`tracking` to manually adjust the current tracking for an object
     * :ref:`conditions` for using conditions with save and delete
     * :ref:`atomic` for using atomic updates
 
@@ -219,7 +218,6 @@ a list of objects, the condition is applied to every object individually.
 
 .. seealso::
     * :ref:`config` to adjust the ``atomic`` option
-    * :ref:`tracking` to manually adjust the current tracking for an object
     * :ref:`conditions` for using conditions with save and delete
     * :ref:`atomic` for using atomic updates
 
@@ -432,10 +430,8 @@ query::
         atomic.save(instance, condition=big_foo)
 
 .. seealso::
-    * :ref:`tracking` for details on the tracking algorithm, as well as ways to
-      manually change what is considered tracked.
-    * The ``atomic`` option in :ref:`config` to enable/disable atomic
-      conditions for save and delete.
+    The ``atomic`` option in :ref:`config` to enable/disable atomic
+    conditions for save and delete.
 
 .. _query:
 

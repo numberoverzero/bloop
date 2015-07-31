@@ -287,9 +287,109 @@ And its use::
 Custom Columns
 --------------
 
-subclass bloop.column.Column
+Sometimes there are customizations you'd like to make across different types,
+such as attaching a validation function.  These should be handled by the
+Column, not the type::
 
-validation
+    from bloop import Column
+
+
+    class ValidatingColumn(Column):
+        def __init__(self, *args, validate=None, **kwargs):
+            super().__init__(*args, **kwargs)
+            if validate is None:
+                validate = lambda obj, value: True
+            self.validate = validate
+
+        def set(self, obj, value):
+            if not self.validate(obj, value):
+                raise ValueError("Cannot set {} on {} to {}".format(
+                    self.model_name, obj, value))
+            super().set(obj, value)
+
+And using that column::
+
+    from bloop import Engine, Integer
+    engine = Engine()
+
+    def positive(obj, value):
+        return value > 0
+
+
+    class Model(engine.model):
+        id = Column(Integer, hash_key=True)
+        content = ValidatingColumn(Integer, validate=positive)
+    engine.bind()
+
+Remember, this will be run every time the value is set, **even when the object
+is loaded from DynamoDB**.  This means that a ValueError will be raised if the
+content was ever negative before this validation was added.
+
+What about aliasing a persisted value without changing its stored value?  The
+following renders ``green`` as ``blue`` without changing what's persisted in
+DynamoDB::
+
+    class SneakyColumn(Column):
+        def get(self, obj):
+            value = super().get(obj)
+            if value == "green":
+                value = "blue"
+            return value
+
+You'll note that these are not the regular descriptor functions ``__get__``,
+``__set__``, and ``__del__``.  These are simplified functions that the
+Column class delegates to when common conditions are met - for instance, when
+obj is not None (class access).  Additionally, the base Column class handles
+storing or retrieving the value from the object's \_\_dict\_\_ by the model
+name (set during class creation) and raising if there is no model name.  This
+allows your set/get/del methods to focus on manipulating data, instead of
+handling the various edge-cases of incorrect initialization.  Here's the full
+signature for overriding the descriptor protocol as used by Column::
+
+    class CustomColumn(Column):
+        def get(self, obj):
+            return super().get(obj)
+
+        def set(self, obj, value):
+            super().set(obj, value)
+
+        def delete(self, obj):
+            super().delete(obj)
+
+To add a ``nullable`` flag to the Column constructor::
+
+    class Column(bloop.Column):
+        def __init__(self, *args, nullable=True, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.nullable = nullable
+
+        def set(self, obj, value):
+            if (value is None) and (not self.nullable):
+                raise ValueError(
+                    "{} is not nullable".format(self.model_name))
+            super().set(obj, value)
+
+        def delete(self, obj):
+            if not self.nullable:
+                raise ValueError(
+                    "{} is not nullable".format(self.model_name))
+            super().delete(obj)
+
+Usage::
+
+    from customization import Column
+    from bloop import Engine, Integer, Boolean
+    engine = Engine()
+
+
+    class Model(engine.model):
+        id = Column(Integer, nullable=False, hash_key=True)
+        content = Column(Integer, nullable=True)
+        flag = Column(Boolean)
+    engine.bind()
+
+    # Raises
+    instance = Model(content=4, flag=True)
 
 .. _tracking:
 

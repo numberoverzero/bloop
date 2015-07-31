@@ -56,3 +56,6 @@ target/
 # Subl
 *.sublime-project
 *.sublime-workspace
+
+# Versioning
+.python-version

@@ -251,16 +251,19 @@ class List(Type):
 
 
 TYPES.extend([
-    String,
-    UUID,
-    DateTime,
-    Float,
-    Integer,
-    Binary,
-    Null,
-    Boolean,
-    Map,
-    List
+    String(),
+    UUID(),
+    DateTime(),
+    Float(),
+    Integer(),
+    Binary(),
+    Null(),
+    Boolean(),
+    Map(),
+    List(),
+    Set(String),
+    Set(Float),
+    Set(Binary)
 ])
 
 
@@ -270,7 +273,7 @@ class _DefaultSerializer:
     def __init__(self, types=None):
         self.types = []
         for typedef in (types or TYPES):
-            self.types.append(typedef())
+            self.types.append(typedef)
 
     def load(self, value):
         """ value is a dictionary {dynamo_type: value} """

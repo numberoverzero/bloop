@@ -9,10 +9,13 @@ bloop 0.7.6
     :target: https://coveralls.io/github/numberoverzero/bloop
 .. image:: https://img.shields.io/pypi/v/bloop.svg?style=flat-square
     :target: https://pypi.python.org/pypi/bloop
+.. image:: https://img.shields.io/pypi/status/bloop.svg?style=flat-square
+    :target: https://pypi.python.org/pypi/bloop
 .. image:: https://img.shields.io/github/issues-raw/numberoverzero/bloop.svg?style=flat-square
     :target: https://github.com/numberoverzero/bloop/issues
 .. image:: https://img.shields.io/pypi/l/bloop.svg?style=flat-square
     :target: https://github.com/numberoverzero/bloop/blob/master/LICENSE
+
 
 DynamoDB object mapper for python 3.4+
 
@@ -81,8 +84,7 @@ Query or scan by column values::
     yesterday = arrow.now().replace(days=-1)
 
     acount = engine.query(Account.by_email)\
-                   .key(Account.email == email)\
-                   .first()
+                   .key(Account.email == email).first()
     tweets = engine.query(Tweet)\
                    .key(Tweet.acount == acount.id)
 

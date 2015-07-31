@@ -11,7 +11,6 @@ ENCODING = "utf-8"
 STRING = "S"
 NUMBER = "N"
 BINARY = "B"
-NULL = "NULL"
 BOOLEAN = "BOOL"
 MAP = "M"
 LIST = "L"
@@ -200,23 +199,6 @@ class Set(Type):
                 all(map(self.typedef.can_dump, value)))
 
 
-class Null(Type):
-    """
-    Load/dump are taken from the boto3 TypeSerializer/TypeDeserializer
-
-    https://github.com/boto/boto3/blob/545fa5120137bbdc3d4e493012c97d6ad35df9af/boto3/dynamodb/types.py#L197
-    https://github.com/boto/boto3/blob/545fa5120137bbdc3d4e493012c97d6ad35df9af/boto3/dynamodb/types.py#L269
-    """
-    python_type = type(None)
-    backing_type = NULL
-
-    def dynamo_load(self, value):
-        return None
-
-    def dynamo_dump(self, value):
-        return True
-
-
 class Boolean(Type):
     python_type = bool
     backing_type = BOOLEAN
@@ -257,7 +239,6 @@ TYPES.extend([
     Float(),
     Integer(),
     Binary(),
-    Null(),
     Boolean(),
     Map(),
     List(),

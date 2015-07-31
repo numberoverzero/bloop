@@ -162,16 +162,6 @@ def test_set_type_instance():
     assert isinstance(subclass_set.typedef, type_subclass)
 
 
-def test_null():
-    typedef = types.Null()
-
-    values = [None, -1, decimal.Decimal(4/3), "string", object()]
-
-    for value in values:
-        assert typedef.dynamo_dump(value) is True
-        assert typedef.dynamo_load(value) is None
-
-
 def test_bool():
     """ Boolean will never store/load as empty - bool(None) is False """
     typedef = types.Boolean()
@@ -210,7 +200,6 @@ def test_map_list_single_value():
         "float": decimal.Decimal("0.125"),
         "int": 4,
         "binary": binary_obj,
-        "null": None,
         "boolean": True,
         "map": {"map_str": "map_value", "map_float": decimal.Decimal("0.125")},
         "list": [4, binary_obj]
@@ -221,7 +210,6 @@ def test_map_list_single_value():
         "float": {"N": "0.125"},
         "int": {"N": "4"},
         "binary": {"B": binary_str},
-        "null": {"NULL": None},
         "boolean": {"BOOL": True},
         "map": {"M": {"map_str": {"S": "map_value"},
                       "map_float": {"N": "0.125"}}},
@@ -260,3 +248,10 @@ def test_map_list_unknown_type():
         types.Map().dynamo_load({"test": unknown_type})
     with pytest.raises(TypeError):
         types.List().dynamo_load([unknown_type])
+
+
+def test_load_dump_none():
+    """ Loading or dumping None returns None """
+    typedef = types.String()
+    assert typedef._dump(None) == {"S": None}
+    assert typedef._load({"S": None}) is None

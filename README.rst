@@ -9,7 +9,7 @@ bloop 0.7.5
     :target: https://pypi.python.org/pypi/bloop
 .. image:: https://img.shields.io/github/issues-raw/numberoverzero/bloop.svg
     :target: https://github.com/numberoverzero/bloop/issues
-.. image:: https://img.shields.io/github/license/numberoverzero/bloop.svg
+.. image:: https://img.shields.io/pypi/l/bloop.svg
     :target: https://github.com/numberoverzero/bloop/blob/master/LICENSE
 
 DynamoDB object mapper for python 3.4+

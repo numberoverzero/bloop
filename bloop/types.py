@@ -11,9 +11,6 @@ ENCODING = "utf-8"
 STRING = "S"
 NUMBER = "N"
 BINARY = "B"
-STRING_SET = "SS"
-NUMBER_SET = "NS"
-BINARY_SET = "BS"
 NULL = "NULL"
 BOOLEAN = "BOOL"
 MAP = "M"
@@ -172,32 +169,35 @@ class Binary(Type):
         return base64.b64encode(value).decode("utf-8")
 
 
-def _set_type(typename, typedef, dynamo_type):
-    class Set(Type):
-        """ Adapter for sets of objects """
-        python_type = collections.abc.Set
-        backing_type = dynamo_type
-
-        def __init__(self, *args, **kwargs):
-            self.typedef = typedef(*args, **kwargs)
-            super().__init__()
-
-        def dynamo_load(self, value):
-            return set(self.typedef.dynamo_load(v) for v in value)
-
-        def dynamo_dump(self, value):
-            return [self.typedef.dynamo_dump(v) for v in value]
-
-        def can_dump(self, value):
-            return (super().can_dump(value) and
-                    all(map(self.typedef.can_dump, value)))
-    return type(typename, (Set,), {})
+def subclassof(C, B):
+    """ Wrap issubclass to return True/False without throwing TypeError """
+    try:
+        return issubclass(C, B)
+    except TypeError:
+        return False
 
 
-StringSet = _set_type("StringSet", String, STRING_SET)
-FloatSet = _set_type("FloatSet", Float, NUMBER_SET)
-IntegerSet = _set_type("IntegerSet", Integer, NUMBER_SET)
-BinarySet = _set_type("BinarySet", Binary, BINARY_SET)
+class Set(Type):
+    """ Adapter for sets of objects """
+    python_type = collections.abc.Set
+
+    def __init__(self, typedef):
+        if subclassof(typedef, Type):
+            # Type class passed, create no-arg instance
+            typedef = typedef()
+        self.typedef = typedef
+        self.backing_type = typedef.backing_type + "S"
+        super().__init__()
+
+    def dynamo_load(self, value):
+        return set(self.typedef.dynamo_load(v) for v in value)
+
+    def dynamo_dump(self, value):
+        return [self.typedef.dynamo_dump(v) for v in value]
+
+    def can_dump(self, value):
+        return (super().can_dump(value) and
+                all(map(self.typedef.can_dump, value)))
 
 
 class Null(Type):
@@ -257,10 +257,6 @@ TYPES.extend([
     Float,
     Integer,
     Binary,
-    StringSet,
-    FloatSet,
-    IntegerSet,
-    BinarySet,
     Null,
     Boolean,
     Map,

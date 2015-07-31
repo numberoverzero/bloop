@@ -6,15 +6,14 @@ from bloop.exceptions import (
 )
 from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.types import (
-    Boolean, Binary, BinarySet, DateTime, Float, FloatSet, Integer,
-    IntegerSet, List, Map, Null, String, StringSet, UUID
+    Boolean, Binary, DateTime, Float, Integer,
+    List, Map, Null, Set, String, UUID
 )
 
 __all__ = [
-    "Boolean", "Binary", "BinarySet", "Column", "Condition",
-    "ConstraintViolation", "DateTime", "Engine", "Float", "FloatSet",
-    "GlobalSecondaryIndex", "Integer", "IntegerSet", "List",
-    "LocalSecondaryIndex", "Map", "Null", "NotModified", "String",
-    "StringSet", "TableMismatch", "UnboundModel", "UUID"
+    "Boolean", "Binary", "Column", "Condition", "ConstraintViolation",
+    "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer",
+    "List", "LocalSecondaryIndex", "Map", "Null", "NotModified", "Set",
+    "String", "TableMismatch", "UnboundModel", "UUID"
 ]
 __version__ = "0.7.5"

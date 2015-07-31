@@ -123,16 +123,16 @@ def test_sets():
         assert set(dumped) == expected
 
     tests = [
-        (types.StringSet(),
+        (types.Set(types.String),
          set(["Hello", "World"]),
          set(["Hello", "World"])),
-        (types.FloatSet(),
+        (types.Set(types.Float),
          set([4.5, 3]),
          set(["4.5", "3"])),
-        (types.IntegerSet(),
+        (types.Set(types.Integer),
          set([0, -1, 1]),
          set(["0", "-1", "1"])),
-        (types.BinarySet(),
+        (types.Set(types.Binary),
          set([b"123", b"456"]),
          set(["MTIz", "NDU2"]))
     ]
@@ -146,9 +146,20 @@ def test_sets():
 def test_set_can_dump():
     """ Checks all values in the set """
 
-    typedef = types.StringSet()
+    typedef = types.Set(types.String)
     assert typedef.can_dump(set(["1", "2", "3"]))
     assert not typedef.can_dump(set(["1", 2, "3"]))
+
+
+def test_set_type_instance():
+    """ Set can take an instance of a Type as well as a Type subclass """
+    type_instance = types.String()
+    instance_set = types.Set(type_instance)
+    assert instance_set.typedef is type_instance
+
+    type_subclass = types.String
+    subclass_set = types.Set(type_subclass)
+    assert isinstance(subclass_set.typedef, type_subclass)
 
 
 def test_null():

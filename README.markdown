@@ -305,7 +305,7 @@ not loaded, its value is empty in DynamoDB.  If it was expected and seen,
 the value is tracked as having been seen.  When creating a diff, any value that
 was seen but is no longer in the object (`del obj.attr`) is added to the set
 of DELETE signals for update.  Any value that was seen and is not equal to the
-current, or that was not seen and now has a value, is added tot he set of SET
+current, or that was not seen and now has a value, is added to the set of SET
 signals for update.
 
 In this way, a small amount of overhead is added to load an object from a

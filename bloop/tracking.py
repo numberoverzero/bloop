@@ -216,7 +216,7 @@ def atomic_condition(obj):
     # The overhead to do so will rarely be significant.
     for column in sorted(loaded, key=lambda col: col.dynamo_name):
         value = tracking.get(column.dynamo_name, None)
-        condition = column.is_(value)
+        condition = column == value
         condition.dumped = True
         atomic &= condition
     return atomic

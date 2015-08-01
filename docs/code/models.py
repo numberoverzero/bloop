@@ -22,7 +22,7 @@ class Tweet(engine.model):
     class Meta:
         write_units = 10
     account = Column(UUID, hash_key=True)
-    tweet_id = Column(String, range_key=True)
+    id = Column(String, range_key=True)
     content = Column(String)
     date = Column(DateTime)
     favorites = Column(Integer)

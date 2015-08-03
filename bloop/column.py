@@ -16,6 +16,7 @@ class _ComparisonMixin(object):
             return bloop.condition.AttributeExists(self, negate=True)
         comparator = operator.eq
         return bloop.condition.Comparison(self, comparator, value)
+    is_ = __eq__
 
     def __ne__(self, value):
         # Special case - None should use function attribute_exists
@@ -23,6 +24,7 @@ class _ComparisonMixin(object):
             return bloop.condition.AttributeExists(self, negate=False)
         comparator = operator.ne
         return bloop.condition.Comparison(self, comparator, value)
+    is_not = __ne__
 
     def __lt__(self, value):
         comparator = operator.lt
@@ -39,14 +41,6 @@ class _ComparisonMixin(object):
     def __ge__(self, value):
         comparator = operator.ge
         return bloop.condition.Comparison(self, comparator, value)
-
-    def is_(self, value):
-        """ alias for == """
-        return self == value
-
-    def is_not(self, value):
-        """ alias for != """
-        return self != value
 
     def between(self, lower, upper):
         """ lower <= column.value <= upper """

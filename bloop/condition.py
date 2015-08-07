@@ -2,6 +2,7 @@
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import operator
 
+
 EXPRESSION_KEYS = {
     "condition": "ConditionExpression",
     "filter": "FilterExpression",
@@ -22,7 +23,7 @@ class ConditionRenderer:
         self.name_attr_index = {}
         self.__ref_index = 0
 
-    def value_ref(self, column, value, *, dumped=False):
+    def value_ref(self, column, value, *, dumped=False, path=None):
         """
         Dumped controls whether the value is already in a dynamo format (True),
         or needs to be dumped through the engine (False).
@@ -31,9 +32,12 @@ class ConditionRenderer:
         self.__ref_index += 1
 
         if not dumped:
-            value = self.engine._dump(column.typedef, value)
-        self.attr_values[ref] = value
+            typedef = column.typedef
+            for segment in (path or []):
+                typedef = typedef[segment]
+            value = self.engine._dump(typedef, value)
 
+        self.attr_values[ref] = value
         return ref
 
     def _name_ref(self, name):
@@ -228,7 +232,8 @@ class Comparison(_BaseCondition):
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
-        vref = renderer.value_ref(self.column, self.value, dumped=self.dumped)
+        vref = renderer.value_ref(self.column, self.value,
+                                  dumped=self.dumped, path=self.path)
         comparator = self.comparator_strings[self.comparator]
         return "({} {} {})".format(nref, comparator, vref)
 
@@ -263,7 +268,8 @@ class BeginsWith(_BaseCondition):
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
-        vref = renderer.value_ref(self.column, self.value, dumped=self.dumped)
+        vref = renderer.value_ref(self.column, self.value,
+                                  dumped=self.dumped, path=self.path)
         return "(begins_with({}, {}))".format(nref, vref)
 
 
@@ -280,7 +286,8 @@ class Contains(_BaseCondition):
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
-        vref = renderer.value_ref(self.column, self.value, dumped=self.dumped)
+        vref = renderer.value_ref(self.column, self.value,
+                                  dumped=self.dumped, path=self.path)
         return "(contains({}, {}))".format(nref, vref)
 
 
@@ -299,9 +306,9 @@ class Between(_BaseCondition):
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
         vref_lower = renderer.value_ref(self.column, self.lower,
-                                        dumped=self.dumped)
+                                        dumped=self.dumped, path=self.path)
         vref_upper = renderer.value_ref(self.column, self.upper,
-                                        dumped=self.dumped)
+                                        dumped=self.dumped, path=self.path)
         return "({} BETWEEN {} AND {})".format(
             nref, vref_lower, vref_upper)
 
@@ -319,7 +326,10 @@ class In(_BaseCondition):
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
-        ref = renderer.value_ref
-        values = (ref(self.column, v, dumped=self.dumped) for v in self.values)
+        values = []
+        for value in self.values:
+            rendered_value = renderer.value_ref(
+                self.column, value, dumped=self.dumped, path=self.path)
+            values.append(rendered_value)
         values = ", ".join(values)
         return "({} IN ({}))".format(nref, values)

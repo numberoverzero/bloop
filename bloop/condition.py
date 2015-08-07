@@ -206,17 +206,18 @@ class Comparison(_BaseCondition):
         operator.ge: ">=",
     }
 
-    def __init__(self, column, comparator, value):
+    def __init__(self, column, comparator, value, path=None):
         if comparator not in self.comparator_strings:
             raise ValueError("Unknown comparator '{}'".format(comparator))
         self.column = column
         self.comparator = comparator
         self.value = value
+        self.path = path
 
     def __str__(self):  # pragma: no cover
-        return "Compare({}, {}, {})".format(
-            self.comparator_strings[self.comparator],
-            self.column, self.value)
+        return "Compare({}(path={}), {}, {})".format(
+            self.column, self.path, self.comparator_strings[self.comparator],
+            self.value)
     __repr__ = __str__
 
     def render(self, renderer):
@@ -227,13 +228,14 @@ class Comparison(_BaseCondition):
 
 
 class AttributeExists(_BaseCondition):
-    def __init__(self, column, negate):
+    def __init__(self, column, negate, path=None):
         self.column = column
         self.negate = negate
+        self.path = path
 
     def __str__(self):  # pragma: no cover
         name = "AttributeNotExists" if self.negate else "AttributeExists"
-        return "{}({})".format(name, self.column)
+        return "{}({}(path={}))".format(name, self.path, self.column)
     __repr__ = __str__
 
     def render(self, renderer):
@@ -243,12 +245,14 @@ class AttributeExists(_BaseCondition):
 
 
 class BeginsWith(_BaseCondition):
-    def __init__(self, column, value):
+    def __init__(self, column, value, path=None):
         self.column = column
         self.value = value
+        self.path = path
 
     def __str__(self):  # pragma: no cover
-        return "BeginsWith({}, {})".format(self.column, self.value)
+        return "BeginsWith({}(path={}), {})".format(
+            self.column, self.path, self.value)
     __repr__ = __str__
 
     def render(self, renderer):
@@ -258,12 +262,14 @@ class BeginsWith(_BaseCondition):
 
 
 class Contains(_BaseCondition):
-    def __init__(self, column, value):
+    def __init__(self, column, value, path=None):
         self.column = column
         self.value = value
+        self.path = path
 
     def __str__(self):  # pragma: no cover
-        return "Contains({}, {})".format(self.column, self.value)
+        return "Contains({}(path={}), {})".format(
+            self.column, self.path, self.value)
     __repr__ = __str__
 
     def render(self, renderer):
@@ -273,14 +279,15 @@ class Contains(_BaseCondition):
 
 
 class Between(_BaseCondition):
-    def __init__(self, column, lower, upper):
+    def __init__(self, column, lower, upper, path=None):
         self.column = column
         self.lower = lower
         self.upper = upper
+        self.path = path
 
     def __str__(self):  # pragma: no cover
-        return "Between({}, {}, {})".format(
-            self.column, self.lower, self.upper)
+        return "Between({}(path={}), {}, {})".format(
+            self.column, self.path, self.lower, self.upper)
     __repr__ = __str__
 
     def render(self, renderer):
@@ -294,13 +301,14 @@ class Between(_BaseCondition):
 
 
 class In(_BaseCondition):
-    def __init__(self, column, values):
+    def __init__(self, column, values, path=None):
         self.column = column
         self.values = values
+        self.path = path
 
     def __str__(self):  # pragma: no cover
         values = ", ".join(str(c) for c in self.values)
-        return "In({}, [{}])".format(self.column, values)
+        return "In({}(path={}), [{}])".format(self.column, self.path, values)
     __repr__ = __str__
 
     def render(self, renderer):

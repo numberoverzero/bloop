@@ -36,17 +36,23 @@ class ConditionRenderer:
 
         return ref
 
-    def name_ref(self, column):
+    def _name_ref(self, name):
         # Small optimization to request size for duplicate name refs
-        existing_ref = self.name_attr_index.get(column.dynamo_name, None)
+        existing_ref = self.name_attr_index.get(name, None)
         if existing_ref:
             return existing_ref
 
         ref = "#n{}".format(self.__ref_index)
         self.__ref_index += 1
-        self.attr_names[ref] = column.dynamo_name
-        self.name_attr_index[column.dynamo_name] = ref
+        self.attr_names[ref] = name
+        self.name_attr_index[name] = ref
         return ref
+
+    def name_ref(self, column, path=None):
+        pieces = [column.dynamo_name]
+        pieces.extend(path or [])
+        refs = map(self._name_ref, pieces)
+        return ".".join(refs)
 
     def refs(self, pair):
         """ Return (#n0, #v1) tuple for a given (column, value) pair """
@@ -221,7 +227,7 @@ class Comparison(_BaseCondition):
     __repr__ = __str__
 
     def render(self, renderer):
-        nref = renderer.name_ref(self.column)
+        nref = renderer.name_ref(self.column, path=self.path)
         vref = renderer.value_ref(self.column, self.value, dumped=self.dumped)
         comparator = self.comparator_strings[self.comparator]
         return "({} {} {})".format(nref, comparator, vref)
@@ -240,7 +246,7 @@ class AttributeExists(_BaseCondition):
 
     def render(self, renderer):
         name = "attribute_not_exists" if self.negate else "attribute_exists"
-        nref = renderer.name_ref(self.column)
+        nref = renderer.name_ref(self.column, path=self.path)
         return "({}({}))".format(name, nref)
 
 
@@ -256,7 +262,7 @@ class BeginsWith(_BaseCondition):
     __repr__ = __str__
 
     def render(self, renderer):
-        nref = renderer.name_ref(self.column)
+        nref = renderer.name_ref(self.column, path=self.path)
         vref = renderer.value_ref(self.column, self.value, dumped=self.dumped)
         return "(begins_with({}, {}))".format(nref, vref)
 
@@ -273,7 +279,7 @@ class Contains(_BaseCondition):
     __repr__ = __str__
 
     def render(self, renderer):
-        nref = renderer.name_ref(self.column)
+        nref = renderer.name_ref(self.column, path=self.path)
         vref = renderer.value_ref(self.column, self.value, dumped=self.dumped)
         return "(contains({}, {}))".format(nref, vref)
 
@@ -291,7 +297,7 @@ class Between(_BaseCondition):
     __repr__ = __str__
 
     def render(self, renderer):
-        nref = renderer.name_ref(self.column)
+        nref = renderer.name_ref(self.column, path=self.path)
         vref_lower = renderer.value_ref(self.column, self.lower,
                                         dumped=self.dumped)
         vref_upper = renderer.value_ref(self.column, self.upper,
@@ -312,7 +318,7 @@ class In(_BaseCondition):
     __repr__ = __str__
 
     def render(self, renderer):
-        nref = renderer.name_ref(self.column)
+        nref = renderer.name_ref(self.column, path=self.path)
         ref = renderer.value_ref
         values = (ref(self.column, v, dumped=self.dumped) for v in self.values)
         values = ", ".join(values)

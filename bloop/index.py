@@ -21,12 +21,12 @@ def _validate_projection(projection):
 
 
 class _Index(declare.Field):
-    def __init__(self, *args, hash_key=None, range_key=None,
+    def __init__(self, hash_key=None, range_key=None,
                  name=None, projection="KEYS_ONLY", **kwargs):
         self.hash_key = hash_key
         self.range_key = range_key
         self._dynamo_name = name
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
 
         # projection_attributes will be set up by `bloop.model.ModelMetaclass`
         self.projection = _validate_projection(projection)
@@ -39,18 +39,18 @@ class _Index(declare.Field):
 
 
 class GlobalSecondaryIndex(_Index):
-    def __init__(self, *args, write_units=1, read_units=1, **kwargs):
+    def __init__(self, write_units=1, read_units=1, **kwargs):
         if "hash_key" not in kwargs:
             raise ValueError(
                 "Must specify a hash_key for a GlobalSecondaryIndex")
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)
         self.write_units = write_units
         self.read_units = read_units
 
 
 class LocalSecondaryIndex(_Index):
     """ LSIs don't have individual read/write units """
-    def __init__(self, *args, **kwargs):
+    def __init__(self, **kwargs):
         # Hash key MUST be the table hash, pop any other values
         if "hash_key" in kwargs:
             raise ValueError(
@@ -61,4 +61,4 @@ class LocalSecondaryIndex(_Index):
         if ("write_units" in kwargs) or ("read_units" in kwargs):
             raise ValueError(
                 "A LocalSecondaryIndex does not have its own read/write units")
-        super().__init__(*args, **kwargs)
+        super().__init__(**kwargs)

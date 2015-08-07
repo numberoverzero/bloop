@@ -3,7 +3,11 @@ import declare
 import operator
 
 
-class _ComparisonMixin(object):
+class _ComparisonMixin:
+    def __init__(self, *, path=None, **kwargs):
+        self.path = path or []
+        super().__init__(**kwargs)
+
     def __hash__(self):
         # With single inheritance this looks stupid, but as a Mixin this
         # ensures we kick hashing back to the other base class so things
@@ -13,57 +17,72 @@ class _ComparisonMixin(object):
     def __eq__(self, value):
         # Special case - None should use function attribute_not_exists
         if value is None:
-            return bloop.condition.AttributeExists(self, negate=True)
+            return bloop.condition.AttributeExists(
+                self, negate=True, path=self.path)
         comparator = operator.eq
-        return bloop.condition.Comparison(self, comparator, value)
+        return bloop.condition.Comparison(
+            self, comparator, value, path=self.path)
     is_ = __eq__
 
     def __ne__(self, value):
         # Special case - None should use function attribute_exists
         if value is None:
-            return bloop.condition.AttributeExists(self, negate=False)
+            return bloop.condition.AttributeExists(
+                self, negate=False, path=self.path)
         comparator = operator.ne
-        return bloop.condition.Comparison(self, comparator, value)
+        return bloop.condition.Comparison(
+            self, comparator, value, path=self.path)
     is_not = __ne__
 
     def __lt__(self, value):
         comparator = operator.lt
-        return bloop.condition.Comparison(self, comparator, value)
+        return bloop.condition.Comparison(
+            self, comparator, value, path=self.path)
 
     def __gt__(self, value):
         comparator = operator.gt
-        return bloop.condition.Comparison(self, comparator, value)
+        return bloop.condition.Comparison(
+            self, comparator, value, path=self.path)
 
     def __le__(self, value):
         comparator = operator.le
-        return bloop.condition.Comparison(self, comparator, value)
+        return bloop.condition.Comparison(
+            self, comparator, value, path=self.path)
 
     def __ge__(self, value):
         comparator = operator.ge
-        return bloop.condition.Comparison(self, comparator, value)
+        return bloop.condition.Comparison(
+            self, comparator, value, path=self.path)
 
     def between(self, lower, upper):
         """ lower <= column.value <= upper """
-        return bloop.condition.Between(self, lower, upper)
+        return bloop.condition.Between(self, lower, upper, path=self.path)
 
     def in_(self, values):
         """ column.value in [3, 4, 5] """
-        return bloop.condition.In(self, values)
+        return bloop.condition.In(self, values, path=self.path)
 
     def begins_with(self, value):
-        return bloop.condition.BeginsWith(self, value)
+        return bloop.condition.BeginsWith(self, value, path=self.path)
 
     def contains(self, value):
-        return bloop.condition.Contains(self, value)
+        return bloop.condition.Contains(self, value, path=self.path)
+
+    def __getitem__(self, path):
+        if not isinstance(path, (str, int)):
+            raise ValueError("Documents can only be indexed by"
+                             " strings or integers.")
+        return _ComparisonMixin(path=self.path + [path])
 
 
 class Column(declare.Field, _ComparisonMixin):
-    def __init__(self, *args, hash_key=None, range_key=None,
+    def __init__(self, typedef, hash_key=None, range_key=None,
                  name=None, **kwargs):
         self.hash_key = hash_key
         self.range_key = range_key
         self._dynamo_name = name
-        super().__init__(*args, **kwargs)
+        kwargs['typedef'] = typedef
+        super().__init__(**kwargs)
 
     def __str__(self):  # pragma: no cover
         attrs = ["model_name", "dynamo_name", "hash_key", "range_key"]

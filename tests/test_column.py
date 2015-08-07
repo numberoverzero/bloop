@@ -1,6 +1,7 @@
 import bloop
 import bloop.condition
 import operator
+import pytest
 
 
 def test_equals_alias_exists():
@@ -84,3 +85,17 @@ def test_dynamo_name():
     column = bloop.Column(bloop.Integer, name="foo")
     column.model_name = "bar"
     assert column.dynamo_name == "foo"
+
+
+def test_column_path():
+    """ Paths can be iteratively built up, with strings or ints as keys """
+    column = bloop.Column(bloop.Integer)
+
+    comparison = column["foo"]
+    assert comparison.path == ["foo"]
+
+    comparison = column["f"]["o"]["o"]["b"]["a"]["r"]
+    assert comparison.path == list("foobar")
+
+    with pytest.raises(ValueError):
+        column[object()]

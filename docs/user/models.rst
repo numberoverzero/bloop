@@ -338,6 +338,18 @@ the same is true of ``is`` and ``is not``.  The other operators are:
 Note that ``is_`` and ``is_not`` simply alias ``==`` and ``!=``, mostly so you
 can avoid lint issues with comparisons against True/False/None.
 
+Finally, you can construct conditions on `document`_ `paths`_ with the usual
+``[]`` for indexes in lists, and keys in maps::
+
+    high_rating = Model.document["Rating"] >= 4.5
+
+    # Construct a condition in two pieces
+    path = Model.document["Reviews"][0]["Name"]
+    condition = path.begins_with("J")
+    other_condition = path.contains("ohnson")
+
+    first_element = Model.list[0].is_(None)
+
 .. warning::
 
     Because the ``Column`` class overrides the ``__eq__`` method, functions
@@ -352,6 +364,8 @@ can avoid lint issues with comparisons against True/False/None.
     perfectly fine (and are used extensively in the model's :ref:`meta`).
 
 .. _handful of conditions: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Condition.html
+.. _document: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DataModel.html#DataModel.DataTypes.Document
+.. _paths: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.AccessingItemAttributes.html#DocumentPaths
 
 .. _atomic:
 

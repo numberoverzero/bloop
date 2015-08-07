@@ -172,3 +172,26 @@ def test_render_path(renderer, User):
     expected = {'ExpressionAttributeNames':
                 {'#n0': 'email', '#n3': 'baz', '#n2': 'bar', '#n1': 'foo'}}
     assert renderer.rendered == expected
+
+
+def test_path_comparitor(renderer, User):
+    """ Render paths for operations, comparisons, and multi-conditions """
+
+    email_condition = User.email["email"].is_(None)
+    name_condition = User.name["foo"]["bar"] >= "Billy"
+    age_condition = User.age[4]["today"].in_([5, 6, 7])
+
+    condition = (email_condition & name_condition) | age_condition
+    renderer.render(condition, "condition")
+
+    expected = {
+        'ExpressionAttributeValues': {
+            ':v10': {'N': '7'}, ':v4': {'S': 'Billy'},
+            ':v9': {'N': '6'}, ':v8': {'N': '5'}},
+        'ConditionExpression': (
+            '(((attribute_not_exists(#n0.#n0)) AND '
+            '(#n1.#n2.#n3 >= :v4)) OR (#n5.#n6.#n7 IN (:v8, :v9, :v10)))'),
+        'ExpressionAttributeNames': {
+            '#n3': 'bar', '#n6': 4, '#n7': 'today', '#n0': 'email',
+            '#n5': 'age', '#n2': 'foo', '#n1': 'name'}}
+    assert renderer.rendered == expected

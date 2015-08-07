@@ -163,3 +163,12 @@ def test_base_condition(User):
 
     with pytest.raises(RuntimeError):
         base.render(None)
+
+
+def test_render_path(renderer, User):
+    """ A path should be rendered as #column.#field.#field """
+    path = "foo bar baz".split()
+    renderer.name_ref(User.email, path=path)
+    expected = {'ExpressionAttributeNames':
+                {'#n0': 'email', '#n3': 'baz', '#n2': 'bar', '#n1': 'foo'}}
+    assert renderer.rendered == expected

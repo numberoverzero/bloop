@@ -32,26 +32,11 @@ Before diving into the available types, here's the structure of the base
         python_type = str
         backing_type = "S"
 
-
-        def can_load(self, value):
-            ...
-
-        def can_dump(self, value):
-            ...
-
         def dynamo_load(self, value):
-            ...
+            return value
 
         def dynamo_dump(self, value):
-            ...
-
-By default the ``can_*`` functions simply check the Type's python/backing type
-attribute against the value.  This check is only performed when loading
-arbitrary structures like List and Map.
-
-The ``dynamo_*`` functions return a value, and are called by the Type's base
-\_load and \_dump functions that tie into the engine's recursive loading
-machinery.
+            return value
 
 String
 ------
@@ -152,11 +137,6 @@ should always use a ``decimal.Decimal`` object::
                 raise TypeError("Infinity and NaN not supported")
             return n
 
-        def can_dump(self, value):
-            """ explicitly disallow bool and subclasses """
-            return (isinstance(value, self.python_type) and not
-                    isinstance(value, bool))
-
 Integer
 -------
 
@@ -219,10 +199,6 @@ is entirely delegated to the instance's typedef::
         def dynamo_dump(self, value):
             return [self.typedef.dynamo_dump(v) for v in sorted(value)]
 
-        def can_dump(self, value):
-            return (super().can_dump(value) and
-                    all(map(self.typedef.can_dump, value)))
-
 Boolean
 -------
 
@@ -242,40 +218,46 @@ False::
 Documents
 ---------
 
-``Map`` and ``List`` are the newest Types to bloop, and are still undergoing
-refinement.  It's currently not possible to load custom types in either
-structure, including UUIDs, DateTimes, and Integers.
+While Dynamo's ``Map`` and ``List`` structures support arbitary types and
+nesting, DynamoDB does not offer the ability to store enough type information
+alongside the values to unpack custom types (like DateTime, UUID) losslessly.
+For instance, ``{"S": "acd67186-8faa-48b2-9300-7f12bc969e76"}`` COULD represent
+a UUID or a String that happens to be a valid UUID.  Without storing some type
+metadata alongside the string, it's impossible to tell the difference.
 
-At present it's also not possible to construct conditions on paths within
-documents, which limits a significant amount of their flexibility.
+Instead of storing additional type information (either in another column,
+table, or concatenation with the data) bloop requires you to explicitly model
+your document types.  This means that for any key you expect to read from a
+Map, you must have specified the type that loads it::
 
-Eventually, a reasonable syntax will be developed to specify types for certain
-keys and indexes.
-
-You can track the work on documents in `Issue #18`_ and `Issue #19`_.
-
-.. _Issue #18: https://github.com/numberoverzero/bloop/issues/18
-.. _Issue #19: https://github.com/numberoverzero/bloop/issues/19
-
-::
-
-    class Map(Type):
-        python_type = collections.abc.Mapping
-        backing_type = MAP
-
-        def dynamo_load(self, value):
-            return {k: self.serializer.load(v) for (k, v) in value.items()}
-
-        def dynamo_dump(self, value):
-            return {k: self.serializer.dump(v) for (k, v) in value.items()}
+    Product = Map(**{
+        'Name': String,
+        'Rating': Float,
+        'Updated': DateTime('US/Pacific'),
+        Description: Map(**{
+            'Title': String,
+            'Body': String,
+            'Specifications': Map(**{
+                ...
+            })
+        })
+    })
 
 
-    class List(Type):
-        python_type = collections.abc.Iterable
-        backing_type = LIST
+    class Item(engine.model):
+        id = Column(Integer, hash_key=True)
+        data = Column(Product)
+    engine.bind()
 
-        def dynamo_load(self, value):
-            return [self.serializer.load(v) for v in value]
+Similarly for Map, the values in a List must be tied to a type.  All values in
+the list must be of the chosen type.  While this doesn't leverage the full
+flexibility of the DynamoDB List type (which can store objects with different
+types) it simplifies the modeling required to load types::
 
-        def dynamo_dump(self, value):
-            return [self.serializer.dump(v) for v in value]
+    class Item(engine.model):
+        id = Column(Integer, hash_key=True)
+        ratings = Column(List(Float))
+    engine.bind()
+
+To create your own List type that can store arbitary types, see an example in
+:ref:`advanced-types`.

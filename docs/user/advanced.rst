@@ -154,6 +154,8 @@ It's important that the ``engine.model`` base is last in this list, so that the
     * :ref:`model` for more details info on the base model class.
     * :ref:`define` for more info on defining models.
 
+.. _advanced-types:
+
 Custom Types
 ------------
 
@@ -256,18 +258,67 @@ And its use::
         color = Column(Enum(Color))
     engine.bind()
 
-.. warning::
-    When creating your own types, keep in mind that everything is stored in
-    DynamoDB as one of eight basic types.  This means that loading a custom
-    type backed by a string will be indistinguishable from a basic String type.
+What about a custom document type?  This example will create a Type that can
+store arbitrary types, instead of the single-typed list that already exists::
 
-    Normally the model provides the target type, which is unavailable for
-    ``Map`` and ``List``. It is not currently possible to use custom types with
-    either structure, although there is an `open issue`_ to investigate ways to
-    do so.
+    class MultiList(Type):
+        def __init__(self, *types):
+            self.types = types
+            super().__init__()
+
+        def dynamo_load(self, values):
+            # Possible to load a list with less
+            # values than defined slots
+            length = min(len(self.types), len(values))
+
+            loaded_values = [None] * len(self.types)
+            for i in range(length):
+                loaded_values.append(self.types[i]._load(values[i]))
+            return loaded_values
+
+        def dynamo_dump(self, values):
+            # Possible to dump a list with less
+            # values than defined slots
+            length = min(len(self.types), len(values))
+
+            dumped_values = []
+            for i in range(length):
+                value = values[i]
+                # This double check is because None values
+                # MUST NOT be sent to DynamoDB.  They represent
+                # a lack of value, and MUST be omitted.
+                if value is not None:
+                    value = self.types[i]._dump(value)
+                if value is not None:
+                    dumped_values.append(value)
+            return dumped_values
+
+        def _register(self, engine):
+            """Register all types contained in the list"""
+            for typedef in self.types:
+                engine.register(typedef)
+
+        def __getitem__(self, index):
+            """
+            Required to correctly dump values
+            when constructing conditions against
+            specific indexes of the list
+            """
+            return self.types[index]
+
+And it can be used as such::
+
+    class Model(engine.model):
+        id = Column(Integer, hash_key=True)
+        objects = Column(MultiList(String, Integer(), Float, UUID()))
+
+
+Unlike the provided ``List`` class which can take an arbitrary number of
+objects of the *same* type, this class can take a fixed number of arbitary
+objects.  If more values are provided that the number of types specified, the
+MultiList type won't serialize them (this is the ``min`` in the code above).
 
 .. _enum: https://docs.python.org/3/library/enum.html
-.. _open issue: https://github.com/numberoverzero/bloop/issues/20
 
 .. note::
     bloop provides all of the current DynamoDB types, with the exception

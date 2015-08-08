@@ -178,9 +178,9 @@ def test_bool():
         assert typedef.dynamo_load(value) is False
 
 
-def test_map_list_single_value():
+def test_list_single_value():
     """
-    Map and List DO NOT support UUID or DateTime.
+    List DOES NOT support UUID or DateTime.
 
     There are no native types for UUID or DateTime, so both use the String
     type in Dynamo - when loading, it's impossible to determine whether the
@@ -190,7 +190,6 @@ def test_map_list_single_value():
     loaded as such - guessing is a terrible resolution to ambiguity.
     """
 
-    map_typedef = types.Map()
     list_typedef = types.List()
     binary_obj = b"123"
     binary_str = base64.b64encode(binary_obj).decode("utf-8")
@@ -201,7 +200,6 @@ def test_map_list_single_value():
         "int": 4,
         "binary": binary_obj,
         "boolean": True,
-        "map": {"map_str": "map_value", "map_float": decimal.Decimal("0.125")},
         "list": [4, binary_obj]
     }
 
@@ -211,18 +209,11 @@ def test_map_list_single_value():
         "int": {"N": "4"},
         "binary": {"B": binary_str},
         "boolean": {"BOOL": True},
-        "map": {"M": {"map_str": {"S": "map_value"},
-                      "map_float": {"N": "0.125"}}},
         "list": {"L": [{"N": "4"}, {"B": binary_str}]}
     }
 
     for key, loaded_obj in loaded_objs.items():
         dumped_obj = dumped_objs[key]
-
-        loaded_map = {"test": loaded_obj}
-        dumped_map = {"test": dumped_obj}
-        assert map_typedef.dynamo_dump(loaded_map) == dumped_map
-        assert map_typedef.dynamo_load(dumped_map) == loaded_map
 
         loaded_list = [loaded_obj]
         dumped_list = [dumped_obj]
@@ -230,7 +221,7 @@ def test_map_list_single_value():
         assert list_typedef.dynamo_load(dumped_list) == loaded_list
 
 
-def test_map_list_unknown_type():
+def test_list_unknown_type():
     """ Trying to load/dump an unknown type raises TypeError """
 
     class UnknownObject:
@@ -240,12 +231,8 @@ def test_map_list_unknown_type():
     unknown_type = {"not S, B, BOOL, etc": unknown_obj}
 
     with pytest.raises(TypeError):
-        types.Map().dynamo_dump({"test": unknown_obj})
-    with pytest.raises(TypeError):
         types.List().dynamo_dump([unknown_obj])
 
-    with pytest.raises(TypeError):
-        types.Map().dynamo_load({"test": unknown_type})
     with pytest.raises(TypeError):
         types.List().dynamo_load([unknown_type])
 
@@ -255,3 +242,59 @@ def test_load_dump_none():
     typedef = types.String()
     assert typedef._dump(None) == {"S": None}
     assert typedef._load({"S": None}) is None
+
+
+def test_map_dump(document_type):
+    """ Map handles nested maps and custom types """
+    uid = uuid.uuid4()
+    now = arrow.now().to('utc')
+    loaded = {
+        'Rating': 0.5,
+        'Stock': 3,
+        'Description': {
+            'Heading': "Head text",
+            'Body': "Body text",
+            'Specifications': None
+        },
+        'Id': uid,
+        'Updated': now
+    }
+    expected = {
+        'Rating': {'N': '0.5'},
+        'Stock': {'N': '3'},
+        'Description': {
+            'M': {
+                'Heading': {'S': 'Head text'},
+                'Body': {'S': 'Body text'}}},
+        'Id': {'S': str(uid)},
+        'Updated': {'S': now.isoformat()}
+    }
+    dumped = document_type.dynamo_dump(loaded)
+    assert dumped == expected
+
+
+def test_map_load(document_type):
+    """ Map handles nested maps and custom types """
+    uid = uuid.uuid4()
+    dumped = {
+        'Rating': {'N': '0.5'},
+        'Stock': {'N': '3'},
+        'Description': {
+            'M': {
+                'Heading': {'S': 'Head text'},
+                'Body': {'S': 'Body text'}}},
+        'Id': {'S': str(uid)}
+    }
+    expected = {
+        'Rating': 0.5,
+        'Stock': 3,
+        'Description': {
+            'Heading': "Head text",
+            'Body': "Body text",
+            'Specifications': None
+        },
+        'Id': uid,
+        'Updated': None
+    }
+    loaded = document_type.dynamo_load(dumped)
+    assert loaded == expected

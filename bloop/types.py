@@ -106,7 +106,7 @@ class DateTime(String):
                        .filter(Model.date >= paris_one_day_ago))
 
         results = list(query)
-        print(results[0].date)
+        results[0].date
 
     """
     python_type = arrow.Arrow
@@ -176,15 +176,20 @@ def subclassof(C, B):
         return False
 
 
+def type_instance(typedef):
+    """ Returns an instance of a type class, or the instance if provided """
+    if subclassof(typedef, Type):
+        # Type class passed, create no-arg instance
+        typedef = typedef()
+    return typedef
+
+
 class Set(Type):
     """ Adapter for sets of objects """
     python_type = collections.abc.Set
 
     def __init__(self, typedef):
-        if subclassof(typedef, Type):
-            # Type class passed, create no-arg instance
-            typedef = typedef()
-        self.typedef = typedef
+        self.typedef = type_instance(typedef)
         self.backing_type = typedef.backing_type + "S"
         super().__init__()
 
@@ -214,11 +219,40 @@ class Map(Type):
     python_type = collections.abc.Mapping
     backing_type = MAP
 
-    def dynamo_load(self, value):
-        return {k: self.serializer.load(v) for (k, v) in value.items()}
+    def __init__(self, **types):
+        self.types = {
+            k: type_instance(t) for k, t in types.items()
+        }
+        super().__init__()
 
-    def dynamo_dump(self, value):
-        return {k: self.serializer.dump(v) for (k, v) in value.items()}
+    def __getitem__(self, key):
+        """Overload allows easy nested access to types"""
+        return self.types[key]
+
+    def _register(self, engine):
+        """Register all types for the map"""
+        for typedef in self.types.values():
+            engine.register(typedef)
+
+    def dynamo_load(self, values):
+        obj = {}
+        for key, typedef in self.types.items():
+            value = values.get(key, None)
+            if value is not None:
+                value = typedef._load(value)
+            obj[key] = value
+        return obj
+
+    def dynamo_dump(self, values):
+        obj = {}
+        for key, typedef in self.types.items():
+            value = values.get(key, None)
+            if value is not None:
+                value = typedef._dump(value)
+            # Never push a literal `None` back to DynamoDB
+            if value is not None:
+                obj[key] = value
+        return obj
 
 
 class List(Type):
@@ -240,7 +274,6 @@ TYPES.extend([
     Integer(),
     Binary(),
     Boolean(),
-    Map(),
     List(),
     Set(String),
     Set(Float),
@@ -269,7 +302,5 @@ class _DefaultSerializer:
                 return typedef._dump(value)
         raise TypeError("Don't know how to dump " + str(value))
 
-# Have to set default serializers for Map, List after all Types have been
-# defined
-
-Map.serializer = List.serializer = _DefaultSerializer()
+# Have to set default serializer for List after all Types have been defined
+List.serializer = _DefaultSerializer()

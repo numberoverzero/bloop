@@ -218,3 +218,14 @@ def test_name_ref_with_path(renderer, engine, local_bind, document_type):
             '((attribute_not_exists(#n0)) AND (#n1.#n2 >= :v3))'}
     renderer.render(condition, "condition")
     assert renderer.rendered == expected
+
+
+def test_list_path(renderer, Document):
+    """ render list indexes correctly """
+    condition = Document.numbers[1] >= 3
+    expected = {
+        'ExpressionAttributeValues': {':v2': {'N': '3'}},
+        'ConditionExpression': '(#n0[1] >= :v2)',
+        'ExpressionAttributeNames': {'#n0': 'numbers'}}
+    renderer.render(condition, "condition")
+    assert renderer.rendered == expected

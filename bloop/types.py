@@ -34,14 +34,6 @@ class Type(declare.TypeDefinition):
             return None
         return self.dynamo_load(value)
 
-    def can_load(self, value):
-        """
-        whether this type can load the given
-        {type: value} dictionary from dynamo
-        """
-        backing_type = next(iter(value.keys()))
-        return backing_type == self.backing_type
-
     def _dump(self, value):
         """
         dump a python value to a {type: value} dictionary for dynamo storage
@@ -55,10 +47,6 @@ class Type(declare.TypeDefinition):
 
     def dynamo_dump(self, value):
         return value
-
-    def can_dump(self, value):
-        """ whether this type can dump the given value to dynamo """
-        return isinstance(value, self.python_type)
 
     def __repr__(self, *a, **kw):  # pragma: no cover
         return "{}(python_type={}, backing_type={})".format(
@@ -138,11 +126,6 @@ class Float(Type):
             raise TypeError("Infinity and NaN not supported")
         return n
 
-    def can_dump(self, value):
-        """ explicitly disallow bool and subclasses """
-        return (isinstance(value, self.python_type) and not
-                isinstance(value, bool))
-
 
 class Integer(Float):
     python_type = int
@@ -197,10 +180,6 @@ class Set(Type):
 
     def dynamo_dump(self, value):
         return [self.typedef.dynamo_dump(v) for v in sorted(value)]
-
-    def can_dump(self, value):
-        return (super().can_dump(value) and
-                all(map(self.typedef.can_dump, value)))
 
 
 class Boolean(Type):

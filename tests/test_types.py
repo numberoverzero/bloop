@@ -12,18 +12,6 @@ def symmetric_test(typedef, *pairs):
         assert typedef.dynamo_dump(loaded) == dumped
 
 
-def test_default_can_load_dump():
-    """ Default Type.can_[load|dump] check against [backing|python]_type """
-
-    class MyType(types.Type):
-        backing_type = "FOO"
-        python_type = float
-
-    typedef = MyType()
-    assert typedef.can_load({"FOO": "not_a_float"})
-    assert typedef.can_dump(float(10))
-
-
 def test_load_dump_best_effort():
     """ can_* are not called when trying to load values """
 
@@ -90,11 +78,6 @@ def test_float():
                    (d(4)/d(3), "1.333333333333333333333333333"))
 
 
-def test_float_disallow_bool():
-    """ Not a strict check in dynamo_dump, but can_dump is overloaded """
-    assert not types.Float().can_dump(True)
-
-
 def test_integer():
     """
     Integer is a thin wrapper over Float that exposes non-decimal objects
@@ -140,14 +123,6 @@ def test_sets():
         dumped = typedef.dynamo_dump(loaded)
         check(dumped, expected)
         assert typedef.dynamo_load(expected) == loaded
-
-
-def test_set_can_dump():
-    """ Checks all values in the set """
-
-    typedef = types.Set(types.String)
-    assert typedef.can_dump(set(["1", "2", "3"]))
-    assert not typedef.can_dump(set(["1", 2, "3"]))
 
 
 def test_set_type_instance():

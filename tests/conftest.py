@@ -101,6 +101,7 @@ def Document(engine, local_bind, document_type):
     class Document(engine.model):
         id = bloop.Column(bloop.Integer, hash_key=True)
         data = bloop.Column(document_type)
+        numbers = bloop.Column(bloop.List(bloop.Integer))
     engine.bind()
     return Document
 

@@ -1,5 +1,4 @@
 import arrow
-import base64
 import decimal
 import pytest
 import uuid
@@ -178,47 +177,14 @@ def test_bool():
         assert typedef.dynamo_load(value) is False
 
 
-def test_list_single_value():
-    """
-    List DOES NOT support UUID or DateTime.
+def test_list():
+    typedef = types.List(types.UUID)
+    loaded = [uuid.uuid4() for _ in range(5)]
+    expected = [{"S": str(id)} for id in loaded]
 
-    There are no native types for UUID or DateTime, so both use the String
-    type in Dynamo - when loading, it's impossible to determine whether the
-    loaded value is a String, UUID, or DateTime.
-
-    Strings that represent valid UUIDs or DateTimes will not be
-    loaded as such - guessing is a terrible resolution to ambiguity.
-    """
-
-    list_typedef = types.List()
-    binary_obj = b"123"
-    binary_str = base64.b64encode(binary_obj).decode("utf-8")
-
-    loaded_objs = {
-        "string": "value",
-        "float": decimal.Decimal("0.125"),
-        "int": 4,
-        "binary": binary_obj,
-        "boolean": True,
-        "list": [4, binary_obj]
-    }
-
-    dumped_objs = {
-        "string": {"S": "value"},
-        "float": {"N": "0.125"},
-        "int": {"N": "4"},
-        "binary": {"B": binary_str},
-        "boolean": {"BOOL": True},
-        "list": {"L": [{"N": "4"}, {"B": binary_str}]}
-    }
-
-    for key, loaded_obj in loaded_objs.items():
-        dumped_obj = dumped_objs[key]
-
-        loaded_list = [loaded_obj]
-        dumped_list = [dumped_obj]
-        assert list_typedef.dynamo_dump(loaded_list) == dumped_list
-        assert list_typedef.dynamo_load(dumped_list) == loaded_list
+    dumped = typedef.dynamo_dump(loaded)
+    assert dumped == expected
+    assert typedef.dynamo_load(dumped) == loaded
 
 
 def test_list_unknown_type():

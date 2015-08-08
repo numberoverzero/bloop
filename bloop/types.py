@@ -6,7 +6,6 @@ import declare
 import numbers
 import uuid
 
-TYPES = []
 ENCODING = "utf-8"
 STRING = "S"
 NUMBER = "N"
@@ -259,48 +258,18 @@ class List(Type):
     python_type = collections.abc.Iterable
     backing_type = LIST
 
+    def __init__(self, typedef):
+        self.typedef = type_instance(typedef)
+        super().__init__()
+
+    def __getitem__(self, key):
+        return self.typedef
+
+    def _register(self, engine):
+        engine.register(self.typedef)
+
     def dynamo_load(self, value):
-        return [self.serializer.load(v) for v in value]
+        return [self.typedef._load(v) for v in value]
 
     def dynamo_dump(self, value):
-        return [self.serializer.dump(v) for v in value]
-
-
-TYPES.extend([
-    String(),
-    UUID(),
-    DateTime(),
-    Float(),
-    Integer(),
-    Binary(),
-    Boolean(),
-    List(),
-    Set(String),
-    Set(Float),
-    Set(Binary)
-])
-
-
-class _DefaultSerializer:
-    """ Default load/dump for Maps and Lists. """
-
-    def __init__(self, types=None):
-        self.types = []
-        for typedef in (types or TYPES):
-            self.types.append(typedef)
-
-    def load(self, value):
-        """ value is a dictionary {dynamo_type: value} """
-        for typedef in self.types:
-            if typedef.can_load(value):
-                return typedef._load(value)
-        raise TypeError("Don't know how to load " + str(value))
-
-    def dump(self, value):
-        for typedef in self.types:
-            if typedef.can_dump(value):
-                return typedef._dump(value)
-        raise TypeError("Don't know how to dump " + str(value))
-
-# Have to set default serializer for List after all Types have been defined
-List.serializer = _DefaultSerializer()
+        return [self.typedef._dump(v) for v in value]

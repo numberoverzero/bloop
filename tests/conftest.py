@@ -82,6 +82,30 @@ def ComplexModel(engine, local_bind):
 
 
 @pytest.fixture
+def document_type():
+    return bloop.Map(**{
+        'Rating': bloop.Float(),
+        'Stock': bloop.Integer(),
+        'Description': bloop.Map(**{
+            'Heading': bloop.String,
+            'Body': bloop.String,
+            'Specifications': bloop.String
+        }),
+        'Id': bloop.UUID,
+        'Updated': bloop.DateTime
+    })
+
+
+@pytest.fixture
+def Document(engine, local_bind, document_type):
+    class Document(engine.model):
+        id = bloop.Column(bloop.Integer, hash_key=True)
+        data = bloop.Column(document_type)
+    engine.bind()
+    return Document
+
+
+@pytest.fixture
 def SimpleModel(engine, local_bind):
     class Model(engine.model):
         id = bloop.Column(bloop.UUID, hash_key=True)

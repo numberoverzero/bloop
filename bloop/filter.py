@@ -145,7 +145,8 @@ class _Filter(object):
                 results = query.all()
                 for result in results:
                     ...
-                print(results.count, results.scanned_count)
+                results.count
+                results.scanned_count
 
         """
         if prefetch is None:

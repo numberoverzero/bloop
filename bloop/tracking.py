@@ -81,11 +81,11 @@ def _get_tracking(obj):
 
 def _get_current(obj, engine):
     """
-    Returns a dict of {dynamo_name: value} for a given object.  Attributes not
-    set on the object are not included.
+    Returns a dict of {dynamo_name: value} for a given object.
+
+    Attributes not set on the object are not included.
     """
-    attrs = engine._dump(obj.__class__, obj)
-    return attrs
+    return engine._dump(obj.__class__, obj)
 
 
 def _diff_value(current, loaded):
@@ -94,15 +94,15 @@ def _diff_value(current, loaded):
     Returns the _DIFF value that should be applied to the attribute when
     saving back to DynamoDB.
 
-    =======  =======  ==========
-    current  loaded   _DIFF
-    =======  =======  ==========
-    foo      foo      _DIFF.NOOP
-    None     None     _DIFF.NOOP
-    None     bar      _DIFF.REM
-    foo      bar      _DIFF.SET
-    foo      None     _DIFF.SET
-    =======  =======  ==========
+    ======= ======= ==========
+    loaded  current _DIFF
+    ======= ======= ==========
+    foo     foo     _DIFF.NOOP
+    None    None    _DIFF.NOOP
+    bar     None    _DIFF.REM
+    bar     foo     _DIFF.SET
+    None    foo     _DIFF.SET
+    ======= ======= ==========
 
     """
     if bloop.util.ordered(current) == bloop.util.ordered(loaded):

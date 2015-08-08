@@ -55,8 +55,15 @@ class ConditionRenderer:
     def name_ref(self, column, path=None):
         pieces = [column.dynamo_name]
         pieces.extend(path or [])
-        refs = map(self._name_ref, pieces)
-        return ".".join(refs)
+        str_pieces = []
+        for piece in pieces:
+            # List indexes are attached to last path item directly
+            if isinstance(piece, int):
+                str_pieces[-1] += "[{}]".format(piece)
+            # Path keys are attached with a "."
+            else:
+                str_pieces.append(self._name_ref(piece))
+        return ".".join(str_pieces)
 
     def refs(self, pair):
         """ Return (#n0, #v1) tuple for a given (column, value) pair """

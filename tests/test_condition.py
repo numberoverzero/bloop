@@ -224,8 +224,8 @@ def test_list_path(renderer, Document):
     """ render list indexes correctly """
     condition = Document.numbers[1] >= 3
     expected = {
-        'ExpressionAttributeValues': {':v2': {'N': '3'}},
-        'ConditionExpression': '(#n0[1] >= :v2)',
+        'ExpressionAttributeValues': {':v1': {'N': '3'}},
+        'ConditionExpression': '(#n0[1] >= :v1)',
         'ExpressionAttributeNames': {'#n0': 'numbers'}}
     renderer.render(condition, "condition")
     assert renderer.rendered == expected

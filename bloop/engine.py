@@ -145,10 +145,7 @@ class Engine:
                     item_condition &= bloop.tracking.atomic_condition(obj)
                 if condition:
                     item_condition &= condition
-                # Guard against an atomic delete on an object that was
-                # never loaded (no expected fields)
-                if item_condition:
-                    renderer.render(item_condition, "condition")
+                renderer.render(item_condition, "condition")
                 item.update(renderer.rendered)
             self.client.delete_item(item)
             bloop.tracking.clear(obj)

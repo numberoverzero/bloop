@@ -218,12 +218,21 @@ def test_save_condition(User, engine):
 
 def test_save_atomic_new(User, engine):
     """
-    When an object is first created, an atomic save should not expect any
-    columns to not exist, since it has never been loaded.
+    When an object is first created, an atomic save should expect no columns
+    to exist.
     """
     user_id = uuid.uuid4()
     user = User(id=user_id)
-    expected = {'TableName': 'User', 'Key': {'id': {'S': str(user_id)}}}
+    expected = {
+        'ExpressionAttributeNames': {
+            '#n0': 'age', '#n3': 'joined', '#n1': 'email',
+            '#n4': 'name', '#n2': 'id'},
+        'Key': {'id': {'S': str(user_id)}},
+        'TableName': 'User',
+        'ConditionExpression': (
+            '(((((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1))) '
+            'AND (attribute_not_exists(#n2))) AND (attribute_not_exists(#n3)))'
+            ' AND (attribute_not_exists(#n4)))')}
 
     def validate(item):
         assert item == expected
@@ -478,17 +487,45 @@ def test_delete_atomic(User, engine):
 
 def test_delete_atomic_new(User, engine):
     """
-    When an object is first created, an atomic delete should not expect any
-    columns to not exist, since it has never been loaded.
+    When an object is first created, an atomic delete should expect
+    no columns to exist.
     """
     user_id = uuid.uuid4()
     user = User(id=user_id)
-    expected = {'TableName': 'User', 'Key': {'id': {'S': str(user_id)}}}
+    expected = {
+        'TableName': 'User',
+        'ExpressionAttributeNames': {
+            '#n2': 'id', '#n0': 'age', '#n4': 'name',
+            '#n3': 'joined', '#n1': 'email'},
+        'Key': {'id': {'S': str(user_id)}},
+        'ConditionExpression': (
+            '(((((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1))) '
+            'AND (attribute_not_exists(#n2))) AND (attribute_not_exists(#n3)))'
+            ' AND (attribute_not_exists(#n4)))')}
 
     def validate(item):
         assert item == expected
     engine.client.delete_item = validate
     engine.config["atomic"] = True
+    engine.delete(user)
+
+
+def test_delete_new(User, engine):
+    """
+    When an object is first created, a non-atomic delete shouldn't expect
+    anything.
+    """
+    user_id = uuid.uuid4()
+    user = User(id=user_id)
+    expected = {
+        'TableName': 'User',
+        'Key': {'id': {'S': str(user_id)}}}
+
+    def validate(item):
+        print(item)
+        assert item == expected
+    engine.client.delete_item = validate
+    engine.config["atomic"] = False
     engine.delete(user)
 
 

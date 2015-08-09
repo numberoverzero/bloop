@@ -13,9 +13,22 @@ def _tracking_dict(obj):
     """
     tracking = getattr(obj, _TRACKING_ATTR_NAME, None)
     if tracking is None:
-        tracking = {"values": {}, "loaded": set()}
+        tracking = {"values": {}, "loaded": set(), "synced": False}
         setattr(obj, _TRACKING_ATTR_NAME, tracking)
     return tracking
+
+
+def _get_synced(obj):
+    """ True if the object has ever been saved or loaded. """
+    return _tracking_dict(obj)["synced"]
+
+
+def _set_synced(obj, value):
+    """
+    Set the sync state of the object
+    Should be True after a load or save
+    """
+    _tracking_dict(obj)["synced"] = value
 
 
 def _set_value(obj, name, value):
@@ -43,10 +56,9 @@ def _del_value(obj, name):
 
 def _get_value(obj, name):
     """
-    Returns the value for an attr from the obj's tracking dict.  Raises
-    KeyError if there is no value.
+    Returns the value for an attr from the obj's tracking dict, or None.
     """
-    return _tracking_dict(obj)["values"][name]
+    return _tracking_dict(obj)["values"].get(name, None)
 
 
 def _set_loaded(obj, loaded):
@@ -72,10 +84,7 @@ def _get_tracking(obj):
     """
     attrs = {}
     for column in obj.Meta.columns:
-        try:
-            attrs[column.dynamo_name] = _get_value(obj, column.dynamo_name)
-        except KeyError:
-            continue
+        attrs[column.dynamo_name] = _get_value(obj, column.dynamo_name)
     return attrs
 
 
@@ -184,6 +193,7 @@ def update(obj, attrs, expected):
         else:
             _set_value(obj, name, value)
     _set_loaded(obj, expected)
+    _set_synced(obj, True)
 
 
 def update_current(obj, engine):
@@ -201,16 +211,15 @@ def atomic_condition(obj):
     """
     Generate a condition to expect the last loaded state of an object.
     Missing fields will expect `is_(None)`
-
-    TODO: this will expect attribute_not_exists for columns that haven't been
-          loaded, even if they did exist on last load (for instance, loading)
-          through a key_only projection would give us no non-key attributes,
-          but this would produce an expectation that those attributes were
-          actually not set.
     """
     atomic = bloop.condition.Condition()
     tracking = _get_tracking(obj)
-    loaded = _get_loaded(obj)
+    # Only expect loaded columns if the obj has ever been synced
+    if _get_synced(obj):
+        loaded = _get_loaded(obj)
+    # Otherwise expect all columns to have no value.
+    else:
+        loaded = obj.Meta.columns
 
     # While sorting isn't required, it allows us some sanity in testing.
     # The overhead to do so will rarely be significant.

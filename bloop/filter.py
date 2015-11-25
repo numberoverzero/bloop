@@ -1,6 +1,7 @@
 import bloop.column
 import bloop.condition
 import bloop.index
+import bloop.tracking2
 import operator
 
 SELECT_MODES = {
@@ -423,5 +424,11 @@ class FilterResult(object):
         for result in results:
             obj = self.engine._instance(self.model)
             self.engine._update(obj, result, self.expected)
+            # Building an atomic condition is expensive
+            # in both space and time, so non-atomic engines shouldn't
+            # persist the state.
+            if self.engine.config["atomic"]:
+                bloop.tracking2.set_snapshot(obj, self.engine)
+
             self._results.append(obj)
             yield obj

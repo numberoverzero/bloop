@@ -10,7 +10,7 @@ def _tracking(obj):
     """
     tracking = getattr(obj, _TRACKING_ATTR_NAME, None)
     if tracking is None:
-        tracking = {"marked": set(), "snapshot": None}
+        tracking = {"marked": set(), "snapshot": None, "synced": False}
         setattr(obj, _TRACKING_ATTR_NAME, tracking)
     return tracking
 
@@ -58,6 +58,11 @@ def dump_update(obj):
     return diff
 
 
+def set_synced(obj):
+    """Mark the object as having been persisted at least once."""
+    _tracking(obj)["synced"] = True
+
+
 def set_snapshot(obj, engine):
     """Store a condition to expect the currently marked values of the object.
 
@@ -70,7 +75,7 @@ def set_snapshot(obj, engine):
         value = getattr(obj, column.model_name, None)
         # Don't try to dump Nones through the typedef
         if value is not None:
-            value = engine.dump(column.typedef, value)
+            value = engine._dump(column.typedef, value)
         condition = column == value
         # The renderer shouldn't try to dump the value again.
         # We're dumping immediately in case the value is mutable,
@@ -81,13 +86,27 @@ def set_snapshot(obj, engine):
 
 
 def get_snapshot(obj):
-    # TODO: This should return an AND((c is None) for c in Meta)
-    # for a model that has never been loaded/saved.  This case
-    # needs to be distinguished from a model that HAS been loaded/saved,
-    # but not in an atomic context.  The former has a valid atomic
-    # condition (everything None) where the latter did not persist a
-    # valid atomic condition because of the engine's mode.
-    return _tracking(obj)["snapshot"]
+    # Cached value
+    condition = _tracking(obj)["snapshot"]
+    if condition is not None:
+        return condition
+
+    # If the object has never been synced, create and cache a condition
+    # that expects every column to be empty
+    if not _tracking(obj)["synced"]:
+        atomic = bloop.condition.Condition()
+        for column in sorted(obj.Meta.columns,
+                             key=lambda col: col.dynamo_name):
+            atomic &= column.is_(None)
+        _tracking(obj)["snapshot"] = atomic
+        return atomic
+
+    # The object has been synced at least once, and no snapshot was created.
+    # That means the object may have been mutated since it was loaded, and
+    # no atomic condition can be created against its last loaded values.
+    raise RuntimeError((
+        "No atomic condition found for {}; was it "
+        "loaded through an atomic engine?").format(obj))
 
 
 def clear_snapshot(obj):

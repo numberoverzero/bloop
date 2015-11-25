@@ -144,22 +144,15 @@ class Engine:
                 renderer = bloop.condition.ConditionRenderer(self)
                 item_condition = bloop.condition.Condition()
                 if self.config["atomic"]:
-                    atomic_condition = bloop.tracking2.get_snapshot(obj)
-                    # Building an atomic condition at load/query is expensive
-                    # in both space and time, so non-atomic engines won't
-                    # create them.  If the condition is None, then there's no
-                    # way to construct the atomic condition.
-                    if atomic_condition is None:
-                        raise RuntimeError((
-                            "No atomic condition found for {}; was it "
-                            "loaded through an atomic engine?").format(obj))
-                    item_condition &= atomic_condition
+                    item_condition &= bloop.tracking2.get_snapshot(obj)
                 if condition:
                     item_condition &= condition
                 renderer.render(item_condition, "condition")
                 item.update(renderer.rendered)
             self.client.delete_item(item)
+            # Set atomic condition to expect None for all columns
             bloop.tracking2.clear_snapshot(obj)
+            bloop.tracking2.set_synced(obj)
 
     def load(self, objs, *, consistent=None):
         """
@@ -241,6 +234,7 @@ class Engine:
                 # in atomic mode.
                 if self.config["atomic"]:
                     bloop.tracking2.set_snapshot(obj, self)
+                bloop.tracking2.set_synced(obj)
 
         # If there are still objects, they weren't found
         if objs_by_key:
@@ -278,16 +272,7 @@ class Engine:
                     diff = bloop.tracking2.dump_update(obj)
                     renderer.update(diff)
                 if atomic:
-                    atomic_condition = bloop.tracking2.get_snapshot(obj)
-                    # Building an atomic condition at load/query is expensive
-                    # in both space and time, so non-atomic engines won't
-                    # create them.  If the condition is None, then there's no
-                    # way to construct the atomic condition.
-                    if atomic_condition is None:
-                        raise RuntimeError((
-                            "No atomic condition found for {}; was it "
-                            "loaded through an atomic engine?").format(obj))
-                    item_condition &= atomic_condition
+                    item_condition &= bloop.tracking2.get_snapshot(obj)
                 if condition:
                     item_condition &= condition
                 if item_condition:
@@ -299,6 +284,7 @@ class Engine:
             # 2. The save above was successful
             if atomic:
                 bloop.tracking2.set_snapshot(obj, self)
+            bloop.tracking2.set_synced(obj)
 
     def scan(self, obj):
         if isinstance(obj, bloop.index._Index):

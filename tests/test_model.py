@@ -6,7 +6,6 @@ import pytest
 
 from bloop import (Column, UUID, Boolean, DateTime, String,
                    LocalSecondaryIndex, GlobalSecondaryIndex)
-missing = object()
 
 
 def test_default_model_init(User):
@@ -17,7 +16,7 @@ def test_default_model_init(User):
 
 
 def test_load_default_init(engine, local_bind):
-    """ The default model loader uses the model"s __init__ method """
+    """ The default model loader uses the model's __init__ method """
     loader_calls = 0
 
     class CustomUser(engine.model):
@@ -201,7 +200,7 @@ def test_local_index_no_range_key(engine):
 
 
 def test_abstract_index(engine):
-    """ Can"t use a direct Index, since it's abstract """
+    """ Can't use a direct Index, since it's abstract """
     with pytest.raises(ValueError):
         class Model(engine.model):
             id = Column(UUID, hash_key=True)

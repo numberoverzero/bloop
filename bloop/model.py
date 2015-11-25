@@ -67,8 +67,8 @@ class _BaseModel(object):
         if not isinstance(other, cls):
             return False
         for column in cls.Meta.columns:
-            value = getattr(self, column.dynamo_name, None)
-            other_value = getattr(other, column.dynamo_name, None)
+            value = getattr(self, column.model_name, None)
+            other_value = getattr(other, column.model_name, None)
             if value != other_value:
                 return False
         return True
@@ -99,50 +99,49 @@ def BaseModel(engine):
         def __new__(metaclass, name, bases, attrs):
 
             model = super().__new__(metaclass, name, bases, attrs)
-            Meta = model.Meta
-            Meta.write_units = getattr(Meta, "write_units", 1)
-            Meta.read_units = getattr(Meta, "read_units", 1)
+            meta = model.Meta
+            meta.write_units = getattr(meta, "write_units", 1)
+            meta.read_units = getattr(meta, "read_units", 1)
 
             # These are sets instead of lists, because set uses __hash__
             # while some list operations uses __eq__ which will break
             # with the ComparisonMixin
-            Meta.columns = set(filter(
+            meta.columns = set(filter(
                 lambda f: isinstance(f, bloop.column.Column),
-                Meta.fields))
-            Meta.indexes = set(filter(
+                meta.fields))
+            meta.indexes = set(filter(
                 lambda f: isinstance(f, bloop.index._Index),
-                Meta.fields))
+                meta.fields))
 
-            Meta.hash_key = None
-            Meta.range_key = None
-            for column in Meta.columns:
+            meta.hash_key = None
+            meta.range_key = None
+            for column in meta.columns:
                 if column.hash_key:
-                    if Meta.hash_key:
+                    if meta.hash_key:
                         raise ValueError("Model hash_key over-specified")
-                    Meta.hash_key = column
+                    meta.hash_key = column
                 elif column.range_key:
-                    if Meta.range_key:
+                    if meta.range_key:
                         raise ValueError("Model range_key over-specified")
-                    Meta.range_key = column
+                    meta.range_key = column
 
             # Look up the current hash key -- which is specified by
             # model_name, not dynamo_name -- in indexed columns and relate
             # the proper `bloop.Column` object
-            cols = declare.index(Meta.columns, "model_name")
-            for index in Meta.indexes:
+            cols = declare.index(meta.columns, "model_name")
+            for index in meta.indexes:
                 index.model = model
                 if isinstance(index, bloop.index.GlobalSecondaryIndex):
                     index.hash_key = cols[index.hash_key]
                 elif isinstance(index, bloop.index.LocalSecondaryIndex):
-                    if not Meta.range_key:
+                    if not meta.range_key:
                         raise ValueError(
                             "Cannot specify a LocalSecondaryIndex " +
                             "without a table range key")
-                    index.hash_key = Meta.hash_key
+                    index.hash_key = meta.hash_key
                 else:
-                    raise ValueError("Index is an abstract class, must specify"
-                                     "LocalSecondaryIndex or"
-                                     "GlobalSecondaryIndex")
+                    raise ValueError("Index must be a LocalSecondaryIndex "
+                                     "or GlobalSecondaryIndex")
 
                 if index.range_key:
                     index.range_key = cols[index.range_key]
@@ -150,15 +149,15 @@ def BaseModel(engine):
                 projected = index.projection_attributes = set()
 
                 if index.projection == "ALL":
-                    projected.update(Meta.columns)
+                    projected.update(meta.columns)
                 elif index.projection == "KEYS_ONLY":
-                    keys = (Meta.hash_key, Meta.range_key,
+                    keys = (meta.hash_key, meta.range_key,
                             index.hash_key, index.range_key)
                     projected.update(key for key in keys if key)
                 # List of column model_names - convert to `bloop.Column`
                 # objects and merge with keys in projection_attributes
                 else:
-                    keys = (Meta.hash_key, Meta.range_key,
+                    keys = (meta.hash_key, meta.range_key,
                             index.hash_key, index.range_key)
                     projected.update(key for key in keys if key)
                     attrs = (cols[attr] for attr in index.projection)
@@ -170,10 +169,10 @@ def BaseModel(engine):
             # model class. Custom models can specify the Meta
             # attr `bloop_init`, which should be a function taking a
             # **kwarg of name:value pairs corresponding to modeled columns.
-            Meta.bloop_init = getattr(Meta, "bloop_init", model)
-            Meta.bloop_engine = engine
+            meta.bloop_init = getattr(meta, "bloop_init", model)
+            meta.bloop_engine = engine
 
-            Meta.table_name = getattr(Meta, "table_name", model.__name__)
+            meta.table_name = getattr(meta, "table_name", model.__name__)
 
             # If the engine already has a base, register this model.
             # Otherwise, this probably IS the engine's base model

@@ -313,7 +313,6 @@ def test_save_update_condition_key_only(User, engine):
     Even when the diff is empty, an UpdateItem should be issued
     (in case this is really a create - the item doesn't exist yet)
     """
-    engine.config["save"] = "update"
     user = User(id=uuid.uuid4())
     condition = User.id.is_(None)
     expected = {"ConditionExpression": "(attribute_not_exists(#n0))",
@@ -331,7 +330,6 @@ def test_save_update_condition(User, engine):
     """
     Non-empty diff
     """
-    engine.config["save"] = "update"
     user = User(id=uuid.uuid4(), age=4)
     condition = User.id.is_(None)
     expected = {"ConditionExpression": "(attribute_not_exists(#n2))",
@@ -348,7 +346,6 @@ def test_save_update_condition(User, engine):
 
 
 def test_save_update_multiple(User, engine):
-    engine.config["save"] = "update"
     user1 = User(id=uuid.uuid4(), age=4)
     user2 = User(id=uuid.uuid4(), age=5)
 
@@ -378,7 +375,6 @@ def test_save_update_multiple(User, engine):
 
 def test_save_set_del_field(User, engine):
     """ UpdateItem can REMOVE fields as well as SET """
-    engine.config["save"] = "update"
     user = User(id=uuid.uuid4(), age=4)
 
     # Manually mark hash key, which shouldn't show up in UpdateExpression
@@ -404,7 +400,6 @@ def test_save_set_del_field(User, engine):
 
 
 def test_save_update_del_field(User, engine):
-    engine.config["save"] = "update"
     user = User(id=uuid.uuid4(), age=4)
 
     # Manually snapshot so we think age is persisted
@@ -597,7 +592,7 @@ def test_scan(User, engine):
 
 
 def test_context(User, engine):
-    engine.config["save"] = "overwrite"
+    engine.config["atomic"] = True
     user_id = uuid.uuid4()
     user = User(id=user_id, name="foo")
 
@@ -611,7 +606,7 @@ def test_context(User, engine):
         assert item == expected
     engine.client.update_item = validate
 
-    with engine.context(save="update") as eng:
+    with engine.context(atomic=False) as eng:
         eng.save(user)
 
     with pytest.raises(RuntimeError):

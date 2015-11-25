@@ -253,7 +253,7 @@ class AttributeExists(_BaseCondition):
 
     def __str__(self):  # pragma: no cover
         name = "AttributeNotExists" if self.negate else "AttributeExists"
-        return "{}({}(path={}))".format(name, self.path, self.column)
+        return "{}({}(path={}))".format(name, self.column, self.path)
     __repr__ = __str__
 
     def render(self, renderer):

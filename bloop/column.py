@@ -112,7 +112,9 @@ class Column(declare.Field, _ComparisonMixin):
         bloop.tracking.mark(obj, self)
 
     def delete(self, obj):
-        super().delete(obj)
-        # Notify the tracking engine that this value
-        # was intentionally mutated
-        bloop.tracking.mark(obj, self)
+        try:
+            super().delete(obj)
+        finally:
+            # Notify the tracking engine that this value
+            # was intentionally mutated
+            bloop.tracking.mark(obj, self)

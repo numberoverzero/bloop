@@ -403,6 +403,9 @@ def test_save_set_del_field(User, engine):
     engine.config["save"] = "update"
     user = User(id=uuid.uuid4(), age=4)
 
+    # Manually mark hash key, which shouldn't show up in UpdateExpression
+    bloop.tracking.mark(user, User.id)
+
     # Manually snapshot so we think age is persisted
     bloop.tracking.set_snapshot(user, engine)
 

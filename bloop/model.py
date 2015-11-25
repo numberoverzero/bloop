@@ -2,6 +2,7 @@ import bloop.column
 import bloop.index
 import bloop.util
 import declare
+_MISSING = object()
 
 
 class _BaseModel(object):
@@ -24,16 +25,23 @@ class _BaseModel(object):
         # Only set values from **attrs if there's a
         # corresponding `model_name` for a column in the model
         for column in self.Meta.columns:
-            value = attrs.get(column.model_name, None)
-            setattr(self, column.model_name, value)
+            value = attrs.get(column.model_name, _MISSING)
+            if value is not _MISSING:
+                setattr(self, column.model_name, value)
 
     @classmethod
     def _load(cls, attrs):
-        """ dict -> obj """
+        """ dict (dynamo name) -> obj """
         obj = cls.Meta.bloop_init()
-        # Expect all columns on load
-        cls.Meta.bloop_engine._update(obj, attrs, cls.Meta.columns)
+        # We want to expect the exact attributes that are passed,
+        # since any superset will mark missing fields as expected and None
+        expected = set()
+        for column in cls.Meta.columns:
+            if column.dynamo_name in attrs:
+                expected.add(column)
+        cls.Meta.bloop_engine._update(obj, attrs, expected)
         return obj
+
 
     @classmethod
     def _dump(cls, obj):

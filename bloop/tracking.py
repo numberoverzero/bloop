@@ -1,6 +1,6 @@
 import bloop.condition
 _ALL = object()
-_TRACKING_ATTR_NAME = "__tracking2"
+_TRACKING_ATTR_NAME = "__tracking"
 
 
 def _tracking(obj):

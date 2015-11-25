@@ -1,5 +1,5 @@
 import bloop.condition
-import bloop.tracking2
+import bloop.tracking
 import declare
 import operator
 
@@ -109,10 +109,10 @@ class Column(declare.Field, _ComparisonMixin):
         super().set(obj, value)
         # Notify the tracking engine that this value
         # was intentionally mutated
-        bloop.tracking2.mark(obj, self)
+        bloop.tracking.mark(obj, self)
 
     def delete(self, obj):
         super().delete(obj)
         # Notify the tracking engine that this value
         # was intentionally mutated
-        bloop.tracking2.mark(obj, self)
+        bloop.tracking.mark(obj, self)

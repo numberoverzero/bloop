@@ -1,7 +1,7 @@
 import bloop.column
 import bloop.condition
 import bloop.index
-import bloop.tracking2
+import bloop.tracking
 import operator
 
 SELECT_MODES = {
@@ -428,8 +428,8 @@ class FilterResult(object):
             # in both space and time, so non-atomic engines shouldn't
             # persist the state.
             if self.engine.config["atomic"]:
-                bloop.tracking2.set_snapshot(obj, self.engine)
-            bloop.tracking2.set_synced(obj)
+                bloop.tracking.set_snapshot(obj, self.engine)
+            bloop.tracking.set_synced(obj)
 
             self._results.append(obj)
             yield obj

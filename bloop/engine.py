@@ -4,7 +4,7 @@ import bloop.exceptions
 import bloop.filter
 import bloop.index
 import bloop.model
-import bloop.tracking2
+import bloop.tracking
 import collections
 import collections.abc
 import declare
@@ -144,15 +144,15 @@ class Engine:
                 renderer = bloop.condition.ConditionRenderer(self)
                 item_condition = bloop.condition.Condition()
                 if self.config["atomic"]:
-                    item_condition &= bloop.tracking2.get_snapshot(obj)
+                    item_condition &= bloop.tracking.get_snapshot(obj)
                 if condition:
                     item_condition &= condition
                 renderer.render(item_condition, "condition")
                 item.update(renderer.rendered)
             self.client.delete_item(item)
             # Set atomic condition to expect None for all columns
-            bloop.tracking2.clear_snapshot(obj)
-            bloop.tracking2.set_synced(obj)
+            bloop.tracking.clear_snapshot(obj)
+            bloop.tracking.set_synced(obj)
 
     def load(self, objs, *, consistent=None):
         """
@@ -233,8 +233,8 @@ class Engine:
                 # conditions for objects that weren't loaded/queried
                 # in atomic mode.
                 if self.config["atomic"]:
-                    bloop.tracking2.set_snapshot(obj, self)
-                bloop.tracking2.set_synced(obj)
+                    bloop.tracking.set_snapshot(obj, self)
+                bloop.tracking.set_synced(obj)
 
         # If there are still objects, they weren't found
         if objs_by_key:
@@ -269,10 +269,10 @@ class Engine:
                 renderer = bloop.condition.ConditionRenderer(self)
                 item_condition = bloop.condition.Condition()
                 if update:
-                    diff = bloop.tracking2.dump_update(obj)
+                    diff = bloop.tracking.dump_update(obj)
                     renderer.update(diff)
                 if atomic:
-                    item_condition &= bloop.tracking2.get_snapshot(obj)
+                    item_condition &= bloop.tracking.get_snapshot(obj)
                 if condition:
                     item_condition &= condition
                 if item_condition:
@@ -283,8 +283,8 @@ class Engine:
             # 1. This is an atomic context (snapshotting is expensive)
             # 2. The save above was successful
             if atomic:
-                bloop.tracking2.set_snapshot(obj, self)
-            bloop.tracking2.set_synced(obj)
+                bloop.tracking.set_snapshot(obj, self)
+            bloop.tracking.set_synced(obj)
 
     def scan(self, obj):
         if isinstance(obj, bloop.index._Index):

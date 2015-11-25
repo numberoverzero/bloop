@@ -37,6 +37,8 @@ class _Index(declare.Field):
             return self.model_name
         return self._dynamo_name
 
+    # TODO: disallow set/get/del for an index.  Raise RuntimeError.
+
 
 class GlobalSecondaryIndex(_Index):
     def __init__(self, write_units=1, read_units=1, **kwargs):

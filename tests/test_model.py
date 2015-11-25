@@ -1,3 +1,4 @@
+import arrow
 import uuid
 import bloop.column
 import bloop.index
@@ -12,7 +13,7 @@ def test_default_model_init(User):
     """ Missing attributes are set to `None` """
     user = User(id=uuid.uuid4(), email="user@domain.com")
     assert user.email == "user@domain.com"
-    assert user.name is None
+    assert not hasattr(user, "name")
 
 
 def test_load_default_init(engine, local_bind):
@@ -56,12 +57,15 @@ def test_load_dump(User):
     """ _load and _dump should be symmetric """
 
     user_id = uuid.uuid4()
-    user = User(id=user_id, name="name", email="user@domain.com", age=25)
+    now = arrow.now()
+    user = User(id=user_id, name="name", email="user@domain.com", age=25,
+                joined=now)
     serialized_user = {
         "id": {"S": str(user_id)},
         "age": {"N": "25"},
         "name": {"S": "name"},
-        "email": {"S": "user@domain.com"}
+        "email": {"S": "user@domain.com"},
+        "j": {"S": now.to("utc").isoformat()}
     }
 
     assert User._load(serialized_user) == user

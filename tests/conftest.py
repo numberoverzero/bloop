@@ -47,7 +47,8 @@ def UnboundUser(engine):
         age = bloop.Column(bloop.Integer)
         name = bloop.Column(bloop.String)
         email = bloop.Column(bloop.String)
-        joined = bloop.Column(bloop.DateTime)
+        # Field with dynamo_name != model_name
+        joined = bloop.Column(bloop.DateTime, name="j")
 
         by_email = bloop.GlobalSecondaryIndex(hash_key="email",
                                               projection="all")

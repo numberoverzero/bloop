@@ -181,7 +181,7 @@ def test_select_specific(engine, User):
 
     result = q.select([User.email, User.joined]).all()
     expected = {"Select": "SPECIFIC_ATTRIBUTES",
-                "ExpressionAttributeNames": {"#n0": "email", "#n1": "joined",
+                "ExpressionAttributeNames": {"#n0": "email", "#n1": "j",
                                              "#n2": "id"},
                 "ScanIndexForward": True,
                 "ExpressionAttributeValues": {":v3": {"S": str(user_id)}},

@@ -11,8 +11,7 @@ Create a user, and save with a condition to ensure a unique id:
     :language: python
     :lines: 5-10
 
-Modify a field, then save changes back to DynamoDB (only modified attributes
-are sent):
+Modify a field, then save changes back to DynamoDB:
 
 .. literalinclude:: ../code/quick.py
     :language: python

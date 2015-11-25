@@ -116,81 +116,23 @@ Like ``load``, one or more objects can be saved at a time::
     engine.save(account)
     engine.save([account, tweet])
 
-By default bloop uses `UpdateItem`_ to save objects.  Internally, the last
-loaded state of an object is tracked.  When an object is saved, its current
-values are diffed against the tracked values - only those that have changed
-are sent in the update.
-
-In the following example, bloop will send the ``content`` attribute to be
-updated, since it was changed from the last loaded (it was never loaded)
-value::
-
-    tweet = Tweet(
-        account=account.id, id='600783770925420546', date=arrow.now(),
-        content=(
-            'Consulting service: you bring your big data problems'
-            ' to me, I say "your data set fits in RAM", you pay me'
-            ' $10,000 for saving you $500,000.'))
-
-    engine.save(tweet)
-
-The following line will trigger an empty update, since none of the fields have
-changed since the last load or save::
-
-    engine.save(tweet)
-
-Alternatively, `PutItem`_ can be used for full-overwrite saves.  This will
-replace any existing attributes for the object, including deleting existing
-values if the new version has no value for them.  To use this mode::
-
-    engine.config['save'] = 'overwrite'
-
-.. warning::
-
-    Using ``overwrite`` saves can have unintented results when you load objects
-    from a SecondaryIndex that doesn't project all attributes.
-
-To demonstrate, consider the following::
-
-    class Account(engine.model):
-        id = Column(UUID, hash_key=True)
-        name = Column(String)
-        email = Column(String)
-        by_email = GlobalSecondaryIndex(
-            hash_key='email', projection='keys_only',
-            write_units=1, read_units=5)
-
-    account = Account(id=uuid.uuid4(), name='name',
-                      email='foo@domain.com')
-    engine.save(account)
-    account = (engine.query(Account.by_email)
-                     .key(email=='foo@domain.com')
-                     .first())
-
-At this point, ``account`` only has the attributes ``id`` and ``email`` because
-the GSI ``by_email`` has a 'keys_only' projection.  If you overwrite the
-account::
-
-    engine.config['save'] = 'overwrite'
-    account.email = 'bar@domain.com'
-    engine.save(account)
-
-And then load the account again, the name is missing::
-
-    engine.load(account)
-    print(account.name)  # AttributeError
+bloop uses `UpdateItem`_ to save objects, tracking which fields on an instance
+of a model have been set or deleted.  When an object is saved, any values that
+have been loaded (if the object was loaded or part of a query/scan result) or
+set/deleted locally are sent in the update.  This is true even if the value
+hasn't changed locally; bloop persists the expected local state, not the
+expected local delta.
 
 Described below, :ref:`conditions` can be used to ensure attributes have
 expected values before persisting a change.  When a condition is provided with
 a list of objects, the condition is applied to every object individually.
 
 .. seealso::
-    * :ref:`config` to adjust ``save`` and ``atomic`` options
+    * :ref:`config` to adjust the ``atomic`` option
     * :ref:`conditions` for using conditions with save and delete
     * :ref:`atomic` for using atomic updates
 
 .. _UpdateItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
-.. _PutItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html
 .. _Secondary Indexes: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SecondaryIndexes.html
 
 .. _delete:
@@ -315,7 +257,7 @@ Instead, a simple condition will prevent the race::
 
         engine.delete(user, condition=two_years)
 
-The following comparison operators are available::
+The following comparison operators are available:
 
 * ``==``
 * ``!=``

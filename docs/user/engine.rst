@@ -80,7 +80,6 @@ Engine's config attribute.  By default, the following are set::
         "atomic": False,
         "consistent": False,
         "prefetch": 0,
-        "save": "update",
         "strict": True,
     }
 
@@ -98,13 +97,6 @@ queries and scans.  By default each page is loaded as necessary, allowing you
 to stop following continuation tokens if you only need a partial query.  You
 can set this to a positive integer to pre-fetch that number of pages at a time,
 or to ``'all'`` to fully iterate the query in one blocking call.
-
-The ``save`` option controls whether ``UpdateItem`` or ``PutItem`` is used.  By
-default ``'update'`` will use UpdateItem, which only submits partial changes
-for items when saving.  The ``'overwrite'`` option will use PutItem, which will
-always replace the entire row; this includes deleting values that were stored
-in DynamoDB but not set locally.  It is **highly** recommended that you review
-:ref:`save` before changing this option from its default of ``'update'``.
 
 Setting ``strict`` to ``False`` will allow queries and scans against LSIs to
 consume additional read units against the table.  By default strict queries
@@ -224,9 +216,6 @@ save
 Save an object or set of objects, with an optional condition::
 
     engine.save(objs, *, condition=None)
-
-By default objects are saved using UpdateItem, but can use PutItem instead.
-For more info on saving objects, see :ref:`save`.
 
 scan
 ----

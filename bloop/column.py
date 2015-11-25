@@ -1,4 +1,5 @@
 import bloop.condition
+import bloop.tracking2
 import declare
 import operator
 
@@ -103,3 +104,15 @@ class Column(declare.Field, _ComparisonMixin):
         if self._dynamo_name is None:
             return self.model_name
         return self._dynamo_name
+
+    def set(self, obj, value):
+        super().set(obj, value)
+        # Notify the tracking engine that this value
+        # was intentionally mutated
+        bloop.tracking2.mark(obj, self)
+
+    def delete(self, obj):
+        super().delete(obj)
+        # Notify the tracking engine that this value
+        # was intentionally mutated
+        bloop.tracking2.mark(obj, self)

@@ -139,11 +139,11 @@ def test_update_noop_save(engine, User):
     user = User(id=uuid.uuid4(), age=5)
 
     expected = {
-            "Key": {"id": {"S": str(user.id)}},
-            "TableName": "User",
-            "ExpressionAttributeNames": {"#n0": "age"},
-            "ExpressionAttributeValues": {":v1": {"N": "5"}},
-            "UpdateExpression": "SET #n0=:v1"}
+        "Key": {"id": {"S": str(user.id)}},
+        "TableName": "User",
+        "ExpressionAttributeNames": {"#n0": "age"},
+        "ExpressionAttributeValues": {":v1": {"N": "5"}},
+        "UpdateExpression": "SET #n0=:v1"}
     calls = 0
 
     def validate(item):

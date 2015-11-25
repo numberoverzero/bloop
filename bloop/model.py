@@ -42,7 +42,6 @@ class _BaseModel(object):
         cls.Meta.bloop_engine._update(obj, attrs, expected)
         return obj
 
-
     @classmethod
     def _dump(cls, obj):
         """ obj -> dict """

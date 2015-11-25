@@ -94,12 +94,8 @@ def get_snapshot(obj):
     # If the object has never been synced, create and cache a condition
     # that expects every column to be empty
     if not _tracking(obj)["synced"]:
-        atomic = bloop.condition.Condition()
-        for column in sorted(obj.Meta.columns,
-                             key=lambda col: col.dynamo_name):
-            atomic &= column.is_(None)
-        _tracking(obj)["snapshot"] = atomic
-        return atomic
+        clear_snapshot(obj)
+        return _tracking(obj)["snapshot"]
 
     # The object has been synced at least once, and no snapshot was created.
     # That means the object may have been mutated since it was loaded, and
@@ -116,5 +112,5 @@ def clear_snapshot(obj):
     """
     snapshot = bloop.condition.Condition()
     for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
-        snapshot &= (column is None)
+        snapshot &= column.is_(None)
     _tracking(obj)["snapshot"] = snapshot

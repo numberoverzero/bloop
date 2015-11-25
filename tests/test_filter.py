@@ -1,4 +1,5 @@
 import bloop
+import bloop.tracking
 import pytest
 import uuid
 
@@ -292,6 +293,44 @@ def test_first(engine, User):
 
     first = q.first()
     assert first.email == "foo@domain.com"
+
+    with pytest.raises(RuntimeError):
+        bloop.tracking.get_snapshot(first)
+
+
+def test_atomic_load(User, engine, renderer):
+    """Queying objects in an atomic context caches the loaded condition"""
+    engine.config["atomic"] = True
+
+    user_id = uuid.uuid4()
+    q = engine.scan(User).filter(User.email == "foo@domain.com")
+
+    def respond(request):
+        item = User(id=user_id, email="foo@domain.com")
+        return {
+            "Count": 1,
+            "ScannedCount": 1,
+            "Items": [engine._dump(User, item)]
+        }
+    engine.client.scan = respond
+    obj = q.first()
+
+    condition = ('((attribute_not_exists(#n0)) AND (#n1 = :v2) '
+                 'AND (#n3 = :v4) AND (attribute_not_exists(#n5)) AND '
+                 '(attribute_not_exists(#n6)))')
+    expected = {
+        'ExpressionAttributeValues': {
+            ':v4': {'S': str(user_id)},
+            ':v2': {'S': 'foo@domain.com'}},
+        'ConditionExpression': condition,
+        'ExpressionAttributeNames': {
+            '#n0': 'age', '#n1': 'email', '#n3': 'id',
+            '#n5': 'j', '#n6': 'name'}}
+
+    actual_condition = bloop.tracking.get_snapshot(obj)
+    renderer.render(actual_condition, "condition")
+    print(renderer.rendered)
+    assert expected == renderer.rendered
 
 
 def test_iter(engine, User):

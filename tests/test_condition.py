@@ -65,8 +65,15 @@ def test_and_appends(renderer, User):
     age = User.age >= 3
     name = User.name == "foo"
     email = User.email != "bar"
+    conditions = [age, name, email]
+
     condition = (age & name) & email
-    assert condition.conditions == [age, name, email]
+    assert condition.conditions == conditions
+
+    condition = bloop.condition.Condition()
+    for c in conditions:
+        condition &= c
+    assert condition.conditions == conditions
 
 
 def test_or_appends(renderer, User):
@@ -76,8 +83,15 @@ def test_or_appends(renderer, User):
     age = User.age >= 3
     name = User.name == "foo"
     email = User.email != "bar"
+    conditions = [age, name, email]
+
     condition = (age | name) | email
-    assert condition.conditions == [age, name, email]
+    assert condition.conditions == conditions
+
+    condition = bloop.condition.Condition()
+    for c in conditions:
+        condition |= c
+    assert condition.conditions == conditions
 
 
 def test_not(renderer, User):

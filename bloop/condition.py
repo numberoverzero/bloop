@@ -188,6 +188,8 @@ class And(_MultiCondition):
         self.conditions.append(other)
         return self
 
+    __iand__ = __and__
+
 
 class Or(_MultiCondition):
     name = "Or"
@@ -196,6 +198,8 @@ class Or(_MultiCondition):
     def __or__(self, other):
         self.conditions.append(other)
         return self
+
+    __ior__ = __or__
 
 
 class Not(_BaseCondition):

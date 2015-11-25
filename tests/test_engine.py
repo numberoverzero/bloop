@@ -135,22 +135,19 @@ def test_load_dump_unknown(engine):
 
 
 def test_update_noop_save(engine, User):
+    """ Saves should send all fields that have been set, every time """
     user = User(id=uuid.uuid4(), age=5)
 
-    expected = [
-        {
+    expected = {
             "Key": {"id": {"S": str(user.id)}},
             "TableName": "User",
             "ExpressionAttributeNames": {"#n0": "age"},
             "ExpressionAttributeValues": {":v1": {"N": "5"}},
-            "UpdateExpression": "SET #n0=:v1"},
-        {
-            "Key": {"id": {"S": str(user.id)}},
-            "TableName": "User"}]
+            "UpdateExpression": "SET #n0=:v1"}
     calls = 0
 
     def validate(item):
-        assert item == expected[calls]
+        assert item == expected
         nonlocal calls
         calls += 1
 

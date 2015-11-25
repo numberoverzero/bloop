@@ -253,15 +253,17 @@ class Engine:
             item = {"TableName": obj.Meta.table_name,
                     "Key": _dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
-            item_condition = bloop.condition.Condition()
             diff = bloop.tracking.dump_update(obj)
             renderer.update(diff)
+
+            item_condition = bloop.condition.Condition()
             if atomic:
                 item_condition &= bloop.tracking.get_snapshot(obj)
             if condition:
                 item_condition &= condition
             if item_condition:
                 renderer.render(item_condition, "condition")
+
             item.update(renderer.rendered)
             self.client.update_item(item)
             # Don't update the atomic snapshot unless:

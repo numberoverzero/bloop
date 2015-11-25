@@ -429,6 +429,7 @@ class FilterResult(object):
             # persist the state.
             if self.engine.config["atomic"]:
                 bloop.tracking2.set_snapshot(obj, self.engine)
+            bloop.tracking2.set_synced(obj)
 
             self._results.append(obj)
             yield obj

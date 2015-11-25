@@ -189,13 +189,6 @@ def test_update_noop_save(engine, User):
     assert calls == 2
 
 
-def test_save_unknown_mode(engine, User):
-    user = User(id=uuid.uuid4())
-    engine.config["save"] = "foo"
-    with pytest.raises(ValueError):
-        engine.save(user)
-
-
 def test_save_multiple_condition(User, engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
     condition = User.id.is_(None)
@@ -216,19 +209,6 @@ def test_save_multiple_condition(User, engine):
     assert calls == 3
 
 
-def test_save_single_overwrite(User, engine):
-    user_id = uuid.uuid4()
-    user = User(id=user_id)
-    expected = {"TableName": "User",
-                "Item": {"id": {"S": str(user_id)}}}
-
-    def validate(item):
-        assert item == expected
-    engine.client.put_item = validate
-    engine.config["save"] = "overwrite"
-    engine.save(user)
-
-
 def test_save_condition(User, engine):
     user_id = uuid.uuid4()
     user = User(id=user_id)
@@ -236,12 +216,11 @@ def test_save_condition(User, engine):
     expected = {"TableName": "User",
                 "ExpressionAttributeNames": {"#n0": "id"},
                 "ConditionExpression": "(attribute_not_exists(#n0))",
-                "Item": {"id": {"S": str(user_id)}}}
+                "Key": {"id": {"S": str(user_id)}}}
 
     def validate(item):
         assert item == expected
-    engine.client.put_item = validate
-    engine.config["save"] = "overwrite"
+    engine.client.update_item = validate
     engine.save(user, condition=condition)
 
 
@@ -316,16 +295,15 @@ def test_save_multiple(User, engine):
     user2 = User(id=uuid.uuid4())
 
     expected = [
-        {"Item": {"id": {"S": str(user1.id)}}, "TableName": "User"},
-        {"Item": {"id": {"S": str(user2.id)}}, "TableName": "User"}]
+        {"Key": {"id": {"S": str(user1.id)}}, "TableName": "User"},
+        {"Key": {"id": {"S": str(user2.id)}}, "TableName": "User"}]
     calls = 0
 
     def validate(item):
         assert item in expected
         nonlocal calls
         calls += 1
-    engine.client.put_item = validate
-    engine.config["save"] = "overwrite"
+    engine.client.update_item = validate
     engine.save((user1, user2))
     assert calls == 2
 

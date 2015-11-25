@@ -14,7 +14,6 @@ DEFAULT_CONFIG = {
     "atomic": False,
     "consistent": False,
     "prefetch": 0,
-    "save": "update",
     "strict": True,
 }
 
@@ -250,35 +249,21 @@ class Engine:
     def save(self, objs, *, condition=None):
         objs = _list_of(objs)
         atomic = self.config["atomic"]
-        mode = self.config["save"]
-        update = mode == "update"
-        rendering = atomic or condition or update
-        try:
-            func = {"overwrite": self.client.put_item,
-                    "update": self.client.update_item}[mode]
-        except KeyError:
-            raise ValueError("Unknown save mode {}".format(mode))
         for obj in objs:
-            if mode == "overwrite":
-                item = {"TableName": obj.Meta.table_name,
-                        "Item": self._dump(obj.__class__, obj)}
-            if mode == "update":
-                item = {"TableName": obj.Meta.table_name,
-                        "Key": _dump_key(self, obj)}
-            if rendering:
-                renderer = bloop.condition.ConditionRenderer(self)
-                item_condition = bloop.condition.Condition()
-                if update:
-                    diff = bloop.tracking.dump_update(obj)
-                    renderer.update(diff)
-                if atomic:
-                    item_condition &= bloop.tracking.get_snapshot(obj)
-                if condition:
-                    item_condition &= condition
-                if item_condition:
-                    renderer.render(item_condition, "condition")
-                item.update(renderer.rendered)
-            func(item)
+            item = {"TableName": obj.Meta.table_name,
+                    "Key": _dump_key(self, obj)}
+            renderer = bloop.condition.ConditionRenderer(self)
+            item_condition = bloop.condition.Condition()
+            diff = bloop.tracking.dump_update(obj)
+            renderer.update(diff)
+            if atomic:
+                item_condition &= bloop.tracking.get_snapshot(obj)
+            if condition:
+                item_condition &= condition
+            if item_condition:
+                renderer.render(item_condition, "condition")
+            item.update(renderer.rendered)
+            self.client.update_item(item)
             # Don't update the atomic snapshot unless:
             # 1. This is an atomic context (snapshotting is expensive)
             # 2. The save above was successful

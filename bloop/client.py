@@ -321,30 +321,6 @@ class Client(object):
                 index.pop(field, None)
         return table
 
-    def put_item(self, item):
-        """Put an item into DynamoDB.  Overwrite existing columns for the row.
-
-        The dict structure is identical to the boto3 client's counterpart.
-        It also handles retrying failed requests.
-
-        Args:
-            item (dict): See `put_item (DynamoDB Client)`_
-
-        Raises:
-            bloop.ConstraintViolation: If the update contains a condition that
-                fails on update.
-
-        See Also:
-            * `PutItem (DynamoDB API Reference)`_
-            * `put_item (DynamoDB Client)`_
-
-        .. _PutItem (DynamoDB API Reference):
-            http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_PutItem.html
-        .. _put_item (DynamoDB Client):
-            https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.put_item
-        """
-        self._modify_item(self.client.put_item, "put", item)
-
     def query(self, request):
         return self._filter(self.client.query, request)
 

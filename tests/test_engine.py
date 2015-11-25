@@ -1,7 +1,7 @@
 import bloop
 import bloop.engine
 import bloop.exceptions
-import bloop.tracking
+import bloop.tracking2
 import bloop.util
 import pytest
 import uuid
@@ -134,6 +134,38 @@ def test_load_dump_unknown(engine):
         engine._dump(NotModeled, obj)
 
 
+def test_atomic_load(User, engine, renderer):
+    """Loading objects in an atomic context caches the loaded condition"""
+    engine.config["atomic"] = True
+    user_id = uuid.uuid4()
+    obj = User(id=user_id)
+
+    # Load may not return fields, in the case of missing data
+    # (or non-mapped data, in the case of multi-view tables)
+    response = {"User": [{"age": {"N": 5},
+                          "id": {"S": str(obj.id)},
+                          "extra_field": {"freeform data": "not parsed"}}]}
+
+    engine.client.batch_get_items = lambda input: response
+    engine.load(obj)
+
+    condition = ('((#n0 = :v1) AND (attribute_not_exists(#n2)) '
+                 'AND (#n3 = :v4) AND (attribute_not_exists(#n5))'
+                 ' AND (attribute_not_exists(#n6)))')
+    expected = {
+        'ExpressionAttributeValues': {
+            ':v4': {'S': str(user_id)},
+            ':v1': {'N': '5'}},
+        'ExpressionAttributeNames': {
+            '#n2': 'email', '#n0': 'age', '#n5': 'j',
+            '#n6': 'name', '#n3': 'id'},
+        'ConditionExpression': condition}
+
+    actual_condition = bloop.tracking2.get_snapshot(obj)
+    renderer.render(actual_condition, "condition")
+    assert expected == renderer.rendered
+
+
 def test_update_noop_save(engine, User):
     """ Saves should send all fields that have been set, every time """
     user = User(id=uuid.uuid4(), age=5)
@@ -222,13 +254,13 @@ def test_save_atomic_new(User, engine):
     user = User(id=user_id)
     expected = {
         'ExpressionAttributeNames': {
-            '#n0': 'age', '#n3': 'joined', '#n1': 'email',
+            '#n0': 'age', '#n3': 'j', '#n1': 'email',
             '#n4': 'name', '#n2': 'id'},
         'Key': {'id': {'S': str(user_id)}},
         'TableName': 'User',
         'ConditionExpression': (
-            '(((((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1))) '
-            'AND (attribute_not_exists(#n2))) AND (attribute_not_exists(#n3)))'
+            '((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1)) '
+            'AND (attribute_not_exists(#n2)) AND (attribute_not_exists(#n3))'
             ' AND (attribute_not_exists(#n4)))')}
 
     def validate(item):
@@ -241,22 +273,18 @@ def test_save_atomic_new(User, engine):
 def test_save_atomic_update_condition(User, engine):
     user_id = uuid.uuid4()
     user = User(id=user_id)
-    # Manually force a tracking update so we think age is persisted
-    bloop.tracking.update_current(user, engine)
+    # Manually snapshot so we think age is persisted
+    bloop.tracking2.set_snapshot(user, engine)
 
-    user.name = "foo"
+    user.name = "new_foo"
 
-    condition = (
-        "((((((attribute_not_exists(#n2)) AND (attribute_not_exists(#n3))) AND"
-        " (#n4 = :v5)) AND (attribute_not_exists(#n6))) AND"
-        " (attribute_not_exists(#n0))) AND (#n0 = :v7))")
     expected = {
-        "ExpressionAttributeNames": {"#n4": "id", "#n2": "age", "#n3": "email",
-                                     "#n0": "name", "#n6": "joined"},
+        "ExpressionAttributeNames": {"#n2": "id", "#n0": "name"},
         "TableName": "User",
-        "ExpressionAttributeValues": {":v7": {"S": "foo"}, ":v1": {"S": "foo"},
-                                      ":v5": {"S": str(user_id)}},
-        "ConditionExpression": condition,
+        "ExpressionAttributeValues": {":v4": {"S": "expect_foo"},
+                                      ":v1": {"S": "new_foo"},
+                                      ":v3": {"S": str(user_id)}},
+        'ConditionExpression': "((#n2 = :v3) AND (#n0 = :v4))",
         "UpdateExpression": "SET #n0=:v1",
         "Key": {"id": {"S": str(user_id)}}}
     called = False
@@ -267,8 +295,20 @@ def test_save_atomic_update_condition(User, engine):
         assert item == expected
     engine.client.update_item = validate
     engine.config["atomic"] = True
-    engine.save(user, condition=User.name == "foo")
+    engine.save(user, condition=User.name == "expect_foo")
     assert called
+
+
+def test_save_nonatomic_load(User, engine):
+    """Atomic operations on objects loaded in a non-atomic context fail"""
+
+    user = User(id=uuid.uuid4())
+    # Manually sync, without snapshotting atomic state
+    bloop.tracking2.set_synced(user)
+
+    engine.config["atomic"] = True
+    with pytest.raises(RuntimeError):
+        engine.save(user)
 
 
 def test_save_multiple(User, engine):
@@ -363,8 +403,8 @@ def test_save_set_del_field(User, engine):
     engine.config["save"] = "update"
     user = User(id=uuid.uuid4(), age=4)
 
-    # Manually force a tracking update so we think age is saved
-    bloop.tracking.update_current(user, engine)
+    # Manually snapshot so we think age is persisted
+    bloop.tracking2.set_snapshot(user, engine)
 
     # Expect to see a REMOVE on age, and a SET on email
     del user.age
@@ -386,8 +426,8 @@ def test_save_update_del_field(User, engine):
     engine.config["save"] = "update"
     user = User(id=uuid.uuid4(), age=4)
 
-    # Manually force a tracking update so we think age is persisted
-    bloop.tracking.update_current(user, engine)
+    # Manually snapshot so we think age is persisted
+    bloop.tracking2.set_snapshot(user, engine)
 
     # Expect to see a REMOVE on age, and a SET on email
     del user.age
@@ -459,10 +499,9 @@ def test_delete_multiple(User, engine):
 def test_delete_atomic(User, engine):
     user_id = uuid.uuid4()
     user = User(id=user_id)
-    # Force tracking to think we loaded only the column id
-    attrs = engine._dump(User, user)
-    expected = [User.id]
-    bloop.tracking.update(user, attrs, expected)
+
+    # Manually snapshot so we think age is persisted
+    bloop.tracking2.set_snapshot(user, engine)
 
     expected = {
         'ConditionExpression': '(#n0 = :v1)',
@@ -493,11 +532,11 @@ def test_delete_atomic_new(User, engine):
         'TableName': 'User',
         'ExpressionAttributeNames': {
             '#n2': 'id', '#n0': 'age', '#n4': 'name',
-            '#n3': 'joined', '#n1': 'email'},
+            '#n3': 'j', '#n1': 'email'},
         'Key': {'id': {'S': str(user_id)}},
         'ConditionExpression': (
-            '(((((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1))) '
-            'AND (attribute_not_exists(#n2))) AND (attribute_not_exists(#n3)))'
+            '((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1)) '
+            'AND (attribute_not_exists(#n2)) AND (attribute_not_exists(#n3))'
             ' AND (attribute_not_exists(#n4)))')}
 
     def validate(item):
@@ -519,7 +558,6 @@ def test_delete_new(User, engine):
         'Key': {'id': {'S': str(user_id)}}}
 
     def validate(item):
-        print(item)
         assert item == expected
     engine.client.delete_item = validate
     engine.config["atomic"] = False
@@ -529,16 +567,15 @@ def test_delete_new(User, engine):
 def test_delete_atomic_condition(User, engine):
     user_id = uuid.uuid4()
     user = User(id=user_id, email='foo@bar.com')
-    # Force tracking to think we loaded only the columns id and email
-    attrs = engine._dump(User, user)
-    expected = [User.id, User.email]
-    bloop.tracking.update(user, attrs, expected)
+
+    # Manually snapshot so we think age is persisted
+    bloop.tracking2.set_snapshot(user, engine)
 
     expected = {
         'ExpressionAttributeNames': {
             '#n2': 'id', '#n4': 'name', '#n0': 'email'},
         'ConditionExpression':
-            '(((#n0 = :v1) AND (#n2 = :v3)) AND (#n4 = :v5))',
+            '((#n0 = :v1) AND (#n2 = :v3) AND (#n4 = :v5))',
         'TableName': 'User',
         'ExpressionAttributeValues': {
             ':v5': {'S': 'foo'}, ':v1': {'S': 'foo@bar.com'},

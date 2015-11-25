@@ -4,10 +4,12 @@ import bloop.exceptions
 import bloop.filter
 import bloop.index
 import bloop.model
-import bloop.tracking
+import bloop.tracking2
 import collections
 import collections.abc
 import declare
+
+_MISSING = object()
 DEFAULT_CONFIG = {
     "atomic": False,
     "consistent": False,
@@ -91,7 +93,7 @@ class Engine:
                     "Failed to load unknown model {}".format(model))
 
     def _update(self, obj, attrs, expected):
-        bloop.tracking.update(obj, attrs, expected)
+        """ Push values by dynamo_name into an object """
         for column in expected:
             value = attrs.get(column.dynamo_name, None)
             if value is not None:
@@ -142,13 +144,22 @@ class Engine:
                 renderer = bloop.condition.ConditionRenderer(self)
                 item_condition = bloop.condition.Condition()
                 if self.config["atomic"]:
-                    item_condition &= bloop.tracking.atomic_condition(obj)
+                    atomic_condition = bloop.tracking2.get_snapshot(obj)
+                    # Building an atomic condition at load/query is expensive
+                    # in both space and time, so non-atomic engines won't
+                    # create them.  If the condition is None, then there's no
+                    # way to construct the atomic condition.
+                    if atomic_condition is None:
+                        raise RuntimeError((
+                            "No atomic condition found for {}; was it "
+                            "loaded through an atomic engine?").format(obj))
+                    item_condition &= atomic_condition
                 if condition:
                     item_condition &= condition
                 renderer.render(item_condition, "condition")
                 item.update(renderer.rendered)
             self.client.delete_item(item)
-            bloop.tracking.clear(obj)
+            bloop.tracking2.clear_snapshot(obj)
 
     def load(self, objs, *, consistent=None):
         """
@@ -196,6 +207,10 @@ class Engine:
         for obj in set(objs):
             table_name = obj.Meta.table_name
             if table_name not in request_items:
+                # TODO: Use ProjectionExpression and ExpressionNames
+                # to specify an exact set of attributes.  This matters
+                # for models that don't load all available columns,
+                # as the extra (un-processed) data eats bandwidth.
                 request_items[table_name] = {"Keys": [],
                                              "ConsistentRead": consistent}
             key = _dump_key(self, obj)
@@ -218,7 +233,14 @@ class Engine:
                 index = (table_name,
                          tuple(_value_of(item[n]) for n in key_shape))
                 obj = objs_by_key.pop(index)
+                # Expect all columns to be populated
                 self._update(obj, item, obj.Meta.columns)
+                # Snapshotting atomic conditions is expensive.
+                # This means users won't be able to construct atomic
+                # conditions for objects that weren't loaded/queried
+                # in atomic mode.
+                if self.config["atomic"]:
+                    bloop.tracking2.set_snapshot(obj, self)
 
         # If there are still objects, they weren't found
         if objs_by_key:
@@ -253,17 +275,30 @@ class Engine:
                 renderer = bloop.condition.ConditionRenderer(self)
                 item_condition = bloop.condition.Condition()
                 if update:
-                    diff = bloop.tracking.diff_obj(obj, self)
+                    diff = bloop.tracking2.dump_update(obj)
                     renderer.update(diff)
                 if atomic:
-                    item_condition &= bloop.tracking.atomic_condition(obj)
+                    atomic_condition = bloop.tracking2.get_snapshot(obj)
+                    # Building an atomic condition at load/query is expensive
+                    # in both space and time, so non-atomic engines won't
+                    # create them.  If the condition is None, then there's no
+                    # way to construct the atomic condition.
+                    if atomic_condition is None:
+                        raise RuntimeError((
+                            "No atomic condition found for {}; was it "
+                            "loaded through an atomic engine?").format(obj))
+                    item_condition &= atomic_condition
                 if condition:
                     item_condition &= condition
                 if item_condition:
                     renderer.render(item_condition, "condition")
                 item.update(renderer.rendered)
             func(item)
-            bloop.tracking.update_current(obj, self)
+            # Don't update the atomic snapshot unless:
+            # 1. This is an atomic context (snapshotting is expensive)
+            # 2. The save above was successful
+            if atomic:
+                bloop.tracking2.set_snapshot(obj, self)
 
     def scan(self, obj):
         if isinstance(obj, bloop.index._Index):

@@ -16,41 +16,49 @@ def test_default_model_init(User):
     assert not hasattr(user, "name")
 
 
-def test_load_default_init(engine, local_bind):
+def test_load_default_init(engine, User):
     """ The default model loader uses the model's __init__ method """
     loader_calls = 0
 
-    class CustomUser(engine.model):
-        id = Column(UUID, hash_key=True)
-        admin = Column(Boolean)
-        joined = Column(DateTime)
-        email = Column(String)
-    engine.bind()
-
-    def load_user(**kwargs):
+    def load_user():
         nonlocal loader_calls
         loader_calls += 1
-        user = CustomUser()
-        for key, value in kwargs.items():
-            setattr(user, key, value)
-        return user
-    CustomUser.Meta.bloop_init = load_user
+        return User()
+    User.Meta.init = load_user
 
     user_id = uuid.uuid4()
+    now = arrow.now()
 
     user = {
         "id": {"S": str(user_id)},
-        "admin": {"BOOL": False},
+        "j": {"S": now.isoformat()},
         "extra_field": {"N": "0.125"}
     }
 
-    loaded_user = CustomUser._load(user)
+    loaded_user = User._load(user)
     assert loader_calls == 1
     assert loaded_user.id == user_id
-    assert loaded_user.admin is False
-    # Values that aren't explicitly described by the model aren't passed to
-    # the custom loader
+    assert loaded_user.joined == now
     assert not hasattr(loaded_user, "extra_field")
+
+
+def test_custom_init(engine, User):
+    """ Custom Meta.init functions are not passed any arguments """
+    init_called = False
+
+    def verify_no_args(*args, **kwargs):
+        nonlocal init_called
+        init_called = True
+        assert not args
+        assert not kwargs
+        return User()
+
+    User.Meta.init = verify_no_args
+
+    instance = engine._instance(User)
+    assert not hasattr(instance, "id")
+    assert not hasattr(instance, "email")
+    assert init_called
 
 
 def test_load_dump(User):

@@ -5,6 +5,12 @@ import declare
 _MISSING = object()
 
 
+def _update(obj, field, default):
+    """Set an object's field to default if it doesn't have a value"""
+    value = getattr(obj, field, default)
+    setattr(obj, field, value)
+
+
 class _BaseModel(object):
     """
     DO NOT SUBCLASS DIRECTLY.
@@ -32,7 +38,7 @@ class _BaseModel(object):
     @classmethod
     def _load(cls, attrs):
         """ dict (dynamo name) -> obj """
-        obj = cls.Meta.bloop_init()
+        obj = cls.Meta.init()
         # We want to expect the exact attributes that are passed,
         # since any superset will mark missing fields as expected and None
         expected = set()
@@ -107,8 +113,8 @@ def BaseModel(engine):
 
             model = super().__new__(metaclass, name, bases, attrs)
             meta = model.Meta
-            meta.write_units = getattr(meta, "write_units", 1)
-            meta.read_units = getattr(meta, "read_units", 1)
+            _update(meta, "write_units", 1)
+            _update(meta, "read_units", 1)
 
             # These are sets instead of lists, because set uses __hash__
             # while some list operations uses __eq__ which will break
@@ -173,16 +179,15 @@ def BaseModel(engine):
                     index.projection = "INCLUDE"
 
             # Entry point for model population. By default this is the
-            # model class. Custom models can specify the Meta
-            # attr `bloop_init`, which should be a function taking a
-            # **kwarg of name:value pairs corresponding to modeled columns.
-            meta.bloop_init = getattr(meta, "bloop_init", model)
+            # class's __init__ function. Custom models can specify the
+            # Meta attr `init`, which must be a function taking no
+            # arguments that returns an instance of the class
+            _update(meta, "init", model)
+            _update(meta, "table_name", model.__name__)
             meta.bloop_engine = engine
 
-            meta.table_name = getattr(meta, "table_name", model.__name__)
-
             # If the engine already has a base, register this model.
-            # Otherwise, this probably IS the engine's base model
+            # Otherwise, this IS the engine's base model
             if engine.model:
                 engine.unbound_models.add(model)
             return model

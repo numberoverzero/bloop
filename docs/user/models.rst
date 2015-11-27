@@ -53,9 +53,9 @@ you may want to only allow setting non-key attributes and let your init method
 take care of generating a unique key for the instance.  If you change the init
 signature, or want bloop to take a different path when instantiating instances
 for any reason (to differentiate user creation from engine loading, for
-example) you must set the model's ``Meta.bloop_init`` to a function that takes
-``**kwargs`` and returns an instance of the model. You can find more details on
-custom loading in the advanced section.
+example) you must set the model's ``Meta.init`` to a function with no arguments
+that returns an instance of the model. You can find more details on custom
+loading in the advanced section.
 
 .. seealso::
     :ref:`loading` to customize the entry point for model creation.
@@ -222,7 +222,7 @@ To check between two dates::
                     .filter(yesterday)
                     .all())
 
-In fact, the ``key`` function aboive is using an equality condition.
+In fact, the ``key`` function above is using an equality condition.
 
 When saving or deleting an object, you can use conditions to ensure the row's
 data hasn't changed since it was last loaded.  This keeps from racing between
@@ -367,21 +367,23 @@ something like::
 This would fail even if there were no changes, since the persisted row has a
 value for ``foo``; it simply wasn't loaded!
 
-bloop takes care of this tracking for us.  Internally, the last persisted state
-of an object is stored.  When querying an index, the projected attributes that
-are available to the index are used to differentiate which attributes were
-expected but missing, and which were not loaded.
+bloop takes care of this tracking for us.  When ``atomic`` is enabled, the last
+persisted state of an object is stored.  When querying an index, the projected
+attributes that are available to the index are used to differentiate which
+attributes were expected but missing, and which were not loaded.
 
 Finally, conditions can be used with atomic updates - this allows you to
 constrain operations on attributes that may not have been loaded.  Using the
 same model above where ``foo`` is a non-key attribute that's not loaded from a
 query::
 
-    instance = (engine.query(Model.some_index)
-                      .key(Model.range == 1)
-                      .first())
-
+    # Temporarily use atomic for queries, since storing atomic conditions
+    # on every object load is space and time intensive:
     with engine.context(atomic=True) as atomic:
+        instance = (atomic.query(Model.some_index)
+                          .key(Model.hash == 1)
+                          .first())
+
         big_foo = Model.foo >= 500
         atomic.save(instance, condition=big_foo)
 
@@ -576,7 +578,7 @@ Meta
 
 Discussed above, the ``Meta`` attribute of a model class stores info about the
 table (read and write units, the table name) as well as metadata used by bloop
-internally (like ``bloop_init``).
+internally (like ``Meta.init``).
 
 Meta exposes the following attributes:
 
@@ -584,7 +586,7 @@ Meta exposes the following attributes:
   units.  Both default to 1.
 * ``table_name`` - mentioned above, the name of the table.  Defaults to the
   class name.
-* ``bloop_init`` - covered in detail in :ref:`loading`, this is the entry point
+* ``init`` - covered in detail in :ref:`loading`, this is the entry point
   bloop uses when creating new instances of a model.  It is NOT used during
   ``bloop.load`` which updates attributes on existing instances.
 * ``colums`` - a ``set`` of ``Column`` objects that are part of the model.

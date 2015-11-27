@@ -27,9 +27,37 @@ most of the cached data used internally::
 
     engine.bind()
 
+When determining the layout for your data in DynamoDB, you should carefully
+review the `Limits`_ documentation to estimate the throughput required to load
+and save one object (or a partial object, when using indexes).  Of particular
+note are the **Item Size** and **Attribute name lengths** limits, which are
+400 KB and 255 characters, respectively.  Additionally, attribute names count
+towards the size limit and the consumed read/write units.
+
+To help save on these limits without using obscure one letter attribute names,
+model columns offer the **name** parameter, which can specify a value other
+than the model's name for reading and writing.  We can rewrite the above
+example as such::
+
+    class MyModel(engine.model):
+        class Meta:
+            table_name = 'MyCustomTableName'
+            write_units = 10
+            read_units = 5
+        id = Column(Integer, hash_key=True, name='h')
+        content = Column(Binary, name='c')
+
+Now the table will use the short names 'h' and 'c' in Dynamo, and map these
+to the model's ``id`` and ``content`` attributes.  For other cross-cutting
+columnar concerns (nullable, validation) you'll want to subclass Column and
+attach your own kwargs.
+
 .. seealso::
     * :ref:`meta` for a full list of Meta's attributes.
     * :ref:`bind` for a detailed look at what happens when models are bound.
+    * :ref:`custom-columns` for extending the Column modeling.
+
+.. _Limits: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html
 
 .. _create:
 

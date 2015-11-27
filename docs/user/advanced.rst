@@ -218,6 +218,8 @@ MultiList type won't serialize them (this is the ``min`` in the code above).
     explicit sentinel ``NULL`` would be useful.  However, this is already
     represented by python's ``None`` and in DynamoDB by a lack of value.
 
+.. _custom-columns:
+
 Custom Columns
 --------------
 

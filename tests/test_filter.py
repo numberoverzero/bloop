@@ -4,52 +4,127 @@ import pytest
 import uuid
 
 
-def test_invalid_key(engine, local_bind):
-    """
-    filter.key should only accept BeginsWith, Between, and Comparators
-    (excluding NE)
-    """
+def test_hash_only_key(engine, local_bind):
+    """ key calls for a model with no range key """
+
     class Visit(engine.model):
-        page = bloop.Column(bloop.String, hash_key=True)
-        visitor = bloop.Column(bloop.Integer, range_key=True)
-        date = bloop.Column(bloop.DateTime)
-
-        by_date = bloop.GlobalSecondaryIndex(hash_key="date")
+        hash = bloop.Column(bloop.String, hash_key=True)
+        nonkey = bloop.Column(bloop.Integer)
     engine.bind()
-
     q = engine.query(Visit)
 
-    invalid_conditions = [
-        # operator.net
-        (Visit.page != "foo"),
-        # OR
-        ((Visit.page == "foo") | (Visit.page == "bar")),
-        # NOT
-        (~(Visit.page == "foo")),
-        # AttributeNotExists
-        (Visit.page.is_(None)),
-        # AttributeExists
-        (Visit.page.is_not(None)),
-        # CONTAINS
-        (Visit.page.contains("foo")),
-        # IN
-        (Visit.page.in_(["foo", "bar"])),
-
-        # No hash key
-        (Visit.date.begins_with("foo")),
-
-        # None
-        None,
-
-        # Same column twice in AND
-        ((Visit.page.begins_with("f")) & (Visit.page == "foo")),
-        # Too many conditions
-        ((Visit.page == "a") & (Visit.page == "b") & (Visit.page == "c")),
-        # AND without hash key
-        ((Visit.visitor == 0) & (Visit.date == 1))
+    valid = [
+        # Basic equality
+        Visit.hash == "==",
+        # And with single argument
+        bloop.condition.And(Visit.hash == "And(==)")
     ]
 
-    for condition in invalid_conditions:
+    for condition in valid:
+        q.key(condition)
+
+    invalid = [
+        None,
+        bloop.condition.And(),
+
+        # Non-equality comparisons
+        Visit.hash < "<",
+        Visit.hash <= "<=",
+        Visit.hash > ">",
+        Visit.hash >= ">=",
+        Visit.hash != "!=",
+        # Non-equality in an And
+        bloop.condition.And(Visit.hash != "And(!=)"),
+
+        # Non-and groupings
+        bloop.condition.Not(Visit.hash == "Not(==)"),
+        bloop.condition.Or(Visit.hash == "Or(==)"),
+
+        # Non-comparison operators
+        Visit.hash.is_(None),
+        Visit.hash.is_not(None),
+        Visit.hash.between("between", "between"),
+        Visit.hash.in_(["in", "in"]),
+        Visit.hash.begins_with("begins_with"),
+        Visit.hash.contains("contains"),
+
+        # Path on hash
+        Visit.hash[0] == "path[0]",
+        Visit.hash["path"] == "path['path']",
+
+        # And with non key condition
+        ((Visit.hash == "and") & (Visit.nonkey == "nonkey")),
+        # And with multiple hash conditions
+        ((Visit.hash == "first") & (Visit.hash == "second")),
+        # And with only non key condition
+        (Visit.nonkey == "nonkey")
+    ]
+
+    for condition in invalid:
+        with pytest.raises(ValueError):
+            q.key(condition)
+
+
+def test_hash_range_key(engine, local_bind):
+    """key calls for a model with hash and range keys"""
+
+    class Visit(engine.model):
+        hash = bloop.Column(bloop.String, hash_key=True)
+        range = bloop.Column(bloop.Integer, range_key=True)
+        nonkey = bloop.Column(bloop.Integer)
+    engine.bind()
+    q = engine.query(Visit)
+
+    valid = [
+        # Basic equality
+        Visit.hash == "==",
+        # And with single argument
+        bloop.condition.And(Visit.hash == "And(==)"),
+        # Hash and valid range
+        ((Visit.hash == "hash") & (Visit.range == "range")),
+
+        # Valid range conditions
+        ((Visit.hash == "hash") & (Visit.range < "<")),
+        ((Visit.hash == "hash") & (Visit.range <= "<=")),
+        ((Visit.hash == "hash") & (Visit.range > ">")),
+        ((Visit.hash == "hash") & (Visit.range >= ">=")),
+        ((Visit.hash == "hash") & (Visit.range.between("range", "between"))),
+        ((Visit.hash == "hash") & (Visit.range.begins_with("begins_with"))),
+    ]
+
+    for condition in valid:
+        q.key(condition)
+
+    invalid = [
+        # Range only
+        Visit.range == "range",
+        bloop.condition.And(Visit.range == "And(range)"),
+
+        # Valid hash, invalid range
+        ((Visit.hash == "hash") & (Visit.range != "!= range")),
+        ((Visit.hash == "hash") & (~(Visit.range == "~(==range)"))),
+        ((Visit.hash == "hash") & (Visit.range.is_(None))),
+        ((Visit.hash == "hash") & (Visit.range.is_not(None))),
+        ((Visit.hash == "hash") & (Visit.range.contains("range contains"))),
+        ((Visit.hash == "hash") & (Visit.range.in_(["range", "in"]))),
+
+        # Valid hash, non key condition
+        ((Visit.hash == "hash") & (Visit.nonkey == "nonkey")),
+        ((Visit.hash == "hash") &
+         (Visit.range == "range") &
+         (Visit.nonkey == "nonkey")),
+
+        # Multiple hash conditions
+        ((Visit.hash == "hash") & (Visit.hash == "also hash")),
+
+        # Multiple range conditions
+        ((Visit.hash == "hash") &
+         (Visit.range == "range") &
+         (Visit.range == "also range")),
+        ((Visit.range == "range") & (Visit.range == "also range")),
+    ]
+
+    for condition in invalid:
         with pytest.raises(ValueError):
             q.key(condition)
 

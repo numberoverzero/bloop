@@ -17,7 +17,18 @@ def _consume(iter):
         pass
 
 
-def _validate_key_condition(condition):
+def _validate_hash_key_condition(condition):
+    # 1 Must be comparison
+    if (isinstance(condition, bloop.condition.Comparison) and
+            # 2 Must be EQ compariator
+            (condition.comparator is operator.eq) and
+            # 3 Must not have a path component
+            (not condition.path)):
+        return True
+    raise ValueError("KeyCondition must be EQ, without any document paths")
+
+
+def _validate_range_key_condition(condition):
     if isinstance(condition, (bloop.condition.BeginsWith,
                               bloop.condition.Between)):
         return True
@@ -26,6 +37,59 @@ def _validate_key_condition(condition):
         if condition.comparator is not operator.ne:
             return True
     raise ValueError("Invalid KeyCondition {}".format(condition))
+
+
+def _validate_key_condition(key_condition, hash_column, range_column):
+    # 0. Must specify at least a hash condition
+    if not key_condition:
+        raise ValueError("At least one key condition (hash) is required")
+
+    # 1. Comparison condition, single column
+    if isinstance(key_condition, bloop.condition.Comparison):
+        # 1.1 Comparison, EQ, no path
+        _validate_hash_key_condition(key_condition)
+        # 1.2 Must be a condition on hash_column
+        if key_condition.column is not hash_column:
+            raise ValueError("KeyCondition must compare against hash column")
+    # 2. AND is valid for hash, range combinations
+    elif isinstance(key_condition, bloop.condition.And):
+        key_columns = {hash_column}
+        if range_column is not None:
+            key_columns.add(range_column)
+
+        # 2.1 `and` can specify at most as many conditions as there are
+        #     key columns (1 or 2)
+        if len(key_condition.conditions) > len(key_columns):
+            msg = "Only {} key conditions allowed but {} provided".format(
+                len(key_columns), len(key_condition))
+            raise ValueError(msg)
+
+        has_hash_condition = False
+        for subcondition in key_condition.conditions:
+            if not hasattr(subcondition, "column"):
+                raise ValueError(
+                    "Condition can't be made up of And/Or/Not conditions")
+            if subcondition.column is hash_column:
+                # 2.2 No more than one condition against the hash column
+                if has_hash_condition:
+                    raise ValueError(
+                        "Must specify a condition on the hash key")
+                _validate_hash_key_condition(subcondition)
+                has_hash_condition = True
+            elif subcondition.column is range_column:
+                # 2.3 Range conditions can be <,<=,>,>=,==, Between, BeginsWith
+                _validate_range_key_condition(subcondition)
+            else:
+                # 2.4 Conditions must be against hash or range columns
+                msg = "Non-key condition {} passed as KeyCondition"
+                raise ValueError(msg.format(subcondition))
+
+        # 2.4 At least one condition against the hash column
+        if not has_hash_condition:
+            raise ValueError("Must specify a condition on the hash key")
+    # 3. Must be EQ or AND
+    else:
+        raise ValueError("KeyCondition must be EQ or AND")
 
 
 def _validate_prefetch(value):
@@ -208,41 +272,7 @@ class _Filter(object):
         hash_column = obj.hash_key
         range_column = obj.range_key
 
-        max_conditions = 1 + bool(range_column)
-
-        if not condition:
-            raise ValueError("At least one key condition (hash) is required")
-
-        # AND is allowed so long as the index we"re using allows hash + range
-        if isinstance(condition, bloop.condition.And):
-            if max_conditions < len(condition):
-                msg = ("Model or Index only allows {} condition(s) but"
-                       " an AND of {} condition(s) was supplied.").format(
-                           max_conditions, len(condition))
-                raise ValueError(msg)
-            # KeyConditions can only use the following:
-            # EQ | LE | LT | GE | GT | BEGINS_WITH | BETWEEN
-            for subcond in condition.conditions:
-                _validate_key_condition(subcond)
-
-            columns = set(subcond.column for subcond in condition.conditions)
-            # Duplicate column in AND
-            if len(columns) < len(condition):
-                raise ValueError("Cannot use a hash/range column more"
-                                 " than once when specifying KeyConditions")
-
-            if hash_column not in columns:
-                raise ValueError("Must specify a hash key")
-
-            # At this point we've got the same number of columns and
-            # conditions, and that's less than or equal to the number of
-            # allowed conditions for this model/index.
-
-        # Simply validate all other conditions
-        else:
-            _validate_key_condition(condition)
-            if condition.column is not hash_column:
-                raise ValueError("Must specify a hash key")
+        _validate_key_condition(condition, hash_column, range_column)
 
         other = self._copy()
         other._key_condition = condition

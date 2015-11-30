@@ -206,7 +206,13 @@ query
 Query a table or index::
 
     query = engine.query(Model.index)
-    query.filter(Model.column == value)
+    query = query.key(Model.hash == value)
+    query = query.filter(Model.column.contains(value))
+
+    for result in query.all():
+        ...
+
+    print(query.first())
 
 For more info on constructing and iterating queries, see :ref:`query`.
 
@@ -223,6 +229,11 @@ scan
 Scan a table or index::
 
     scan = engine.scan(Model.index)
-    scan.filter(Model.column == value)
+    scan = scan.filter(Model.column.between(low, high))
+
+    for result in scan.all():
+        ...
+
+    print(scan.first())
 
 For more info on constructing and iterating scans, see :ref:`scan`.

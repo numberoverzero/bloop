@@ -142,20 +142,21 @@ class Engine:
         return EngineView(self, **config)
 
     def delete(self, objs, *, condition=None):
-        rendering = self.config["atomic"] or condition
         for obj in _list_of(objs):
             item = {"TableName": obj.Meta.table_name,
                     "Key": _dump_key(self, obj)}
-            if rendering:
-                renderer = bloop.condition.ConditionRenderer(self)
-                item_condition = bloop.condition.Condition()
-                if self.config["atomic"]:
-                    item_condition &= bloop.tracking.get_snapshot(obj)
-                if condition:
-                    item_condition &= condition
-                renderer.render(item_condition, "condition")
-                item.update(renderer.rendered)
+            renderer = bloop.condition.ConditionRenderer(self)
+
+            item_condition = bloop.condition.Condition()
+            if self.config["atomic"]:
+                item_condition &= bloop.tracking.get_snapshot(obj)
+            if condition:
+                item_condition &= condition
+            renderer.render(item_condition, "condition")
+            item.update(renderer.rendered)
+
             self.client.delete_item(item)
+
             # Set atomic condition to expect None for all columns
             bloop.tracking.clear_snapshot(obj)
             bloop.tracking.set_synced(obj)
@@ -258,6 +259,7 @@ class Engine:
             item = {"TableName": obj.Meta.table_name,
                     "Key": _dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
+
             diff = bloop.tracking.dump_update(obj)
             renderer.update(diff)
 
@@ -266,11 +268,11 @@ class Engine:
                 item_condition &= bloop.tracking.get_snapshot(obj)
             if condition:
                 item_condition &= condition
-            if item_condition:
-                renderer.render(item_condition, "condition")
-
+            renderer.render(item_condition, "condition")
             item.update(renderer.rendered)
+
             self.client.update_item(item)
+
             # Don't update the atomic snapshot unless:
             # 1. This is an atomic context (snapshotting is expensive)
             # 2. The save above was successful

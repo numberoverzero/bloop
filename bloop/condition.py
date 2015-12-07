@@ -188,7 +188,6 @@ class And(_MultiCondition):
     def __and__(self, other):
         self.conditions.append(other)
         return self
-
     __iand__ = __and__
 
 
@@ -199,7 +198,6 @@ class Or(_MultiCondition):
     def __or__(self, other):
         self.conditions.append(other)
         return self
-
     __ior__ = __or__
 
 

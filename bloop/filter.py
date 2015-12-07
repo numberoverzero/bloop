@@ -379,18 +379,15 @@ class FilterResult(object):
 
     @property
     def first(self):
-        if self._results:
-            return self._results[0]
+        # Advance until we have some results, or we exhaust the query
+        step = iter(self)
+        while not self._results and not self.complete:
+            try:
+                next(step)
+            except StopIteration:
+                # The step above exhausted the results, nothing left
+                break
 
-        if not self.complete:
-            step = iter(self)
-            # Advance until we have some results, or we exhaust the query
-            while not self._results and not self.complete:
-                try:
-                    next(step)
-                except StopIteration:
-                    # The step above exhausted the results, nothing left
-                    break
         if not self._results:
             raise ValueError("No results found.")
         return self._results[0]

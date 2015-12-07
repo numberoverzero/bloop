@@ -383,27 +383,23 @@ def _attribute_definitions(model):
     dedupe_attrs = set()
     attrs = []
 
-    def has_key(column):
-        return column.hash_key or column.range_key
-
-    def attribute_def(column):
-        return {
+    def add_column(column):
+        if column is None:
+            return
+        if column in dedupe_attrs:
+            return
+        dedupe_attrs.add(column)
+        attrs.append({
             "AttributeType": column.typedef.backing_type,
             "AttributeName": column.dynamo_name
-        }
+        })
 
-    for column in filter(has_key, model.Meta.columns):
-        dedupe_attrs.add(column)
-        attrs.append(attribute_def(column))
-    for index in filter(has_key, model.Meta.indexes):
-        hash_column = index.hash_key
-        if hash_column and hash_column not in dedupe_attrs:
-            dedupe_attrs.add(hash_column)
-            attrs.append(attribute_def(hash_column))
-        range_column = index.range_key
-        if range_column and range_column not in dedupe_attrs:
-            dedupe_attrs.add(range_column)
-            attrs.append(attribute_def(range_column))
+    add_column(model.Meta.hash_key)
+    add_column(model.Meta.range_key)
+
+    for index in model.Meta.indexes:
+        add_column(index.hash_key)
+        add_column(index.range_key)
     return attrs
 
 

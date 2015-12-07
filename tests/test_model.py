@@ -211,15 +211,6 @@ def test_local_index_no_range_key(engine):
             by_another = LocalSecondaryIndex(range_key="another")
 
 
-def test_abstract_index(engine):
-    """ Can't use a direct Index, since it's abstract """
-    with pytest.raises(ValueError):
-        class Model(engine.model):
-            id = Column(UUID, hash_key=True)
-            another = Column(UUID)
-            by_another = bloop.index._Index(hash_key="another")
-
-
 def test_index_projections(engine):
     """ Make sure index projections are calculated to include table keys """
     Global, Local = GlobalSecondaryIndex, LocalSecondaryIndex

@@ -5,12 +5,6 @@ import declare
 _MISSING = object()
 
 
-def _update(obj, field, default):
-    """Set an object's field to default if it doesn't have a value"""
-    value = getattr(obj, field, default)
-    setattr(obj, field, value)
-
-
 class _BaseModel(object):
     """
     DO NOT SUBCLASS DIRECTLY.
@@ -90,6 +84,57 @@ class _BaseModel(object):
         return not self.__eq__(other)
 
 
+def _update(obj, field, default):
+    """Set an object's field to default if it doesn't have a value"""
+    value = getattr(obj, field, default)
+    setattr(obj, field, value)
+
+
+def _is_column(field):
+    return isinstance(field, bloop.column.Column)
+
+
+def _is_index(field):
+    return isinstance(field, bloop.index._Index)
+
+
+def _setup_columns(meta):
+    """Filter columns from fields, identify hash and range keys"""
+
+    # This is a set instead of a list, because set uses __hash__
+    # while some list operations uses __eq__ which will break
+    # with the ComparisonMixin
+    meta.columns = set(filter(_is_column, meta.fields))
+
+    meta.hash_key = None
+    meta.range_key = None
+    for column in meta.columns:
+        if column.hash_key:
+            if meta.hash_key:
+                raise ValueError("Model hash_key over-specified")
+            meta.hash_key = column
+        elif column.range_key:
+            if meta.range_key:
+                raise ValueError("Model range_key over-specified")
+            meta.range_key = column
+
+
+def _setup_indexes(meta):
+    """Filter indexes from fields, compute projection for each index"""
+    # This is a set instead of a list, because set uses __hash__
+    # while some list operations uses __eq__ which will break
+    # with the ComparisonMixin
+    meta.indexes = set(filter(_is_index, meta.fields))
+
+    # Look up the current hash key -- which is specified by
+    # model_name, not dynamo_name -- in indexed columns and relate
+    # the proper `bloop.Column` object
+    columns = declare.index(meta.columns, "model_name")
+    for index in meta.indexes:
+        index.model = meta.model
+        index._bind(columns, meta.hash_key, meta.range_key)
+
+
 def BaseModel(engine):
     """
     Although this returns a class, you should NOT call this function to create
@@ -113,70 +158,12 @@ def BaseModel(engine):
 
             model = super().__new__(metaclass, name, bases, attrs)
             meta = model.Meta
+            meta.model = model
             _update(meta, "write_units", 1)
             _update(meta, "read_units", 1)
 
-            # These are sets instead of lists, because set uses __hash__
-            # while some list operations uses __eq__ which will break
-            # with the ComparisonMixin
-            meta.columns = set(filter(
-                lambda f: isinstance(f, bloop.column.Column),
-                meta.fields))
-            meta.indexes = set(filter(
-                lambda f: isinstance(f, bloop.index._Index),
-                meta.fields))
-
-            meta.hash_key = None
-            meta.range_key = None
-            for column in meta.columns:
-                if column.hash_key:
-                    if meta.hash_key:
-                        raise ValueError("Model hash_key over-specified")
-                    meta.hash_key = column
-                elif column.range_key:
-                    if meta.range_key:
-                        raise ValueError("Model range_key over-specified")
-                    meta.range_key = column
-
-            # Look up the current hash key -- which is specified by
-            # model_name, not dynamo_name -- in indexed columns and relate
-            # the proper `bloop.Column` object
-            cols = declare.index(meta.columns, "model_name")
-            for index in meta.indexes:
-                index.model = model
-                if isinstance(index, bloop.index.GlobalSecondaryIndex):
-                    index.hash_key = cols[index.hash_key]
-                elif isinstance(index, bloop.index.LocalSecondaryIndex):
-                    if not meta.range_key:
-                        raise ValueError(
-                            "Cannot specify a LocalSecondaryIndex " +
-                            "without a table range key")
-                    index.hash_key = meta.hash_key
-                else:
-                    raise ValueError("Index must be a LocalSecondaryIndex "
-                                     "or GlobalSecondaryIndex")
-
-                if index.range_key:
-                    index.range_key = cols[index.range_key]
-
-                projected = index.projection_attributes = set()
-
-                if index.projection == "ALL":
-                    projected.update(meta.columns)
-                elif index.projection == "KEYS_ONLY":
-                    keys = (meta.hash_key, meta.range_key,
-                            index.hash_key, index.range_key)
-                    projected.update(key for key in keys if key)
-                # List of column model_names - convert to `bloop.Column`
-                # objects and merge with keys in projection_attributes
-                else:
-                    keys = (meta.hash_key, meta.range_key,
-                            index.hash_key, index.range_key)
-                    projected.update(key for key in keys if key)
-                    attrs = (cols[attr] for attr in index.projection)
-                    projected.update(attrs)
-
-                    index.projection = "INCLUDE"
+            _setup_columns(meta)
+            _setup_indexes(meta)
 
             # Entry point for model population. By default this is the
             # class's __init__ function. Custom models can specify the

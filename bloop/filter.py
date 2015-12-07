@@ -121,12 +121,18 @@ def _validate_select_mode(select):
     return select
 
 
-def _requires_exact(index, engine):
-    """True if the filter is a GSI, or an LSI and the engine is strict"""
+def _is_select_exact(index, engine):
+    """
+    Returns True if :
+    1) The filter is on a GSI, or an LSI and the engine is strict
+    2) The index projection is not ALL
+    """
     is_gsi = isinstance(index, bloop.index.GlobalSecondaryIndex)
     is_lsi = isinstance(index, bloop.index.LocalSecondaryIndex)
     strict = engine.config["strict"]
-    return is_gsi or (is_lsi and strict)
+    requires_exact = is_gsi or (is_lsi and strict)
+    is_exact = (not requires_exact) or (index.projection == "ALL")
+    return is_exact
 
 
 class _Filter(object):
@@ -287,12 +293,11 @@ class _Filter(object):
         columns must be "all", "projected", or a list of `bloop.Column` objects
         """
         select = _validate_select_mode(columns)
-        # False for non-index queries
-        requires_exact = _requires_exact(self.index, self.engine)
+        # False for non-index queries.
         # True if we need to query exactly, but the index's projection
         # doesn't support fetching all attributes.  Invalid to select all,
         # possibly valid to select specific.
-        not_exact = requires_exact and (self.index.projection != "ALL")
+        is_exact = _is_select_exact(self.index, self.engine)
 
         if select == "projected":
             if not self.index:
@@ -304,7 +309,7 @@ class _Filter(object):
             return other
 
         elif select == "all":
-            if not_exact:
+            if not is_exact:
                 raise ValueError("Cannot select 'all' attributes from a GSI"
                                  " (or an LSI in strict mode) unless the"
                                  " index's projection is 'ALL'")
@@ -315,7 +320,7 @@ class _Filter(object):
 
         # select is a list of model names, use "specific"
         else:
-            if not_exact:
+            if not is_exact:
                 missing_attrs = set(select) - self.index.projection_attributes
                 if missing_attrs:
                     msg = ("Index projection is missing the following expected"

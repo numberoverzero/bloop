@@ -229,6 +229,18 @@ Conditions can be combined and mutated with bitwise operators::
     secrets_or_empty = has_secrets | (Tweet.content.is_(None))
     secrets_and_nsa = hash_secrets & (Tweet.user == '@nsa')
 
+.. note::
+
+    Keep in mind that in Python, `comparisons have lower priority than bitwise
+    operations`_, which means that parentheses should be used when combining
+    comparisons::
+
+        # Correct AND of two conditions, one on hash and one on range
+        both = (Model.hash == 1) & (Model.range > 2)
+
+        # INCORRECT: & will bind on (1 & Model.range)
+        wrong = Model.hash == 1 & Model.range > 2
+
 All of the conditions use python objects, so datetime comparisons are easy::
 
     now = arrow.now()
@@ -334,6 +346,7 @@ Finally, you can construct conditions on `document`_ `paths`_ with the usual
     perfectly fine (and are used extensively in the model's :ref:`meta`).
 
 .. _handful of conditions: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Condition.html
+.. _comparisons have lower priority than bitwise operations: https://docs.python.org/3.6/reference/expressions.html#comparisons
 .. _document: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DataModel.html#DataModel.DataTypes.Document
 .. _paths: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.AccessingItemAttributes.html#DocumentPaths
 
@@ -381,7 +394,7 @@ operation could never populate those attributes.  For example, say the
 following only loads the ``hash`` and ``range`` attributes of the model::
 
     instance = (engine.query(Model.some_index)
-                      .key(Model.range == 1)
+                      .key((Model.hash == 0) & (Model.range == 1))
                       .first())
 
 This instance hasn't loaded the ``foo`` attribute, even though there's a value
@@ -446,7 +459,8 @@ re-usable base queries::
 
 The ``key`` method takes a condition on the hash key.  You may optionally
 include a range key condition.  Not all operators are supported for key
-conditions.  Valid conditions are::
+conditions.  An equality condition on the hash key MUST be provided.  Valid
+conditions against the range key are::
 
     ==, <=, <, >=, >, begins_with, between
 

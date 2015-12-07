@@ -98,11 +98,10 @@ def _validate_prefetch(value):
     if value != "all":
         try:
             value = int(value)
-        except ValueError:
-            raise invalid
-        else:
             if value < 0:
                 raise invalid
+        except ValueError:
+            raise invalid
     return value
 
 

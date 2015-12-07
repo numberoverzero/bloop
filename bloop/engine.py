@@ -60,10 +60,23 @@ def _dump_key(engine, obj):
     return key
 
 
-class LoadRequest:
+class _LoadManager:
+    """
+    The load operation involves a double indexing to provide O(1)
+    lookup from a table name and dictionary of attributes.
+
+    Besides the lookups to associate a blob of attributes with an
+    instance of a model, loading involves manipulating these blobs
+    into real python values, and modifying the tracking for each object.
+
+    This class exists to keep the more complex of the three pieces
+    separated, and easier to maintain.
+    """
     def __init__(self, engine):
         self.engine = engine
         self.indexed_objects = {}
+        # If there are any objects in this set after popping all the items
+        # from a response, then the remaining items were not processed.
         self.objects = set()
         self.table_keys = {}
         self.wire = {}
@@ -93,10 +106,6 @@ class LoadRequest:
         self.indexed_objects[table_name][index] = obj
         self.objects.add(obj)
 
-    def extend(self, objects):
-        for obj in objects:
-            self.add(obj)
-
     def pop(self, table_name, item):
         objects = self.indexed_objects[table_name]
         keys = self.table_keys[table_name]
@@ -104,10 +113,6 @@ class LoadRequest:
         obj = objects.get(index)
         self.objects.remove(obj)
         return obj
-
-    @property
-    def missing(self):
-        return self.objects
 
 
 class Engine:
@@ -238,20 +243,20 @@ class Engine:
         # Load multiple instances
         engine.load(hash_only, hash_and_range)
         """
-        request = LoadRequest(self)
-        request.extend(_list_of(objs))
-        results = self.client.batch_get_items(request.wire)
+        request = _LoadManager(self)
+        for obj in _list_of(objs):
+            request.add(obj)
+        response = self.client.batch_get_items(request.wire)
 
-        for table_name, items in results.items():
+        for table_name, items in response.items():
             for item in items:
                 obj = request.pop(table_name, item)
                 self._update(obj, item, obj.Meta.columns)
-
                 bloop.tracking.set_snapshot(obj, self)
                 bloop.tracking.set_synced(obj)
 
-        if request.missing:
-            raise bloop.exceptions.NotModified("load", request.missing)
+        if request.objects:
+            raise bloop.exceptions.NotModified("load", request.objects)
 
     def query(self, obj):
         if isinstance(obj, bloop.index._Index):

@@ -125,6 +125,14 @@ def _validate_select_mode(select):
     return select
 
 
+def _requires_exact(index, engine):
+    """True if the filter is a GSI, or an LSI and the engine is strict"""
+    is_gsi = isinstance(index, bloop.index.GlobalSecondaryIndex)
+    is_lsi = isinstance(index, bloop.index.LocalSecondaryIndex)
+    strict = engine.config["strict"]
+    return is_gsi or (is_lsi and strict)
+
+
 class _Filter(object):
     """Base class for Scan and Query."""
     # Scan -> "scan", Query -> "query"
@@ -283,10 +291,8 @@ class _Filter(object):
         columns must be "all", "projected", or a list of `bloop.Column` objects
         """
         select = _validate_select_mode(columns)
-        is_gsi = isinstance(self.index, bloop.index.GlobalSecondaryIndex)
-        is_lsi = isinstance(self.index, bloop.index.LocalSecondaryIndex)
-        strict = self.engine.config["strict"]
-        requires_exact = (is_gsi or (is_lsi and strict))
+        # False for non-index queries
+        requires_exact = _requires_exact(self.index, self.engine)
 
         if select == "projected":
             if not self.index:

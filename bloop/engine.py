@@ -255,9 +255,7 @@ class Engine:
         return bloop.filter.Query(engine=self, model=model, index=index)
 
     def save(self, objs, *, condition=None):
-        objs = _list_of(objs)
-        atomic = self.config["atomic"]
-        for obj in objs:
+        for obj in _list_of(objs):
             item = {"TableName": obj.Meta.table_name,
                     "Key": _dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
@@ -265,7 +263,7 @@ class Engine:
             renderer.update(diff)
 
             item_condition = bloop.condition.Condition()
-            if atomic:
+            if self.config["atomic"]:
                 item_condition &= bloop.tracking.get_snapshot(obj)
             if condition:
                 item_condition &= condition
@@ -277,7 +275,7 @@ class Engine:
             # Don't update the atomic snapshot unless:
             # 1. This is an atomic context (snapshotting is expensive)
             # 2. The save above was successful
-            if atomic:
+            if self.config["atomic"]:
                 bloop.tracking.set_snapshot(obj, self)
             bloop.tracking.set_synced(obj)
 

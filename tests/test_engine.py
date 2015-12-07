@@ -134,6 +134,22 @@ def test_load_dump_unknown(engine):
         engine._dump(NotModeled, obj)
 
 
+def test_load_missing_key(engine, User, ComplexModel):
+    """Trying to load objects with missing hash and range keys raises"""
+    user = User(age=2)
+    with pytest.raises(ValueError):
+        engine.load(user)
+
+    complex_models = [
+        ComplexModel(),
+        ComplexModel(name="no range"),
+        ComplexModel(date="no hash")
+    ]
+    for model in complex_models:
+        with pytest.raises(ValueError):
+            engine.load(model)
+
+
 def test_atomic_load(User, engine, renderer):
     """Loading objects in an atomic context caches the loaded condition"""
     engine.config["atomic"] = True

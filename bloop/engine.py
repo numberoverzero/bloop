@@ -42,11 +42,19 @@ def _dump_key(engine, obj):
     """
     meta = obj.Meta
     hash_key, range_key = meta.hash_key, meta.range_key
-    hash_value = getattr(obj, hash_key.model_name)
+    hash_value = getattr(obj, hash_key.model_name, _MISSING)
+    if hash_value is _MISSING:
+        raise ValueError(
+            "Must specify a value for the hash attribute '{}'".format(
+                hash_key.model_name))
     key = {
         hash_key.dynamo_name: engine._dump(hash_key.typedef, hash_value)}
     if range_key:
-        range_value = getattr(obj, range_key.model_name)
+        range_value = getattr(obj, range_key.model_name, _MISSING)
+        if range_value is _MISSING:
+            raise ValueError(
+                "Must specify a value for the range attribute '{}'".format(
+                    range_key.model_name))
         key[range_key.dynamo_name] = engine._dump(
             range_key.typedef, range_value)
     return key

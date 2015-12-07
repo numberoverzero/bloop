@@ -73,7 +73,8 @@ class ConditionRenderer:
     def render(self, condition, mode):
         key = EXPRESSION_KEYS[mode]
         rendered_expression = condition.render(self)
-        self.expressions[key] = rendered_expression
+        if rendered_expression:
+            self.expressions[key] = rendered_expression
 
     def projection(self, columns):
         names = map(self.name_ref, columns)
@@ -157,7 +158,7 @@ class Condition(_BaseCondition):
     __repr__ = __str__
 
     def render(self, renderer):
-        raise RuntimeError("Can't render empty condition")
+        return None
 
 
 class _MultiCondition(_BaseCondition):

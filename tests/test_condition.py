@@ -166,7 +166,7 @@ def test_in(renderer, User):
     assert renderer.rendered == expected
 
 
-def test_base_condition(User):
+def test_base_condition(renderer, User):
     """ (Condition() OP condition) is condition """
     base = bloop.condition.Condition()
     other = User.email == "foo"
@@ -176,8 +176,10 @@ def test_base_condition(User):
     assert (~base) is base
     assert len(base) == 0
 
-    with pytest.raises(RuntimeError):
-        base.render(None)
+    assert base.render(None) is None
+
+    renderer.render(base, "condition")
+    assert not renderer.rendered
 
 
 def test_render_path(renderer, User):

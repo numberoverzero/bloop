@@ -142,9 +142,8 @@ class Engine:
         return EngineView(self, **config)
 
     def delete(self, objs, *, condition=None):
-        objs = _list_of(objs)
         rendering = self.config["atomic"] or condition
-        for obj in objs:
+        for obj in _list_of(objs):
             item = {"TableName": obj.Meta.table_name,
                     "Key": _dump_key(self, obj)}
             if rendering:

@@ -105,7 +105,6 @@ Objects are loaded through an engine - either one at a time, or as a list::
 
     engine.load(account)
     engine.load([account, tweet])
-    engine.load(account, consistent=True)
 
     with engine.context(consistent=True) as consistent:
         consistent.load(account)

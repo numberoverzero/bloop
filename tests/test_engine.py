@@ -52,7 +52,8 @@ def test_load_object(User, engine):
     engine.client.batch_get_items = respond
 
     user = User(id=user_id)
-    engine.load(user, consistent=True)
+    with engine.context(consistent=True) as consistent:
+        consistent.load(user)
 
     assert user.age == 5
     assert user.name == "foo"
@@ -83,6 +84,26 @@ def test_load_objects(User, engine):
     assert user1.name == "foo"
     assert user2.age == 10
     assert user2.name == "bar"
+
+
+def test_load_duplicate_objects(User, engine):
+    """Duplicate objects are handled correctly when loading"""
+    user = User(id=uuid.uuid4())
+    expected = {"User": {"Keys": [{"id": {"S": str(user.id)}}],
+                         "ConsistentRead": False}}
+    response = {"User": [{"age": {"N": 5},
+                          "name": {"S": "foo"},
+                          "id": {"S": str(user.id)}}]}
+
+    def respond(input):
+        assert bloop.util.ordered(input) == bloop.util.ordered(expected)
+        return response
+    engine.client.batch_get_items = respond
+
+    engine.load((user, user))
+
+    assert user.age == 5
+    assert user.name == "foo"
 
 
 def test_load_missing_attrs(User, engine):
@@ -150,9 +171,8 @@ def test_load_missing_key(engine, User, ComplexModel):
             engine.load(model)
 
 
-def test_atomic_load(User, engine, renderer):
+def test_atomic_load(User, atomic, renderer):
     """Loading objects in an atomic context caches the loaded condition"""
-    engine.config["atomic"] = True
     user_id = uuid.uuid4()
     obj = User(id=user_id)
 
@@ -162,8 +182,8 @@ def test_atomic_load(User, engine, renderer):
                           "id": {"S": str(obj.id)},
                           "extra_field": {"freeform data": "not parsed"}}]}
 
-    engine.client.batch_get_items = lambda input: response
-    engine.load(obj)
+    atomic.client.batch_get_items = lambda input: response
+    atomic.load(obj)
 
     condition = ('((#n0 = :v1) AND (attribute_not_exists(#n2)) '
                  'AND (#n3 = :v4) AND (attribute_not_exists(#n5))'
@@ -177,7 +197,7 @@ def test_atomic_load(User, engine, renderer):
             '#n6': 'name', '#n3': 'id'},
         'ConditionExpression': condition}
 
-    actual_condition = bloop.tracking.get_snapshot(obj)
+    actual_condition = bloop.tracking.get_snapshot(obj, atomic)
     renderer.render(actual_condition, "condition")
     assert expected == renderer.rendered
 
@@ -265,11 +285,11 @@ def test_save_atomic_new(User, engine):
     engine.save(user)
 
 
-def test_save_atomic_update_condition(User, engine):
+def test_save_atomic_update_condition(User, atomic):
     user_id = uuid.uuid4()
     user = User(id=user_id)
     # Manually snapshot so we think age is persisted
-    bloop.tracking.set_snapshot(user, engine)
+    bloop.tracking.set_snapshot(user, atomic)
 
     user.name = "new_foo"
 
@@ -288,9 +308,8 @@ def test_save_atomic_update_condition(User, engine):
         nonlocal called
         called = True
         assert item == expected
-    engine.client.update_item = validate
-    engine.config["atomic"] = True
-    engine.save(user, condition=User.name == "expect_foo")
+    atomic.client.update_item = validate
+    atomic.save(user, condition=User.name == "expect_foo")
     assert called
 
 
@@ -393,11 +412,8 @@ def test_save_set_del_field(User, engine):
     """ UpdateItem can REMOVE fields as well as SET """
     user = User(id=uuid.uuid4(), age=4)
 
-    # Manually mark hash key, which shouldn't show up in UpdateExpression
-    bloop.tracking.mark(user, User.id)
-
-    # Manually snapshot so we think age is persisted
-    bloop.tracking.set_snapshot(user, engine)
+    for field in [User.id, User.age, User.email]:
+        bloop.tracking.mark(user, field)
 
     # Expect to see a REMOVE on age, and a SET on email
     del user.age
@@ -488,12 +504,12 @@ def test_delete_multiple(User, engine):
     assert calls == 2
 
 
-def test_delete_atomic(User, engine):
+def test_delete_atomic(User, atomic):
     user_id = uuid.uuid4()
     user = User(id=user_id)
 
     # Manually snapshot so we think age is persisted
-    bloop.tracking.set_snapshot(user, engine)
+    bloop.tracking.set_snapshot(user, atomic)
 
     expected = {
         'ConditionExpression': '(#n0 = :v1)',
@@ -507,9 +523,8 @@ def test_delete_atomic(User, engine):
         nonlocal called
         called = True
         assert item == expected
-    engine.client.delete_item = validate
-    engine.config["atomic"] = True
-    engine.delete(user)
+    atomic.client.delete_item = validate
+    atomic.delete(user)
     assert called
 
 
@@ -556,12 +571,12 @@ def test_delete_new(User, engine):
     engine.delete(user)
 
 
-def test_delete_atomic_condition(User, engine):
+def test_delete_atomic_condition(User, atomic):
     user_id = uuid.uuid4()
     user = User(id=user_id, email='foo@bar.com')
 
     # Manually snapshot so we think age is persisted
-    bloop.tracking.set_snapshot(user, engine)
+    bloop.tracking.set_snapshot(user, atomic)
 
     expected = {
         'ExpressionAttributeNames': {
@@ -579,9 +594,8 @@ def test_delete_atomic_condition(User, engine):
         nonlocal called
         called = True
         assert item == expected
-    engine.client.delete_item = validate
-    engine.config["atomic"] = True
-    engine.delete(user, condition=User.name.is_("foo"))
+    atomic.client.delete_item = validate
+    atomic.delete(user, condition=User.name.is_("foo"))
     assert called
 
 

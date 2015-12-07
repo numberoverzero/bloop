@@ -60,6 +60,56 @@ def _dump_key(engine, obj):
     return key
 
 
+class LoadRequest:
+    def __init__(self, engine):
+        self.engine = engine
+        self.indexed_objects = {}
+        self.objects = set()
+        self.table_keys = {}
+        self.wire = {}
+
+    def add(self, obj):
+        if obj in self.objects:
+            return
+        table_name = obj.Meta.table_name
+        table_exists = table_name in self.wire
+
+        if not table_exists:
+            self.wire[table_name] = {
+                "Keys": [],
+                "ConsistentRead": self.engine.config["consistent"]}
+            self.indexed_objects[table_name] = {}
+
+        # key is {dynamo_name: {dynamo_type: value}, ...} for hash/range keys
+        key = _dump_key(self.engine, obj)
+        self.wire[table_name]["Keys"].append(key)
+
+        # The table key shape gives us a way to find the object in O(1)
+        # from the attributes returned by Dynamo.
+        if not table_exists:
+            self.table_keys[table_name] = list(key.keys())
+
+        index = tuple(_value_of(k) for k in key.values())
+        self.indexed_objects[table_name][index] = obj
+        self.objects.add(obj)
+
+    def extend(self, objects):
+        for obj in objects:
+            self.add(obj)
+
+    def pop(self, table_name, item):
+        objects = self.indexed_objects[table_name]
+        keys = self.table_keys[table_name]
+        index = tuple(_value_of(item[k]) for k in keys)
+        obj = objects.get(index)
+        self.objects.remove(obj)
+        return obj
+
+    @property
+    def missing(self):
+        return self.objects
+
+
 class Engine:
     model = None
 
@@ -149,7 +199,7 @@ class Engine:
 
             item_condition = bloop.condition.Condition()
             if self.config["atomic"]:
-                item_condition &= bloop.tracking.get_snapshot(obj)
+                item_condition &= bloop.tracking.get_snapshot(obj, self)
             if condition:
                 item_condition &= condition
             renderer.render(item_condition, "condition")
@@ -157,11 +207,10 @@ class Engine:
 
             self.client.delete_item(item)
 
-            # Set atomic condition to expect None for all columns
-            bloop.tracking.clear_snapshot(obj)
+            bloop.tracking.clear_snapshot(obj, self)
             bloop.tracking.set_synced(obj)
 
-    def load(self, objs, *, consistent=None):
+    def load(self, objs):
         """
         Populate objects from dynamodb, optionally using consistent reads.
 
@@ -183,69 +232,26 @@ class Engine:
         hash_and_range = HashAndRange(user_id=101, game_title="Starship X")
 
         # Load only one instance, with consistent reads
-        engine.load(hash_only, consistent=True)
+        with engine.context(consistent=True) as e:
+            e.load(hash_only)
 
         # Load multiple instances
         engine.load(hash_only, hash_and_range)
         """
-        if consistent is None:
-            consistent = self.config["consistent"]
-
-        objs = _list_of(objs)
-        # The RequestItems dictionary of table:Key(list) that will be
-        # passed to client
-        request_items = {}
-        # table_name:dynamodb_name(list) of table keys (hash and opt range)
-        # that is used to pull the correct attributes from result items
-        # when mapping fields back to the input models
-        table_key_shapes = {}
-        # Index objects by the (table_name, _dump_key) tuple that
-        # can be used to find their attributes in the results map
-        objs_by_key = {}
-
-        # Use set here to properly de-dupe list (don't load same obj twice)
-        for obj in set(objs):
-            table_name = obj.Meta.table_name
-            if table_name not in request_items:
-                # TODO: Use ProjectionExpression and ExpressionNames
-                # to specify an exact set of attributes.  This matters
-                # for models that don't load all available columns,
-                # as the extra (un-processed) data eats bandwidth.
-                request_items[table_name] = {"Keys": [],
-                                             "ConsistentRead": consistent}
-            key = _dump_key(self, obj)
-            request_items[table_name]["Keys"].append(key)
-            # Make sure we can find the key shape for this table and index
-            # the object by its table name and key values for quickly loading
-            # from results
-            key_shape = table_key_shapes[table_name] = list(key)
-            index = (table_name,
-                     tuple(_value_of(key[n]) for n in key_shape))
-            objs_by_key[index] = obj
-
-        results = self.client.batch_get_items(request_items)
+        request = LoadRequest(self)
+        request.extend(_list_of(objs))
+        results = self.client.batch_get_items(request.wire)
 
         for table_name, items in results.items():
-            # The attributes that make up the key
-            key_shape = table_key_shapes[table_name]
             for item in items:
-                # Find the instance by key in the index above O(1)
-                index = (table_name,
-                         tuple(_value_of(item[n]) for n in key_shape))
-                obj = objs_by_key.pop(index)
-                # Expect all columns to be populated
+                obj = request.pop(table_name, item)
                 self._update(obj, item, obj.Meta.columns)
-                # Snapshotting atomic conditions is expensive.
-                # This means users won't be able to construct atomic
-                # conditions for objects that weren't loaded/queried
-                # in atomic mode.
-                if self.config["atomic"]:
-                    bloop.tracking.set_snapshot(obj, self)
+
+                bloop.tracking.set_snapshot(obj, self)
                 bloop.tracking.set_synced(obj)
 
-        # If there are still objects, they weren't found
-        if objs_by_key:
-            raise bloop.exceptions.NotModified("load", objs_by_key.values())
+        if request.missing:
+            raise bloop.exceptions.NotModified("load", request.missing)
 
     def query(self, obj):
         if isinstance(obj, bloop.index._Index):
@@ -265,7 +271,7 @@ class Engine:
 
             item_condition = bloop.condition.Condition()
             if self.config["atomic"]:
-                item_condition &= bloop.tracking.get_snapshot(obj)
+                item_condition &= bloop.tracking.get_snapshot(obj, self)
             if condition:
                 item_condition &= condition
             renderer.render(item_condition, "condition")
@@ -273,11 +279,7 @@ class Engine:
 
             self.client.update_item(item)
 
-            # Don't update the atomic snapshot unless:
-            # 1. This is an atomic context (snapshotting is expensive)
-            # 2. The save above was successful
-            if self.config["atomic"]:
-                bloop.tracking.set_snapshot(obj, self)
+            bloop.tracking.set_snapshot(obj, self)
             bloop.tracking.set_synced(obj)
 
     def scan(self, obj):

@@ -457,8 +457,7 @@ class FilterResult(object):
             # Building an atomic condition is expensive
             # in both space and time, so non-atomic engines shouldn't
             # persist the state.
-            if self.engine.config["atomic"]:
-                bloop.tracking.set_snapshot(obj, self.engine)
+            bloop.tracking.set_snapshot(obj, self.engine)
             bloop.tracking.set_synced(obj)
 
             self._results.append(obj)

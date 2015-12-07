@@ -141,7 +141,10 @@ load
 
 Load an object or set of objects, optionally using ConsistentReads::
 
-    engine.load(objs, *, consistent=False)
+    engine.load(objs)
+
+    with engine.context(consistent=True) as consistent:
+        consistent.load(objs)
 
 Load raises ``NotModified`` if any objects fail to load.  For more info on
 loading objects, see :ref:`load`.

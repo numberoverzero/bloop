@@ -30,6 +30,12 @@ def engine(session):
 
 
 @pytest.fixture
+def atomic(engine):
+    with engine.context(atomic=True) as atomic:
+        return atomic
+
+
+@pytest.fixture
 def renderer(engine):
     return bloop.condition.ConditionRenderer(engine)
 

@@ -2,6 +2,7 @@ import bloop.column
 import bloop.condition
 import bloop.index
 import bloop.tracking
+import bloop.util
 import operator
 
 SELECT_MODES = {
@@ -108,20 +109,16 @@ def _validate_prefetch(value):
 def _validate_select_mode(select):
     invalid = ValueError("Must specify 'all', 'projected', or"
                          " a list of column objects to select")
+    if not select:
+            raise invalid
     if isinstance(select, str):
         select = select.lower()
         if select not in ["all", "projected"]:
             raise invalid
     else:
-        try:
-            select = list(select)
-        except TypeError:
+        select = list(select)
+        if not bloop.util.areinstance(select, bloop.column.Column):
             raise invalid
-        if not select:
-            raise invalid
-        for column in select:
-            if not isinstance(column, bloop.column.Column):
-                raise invalid
     return select
 
 

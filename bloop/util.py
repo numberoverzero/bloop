@@ -10,3 +10,10 @@ def ordered(obj):
         return sorted(ordered(x) for x in obj)
     else:
         return obj
+
+
+def areinstance(lst, types):
+    for obj in lst:
+        if not isinstance(obj, types):
+            return False
+    return True

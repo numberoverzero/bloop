@@ -57,6 +57,7 @@ Query or scan by column values::
     user/types
     user/advanced
     dev/contributing
+    dev/internals
 
 .. _tricky code: https://gist.github.com/numberoverzero/f0633e71a6b0f3f6132e
 .. _simpler code: https://gist.github.com/numberoverzero/94c939b4106e88b13e83

@@ -293,6 +293,10 @@ class _Filter(object):
         select = _validate_select_mode(columns)
         # False for non-index queries
         requires_exact = _requires_exact(self.index, self.engine)
+        # True if we need to query exactly, but the index's projection
+        # doesn't support fetching all attributes.  Invalid to select all,
+        # possibly valid to select specific.
+        not_exact = requires_exact and (self.index.projection != "ALL")
 
         if select == "projected":
             if not self.index:
@@ -304,7 +308,7 @@ class _Filter(object):
             return other
 
         elif select == "all":
-            if requires_exact and self.index.projection != "ALL":
+            if not_exact:
                 raise ValueError("Cannot select 'all' attributes from a GSI"
                                  " (or an LSI in strict mode) unless the"
                                  " index's projection is 'ALL'")
@@ -315,22 +319,16 @@ class _Filter(object):
 
         # select is a list of model names, use "specific"
         else:
-            # Combine before validation, since the total set may no longer
-            # be valid for the index.
-            other = self._copy()
-            other._select = "specific"
-            other._select_columns = select
-
-            if requires_exact and self.index.projection != "ALL":
-                projected = self.index.projection_attributes
-                missing_attrs = set(other._select_columns) - projected
-
+            if not_exact:
+                missing_attrs = set(select) - self.index.projection_attributes
                 if missing_attrs:
                     msg = ("Index projection is missing the following expected"
                            " attributes, and is either a GSI or an LSI and"
-                           " strict mode is enabled: {}").format(
-                        [attr.model_name for attr in missing_attrs])
+                           " strict mode is enabled: {}").format(missing_attrs)
                     raise ValueError(msg)
+            other = self._copy()
+            other._select = "specific"
+            other._select_columns = select
             return other
 
     def __iter__(self):

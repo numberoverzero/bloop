@@ -80,10 +80,10 @@ Query or scan by column values::
     email = 'foo@bar.com'
     yesterday = arrow.now().replace(days=-1)
 
-    acount = engine.query(Account.by_email)\
+    account = engine.query(Account.by_email)\
                    .key(Account.email == email).first()
     tweets = engine.query(Tweet)\
-                   .key(Tweet.acount == acount.id)
+                   .key(Tweet.account == account.id)
 
     for tweet in tweets.filter(Tweet.date >= yesterday):
         print(tweet.content)

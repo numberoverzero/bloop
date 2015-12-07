@@ -415,9 +415,9 @@ class FilterResult(object):
             return iter(self.results)
         # Lazy load, prefetching as necessary
         else:
-            return self.__prefetch_iter__()
+            return self._prefetch_iter()
 
-    def __prefetch_iter__(self):
+    def _prefetch_iter(self):
         """
         Separate function because the `yield` statement would turn __iter__
         into a generator when we want to return existing iterators in some

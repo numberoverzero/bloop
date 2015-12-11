@@ -30,7 +30,7 @@ class _BaseModel(object):
                 setattr(self, column.model_name, value)
 
     @classmethod
-    def _load(cls, attrs):
+    def _load(cls, attrs, *, context=None, **kwargs):
         """ dict (dynamo name) -> obj """
         obj = cls.Meta.init()
         # We want to expect the exact attributes that are passed,
@@ -43,7 +43,7 @@ class _BaseModel(object):
         return obj
 
     @classmethod
-    def _dump(cls, obj):
+    def _dump(cls, obj, *, context=None, **kwargs):
         """ obj -> dict """
         attrs = {}
         engine = cls.Meta.bloop_engine.type_engine

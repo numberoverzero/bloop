@@ -59,14 +59,14 @@ you'll use a backing integer, and then a string::
     class ColorType(Integer):
         python_type = Color
 
-        def dynamo_load(self, value):
+        def dynamo_load(self, value, *, context=None, **kwargs):
             # Load the value through the Integer type first
-            value = super().dynamo_load(value)
+            value = super().dynamo_load(value, context=context, **kwargs)
             return Color(value)
 
-        def dynamo_dump(self, value):
+        def dynamo_dump(self, value, *, context=None, **kwargs):
             # Dump the value through the Integer type first
-            return super().dynamo_dump(value.value)
+            return super().dynamo_dump(value.value, context=context, **kwargs)
 
     from bloop import Engine, Column
     engine = Engine()
@@ -94,15 +94,15 @@ Here's the same mapping, but backed by the enum name instead of the integer::
     class ColorType(String):
         python_type = Color
 
-        def dynamo_load(self, value):
+        def dynamo_load(self, value, *, context=None, **kwargs):
             # Load the value through the String type first
-            value = super().dynamo_load(value)
+            value = super().dynamo_load(value, context=context, **kwargs)
             return Color[value]
 
-        def dynamo_dump(self, value):
+        def dynamo_dump(self, value, *, context=None, **kwargs):
             value = value.name
             # Dump the resulting value through the Integer type
-            return super().dynamo_dump(value)
+            return super().dynamo_dump(value, context=context, **kwargs)
 
 Now you'd see::
 
@@ -128,10 +128,12 @@ passing the enum class in the \_\_init\_\_ method::
         def __init__(self, enum):
             super().__init__()
             self.python_type = enum
-        def dynamo_load(self, value):
-            return Color[super().dynamo_load(value)]
-        def dynamo_dump(self, value):
-            return super.dynamo_dump(value.name)
+
+        def dynamo_load(self, value, *, context=None, **kwargs):
+            return Color[super().dynamo_load(value, context=context, **kwargs)]
+
+        def dynamo_dump(self, value, *, context=None, **kwargs):
+            return super.dynamo_dump(value.name, context=context, **kwargs)
 
 And its use::
 
@@ -149,17 +151,18 @@ store arbitrary types, instead of the single-typed list that already exists::
             self.types = types
             super().__init__()
 
-        def dynamo_load(self, values):
+        def dynamo_load(self, values, *, context=None, **kwargs):
             # Possible to load a list with less
             # values than defined slots
             length = min(len(self.types), len(values))
 
             loaded_values = [None] * len(self.types)
             for i in range(length):
-                loaded_values.append(self.types[i]._load(values[i]))
+                loaded_values.append(
+                    self.types[i]._load(values[i], context=context, **kwargs))
             return loaded_values
 
-        def dynamo_dump(self, values):
+        def dynamo_dump(self, values, *, context=None, **kwargs):
             # Possible to dump a list with less
             # values than defined slots
             length = min(len(self.types), len(values))
@@ -171,7 +174,8 @@ store arbitrary types, instead of the single-typed list that already exists::
                 # MUST NOT be sent to DynamoDB.  They represent
                 # a lack of value, and MUST be omitted.
                 if value is not None:
-                    value = self.types[i]._dump(value)
+                    value = self.types[i]._dump(
+                        value, context=context, **kwargs)
                 if value is not None:
                     dumped_values.append(value)
             return dumped_values

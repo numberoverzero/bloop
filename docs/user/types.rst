@@ -32,10 +32,10 @@ Before diving into the available types, here's the structure of the base
         python_type = str
         backing_type = "S"
 
-        def dynamo_load(self, value):
+        def dynamo_load(self, value, *, context=None, **kwargs):
             return value
 
-        def dynamo_dump(self, value):
+        def dynamo_dump(self, value, *, context=None, **kwargs):
             return value
 
 String
@@ -61,10 +61,10 @@ a Binary format to save space.
     class UUID(String):
         python_type = uuid.UUID
 
-        def dynamo_load(self, value):
+        def dynamo_load(self, value, *, context=None, **kwargs):
             return uuid.UUID(value)
 
-        def dynamo_dump(self, value):
+        def dynamo_dump(self, value, *, context=None, **kwargs):
             return str(value)
 
 DateTime
@@ -91,13 +91,15 @@ specified, they will be loaded in UTC.
             self.timezone = timezone or DateTime.default_timezone
             super().__init__()
 
-        def dynamo_load(self, value):
-            iso8601_string = super().dynamo_load(value)
+        def dynamo_load(self, value, *, context=None, **kwargs):
+            iso8601_string = super().dynamo_load(
+                value, context=context, **kwargs)
             return arrow.get(iso8601_string).to(self.timezone)
 
-        def dynamo_dump(self, value):
+        def dynamo_dump(self, value, *, context=None, **kwargs):
             iso8601_string = value.to("utc").isoformat()
-            return super().dynamo_dump(iso8601_string)
+            return super().dynamo_dump(
+                iso8601_string, context=context, **kwargs)
 
 Float
 -----
@@ -128,10 +130,10 @@ should always use a ``decimal.Decimal`` object::
         python_type = numbers.Number
         backing_type = NUMBER
 
-        def dynamo_load(self, value):
+        def dynamo_load(self, value, *, context=None, **kwargs):
             return DYNAMODB_CONTEXT.create_decimal(value)
 
-        def dynamo_dump(self, value):
+        def dynamo_dump(self, value, *, context=None, **kwargs):
             n = str(DYNAMODB_CONTEXT.create_decimal(value))
             if any(filter(lambda x: x in n, ("Infinity", "NaN"))):
                 raise TypeError("Infinity and NaN not supported")
@@ -145,13 +147,13 @@ Based off of Float, this numeric type will truncate according to ``int``::
     class Integer(Float):
         python_type = int
 
-        def dynamo_load(self, value):
-            number = super().dynamo_load(value)
+        def dynamo_load(self, value, *, context=None, **kwargs):
+            number = super().dynamo_load(value, context=context, **kwargs)
             return int(number)
 
-        def dynamo_dump(self, value):
+        def dynamo_dump(self, value, *, context=None, **kwargs):
             value = int(value)
-            return super().dynamo_dump(value)
+            return super().dynamo_dump(value, context=context, **kwargs)
 
 Binary
 ------
@@ -163,10 +165,10 @@ as a base64 encoded string::
         python_type = bytes
         backing_type = BINARY
 
-        def dynamo_load(self, value):
+        def dynamo_load(self, value, *, context=None, **kwargs):
             return base64.b64decode(value)
 
-        def dynamo_dump(self, value):
+        def dynamo_dump(self, value, *, context=None, **kwargs):
             return base64.b64encode(value).decode("utf-8")
 
 Sets
@@ -193,11 +195,13 @@ is entirely delegated to the instance's typedef::
         def __init__(self, typedef):
             ...
 
-        def dynamo_load(self, value):
-            return set(self.typedef.dynamo_load(v) for v in value)
+        def dynamo_load(self, value, *, context=None, **kwargs):
+            load = self.typedef.dynamo_load
+            return set(load(v, context=context, **kwargs) for v in value)
 
-        def dynamo_dump(self, value):
-            return [self.typedef.dynamo_dump(v) for v in sorted(value)]
+        def dynamo_dump(self, value, *, context=None, **kwargs):
+            dump = self.typedef.dynamo_dump
+            return [dump(v, context=context, **kwargs) for v in sorted(value)]
 
 Boolean
 -------
@@ -209,10 +213,10 @@ False::
         python_type = bool
         backing_type = BOOLEAN
 
-        def dynamo_load(self, value):
+        def dynamo_load(self, value, *, context=None, **kwargs):
             return bool(value)
 
-        def dynamo_dump(self, value):
+        def dynamo_dump(self, value, *, context=None, **kwargs):
             return bool(value)
 
 Documents

@@ -130,7 +130,8 @@ passing the enum class in the \_\_init\_\_ method::
             self.python_type = enum
 
         def dynamo_load(self, value, *, context=None, **kwargs):
-            return Color[super().dynamo_load(value, context=context, **kwargs)]
+            value = super().dynamo_load(value, context=context, **kwargs)
+            return Color[value]
 
         def dynamo_dump(self, value, *, context=None, **kwargs):
             return super.dynamo_dump(value.name, context=context, **kwargs)

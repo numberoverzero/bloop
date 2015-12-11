@@ -120,7 +120,7 @@ It is most often valuable when debugging behavior, as a loggable property::
     # Although the repr of a column already includes this
     print(some_column.typedef)
 
-Finally, note that there's nothing specific the the ``Color`` enum in the new
+Finally, note that there's nothing specific to the ``Color`` enum in the new
 type's load or dump functions.  One could in fact create a general Enum by
 passing the enum class in the \_\_init\_\_ method::
 

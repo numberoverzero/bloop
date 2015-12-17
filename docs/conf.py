@@ -46,7 +46,7 @@ html_theme_options = {
     'analytics_id': 'UA-65843067-1'
 }
 html_theme_path = [alabaster.get_path()]
-html_static_path = ['_static']
+html_static_path = []
 html_sidebars = {
     '**': [
         'about.html',

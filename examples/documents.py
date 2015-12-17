@@ -37,8 +37,8 @@ engine.bind()
 # Usage
 # ================================================
 
-item = Item(id=uuid.uuid4(), data={})
-item.data.update({
+item = Item(id=uuid.uuid4())
+item.data = {
     'Name': 'item-name',
     'Rating': decimal.Decimal(str(random.random())),
     'Updated': arrow.now(),
@@ -47,7 +47,7 @@ item.data.update({
         'Body': 'item-body',
     },
     'Sellers': {}
-})
+}
 
 for i in range(4):
     seller_id = uuid.uuid4()

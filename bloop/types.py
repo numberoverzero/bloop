@@ -237,6 +237,35 @@ class Map(Type):
         return obj
 
 
+class TypedMap(Type):
+    python_type = collections.abc.Mapping
+    backing_type = MAP
+
+    def __init__(self, typedef):
+        self.typedef = type_instance(typedef)
+        super().__init__()
+
+    def __getitem__(self, key):
+        """Overload allows easy nested access to types"""
+        return self.typedef
+
+    def _register(self, engine):
+        """Register all types for the map"""
+        engine.register(self.typedef)
+
+    def dynamo_load(self, values, *, context=None, **kwargs):
+        load = self.typedef._load
+        return {
+            k: load(v, context=context, **kwargs) for k, v in values.items()
+        }
+
+    def dynamo_dump(self, values, *, context=None, **kwargs):
+        dump = self.typedef._dump
+        return {
+            k: dump(v, context=context, **kwargs) for k, v in values.items()
+        }
+
+
 class List(Type):
     python_type = collections.abc.Iterable
     backing_type = LIST

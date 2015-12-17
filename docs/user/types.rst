@@ -229,8 +229,10 @@ For instance, ``{"S": "acd67186-8faa-48b2-9300-7f12bc969e76"}`` COULD represent
 a UUID or a String that happens to be a valid UUID.  Without storing some type
 metadata alongside the string, it's impossible to tell the difference.
 
+Bloop provides two document types: ``Map`` and ``TypedMap``.
+
 Instead of storing additional type information (either in another column,
-table, or concatenation with the data) bloop requires you to explicitly model
+table, or concatenation with the data) ``Map`` requires you to explicitly model
 your document types.  This means that for any key you expect to read from a
 Map, you must have specified the type that loads it::
 
@@ -252,6 +254,28 @@ Map, you must have specified the type that loads it::
         id = Column(Integer, hash_key=True)
         data = Column(Product)
     engine.bind()
+
+Omitted keys will not be loaded from, or saved to, Dynamo.  In the above
+example, ``item.data['other']`` will not be persisted because there is no
+type provided for the key ``other``.
+
+TypedMaps, however, allow arbitrary keys for a single type definition.  This
+is useful when you know that all values conform to a single shape, but the key
+space is unbounded::
+
+    InstanceStatus = TypedMap(String)
+
+    class Cluster(engine.model):
+        id = Column(Integer, hash_key=True)
+        statuses = Column(InstanceStatus)
+    engine.bind()
+
+Now we can store an arbitrary (up to Dynamo's limits) set of keys::
+
+    cluster = Cluster(0)
+    cluster.statuses = {'instance1': 'Healthy', 'instance2': 'Rebooting'}
+    engine.load(cluster)
+    print(cluster.statuses['instanceN'])
 
 Similarly for Map, the values in a List must be tied to a type.  All values in
 the list must be of the chosen type.  While this doesn't leverage the full

@@ -239,3 +239,21 @@ def test_map_load(document_type):
     }
     loaded = document_type.dynamo_load(dumped)
     assert loaded == expected
+
+
+def test_typedmap():
+    """ TypedMap handles arbitary keys and values """
+    typedef = types.TypedMap(types.DateTime)
+
+    now = arrow.now().to('utc')
+    later = now.replace(seconds=30)
+    loaded = {
+        'now': now,
+        'later': later
+    }
+    dumped = {
+        'now': {'S': now.isoformat()},
+        'later': {'S': later.isoformat()}
+    }
+    assert typedef.dynamo_dump(loaded) == dumped
+    assert typedef.dynamo_load(dumped) == loaded

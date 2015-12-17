@@ -240,7 +240,7 @@ Map, you must have specified the type that loads it::
         'Name': String,
         'Rating': Float,
         'Updated': DateTime('US/Pacific'),
-        Description: Map(**{
+        'Description': Map(**{
             'Title': String,
             'Body': String,
             'Specifications': Map(**{

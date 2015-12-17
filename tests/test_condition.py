@@ -1,6 +1,7 @@
 import bloop
 import bloop.condition
 import pytest
+import uuid
 
 
 def test_duplicate_name_refs(renderer, User):
@@ -209,6 +210,26 @@ def test_path_comparitor(renderer, Document):
         'ExpressionAttributeNames': {
             '#n0': 'data', '#n3': 'Description',
             '#n5': 'Stock', '#n1': 'Rating', '#n4': 'Body'}}
+
+    renderer.render(condition, "condition")
+    assert renderer.rendered == expected
+
+
+def test_typedmap_path_comparitor(renderer, engine, local_bind):
+    """ TypedMap should defer to the value typedef for conditions """
+    class Model(engine.model):
+        id = bloop.Column(bloop.Integer, hash_key=True)
+        data = bloop.Column(bloop.TypedMap(bloop.UUID))
+    engine.bind()
+
+    uid = uuid.uuid4()
+    condition = Model.data['foo'].is_(uid)
+
+    expected = {
+        'ConditionExpression': '(#n0.#n1 = :v2)',
+        'ExpressionAttributeValues': {':v2': {'S': str(uid)}},
+        'ExpressionAttributeNames': {'#n0': 'data', '#n1': 'foo'}
+    }
 
     renderer.render(condition, "condition")
     assert renderer.rendered == expected

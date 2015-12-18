@@ -137,8 +137,11 @@ def test_meta_indexes_columns(User):
 
 def test_meta_keys(engine):
     """ Various combinations of hash and range keys (some impossible) """
-    hash_column = lambda: Column(UUID, hash_key=True)
-    range_column = lambda: Column(UUID, range_key=True)
+    def hash_column():
+        return Column(UUID, hash_key=True)
+
+    def range_column():
+        return Column(UUID, range_key=True)
 
     class HashOnly(engine.model):
         h = hash_column()

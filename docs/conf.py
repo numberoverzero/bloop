@@ -1,5 +1,6 @@
 import sys
 import alabaster
+import pkg_resources
 
 extensions = [
     'alabaster',
@@ -17,7 +18,7 @@ project = 'bloop'
 copyright = '2015, Joe Cross'
 author = 'Joe Cross'
 
-import pkg_resources
+
 try:
     release = pkg_resources.get_distribution('bloop').version
 except pkg_resources.DistributionNotFound:

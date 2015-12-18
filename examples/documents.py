@@ -3,8 +3,8 @@ import boto3
 import decimal
 import random
 import uuid
-from bloop import (Engine, Column, DateTime, UUID,
-                   String, Map, TypedMap, Float)
+from bloop import (Engine, Column, DateTime, Integer,
+                   UUID, String, Map, TypedMap, Float)
 
 
 # ================================================
@@ -23,7 +23,7 @@ Product = Map(**{
         'Title': String,
         'Body': String
     }),
-    'Sellers': TypedMap(UUID)
+    'Sellers': TypedMap(Integer)
 })
 
 
@@ -50,8 +50,7 @@ item.data = {
 }
 
 for i in range(4):
-    seller_id = uuid.uuid4()
     seller_name = 'seller-{}'.format(i)
-    item.data['Sellers'][seller_name] = seller_id
+    item.data['Sellers'][seller_name] = random.randint(0, 100)
 
 engine.save(item)

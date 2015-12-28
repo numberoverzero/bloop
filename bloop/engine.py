@@ -278,7 +278,7 @@ class Engine:
                     "Key": _dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
 
-            diff = bloop.tracking.dump_update(obj)
+            diff = bloop.tracking.get_update(obj)
             renderer.update(diff)
 
             item_condition = bloop.condition.Condition()

@@ -5,6 +5,18 @@ _tracking = bloop.util.WeakDefaultDictionary(
     lambda: {"marked": set(), "snapshot": None, "synced": False})
 
 
+def clear(obj):
+    """Store a snapshot of an entirely empty object.
+
+    Usually called after deleting an object.
+    """
+    _tracking[obj]["synced"] = True
+    snapshot = bloop.condition.Condition()
+    for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
+        snapshot &= column.is_(None)
+    _tracking[obj]["snapshot"] = snapshot
+
+
 def mark(obj, column):
     """
     Mark a column for a given object as being modified in any way.
@@ -12,36 +24,6 @@ def mark(obj, column):
     future UpdateItem calls that include the object.
     """
     _tracking[obj]["marked"].add(column)
-
-
-def dump_update(obj):
-    """Creates a dict of changes to make for a given object.
-
-    Returns:
-        dict: A dict with two keys "SET" and "REMOVE".
-
-        The dict has the following format::
-
-            {
-                "SET": [(Column<Foo>, obj.Foo), (Column<Bar>, obj.Bar), ...],
-                "REMOVE": [Column<Baz>, ...]
-            }
-
-    """
-    diff = collections.defaultdict(list)
-    marked = _tracking[obj]["marked"]
-    key = set((obj.Meta.hash_key, obj.Meta.range_key))
-    for column in marked:
-        if column in key:
-            continue
-        value = getattr(obj, column.model_name, None)
-        if value is not None:
-            diff["SET"].append((column, value))
-        # None (or missing, an implicit None) expects the
-        # value to be empty (missing) in Dynamo.
-        else:
-            diff["REMOVE"].append(column)
-    return diff
 
 
 def sync(obj, engine):
@@ -79,13 +61,30 @@ def get_snapshot(obj):
     return _tracking[obj]["snapshot"]
 
 
-def clear(obj):
-    """Store a snapshot of an entirely empty object.
+def get_update(obj):
+    """Creates a dict of changes to make for a given object.
 
-    Usually called after deleting an object.
+    Returns:
+        dict: A dict with two keys "SET" and "REMOVE".
+
+        The dict has the following format::
+
+            {
+                "SET": [(Column<Foo>, obj.Foo), (Column<Bar>, obj.Bar), ...],
+                "REMOVE": [Column<Baz>, ...]
+            }
+
     """
-    _tracking[obj]["synced"] = True
-    snapshot = bloop.condition.Condition()
-    for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
-        snapshot &= column.is_(None)
-    _tracking[obj]["snapshot"] = snapshot
+    diff = collections.defaultdict(list)
+    key = set((obj.Meta.hash_key, obj.Meta.range_key))
+    for column in _tracking[obj]["marked"]:
+        if column in key:
+            continue
+        value = getattr(obj, column.model_name, None)
+        if value is not None:
+            diff["SET"].append((column, value))
+        # None (or missing, an implicit None) expects the
+        # value to be empty (missing) in Dynamo.
+        else:
+            diff["REMOVE"].append(column)
+    return diff

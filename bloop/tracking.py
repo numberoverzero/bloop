@@ -1,19 +1,8 @@
 import bloop.condition
+import bloop.util
 import collections
-_ALL = object()
-_TRACKING_ATTR_NAME = "__tracking"
-
-
-def _tracking(obj):
-    """
-    Returns the set used to track changes for a given object.
-    If the obj does not have a tracking set, creates and returns one.
-    """
-    tracking = getattr(obj, _TRACKING_ATTR_NAME, None)
-    if tracking is None:
-        tracking = {"marked": set(), "snapshot": None, "synced": False}
-        setattr(obj, _TRACKING_ATTR_NAME, tracking)
-    return tracking
+_tracking = bloop.util.WeakDefaultDictionary(
+    lambda: {"marked": set(), "snapshot": None, "synced": False})
 
 
 def mark(obj, column):
@@ -22,7 +11,7 @@ def mark(obj, column):
     Any marked columns will be pushed (possibly as DELETES) in
     future UpdateItem calls that include the object.
     """
-    _tracking(obj)["marked"].add(column)
+    _tracking[obj]["marked"].add(column)
 
 
 def dump_update(obj):
@@ -40,7 +29,7 @@ def dump_update(obj):
 
     """
     diff = collections.defaultdict(list)
-    marked = _tracking(obj)["marked"]
+    marked = _tracking[obj]["marked"]
     hash_key, range_key = obj.Meta.hash_key, obj.Meta.range_key
     for column in marked:
         # The next two lines have pragmas even though there are tests to
@@ -65,7 +54,7 @@ def dump_update(obj):
 
 def set_synced(obj):
     """Mark the object as having been persisted at least once."""
-    _tracking(obj)["synced"] = True
+    _tracking[obj]["synced"] = True
 
 
 def set_snapshot(obj, engine):
@@ -77,7 +66,7 @@ def set_snapshot(obj, engine):
     if not engine.config["atomic"]:
         return
     snapshot = bloop.condition.Condition()
-    marked = _tracking(obj)["marked"]
+    marked = _tracking[obj]["marked"]
     # Only expect values (or lack of a value) for colummns that have
     # been explicitly set
     for column in sorted(marked, key=lambda col: col.dynamo_name):
@@ -91,20 +80,20 @@ def set_snapshot(obj, engine):
         # such as a set or (many) custom data types.
         condition.dumped = True
         snapshot &= condition
-    _tracking(obj)["snapshot"] = snapshot
+    _tracking[obj]["snapshot"] = snapshot
 
 
 def get_snapshot(obj, engine):
     # Cached value
-    condition = _tracking(obj)["snapshot"]
+    condition = _tracking[obj]["snapshot"]
     if condition is not None:
         return condition
 
     # If the object has never been synced, create and cache a condition
     # that expects every column to be empty
-    if not _tracking(obj)["synced"]:
+    if not _tracking[obj]["synced"]:
         clear_snapshot(obj, engine)
-        return _tracking(obj)["snapshot"]
+        return _tracking[obj]["snapshot"]
 
     # The object has been synced at least once, and no snapshot was created.
     # That means the object may have been mutated since it was loaded, and
@@ -121,9 +110,9 @@ def clear_snapshot(obj, engine):
     Nothing is stored if the engine isn't atomic.
     """
     if not engine.config["atomic"]:
-        _tracking(obj)["snapshot"] = None
+        _tracking[obj]["snapshot"] = None
         return
     snapshot = bloop.condition.Condition()
     for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
         snapshot &= column.is_(None)
-    _tracking(obj)["snapshot"] = snapshot
+    _tracking[obj]["snapshot"] = snapshot

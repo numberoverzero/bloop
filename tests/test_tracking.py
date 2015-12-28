@@ -4,7 +4,7 @@ import bloop.tracking
 
 def test_init_marks(User):
     user = User(id=uuid.uuid4(), unused="unknown kwarg")
-    assert bloop.tracking._tracking(user)["marked"] == set([User.id])
+    assert bloop.tracking._tracking[user]["marked"] == set([User.id])
 
 
 def test_delete_unknown(User):
@@ -16,7 +16,7 @@ def test_delete_unknown(User):
         # Expected - regardless of the failure to lookup, the remote
         # should expect a delete
         pass
-    assert User.email in bloop.tracking._tracking(user)["marked"]
+    assert User.email in bloop.tracking._tracking[user]["marked"]
 
     diff = bloop.tracking.dump_update(user)
     assert diff["REMOVE"] == [User.email]

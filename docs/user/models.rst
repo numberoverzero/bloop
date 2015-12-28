@@ -106,8 +106,7 @@ Objects are loaded through an engine - either one at a time, or as a list::
     engine.load(account)
     engine.load([account, tweet])
 
-    with engine.context(consistent=True) as consistent:
-        consistent.load(account)
+    engine.load(account, consistent=True)
 
 If any objects fail to load, a ``NotModified`` exception is raised with the
 objects that were not loaded::
@@ -417,15 +416,12 @@ constrain operations on attributes that may not have been loaded.  Using the
 same model above where ``foo`` is a non-key attribute that's not loaded from a
 query::
 
-    # Temporarily use atomic for queries, since storing atomic conditions
-    # on every object load is space and time intensive:
-    with engine.context(atomic=True) as atomic:
-        instance = (atomic.query(Model.some_index)
-                          .key(Model.hash == 1)
-                          .first())
+    instance = (engine.query(Model.some_index)
+                      .key(Model.hash == 1)
+                      .first())
 
-        big_foo = Model.foo >= 500
-        atomic.save(instance, condition=big_foo)
+    big_foo = Model.foo >= 500
+    engine.save(instance, condition=big_foo, atomic=True)
 
 .. seealso::
     The ``atomic`` option in :ref:`config` to enable/disable atomic

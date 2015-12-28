@@ -52,8 +52,7 @@ def test_load_object(User, engine):
     engine.client.batch_get_items = respond
 
     user = User(id=user_id)
-    with engine.context(consistent=True) as consistent:
-        consistent.load(user)
+    engine.load(user, consistent=True)
 
     assert user.age == 5
     assert user.name == "foo"
@@ -197,7 +196,7 @@ def test_atomic_load(User, atomic, renderer):
             '#n6': 'name', '#n3': 'id'},
         'ConditionExpression': condition}
 
-    actual_condition = bloop.tracking.get_snapshot(obj, atomic)
+    actual_condition = bloop.tracking.get_snapshot(obj)
     renderer.render(actual_condition, "condition")
     assert expected == renderer.rendered
 
@@ -288,8 +287,7 @@ def test_save_atomic_new(User, engine):
 def test_save_atomic_update_condition(User, atomic):
     user_id = uuid.uuid4()
     user = User(id=user_id)
-    # Manually snapshot so we think age is persisted
-    bloop.tracking.set_snapshot(user, atomic)
+    bloop.tracking.sync(user, atomic)
 
     user.name = "new_foo"
 
@@ -311,18 +309,6 @@ def test_save_atomic_update_condition(User, atomic):
     atomic.client.update_item = validate
     atomic.save(user, condition=User.name == "expect_foo")
     assert called
-
-
-def test_save_nonatomic_load(User, engine):
-    """Atomic operations on objects loaded in a non-atomic context fail"""
-
-    user = User(id=uuid.uuid4())
-    # Manually sync, without snapshotting atomic state
-    bloop.tracking.set_synced(user)
-
-    engine.config["atomic"] = True
-    with pytest.raises(RuntimeError):
-        engine.save(user)
 
 
 def test_save_multiple(User, engine):
@@ -435,7 +421,7 @@ def test_save_update_del_field(User, engine):
     user = User(id=uuid.uuid4(), age=4)
 
     # Manually snapshot so we think age is persisted
-    bloop.tracking.set_snapshot(user, engine)
+    bloop.tracking.sync(user, engine)
 
     # Expect to see a REMOVE on age, and a SET on email
     del user.age
@@ -509,7 +495,7 @@ def test_delete_atomic(User, atomic):
     user = User(id=user_id)
 
     # Manually snapshot so we think age is persisted
-    bloop.tracking.set_snapshot(user, atomic)
+    bloop.tracking.sync(user, atomic)
 
     expected = {
         'ConditionExpression': '(#n0 = :v1)',
@@ -576,7 +562,7 @@ def test_delete_atomic_condition(User, atomic):
     user = User(id=user_id, email='foo@bar.com')
 
     # Manually snapshot so we think age is persisted
-    bloop.tracking.set_snapshot(user, atomic)
+    bloop.tracking.sync(user, atomic)
 
     expected = {
         'ExpressionAttributeNames': {
@@ -639,6 +625,7 @@ def test_context(User, engine):
     with engine.context(atomic=False) as eng:
         eng.save(user)
 
+    # EngineViews can't bind
     with pytest.raises(RuntimeError):
         with engine.context() as eng:
             eng.bind()

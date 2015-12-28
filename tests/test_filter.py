@@ -369,9 +369,6 @@ def test_first(engine, User):
     first = q.first()
     assert first.email == "foo@domain.com"
 
-    with pytest.raises(RuntimeError):
-        bloop.tracking.get_snapshot(first, engine)
-
 
 def test_atomic_load(User, atomic, renderer):
     """Queying objects in an atomic context caches the loaded condition"""
@@ -401,7 +398,7 @@ def test_atomic_load(User, atomic, renderer):
             '#n0': 'age', '#n1': 'email', '#n3': 'id',
             '#n5': 'j', '#n6': 'name'}}
 
-    actual_condition = bloop.tracking.get_snapshot(obj, atomic)
+    actual_condition = bloop.tracking.get_snapshot(obj)
     renderer.render(actual_condition, "condition")
     print(renderer.rendered)
     assert expected == renderer.rendered

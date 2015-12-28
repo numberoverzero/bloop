@@ -10,7 +10,7 @@ import collections.abc
 import declare
 
 _MISSING = object()
-DEFAULT_CONFIG = {
+_DEFAULT_CONFIG = {
     "atomic": False,
     "consistent": False,
     "prefetch": 0,
@@ -60,6 +60,15 @@ def _dump_key(engine, obj):
     return key
 
 
+def _config(engine, key, value):
+    """Return a given config value unless it's None.
+
+    In that case, fall back to the engine's config value."""
+    if value is None:
+        return engine.config[key]
+    return value
+
+
 class _LoadManager:
     """
     The load operation involves a double indexing to provide O(1)
@@ -72,8 +81,9 @@ class _LoadManager:
     This class exists to keep the more complex of the three pieces
     separated, and easier to maintain.
     """
-    def __init__(self, engine):
+    def __init__(self, engine, consistent):
         self.engine = engine
+        self.consistent = _config(engine, "consistent", consistent)
         self.indexed_objects = {}
         # If there are any objects in this set after popping all the items
         # from a response, then the remaining items were not processed.
@@ -90,7 +100,7 @@ class _LoadManager:
         if not table_exists:
             self.wire[table_name] = {
                 "Keys": [],
-                "ConsistentRead": self.engine.config["consistent"]}
+                "ConsistentRead": self.consistent}
             self.indexed_objects[table_name] = {}
 
         # key is {dynamo_name: {dynamo_type: value}, ...} for hash/range keys
@@ -126,7 +136,7 @@ class Engine:
         self.model = bloop.model.BaseModel(self)
         self.unbound_models = set()
         self.models = set()
-        self.config = dict(DEFAULT_CONFIG)
+        self.config = dict(_DEFAULT_CONFIG)
         self.config.update(config)
 
     def _dump(self, model, obj):
@@ -196,15 +206,15 @@ class Engine:
         """
         return EngineView(self, **config)
 
-    def delete(self, objs, *, condition=None):
+    def delete(self, objs, *, condition=None, atomic=None):
         for obj in _list_of(objs):
             item = {"TableName": obj.Meta.table_name,
                     "Key": _dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
 
             item_condition = bloop.condition.Condition()
-            if self.config["atomic"]:
-                item_condition &= bloop.tracking.get_snapshot(obj, self)
+            if _config(self, "atomic", atomic):
+                item_condition &= bloop.tracking.get_snapshot(obj)
             if condition:
                 item_condition &= condition
             renderer.render(item_condition, "condition")
@@ -212,10 +222,9 @@ class Engine:
 
             self.client.delete_item(item)
 
-            bloop.tracking.clear_snapshot(obj, self)
-            bloop.tracking.set_synced(obj)
+            bloop.tracking.clear(obj)
 
-    def load(self, objs):
+    def load(self, objs, consistent=None):
         """
         Populate objects from dynamodb, optionally using consistent reads.
 
@@ -237,13 +246,12 @@ class Engine:
         hash_and_range = HashAndRange(user_id=101, game_title="Starship X")
 
         # Load only one instance, with consistent reads
-        with engine.context(consistent=True) as e:
-            e.load(hash_only)
+        engine.load(hash_only, consistent=True)
 
         # Load multiple instances
         engine.load(hash_only, hash_and_range)
         """
-        request = _LoadManager(self)
+        request = _LoadManager(self, consistent=consistent)
         for obj in _list_of(objs):
             request.add(obj)
         response = self.client.batch_get_items(request.wire)
@@ -252,8 +260,7 @@ class Engine:
             for item in items:
                 obj = request.pop(table_name, item)
                 self._update(obj, item, obj.Meta.columns)
-                bloop.tracking.set_snapshot(obj, self)
-                bloop.tracking.set_synced(obj)
+                bloop.tracking.sync(obj, self)
 
         if request.objects:
             raise bloop.exceptions.NotModified("load", request.objects)
@@ -265,18 +272,18 @@ class Engine:
             model, index = obj, None
         return bloop.filter.Query(engine=self, model=model, index=index)
 
-    def save(self, objs, *, condition=None):
+    def save(self, objs, *, condition=None, atomic=None):
         for obj in _list_of(objs):
             item = {"TableName": obj.Meta.table_name,
                     "Key": _dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
 
-            diff = bloop.tracking.dump_update(obj)
+            diff = bloop.tracking.get_update(obj)
             renderer.update(diff)
 
             item_condition = bloop.condition.Condition()
-            if self.config["atomic"]:
-                item_condition &= bloop.tracking.get_snapshot(obj, self)
+            if _config(self, "atomic", atomic):
+                item_condition &= bloop.tracking.get_snapshot(obj)
             if condition:
                 item_condition &= condition
             renderer.render(item_condition, "condition")
@@ -284,8 +291,7 @@ class Engine:
 
             self.client.update_item(item)
 
-            bloop.tracking.set_snapshot(obj, self)
-            bloop.tracking.set_synced(obj)
+            bloop.tracking.sync(obj, self)
 
     def scan(self, obj):
         if isinstance(obj, bloop.index._Index):

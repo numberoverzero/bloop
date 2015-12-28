@@ -32,9 +32,11 @@ same_content = Tweet.content == tweet.content
 same_tweet = same_account & same_id & same_content
 engine.save(tweet, condition=same_tweet)
 
-with engine.context(atomic=True) as atomic:
-    atomic.load(tweet)
-    # Manipulate the object here
-    atomic.save(tweet)
+engine.save(tweet, atomic=True)
 
 engine.config['atomic'] = True
+engine.save(tweet)
+
+with engine.context(atomic=True) as atomic:
+    # Other atomic operations here
+    atomic.save(tweet)

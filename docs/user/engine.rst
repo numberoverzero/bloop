@@ -131,7 +131,7 @@ delete
 
 Delete an object or set of objects, with an optional condition::
 
-    engine.delete(objs, *, condition=None)
+    engine.delete(objs, *, condition=None, atomic=None)
 
 It is safe to delete objects that don't exist.  For more info on deleting
 objects, see :ref:`delete`.
@@ -142,9 +142,7 @@ load
 Load an object or set of objects, optionally using ConsistentReads::
 
     engine.load(objs)
-
-    with engine.context(consistent=True) as consistent:
-        consistent.load(objs)
+    engine.load(objs, consistent=True)
 
 Load raises ``NotModified`` if any objects fail to load.  For more info on
 loading objects, see :ref:`load`.
@@ -224,7 +222,7 @@ save
 
 Save an object or set of objects, with an optional condition::
 
-    engine.save(objs, *, condition=None)
+    engine.save(objs, *, condition=None, atomic=None)
 
 scan
 ----

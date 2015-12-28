@@ -1,3 +1,6 @@
+import weakref
+
+
 def ordered(obj):
     """
     Return sorted version of nested dicts/lists for comparing.
@@ -17,3 +20,19 @@ def areinstance(lst, types):
         if not isinstance(obj, types):
             return False
     return True
+
+
+class WeakDefaultDictionary(weakref.WeakKeyDictionary):
+    def __init__(self, default_factory):
+        self.default_factory = default_factory
+        super().__init__()
+
+    def __getitem__(self, key):
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            return self.__missing__(key)
+
+    def __missing__(self, key):
+        self[key] = value = self.default_factory()
+        return value

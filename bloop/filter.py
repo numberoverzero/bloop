@@ -456,11 +456,7 @@ class FilterResult(object):
         for result in results:
             obj = self.engine._instance(self.model)
             self.engine._update(obj, result, self.expected)
-            # Building an atomic condition is expensive
-            # in both space and time, so non-atomic engines shouldn't
-            # persist the state.
-            bloop.tracking.set_snapshot(obj, self.engine)
-            bloop.tracking.set_synced(obj)
+            bloop.tracking.sync(obj, self.engine)
 
             self._results.append(obj)
             yield obj

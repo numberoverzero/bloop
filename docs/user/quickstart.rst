@@ -48,18 +48,19 @@ There's an easier way:
 
 .. literalinclude:: ../code/quick.py
     :language: python
-    :lines: 35-38
+    :lines: 35
 
-Note that atomic modifications require the object to have been loaded through
-an atomic context; otherwise, the initial state won't be preserved.  This is
-because constructing and storing the initial state on every load is expensive,
-and therefore not done for non-atomic loads/queries.
-
-You can also set the engine to always use atomic conditions, with:
+You can also set the engine to always use atomic conditions:
 
 .. literalinclude:: ../code/quick.py
     :language: python
-    :lines: 40
+    :lines: 37-38
+
+Or we can switch to atomic operations for a block of code:
+
+.. literalinclude:: ../code/quick.py
+    :language: python
+    :lines: 40-42
 
 The context version allows you to temporarily talk through the engine as if it
 had the given config values, without changing the engine's actual config values

@@ -106,8 +106,7 @@ Objects are loaded through an engine - either one at a time, or as a list::
     engine.load(account)
     engine.load([account, tweet])
 
-    with engine.context(consistent=True) as consistent:
-        consistent.load(account)
+    engine.load(account, consistent=True)
 
 If any objects fail to load, a ``NotModified`` exception is raised with the
 objects that were not loaded::
@@ -141,7 +140,7 @@ Like ``load``, one or more objects can be saved at a time::
             ' $10,000 for saving you $500,000.'))
 
     engine.save(account)
-    engine.save([account, tweet])
+    engine.save([account, tweet], consistent=False, atomic=True)
 
 bloop uses `UpdateItem`_ to save objects, tracking which fields on an instance
 of a model have been set or deleted.  When an object is saved, any values that
@@ -179,7 +178,7 @@ Like ``load`` and ``save``, one or more objects can be deleted at a time::
             ' $10,000 for saving you $500,000.'))
 
     engine.delete(account)
-    engine.delete([account, tweet])
+    engine.delete([account, tweet], atomic=True)
 
 Described below, :ref:`conditions` can be used to ensure attributes have
 expected values before persisting a change.  When a condition is provided with
@@ -381,7 +380,7 @@ With atomic updates::
 
     instance.foo = 'new foo'
     try:
-        engine.save(instance)
+        engine.save(instance, atomic=True)
     except bloop.ConstraintViolation:
         # Modified between load and save!
         ...
@@ -417,15 +416,12 @@ constrain operations on attributes that may not have been loaded.  Using the
 same model above where ``foo`` is a non-key attribute that's not loaded from a
 query::
 
-    # Temporarily use atomic for queries, since storing atomic conditions
-    # on every object load is space and time intensive:
-    with engine.context(atomic=True) as atomic:
-        instance = (atomic.query(Model.some_index)
-                          .key(Model.hash == 1)
-                          .first())
+    instance = (engine.query(Model.some_index)
+                      .key(Model.hash == 1)
+                      .first())
 
-        big_foo = Model.foo >= 500
-        atomic.save(instance, condition=big_foo)
+    big_foo = Model.foo >= 500
+    engine.save(instance, condition=big_foo, atomic=True)
 
 .. seealso::
     The ``atomic`` option in :ref:`config` to enable/disable atomic

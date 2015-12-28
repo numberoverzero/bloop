@@ -30,18 +30,10 @@ def dump_update(obj):
     """
     diff = collections.defaultdict(list)
     marked = _tracking[obj]["marked"]
-    hash_key, range_key = obj.Meta.hash_key, obj.Meta.range_key
+    key = set((obj.Meta.hash_key, obj.Meta.range_key))
     for column in marked:
-        # The next two lines have pragmas even though there are tests to
-        # exercise them, because coverage does not observe the continuation.
-        # A simple verification is to add a line before continue that is
-        # simply ... and remove the pragmas.  For tests that cover these lines,
-        # see:
-        #   test_tracking.py/test_dump_update
-        #   test_engine.py/test_save_set_del_field
-        if (column is hash_key) or (column is range_key):  # pragma: no branch
-            continue  # pragma: no cover
-
+        if column in key:
+            continue
         value = getattr(obj, column.model_name, None)
         if value is not None:
             diff["SET"].append((column, value))

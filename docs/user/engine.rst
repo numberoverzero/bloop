@@ -131,7 +131,7 @@ delete
 
 Delete an object or set of objects, with an optional condition::
 
-    engine.delete(objs, *, condition=None)
+    engine.delete(objs, *, condition=None, atomic=None)
 
 It is safe to delete objects that don't exist.  For more info on deleting
 objects, see :ref:`delete`.
@@ -222,7 +222,7 @@ save
 
 Save an object or set of objects, with an optional condition::
 
-    engine.save(objs, *, condition=None)
+    engine.save(objs, *, condition=None, atomic=None)
 
 scan
 ----

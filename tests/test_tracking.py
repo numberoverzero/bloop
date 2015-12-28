@@ -29,3 +29,15 @@ def test_dump_update(User):
 
     assert "REMOVE" not in diff
     assert diff["SET"] == [(User.email, "support@domain.com")]
+
+
+def test_tracking_empty_update(ComplexModel, engine):
+    """ no SET changes for hash and range key only """
+    uid = uuid.uuid4()
+    model = ComplexModel(name=uid, date="now")
+    expected_marked = set([ComplexModel.name, ComplexModel.date])
+    assert expected_marked == bloop.tracking._tracking[model]["marked"]
+
+    # Dynamo doesn't send the Key (hash/range) as part of the UPDATE expr
+    update = bloop.tracking.dump_update(model)
+    assert not update

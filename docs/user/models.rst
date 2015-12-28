@@ -140,7 +140,7 @@ Like ``load``, one or more objects can be saved at a time::
             ' $10,000 for saving you $500,000.'))
 
     engine.save(account)
-    engine.save([account, tweet])
+    engine.save([account, tweet], consistent=False, atomic=True)
 
 bloop uses `UpdateItem`_ to save objects, tracking which fields on an instance
 of a model have been set or deleted.  When an object is saved, any values that
@@ -178,7 +178,7 @@ Like ``load`` and ``save``, one or more objects can be deleted at a time::
             ' $10,000 for saving you $500,000.'))
 
     engine.delete(account)
-    engine.delete([account, tweet])
+    engine.delete([account, tweet], atomic=True)
 
 Described below, :ref:`conditions` can be used to ensure attributes have
 expected values before persisting a change.  When a condition is provided with
@@ -380,7 +380,7 @@ With atomic updates::
 
     instance.foo = 'new foo'
     try:
-        engine.save(instance)
+        engine.save(instance, atomic=True)
     except bloop.ConstraintViolation:
         # Modified between load and save!
         ...

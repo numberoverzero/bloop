@@ -16,4 +16,4 @@ __all__ = [
     "List", "LocalSecondaryIndex", "Map", "NotModified", "Set",
     "String", "TableMismatch", "TypedMap", "UnboundModel", "UUID"
 ]
-__version__ = "0.9.4"
+__version__ = "0.9.5"

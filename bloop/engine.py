@@ -303,11 +303,9 @@ class Engine:
 
 class EngineView(Engine):
     def __init__(self, engine, **config):
-        self.client = engine.client
+        self.__engine = engine
         self.config = dict(engine.config)
         self.config.update(config)
-        self.model = engine.model
-        self.type_engine = engine.type_engine
 
     def bind(self):
         raise RuntimeError("EngineViews can't modify engine types or bindings")
@@ -317,3 +315,19 @@ class EngineView(Engine):
 
     def __exit__(self, *exc):
         return False
+
+    @property
+    def client(self):
+        return self.__engine.client
+
+    @property
+    def model(self):
+        return self.__engine.model
+
+    @property
+    def type_engine(self):
+        return self.__engine.type_engine
+
+    @property
+    def unbound_models(self):
+        return self.__engine.unbound_models

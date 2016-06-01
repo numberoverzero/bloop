@@ -629,3 +629,22 @@ def test_context(User, engine):
     with pytest.raises(RuntimeError):
         with engine.context() as eng:
             eng.bind()
+
+
+def test_unbound_engine_view(engine):
+    """Trying to mutate an unbound model through an EngineView fails"""
+    class UnboundModel(engine.model):
+        id = bloop.Column(bloop.String, hash_key=True)
+    instance = UnboundModel(id="foo")
+
+    with pytest.raises(bloop.exceptions.UnboundModel):
+        with engine.context() as view:
+            view._dump(UnboundModel, instance)
+
+
+def test_engine_view_model(engine):
+    """An EngineView's model is just a pointer to it's engine's model"""
+    with engine.context() as view:
+        class Model(view.model):
+            id = bloop.Column(bloop.String, hash_key=True)
+    assert Model in engine.unbound_models

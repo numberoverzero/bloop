@@ -150,9 +150,6 @@ def BaseModel(engine):
         class CustomBaseModel(BaseModel):
             # ... cross-model code goes here
     """
-    if engine.model:
-        raise ValueError("BaseModel already exists for engine")
-
     class ModelMetaclass(declare.ModelMetaclass):
         def __new__(metaclass, name, bases, attrs):
 

@@ -1,8 +1,5 @@
 import arrow
 import uuid
-import bloop.column
-import bloop.index
-import bloop.model
 import pytest
 
 from bloop import (Column, UUID, Boolean, DateTime, String,
@@ -100,12 +97,6 @@ def test_equality(User):
     assert user != another
 
     assert user == same
-
-
-def test_multiple_base_models(engine):
-    """ Once an engine has a `model` attr, BaseModel should always throw """
-    with pytest.raises(ValueError):
-        bloop.model.BaseModel(engine)
 
 
 def test_meta_read_write_units(engine):

@@ -4,7 +4,7 @@ import decimal
 import random
 import uuid
 from bloop import (Engine, Column, DateTime, Integer,
-                   UUID, String, Map, TypedMap, Float)
+                   UUID, String, Map, TypedMap, Float, new_base)
 
 
 # ================================================
@@ -13,6 +13,7 @@ from bloop import (Engine, Column, DateTime, Integer,
 
 session = boto3.session.Session(profile_name="test-user-bloop")
 engine = Engine(session=session)
+Base = new_base()
 
 
 Product = Map(**{
@@ -27,10 +28,10 @@ Product = Map(**{
 })
 
 
-class Item(engine.model):
+class Item(Base):
     id = Column(UUID, hash_key=True)
     data = Column(Product)
-engine.bind()
+engine.bind(base=Base)
 
 
 # ================================================

@@ -80,7 +80,7 @@ class DateTime(String):
     For example, comparisons can be done in any timezone since they
     will all be converted to UTC on request and from UTC on response::
 
-        class Model(engine.model):
+        class Model(Base):
             id = Column(Integer, hash_key=True)
             date = Column(DateTime(timezone="US/Pacific"))
         engine.bind()

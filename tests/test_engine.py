@@ -23,11 +23,11 @@ def test_missing_objects(User, engine):
     assert set(excinfo.value.objects) == set(users)
 
 
-def test_dump_key(User, engine, local_bind):
-    class HashAndRange(engine.model):
+def test_dump_key(User, engine, base_model, local_bind):
+    class HashAndRange(base_model):
         foo = bloop.Column(bloop.Integer, hash_key=True)
         bar = bloop.Column(bloop.Integer, range_key=True)
-    engine.bind()
+    engine.bind(base=base_model)
 
     user = User(id=uuid.uuid4())
     user_key = {"id": {"S": str(user.id)}}
@@ -630,9 +630,9 @@ def test_context(User, engine):
             eng.bind()
 
 
-def test_unbound_engine_view(engine):
+def test_unbound_engine_view(engine, base_model):
     """Trying to mutate an unbound model through an EngineView fails"""
-    class UnboundModel(engine.model):
+    class UnboundModel(base_model):
         id = bloop.Column(bloop.String, hash_key=True)
     instance = UnboundModel(id="foo")
 

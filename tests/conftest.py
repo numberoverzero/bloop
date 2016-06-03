@@ -47,8 +47,13 @@ def local_bind(engine):
 
 
 @pytest.fixture
-def UnboundUser(engine):
-    class User(engine.model):
+def base_model():
+    return bloop.new_base()
+
+
+@pytest.fixture
+def UnboundUser(engine, base_model):
+    class User(base_model):
         id = bloop.Column(bloop.UUID, hash_key=True)
         age = bloop.Column(bloop.Integer)
         name = bloop.Column(bloop.String)
@@ -62,14 +67,14 @@ def UnboundUser(engine):
 
 
 @pytest.fixture
-def User(UnboundUser, engine, local_bind):
-    engine.bind()
+def User(UnboundUser, engine, base_model, local_bind):
+    engine.bind(base=base_model)
     return UnboundUser
 
 
 @pytest.fixture
-def ComplexModel(engine, local_bind):
-    class Model(engine.model):
+def ComplexModel(engine, base_model, local_bind):
+    class Model(base_model):
         class Meta:
             write_units = 2
             read_units = 3
@@ -84,7 +89,7 @@ def ComplexModel(engine, local_bind):
                                               projection="all", write_units=5)
         by_joined = bloop.LocalSecondaryIndex(range_key="joined",
                                               projection=["email"])
-    engine.bind()
+    engine.bind(base=base_model)
     return Model
 
 
@@ -104,20 +109,20 @@ def document_type():
 
 
 @pytest.fixture
-def Document(engine, local_bind, document_type):
-    class Document(engine.model):
+def Document(engine, base_model, local_bind, document_type):
+    class Document(base_model):
         id = bloop.Column(bloop.Integer, hash_key=True)
         data = bloop.Column(document_type)
         numbers = bloop.Column(bloop.List(bloop.Integer))
-    engine.bind()
+    engine.bind(base=base_model)
     return Document
 
 
 @pytest.fixture
-def SimpleModel(engine, local_bind):
-    class Model(engine.model):
+def SimpleModel(engine, base_model, local_bind):
+    class Model(base_model):
         id = bloop.Column(bloop.UUID, hash_key=True)
-    engine.bind()
+    engine.bind(base=base_model)
     return Model
 
 

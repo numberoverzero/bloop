@@ -43,7 +43,8 @@ class TableMismatch(Exception):
     """Raised when binding a model to an existing table with the wrong schema.
 
     Attributes:
-        model (:attr:`bloop.Engine.model`): The model that was trying to bind
+        model (:class:`bloop.model.BaseModel`):
+            The model that was trying to bind
         expected (dict): The expected schema for the table
         actual (dict): The actual schema of the table
     """
@@ -58,8 +59,8 @@ class UnboundModel(Exception):
     """Raised when loading or dumping on a model before binding it to an engine
 
     Attributes:
-        model (:attr:`bloop.Engine.model`): The model of the object being
-            loaded, or dumped
+        model (:class:`bloop.model.BaseModel`):
+            The model of the object being loaded, or dumped
         obj (object or None): The instance of the model that was being dumped,
             or loaded into.  If a new instance of the model was being created,
             this will be None

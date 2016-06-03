@@ -30,11 +30,12 @@ Define some models::
     import arrow
     import uuid
     from bloop import (Engine, Column, Integer, DateTime, UUID,
-                       GlobalSecondaryIndex, String)
+                       GlobalSecondaryIndex, String, new_base)
+    Base = new_base()
     engine = Engine()
 
 
-    class Account(engine.model):
+    class Account(Base):
         class Meta:
             read_units = 5
             write_units = 2
@@ -47,7 +48,7 @@ Define some models::
             write_units=1, read_units=5)
 
 
-    class Tweet(engine.model):
+    class Tweet(Base):
         class Meta:
             write_units = 10
         account = Column(UUID, hash_key=True)
@@ -59,7 +60,7 @@ Define some models::
         by_date = GlobalSecondaryIndex(
             hash_key='date', projection='keys_only')
 
-    engine.bind()
+    engine.bind(base=Base)
 
 
 Create an instance::

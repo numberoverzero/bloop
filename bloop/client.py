@@ -208,7 +208,7 @@ class Client(object):
         :meth:`.validate_table`.
 
         Args:
-            model: subclass of an :attr:`bloop.Engine.model`
+            model: subclass of an :class:`bloop.model.BaseModel`
 
         See Also:
             * :meth:`.describe_table`
@@ -274,7 +274,7 @@ class Client(object):
               * ProvisionedThroughput > NumberOfDecreasesToday
 
         Args:
-            model: subclass of an :attr:`bloop.Engine.model`
+            model: subclass of an :class:`bloop.model.BaseModel`
 
         Returns:
             dict: The same return value from a ``boto3.client`` with the above
@@ -359,7 +359,7 @@ class Client(object):
         existing table's schema, :exc:`bloop.TableMismatch` is raised.
 
         Args:
-            model: subclass of an :attr:`bloop.Engine.model`
+            model: subclass of an :class:`bloop.model.BaseModel`
 
         Raises:
             bloop.TableMismatch: If the actual schema doesn't

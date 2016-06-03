@@ -126,14 +126,11 @@ class _LoadManager:
 
 
 class Engine:
-    model = None
-
     def __init__(self, *, session=None, **config):
         self.client = bloop.client.Client(session=session)
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()
-        self.model = bloop.model.new_base()
         self.config = dict(_DEFAULT_CONFIG)
         self.config.update(config)
 
@@ -174,13 +171,13 @@ class Engine:
                 value = self._load(column.typedef, value)
             setattr(obj, column.model_name, value)
 
-    def bind(self):
-        """ Create tables for all models that have been registered """
+    def bind(self, *, base):
+        """Create tables for all models off of base"""
         # only need to verify models that haven't been
         # bound (created/verified) already
         unverified = set(filter(
             lambda model: not bloop.tracking.is_model_verified(model),
-            self.model.__subclasses__()))
+            base.__subclasses__()))
 
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
@@ -236,12 +233,13 @@ class Engine:
 
         Example
         -------
+        Base = new_base()
         engine = Engine()
 
-        class HashOnly(engine.model):
+        class HashOnly(Base):
             user_id = Column(NumberType, hash_key=True)
 
-        class HashAndRange(engine.model):
+        class HashAndRange(Base):
             user_id = Column(NumberType, hash_key=True)
             game_title = Column(StringType, range_key=True)
 
@@ -322,10 +320,6 @@ class EngineView(Engine):
     @property
     def client(self):
         return self.__engine.client
-
-    @property
-    def model(self):
-        return self.__engine.model
 
     @property
     def type_engine(self):

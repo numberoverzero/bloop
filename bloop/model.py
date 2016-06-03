@@ -3,11 +3,38 @@ import bloop.index
 import bloop.util
 import declare
 _MISSING = object()
+__all__ = ["new_base", "BaseModel"]
 
 
-class _BaseModel(object):
+def new_base():
+    """Return an unbound base model"""
+    return ModelMetaclass("Model", (BaseModel,), {})
+
+
+class ModelMetaclass(declare.ModelMetaclass):
+    def __new__(metaclass, name, bases, attrs):
+        model = super().__new__(metaclass, name, bases, attrs)
+        meta = model.Meta
+        meta.model = model
+        _update(meta, "write_units", 1)
+        _update(meta, "read_units", 1)
+
+        _setup_columns(meta)
+        _setup_indexes(meta)
+
+        # Entry point for model population. By default this is the
+        # class's __init__ function. Custom models can specify the
+        # Meta attr `init`, which must be a function taking no
+        # arguments that returns an instance of the class
+        _update(meta, "init", model)
+        _update(meta, "table_name", model.__name__)
+
+        return model
+
+
+class BaseModel(object):
     """
-    DO NOT SUBCLASS DIRECTLY.
+    Do not subclass directly, use new_base.
 
     Instead, subclass the `model` attribute of an engine.  This ensures the
     proper metaclass setup has been performed, so that `engine.bind` will
@@ -133,45 +160,3 @@ def _setup_indexes(meta):
     for index in meta.indexes:
         index.model = meta.model
         index._bind(columns, meta.hash_key, meta.range_key)
-
-
-def BaseModel(engine):
-    """
-    Although this returns a class, you should NOT call this function to create
-    a base model class.  Instead, subclass the `model` attribute of an engine.
-    Doing this ensures the proper metaclass setup has been performed,
-    so that `engine.bind` will work.
-
-    Example:
-
-        engine = bloop.Engine()
-        BaseModel = engine.model
-
-        class CustomBaseModel(BaseModel):
-            # ... cross-model code goes here
-    """
-    class ModelMetaclass(declare.ModelMetaclass):
-        def __new__(metaclass, name, bases, attrs):
-
-            model = super().__new__(metaclass, name, bases, attrs)
-            meta = model.Meta
-            meta.model = model
-            _update(meta, "write_units", 1)
-            _update(meta, "read_units", 1)
-
-            _setup_columns(meta)
-            _setup_indexes(meta)
-
-            # Entry point for model population. By default this is the
-            # class's __init__ function. Custom models can specify the
-            # Meta attr `init`, which must be a function taking no
-            # arguments that returns an instance of the class
-            _update(meta, "init", model)
-            _update(meta, "table_name", model.__name__)
-
-            # If the engine already has a base, register this model.
-            # Otherwise, this IS the engine's base model
-            if engine.model:
-                engine.unbound_models.add(model)
-            return model
-    return ModelMetaclass("Model", (_BaseModel,), {})

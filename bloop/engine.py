@@ -133,7 +133,7 @@ class Engine:
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()
-        self.model = bloop.model.BaseModel(self)
+        self.model = bloop.model.new_base()
         self.unbound_models = set()
         self.models = set()
         self.config = dict(_DEFAULT_CONFIG)
@@ -145,7 +145,8 @@ class Engine:
             return self.type_engine.dump(
                 model, obj, context={"engine": self})
         except declare.DeclareException:
-            if model in self.unbound_models:
+            # Best-effort check for a more helpful message
+            if issubclass(model, bloop.model.BaseModel):
                 raise bloop.exceptions.UnboundModel("load", model, obj)
             else:
                 raise ValueError(
@@ -160,7 +161,8 @@ class Engine:
             return self.type_engine.load(
                 model, value, context={"engine": self})
         except declare.DeclareException:
-            if model in self.unbound_models:
+            # Best-effort check for a more helpful message
+            if issubclass(model, bloop.model.BaseModel):
                 raise bloop.exceptions.UnboundModel("load", model, None)
             else:
                 raise ValueError(
@@ -179,12 +181,14 @@ class Engine:
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
-        for model in self.unbound_models:
+
+        concrete_models = set(self.model.__subclasses__())
+        unbound_models = concrete_models - self.models
+        for model in unbound_models:
             self.client.create_table(model)
 
-        unverified = set(self.unbound_models)
-        while unverified:
-            model = unverified.pop()
+        while unbound_models:
+            model = unbound_models.pop()
 
             self.client.validate_table(model)
             # If the call above didn't throw, everything's good to go.
@@ -193,9 +197,8 @@ class Engine:
             for column in model.Meta.columns:
                 self.type_engine.register(column.typedef)
             self.type_engine.bind()
-            # If nothing above threw, we can mark this model bound
 
-            self.unbound_models.remove(model)
+            # If nothing above threw, we can mark this model bound
             self.models.add(model)
 
     def context(self, **config):

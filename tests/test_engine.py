@@ -143,10 +143,9 @@ def test_load_dump_unknown(engine):
     class NotModeled:
         pass
     obj = NotModeled()
-    user_id = uuid.uuid4()
     value = {"User": [{"age": {"N": 5},
                        "name": {"S": "foo"},
-                       "id": {"S": str(user_id)}}]}
+                       "id": {"S": str(uuid.uuid4())}}]}
 
     with pytest.raises(ValueError):
         engine._load(NotModeled, value)
@@ -640,11 +639,3 @@ def test_unbound_engine_view(engine):
     with pytest.raises(bloop.exceptions.UnboundModel):
         with engine.context() as view:
             view._dump(UnboundModel, instance)
-
-
-def test_engine_view_model(engine):
-    """An EngineView's model is just a pointer to it's engine's model"""
-    with engine.context() as view:
-        class Model(view.model):
-            id = bloop.Column(bloop.String, hash_key=True)
-    assert Model in engine.unbound_models

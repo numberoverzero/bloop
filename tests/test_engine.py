@@ -627,7 +627,7 @@ def test_context(User, engine):
     # EngineViews can't bind
     with pytest.raises(RuntimeError):
         with engine.context() as eng:
-            eng.bind()
+            eng.bind(base=bloop.new_base())
 
 
 def test_unbound_engine_view(engine, base_model):

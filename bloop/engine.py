@@ -308,7 +308,7 @@ class EngineView(Engine):
         self.config = dict(engine.config)
         self.config.update(config)
 
-    def bind(self):
+    def bind(self, **kwargs):
         raise RuntimeError("EngineViews can't modify engine types or bindings")
 
     def __enter__(self):

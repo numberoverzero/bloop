@@ -35,7 +35,7 @@ def test_load_default_init(engine, User):
         "extra_field": {"N": "0.125"}
     }
 
-    loaded_user = User._load(user)
+    loaded_user = User._load(user, context={"engine": engine})
     assert loader_calls == 1
     assert loaded_user.id == user_id
     assert loaded_user.joined == now
@@ -61,7 +61,7 @@ def test_custom_init(engine, User):
     assert init_called
 
 
-def test_load_dump(User):
+def test_load_dump(engine, User):
     """ _load and _dump should be symmetric """
 
     user_id = uuid.uuid4()
@@ -76,8 +76,8 @@ def test_load_dump(User):
         "j": {"S": now.to("utc").isoformat()}
     }
 
-    assert User._load(serialized_user) == user
-    assert User._dump(user) == serialized_user
+    assert User._load(serialized_user, context={"engine": engine}) == user
+    assert User._dump(user, context={"engine": engine}) == serialized_user
 
 
 def test_equality(User):

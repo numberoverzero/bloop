@@ -39,14 +39,14 @@ class _BaseModel(object):
         for column in cls.Meta.columns:
             if column.dynamo_name in attrs:
                 expected.add(column)
-        cls.Meta.bloop_engine._update(obj, attrs, expected)
+        context["engine"]._update(obj, attrs, expected)
         return obj
 
     @classmethod
     def _dump(cls, obj, *, context=None, **kwargs):
         """ obj -> dict """
         attrs = {}
-        engine = cls.Meta.bloop_engine.type_engine
+        engine = context["engine"].type_engine
         for column in cls.Meta.columns:
             value = getattr(obj, column.model_name, None)
             # Missing expected column - None is equivalent to empty
@@ -171,7 +171,6 @@ def BaseModel(engine):
             # arguments that returns an instance of the class
             _update(meta, "init", model)
             _update(meta, "table_name", model.__name__)
-            meta.bloop_engine = engine
 
             # If the engine already has a base, register this model.
             # Otherwise, this IS the engine's base model

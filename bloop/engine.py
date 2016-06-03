@@ -142,7 +142,8 @@ class Engine:
     def _dump(self, model, obj):
         """ Return a dict of the obj in DynamoDB format """
         try:
-            return self.type_engine.dump(model, obj)
+            return self.type_engine.dump(
+                model, obj, context={"engine": self})
         except declare.DeclareException:
             if model in self.unbound_models:
                 raise bloop.exceptions.UnboundModel("load", model, obj)
@@ -156,7 +157,8 @@ class Engine:
 
     def _load(self, model, value):
         try:
-            return self.type_engine.load(model, value)
+            return self.type_engine.load(
+                model, value, context={"engine": self})
         except declare.DeclareException:
             if model in self.unbound_models:
                 raise bloop.exceptions.UnboundModel("load", model, None)

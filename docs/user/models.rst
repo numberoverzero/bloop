@@ -631,5 +631,3 @@ Meta exposes the following attributes:
 * ``hash_key`` - the ``Column`` that is the model's hash key.
 * ``range_key`` - the ``Column`` that is the model's range key.  Is ``None`` if
   there is no range key for the table.
-* ``bloop_engine`` - the engine that the model is associated with.  It may not
-  be bound yet.

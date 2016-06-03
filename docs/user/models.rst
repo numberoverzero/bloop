@@ -140,7 +140,7 @@ Like ``load``, one or more objects can be saved at a time::
             ' $10,000 for saving you $500,000.'))
 
     engine.save(account)
-    engine.save([account, tweet], consistent=False, atomic=True)
+    engine.save([account, tweet], atomic=True)
 
 bloop uses `UpdateItem`_ to save objects, tracking which fields on an instance
 of a model have been set or deleted.  When an object is saved, any values that

@@ -134,8 +134,6 @@ class Engine:
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()
         self.model = bloop.model.new_base()
-        self.unbound_models = set()
-        self.models = set()
         self.config = dict(_DEFAULT_CONFIG)
         self.config.update(config)
 
@@ -178,28 +176,28 @@ class Engine:
 
     def bind(self):
         """ Create tables for all models that have been registered """
+        # only need to verify models that haven't been
+        # bound (created/verified) already
+        unverified = set(filter(
+            lambda model: not bloop.tracking.is_model_verified(model),
+            self.model.__subclasses__()))
+
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
-
-        concrete_models = set(self.model.__subclasses__())
-        unbound_models = concrete_models - self.models
-        for model in unbound_models:
+        for model in unverified:
             self.client.create_table(model)
 
-        while unbound_models:
-            model = unbound_models.pop()
-
+        for model in unverified:
             self.client.validate_table(model)
-            # If the call above didn't throw, everything's good to go.
+            # Model won't need to be verified the
+            # next time its BaseModel is bound to an engine
+            bloop.tracking.verify_model(model)
 
             self.type_engine.register(model)
             for column in model.Meta.columns:
                 self.type_engine.register(column.typedef)
             self.type_engine.bind()
-
-            # If nothing above threw, we can mark this model bound
-            self.models.add(model)
 
     def context(self, **config):
         """

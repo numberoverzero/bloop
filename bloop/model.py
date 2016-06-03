@@ -36,17 +36,15 @@ class BaseModel(object):
     """
     Do not subclass directly, use new_base.
 
-    Instead, subclass the `model` attribute of an engine.  This ensures the
-    proper metaclass setup has been performed, so that `engine.bind` will
-    work.
-
     Example:
 
-        engine = bloop.Engine()
-        BaseModel = engine.model
+        BaseModel = new_base()
 
-        class CustomBaseModel(BaseModel):
-            # ... cross-model code goes here
+        class MyModel(BaseModel):
+            ...
+
+        engine = bloop.Engine()
+        engine.bind(base=BaseModel)
     """
     def __init__(self, **attrs):
         # Only set values from **attrs if there's a

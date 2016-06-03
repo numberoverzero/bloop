@@ -324,7 +324,3 @@ class EngineView(Engine):
     @property
     def type_engine(self):
         return self.__engine.type_engine
-
-    @property
-    def unbound_models(self):
-        return self.__engine.unbound_models

@@ -20,11 +20,12 @@ mess::
         ...
 
 Instead, subclasses of a base model are discovered during an ``engine.bind``
-call, and CreateTable is called for any models that haven't already been bound
-through any engine.  After CreateTable calls are issued, the engine will poll
-with DescribeTable until the table and all its GSIs are in the ``ACTIVE``
-state.  Finally, it will verify that the existing table matches the required
-table for the model, or throw an exception.  Now the code above becomes::
+call, and CreateTable is called for any models subclassing that base that
+haven't already been bound through any engine.  After CreateTable calls are
+issued, the engine will poll with DescribeTable until the table and all its
+GSIs are in the ``ACTIVE`` state.  Finally, it will verify that the existing
+table matches the required table for the model, or throw an exception.
+Now the code above becomes::
 
     class Model(Base):
         id = Column(...)

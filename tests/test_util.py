@@ -29,3 +29,19 @@ def test_weakref_default_dict():
     gc.collect()
     # Properly cleaning up data when gc'd
     assert len(d) == 2
+
+
+def test_walk_subclasses():
+    class A:
+        pass
+
+    class B:  # Not included
+        pass
+
+    class C(A):
+        pass
+
+    class D(B, C, A):
+        pass
+
+    assert set(bloop.util.walk_subclasses(A)) == set([A, C, D])

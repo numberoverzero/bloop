@@ -5,6 +5,7 @@ import bloop.filter
 import bloop.index
 import bloop.model
 import bloop.tracking
+import bloop.util
 import collections
 import collections.abc
 import declare
@@ -175,9 +176,14 @@ class Engine:
         """Create tables for all models off of base"""
         # only need to verify models that haven't been
         # bound (created/verified) already
-        unverified = set(filter(
-            lambda model: not bloop.tracking.is_model_verified(model),
-            base.__subclasses__()))
+        def needs_verification(model):
+            # Until there are proper abstract models,
+            # hardcode to filter out the base
+            if model is base:
+                return False
+            return not bloop.tracking.is_model_verified(model)
+        subclasses = bloop.util.walk_subclasses(base)
+        unverified = set(filter(needs_verification, subclasses))
 
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe

@@ -22,6 +22,18 @@ def areinstance(lst, types):
     return True
 
 
+def walk_subclasses(cls):
+    classes = set([cls])
+    visited = set()
+    while classes:
+        cls = classes.pop()
+        # Testing this branch would require checking walk_subclass(object)
+        if cls is not type:  # pragma: no branch
+            classes.update(cls.__subclasses__())
+            visited.add(cls)
+            yield cls
+
+
 class WeakDefaultDictionary(weakref.WeakKeyDictionary):
     def __init__(self, default_factory):
         self.default_factory = default_factory

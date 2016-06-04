@@ -16,6 +16,6 @@ __all__ = [
     "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer",
     "List", "LocalSecondaryIndex", "Map", "NotModified", "Set",
     "String", "TableMismatch", "TypedMap", "UnboundModel", "UUID",
-    "new_base"
+    "new_base", "engine_for_profile"
 ]
 __version__ = "0.9.6"

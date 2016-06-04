@@ -10,7 +10,8 @@ def test_hash_only_key(engine, base_model, local_bind):
     class Visit(base_model):
         hash = bloop.Column(bloop.String, hash_key=True)
         nonkey = bloop.Column(bloop.Integer)
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
     q = engine.query(Visit)
 
     valid = [
@@ -72,7 +73,8 @@ def test_hash_range_key(engine, base_model, local_bind):
         hash = bloop.Column(bloop.String, hash_key=True)
         range = bloop.Column(bloop.Integer, range_key=True)
         nonkey = bloop.Column(bloop.Integer)
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
     q = engine.query(Visit)
 
     valid = [
@@ -215,7 +217,8 @@ def test_select_all_invalid_gsi(engine, base_model, local_bind):
 
         by_date = bloop.GlobalSecondaryIndex(hash_key="date",
                                              projection=["visitor"])
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
 
     q = engine.query(Visit.by_date)
 
@@ -281,7 +284,8 @@ def test_select_specific_gsi_projection(engine, base_model, local_bind):
 
         by_date = bloop.GlobalSecondaryIndex(hash_key="date",
                                              projection=["visitor"])
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
 
     q = engine.query(Visit.by_date).key(Visit.date == "now")
 

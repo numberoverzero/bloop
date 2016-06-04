@@ -6,6 +6,7 @@ import bloop.index
 import bloop.model
 import bloop.tracking
 import bloop.util
+import boto3
 import collections
 import collections.abc
 import declare
@@ -128,8 +129,9 @@ class _LoadManager:
 
 
 class Engine:
+    client = None
+
     def __init__(self, **config):
-        self.client = bloop.client.Client(session=config["session"])
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()
@@ -174,6 +176,9 @@ class Engine:
             setattr(obj, column.model_name, value)
 
     def bind(self, *, base):
+        self.client = self.client or bloop.client.Client(
+            session=self.config["session"])
+
         """Create tables for all models off of base"""
         # only need to verify models that haven't been
         # bound (created/verified) already
@@ -331,3 +336,10 @@ class EngineView(Engine):
     @property
     def type_engine(self):
         return self.__engine.type_engine
+
+
+def engine_for_profile(profile_name, **config):  # pragma: no cover
+    """Helper to simplify creating an engine for a boto config profile"""
+    return Engine(
+        session=boto3.session.Session(profile_name=profile_name),
+        **config)

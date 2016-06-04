@@ -1,5 +1,6 @@
 import bloop
 import botocore
+import contextlib
 import pytest
 
 
@@ -25,8 +26,10 @@ def session():
 
 
 @pytest.fixture
-def engine(session):
-    return bloop.Engine(session=session)
+def engine(client):
+    engine = bloop.Engine()
+    engine.client = client
+    return engine
 
 
 @pytest.fixture
@@ -42,8 +45,16 @@ def renderer(engine):
 
 @pytest.fixture
 def local_bind(engine):
-    engine.client.create_table = noop
-    engine.client.validate_table = noop
+    @contextlib.contextmanager
+    def context():
+        real_create_table = engine.client.create_table
+        real_validate_table = engine.client.validate_table
+        engine.client.create_table = noop
+        engine.client.validate_table = noop
+        yield
+        engine.client.create_table = real_create_table
+        engine.client.validate_table = real_validate_table
+    return context
 
 
 @pytest.fixture
@@ -68,7 +79,8 @@ def UnboundUser(engine, base_model):
 
 @pytest.fixture
 def User(UnboundUser, engine, base_model, local_bind):
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
     return UnboundUser
 
 
@@ -89,7 +101,8 @@ def ComplexModel(engine, base_model, local_bind):
                                               projection="all", write_units=5)
         by_joined = bloop.LocalSecondaryIndex(range_key="joined",
                                               projection=["email"])
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
     return Model
 
 
@@ -114,7 +127,8 @@ def Document(engine, base_model, local_bind, document_type):
         id = bloop.Column(bloop.Integer, hash_key=True)
         data = bloop.Column(document_type)
         numbers = bloop.Column(bloop.List(bloop.Integer))
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
     return Document
 
 
@@ -122,7 +136,8 @@ def Document(engine, base_model, local_bind, document_type):
 def SimpleModel(engine, base_model, local_bind):
     class Model(base_model):
         id = bloop.Column(bloop.UUID, hash_key=True)
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
     return Model
 
 

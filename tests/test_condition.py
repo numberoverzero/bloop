@@ -220,7 +220,8 @@ def test_typedmap_path_comparitor(renderer, engine, base_model, local_bind):
     class Model(base_model):
         id = bloop.Column(bloop.Integer, hash_key=True)
         data = bloop.Column(bloop.TypedMap(bloop.UUID))
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
 
     uid = uuid.uuid4()
     condition = Model.data['foo'].is_(uid)
@@ -242,7 +243,8 @@ def test_name_ref_with_path(
     class Model(base_model):
         id = bloop.Column(bloop.Integer, hash_key=True, name='this.is.id')
         data = bloop.Column(document_type)
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
 
     no_id = Model.id.is_(None)
     path_condition = Model.data["Rating"] >= 2

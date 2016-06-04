@@ -1,15 +1,13 @@
 import arrow
-import boto3
 import uuid
-from bloop import (Engine, Column, Integer, DateTime, UUID,
-                   GlobalSecondaryIndex, String, new_base)
+from bloop import (Column, Integer, DateTime, UUID, GlobalSecondaryIndex,
+                   String, new_base, engine_for_profile)
 
 # ================================================
 # Model setup
 # ================================================
 
-session = boto3.session.Session(profile_name="test-user-bloop")
-engine = Engine(session=session)
+engine = engine_for_profile("test-user-bloop")
 Base = new_base()
 
 

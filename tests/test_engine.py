@@ -27,7 +27,8 @@ def test_dump_key(User, engine, base_model, local_bind):
     class HashAndRange(base_model):
         foo = bloop.Column(bloop.Integer, hash_key=True)
         bar = bloop.Column(bloop.Integer, range_key=True)
-    engine.bind(base=base_model)
+    with local_bind():
+        engine.bind(base=base_model)
 
     user = User(id=uuid.uuid4())
     user_key = {"id": {"S": str(user.id)}}

@@ -16,6 +16,7 @@ _DEFAULT_CONFIG = {
     "consistent": False,
     "prefetch": 0,
     "strict": True,
+    "session": None
 }
 
 
@@ -127,8 +128,8 @@ class _LoadManager:
 
 
 class Engine:
-    def __init__(self, *, session=None, **config):
-        self.client = bloop.client.Client(session=session)
+    def __init__(self, **config):
+        self.client = bloop.client.Client(session=config["session"])
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()

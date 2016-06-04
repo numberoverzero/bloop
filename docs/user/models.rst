@@ -1,14 +1,20 @@
 Working with Models
 ===================
 
-.. _define:
+.. _model:
 
 Define Models
 -------------
 
-Every model must subclass a single engine's base model.  It isn't required to
-call ``engine.bind`` immediately after the class is constructed - instances
-can be created and modified locally without binding the model to DynamoDB.
+The start of any model is the base model.  You can get one through the
+``new_base`` function::
+
+    from bloop import new_base
+    Base = new_base()
+
+Every model must subclass a Base (possibly indirectly - see note on abstract
+models).  The backing tables for models aren't created at class definition, but
+when the base class of a model is bound to an engine using ``engine.bind``.
 This allows you to define models and then handle the binding in a try/except
 to handle any failure modes (network failure, model mismatches).
 
@@ -16,7 +22,10 @@ When defining a model, you can specify an optional ``Meta`` attribute within
 the class, which lets you customize properties of the table, as well as holding
 most of the cached data used internally::
 
-    class MyModel(engine.model):
+    Base = new_base()
+
+
+    class MyModel(Base):
         class Meta:
             # Defaults to class name
             table_name = 'MyCustomTableName'
@@ -25,7 +34,7 @@ most of the cached data used internally::
         id = Column(Integer, hash_key=True)
         content = Column(Binary)
 
-    engine.bind()
+    engine.bind(base=Base)
 
 When determining the layout for your data in DynamoDB, you should carefully
 review the `Limits`_ documentation to estimate the throughput required to load
@@ -39,7 +48,7 @@ model columns offer the **name** parameter, which can specify a value other
 than the model's name for reading and writing.  We can rewrite the above
 example as such::
 
-    class MyModel(engine.model):
+    class MyModel(Base):
         class Meta:
             table_name = 'MyCustomTableName'
             write_units = 10
@@ -52,21 +61,48 @@ to the model's ``id`` and ``content`` attributes.  For other cross-cutting
 columnar concerns (nullable, validation) you'll want to subclass Column and
 attach your own kwargs.
 
+.. note::
+    While abstract models are not currently implemented, you can subclass the
+    base created from ``new_base`` and use that as your base class::
+
+        Base = new_base()
+
+        class MyCustomBase(Base):
+            def shared_function_for_all_subclasses(self):
+                ...
+        ...
+
+        class Model(MyCustomBase):
+            ...
+
+        engine.bind(base=MyCustomBase)
+
+    Be careful!  ``engine.bind`` recursively walks the subclasses of whatever
+    base you provide; if the above call was instead ``engine.bind(base=Base)``
+    then bloop would try to create a table in Dynamo for the model
+    ``MyCustomBase`` which would either fail, or create an unexpected table.
+
+    There is an existing `issue`_ to track implementation of proper abstract
+    models, which would allow models that aren't backed by tables to exist
+    anywhere along the inheritance of a base model.
+
+
 .. seealso::
     * :ref:`meta` for a full list of Meta's attributes.
     * :ref:`bind` for a detailed look at what happens when models are bound.
     * :ref:`custom-columns` for extending the Column modeling.
 
 .. _Limits: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html
+.. _issue: https://github.com/numberoverzero/bloop/issues/26
 
 .. _create:
 
 Create Instances
 ----------------
 
-The ``engine.model`` base class provides an \_\_init\_\_ method that takes
-\*\*kwargs and sets those values on the object (if they match a column).  For
-the model above, you could do the following::
+The base model provides an ``__init__`` method that takes
+``**kwargs`` and sets those values on the object (if they match a column).  For
+the model above::
 
     instance = MyModel(content=b'hello, world', id=0, unused='not set')
 
@@ -84,6 +120,12 @@ for any reason (to differentiate user creation from engine loading, for
 example) you must set the model's ``Meta.init`` to a function with no arguments
 that returns an instance of the model. You can find more details on custom
 loading in the advanced section.
+
+
+.. note::
+    When using the default init provided by the base model, it expects the
+    python version of values; for instance, a UUID should be provided as
+    ``uuid.uuid4()`` instead of ``"241b13b9-857b-432d-ac9e-3ae5f054f131"``.
 
 .. seealso::
     :ref:`loading` to customize the entry point for model creation.
@@ -140,7 +182,7 @@ Like ``load``, one or more objects can be saved at a time::
             ' $10,000 for saving you $500,000.'))
 
     engine.save(account)
-    engine.save([account, tweet], consistent=False, atomic=True)
+    engine.save([account, tweet], atomic=True)
 
 bloop uses `UpdateItem`_ to save objects, tracking which fields on an instance
 of a model have been set or deleted.  When an object is saved, any values that
@@ -208,7 +250,7 @@ transactions (yet?), conditions let you do a pretty good impression::
     engine.save(instance, condition=still_zero)
 
     # Fails, because the persisted value is 1,
-    # and the condition fails.
+    # and the condition isn't valid.
     engine.save(instance, condition=still_zero)
 
 There are a `handful of conditions`_ available, which are cleanly exposed in
@@ -406,10 +448,11 @@ something like::
 This would fail even if there were no changes, since the persisted row has a
 value for ``foo``; it simply wasn't loaded!
 
-bloop takes care of this tracking for us.  When ``atomic`` is enabled, the last
-persisted state of an object is stored.  When querying an index, the projected
-attributes that are available to the index are used to differentiate which
-attributes were expected but missing, and which were not loaded.
+bloop takes care of this tracking for us; objects that were updated through a
+load or query/scan have a copy of their last persisted state stored.
+When querying an index, the projected attributes that are available to the
+index are used to differentiate which attributes were expected but missing,
+and which were not loaded.
 
 Finally, conditions can be used with atomic updates - this allows you to
 constrain operations on attributes that may not have been loaded.  Using the
@@ -626,10 +669,8 @@ Meta exposes the following attributes:
 * ``init`` - covered in detail in :ref:`loading`, this is the entry point
   bloop uses when creating new instances of a model.  It is NOT used during
   ``bloop.load`` which updates attributes on existing instances.
-* ``colums`` - a ``set`` of ``Column`` objects that are part of the model.
+* ``columns`` - a ``set`` of ``Column`` objects that are part of the model.
 * ``indexes`` - a ``set`` of ``Index`` objects that are part of the model.
 * ``hash_key`` - the ``Column`` that is the model's hash key.
-* ``range_key`` - the ``Column`` that is the model's range key.  Is ``None`` if
+* ``range_key`` - the ``Column`` that is the model's range key.  ``None`` if
   there is no range key for the table.
-* ``bloop_engine`` - the engine that the model is associated with.  It may not
-  be bound yet.

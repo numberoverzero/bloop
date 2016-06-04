@@ -1,18 +1,17 @@
 import arrow
-import boto3
 import decimal
 import random
 import uuid
-from bloop import (Engine, Column, DateTime, Integer,
-                   UUID, String, Map, TypedMap, Float)
+from bloop import (Column, DateTime, Integer, UUID, String,
+                   Map, TypedMap, Float, new_base, engine_for_profile)
 
 
 # ================================================
 # Model setup
 # ================================================
 
-session = boto3.session.Session(profile_name="test-user-bloop")
-engine = Engine(session=session)
+engine = engine_for_profile("test-user-bloop")
+Base = new_base()
 
 
 Product = Map(**{
@@ -27,10 +26,10 @@ Product = Map(**{
 })
 
 
-class Item(engine.model):
+class Item(Base):
     id = Column(UUID, hash_key=True)
     data = Column(Product)
-engine.bind()
+engine.bind(base=Base)
 
 
 # ================================================

@@ -162,20 +162,11 @@ def test_list():
     assert typedef.dynamo_load(dumped) == loaded
 
 
-def test_list_unknown_type():
-    """ Trying to load/dump an unknown type raises TypeError """
-
-    class UnknownObject:
-        pass
-
-    unknown_obj = UnknownObject()
-    unknown_type = {"not S, B, BOOL, etc": unknown_obj}
-
-    with pytest.raises(TypeError):
-        types.List().dynamo_dump([unknown_obj])
-
-    with pytest.raises(TypeError):
-        types.List().dynamo_load([unknown_type])
+def test_required_subtypes():
+    """Typed containers require an inner type"""
+    for typeclass in [types.List, types.Set, types.TypedMap]:
+        with pytest.raises(TypeError):
+            typeclass()
 
 
 def test_load_dump_none():

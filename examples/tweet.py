@@ -1,18 +1,17 @@
 import arrow
-import boto3
 import uuid
-from bloop import (Engine, Column, Integer, DateTime, UUID,
-                   GlobalSecondaryIndex, String)
+from bloop import (Column, Integer, DateTime, UUID, GlobalSecondaryIndex,
+                   String, new_base, engine_for_profile)
 
 # ================================================
 # Model setup
 # ================================================
 
-session = boto3.session.Session(profile_name="test-user-bloop")
-engine = Engine(session=session)
+engine = engine_for_profile("test-user-bloop")
+Base = new_base()
 
 
-class Account(engine.model):
+class Account(Base):
     class Meta:
         read_units = 5
         write_units = 2
@@ -25,7 +24,7 @@ class Account(engine.model):
         write_units=1, read_units=5)
 
 
-class Tweet(engine.model):
+class Tweet(Base):
     class Meta:
         write_units = 10
     account = Column(UUID, hash_key=True)
@@ -37,7 +36,7 @@ class Tweet(engine.model):
     by_date = GlobalSecondaryIndex(
         hash_key='date', projection='keys_only')
 
-engine.bind()
+engine.bind(base=Base)
 
 
 # ================================================

@@ -14,7 +14,12 @@ _TABLE_MISMATCH = "Existing table for model {} does not match expected"
 _UNBOUND = "Failed to {} unbound model.  Did you forget to call engine.bind()?"
 
 
-class ConstraintViolation(Exception):
+class BloopException(Exception):
+    """Base exception for blanket catching"""
+    pass
+
+
+class ConstraintViolation(BloopException):
     """Raised when a condition is not met during put/update/delete.
 
     Attributes:
@@ -27,7 +32,7 @@ class ConstraintViolation(Exception):
         self.obj = obj
 
 
-class NotModified(Exception):
+class NotModified(BloopException):
     """Raised when some objects are not loaded, saved, or deleted.
 
     Attributes:
@@ -39,11 +44,12 @@ class NotModified(Exception):
         self.objects = list(objects)
 
 
-class TableMismatch(Exception):
+class TableMismatch(BloopException):
     """Raised when binding a model to an existing table with the wrong schema.
 
     Attributes:
-        model (:attr:`bloop.Engine.model`): The model that was trying to bind
+        model (:class:`bloop.model.BaseModel`):
+            The model that was trying to bind
         expected (dict): The expected schema for the table
         actual (dict): The actual schema of the table
     """
@@ -54,12 +60,12 @@ class TableMismatch(Exception):
         self.actual = actual
 
 
-class UnboundModel(Exception):
+class UnboundModel(BloopException):
     """Raised when loading or dumping on a model before binding it to an engine
 
     Attributes:
-        model (:attr:`bloop.Engine.model`): The model of the object being
-            loaded, or dumped
+        model (:class:`bloop.model.BaseModel`):
+            The model of the object being loaded, or dumped
         obj (object or None): The instance of the model that was being dumped,
             or loaded into.  If a new instance of the model was being created,
             this will be None

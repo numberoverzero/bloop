@@ -215,12 +215,13 @@ def test_path_comparitor(renderer, Document):
     assert renderer.rendered == expected
 
 
-def test_typedmap_path_comparitor(renderer, engine, local_bind):
+def test_typedmap_path_comparitor(renderer, engine, base_model, local_bind):
     """ TypedMap should defer to the value typedef for conditions """
-    class Model(engine.model):
+    class Model(base_model):
         id = bloop.Column(bloop.Integer, hash_key=True)
         data = bloop.Column(bloop.TypedMap(bloop.UUID))
-    engine.bind()
+    with local_bind():
+        engine.bind(base=base_model)
 
     uid = uuid.uuid4()
     condition = Model.data['foo'].is_(uid)
@@ -235,13 +236,15 @@ def test_typedmap_path_comparitor(renderer, engine, local_bind):
     assert renderer.rendered == expected
 
 
-def test_name_ref_with_path(renderer, engine, local_bind, document_type):
+def test_name_ref_with_path(
+        renderer, engine, base_model, local_bind, document_type):
     """ Columns with custom names with literal periods render correctly """
 
-    class Model(engine.model):
+    class Model(base_model):
         id = bloop.Column(bloop.Integer, hash_key=True, name='this.is.id')
         data = bloop.Column(document_type)
-    engine.bind()
+    with local_bind():
+        engine.bind(base=base_model)
 
     no_id = Model.id.is_(None)
     path_condition = Model.data["Rating"] >= 2

@@ -11,6 +11,9 @@ takes no arguments and returns instances of the model.  By default this is
 simply the model's ``__init__`` method, but any object-returning function
 can be used::
 
+    Base = new_base()
+
+
     def default_model():
         # Ensure content is not None
         instance = MyModel()
@@ -18,24 +21,20 @@ can be used::
         return instance
 
 
-    class MyModel(engine.model):
+    class MyModel(Base):
         class Meta:
             init = default_model
 
         id = Column(Integer, hash_key=True)
         content = Column(Binary)
 
-    engine.bind()
+    engine.bind(base=Base)
 
-While it's possible to return an object that doesn't inherit from engine.model,
-most Engine methods rely on certain ``Meta`` attributes to exist on the model
-to properly load and dump values from/to Dynamo.  The non-default init method
-can be useful for data migrations, such as loading from an old model, and
-initializing into instances of a new model.
+The non-default init method can be useful for data migrations, such as loading
+from an old model, and initializing into instances of a new model.
 
 .. seealso::
     * :ref:`model` for more details info on the base model class.
-    * :ref:`define` for more info on defining models.
 
 .. _advanced-types:
 
@@ -68,15 +67,16 @@ you'll use a backing integer, and then a string::
             # Dump the value through the Integer type first
             return super().dynamo_dump(value.value, context=context, **kwargs)
 
-    from bloop import Engine, Column
+    from bloop import Engine, Column, new_base
+    Base = new_base()
     engine = Engine()
 
 
-    class Cube(engine.model):
+    class Cube(Base):
         id = Column(Integer, hash_key=True)
         size = Column(Integer)
         color = Column(ColorType)
-    engine.bind()
+    engine.bind(base=Base)
 
     cube = Cube(id=0, size=1, color=Color.green)
     engine.save(cube)
@@ -138,11 +138,11 @@ passing the enum class in the \_\_init\_\_ method::
 
 And its use::
 
-    class Cube(engine.model):
+    class Cube(Base):
         id = Column(Integer, hash_key=True)
         size = Column(Integer)
         color = Column(Enum(Color))
-    engine.bind()
+    engine.bind(base=Base)
 
 What about a custom document type?  This example will create a Type that can
 store arbitrary types, instead of the single-typed list that already exists::
@@ -196,7 +196,7 @@ store arbitrary types, instead of the single-typed list that already exists::
 
 And it can be used as such::
 
-    class Model(engine.model):
+    class Model(Base):
         id = Column(Integer, hash_key=True)
         objects = Column(MultiList(String, Integer(), Float, UUID()))
 
@@ -214,7 +214,7 @@ MultiList type won't serialize them (this is the ``min`` in the code above).
     ``True``. While it is useful with untyped values, it has no place in an
     object mapper that enforces typed data.  Consider a column of Null::
 
-        class MyModel(engine.model):
+        class MyModel(Base):
             id = Column(Integer, hash_key=True)
             is_null = Column(Null)
 
@@ -250,17 +250,18 @@ Column, not the type::
 
 And using that column::
 
-    from bloop import Engine, Integer
+    from bloop import Engine, Integer, new_base
+    Base = new_base()
     engine = Engine()
 
     def positive(obj, value):
         return value > 0
 
 
-    class Model(engine.model):
+    class Model(Base):
         id = Column(Integer, hash_key=True)
         content = ValidatingColumn(Integer, validate=positive)
-    engine.bind()
+    engine.bind(base=Base)
 
 Remember, this will be run every time the value is set, **even when the object
 is loaded from DynamoDB**.  This means that a ValueError will be raised if the
@@ -319,12 +320,13 @@ To add a ``nullable`` flag to the Column constructor::
 Usage::
 
     from customization import Column
-    from bloop import Engine, Integer, Boolean
+    from bloop import Engine, Integer, Boolean, new_base
+    Base = new_base()
     engine = Engine()
     missing = object()
 
 
-    class Model(engine.model):
+    class Model(Base):
         id = Column(Integer, nullable=False, hash_key=True)
         content = Column(Integer, nullable=True)
         flag = Column(Boolean)
@@ -337,7 +339,7 @@ Usage::
                         "{} is not nullable".format(column.model_name))
                 elif value is not missing:
                     setattr(self, column.model_name, value)
-    engine.bind()
+    engine.bind(base=Base)
 
     # Each of these raises
     instance = Model(content=4, flag=True)

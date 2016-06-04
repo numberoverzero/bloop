@@ -23,11 +23,12 @@ def test_missing_objects(User, engine):
     assert set(excinfo.value.objects) == set(users)
 
 
-def test_dump_key(User, engine, local_bind):
-    class HashAndRange(engine.model):
+def test_dump_key(User, engine, base_model, local_bind):
+    class HashAndRange(base_model):
         foo = bloop.Column(bloop.Integer, hash_key=True)
         bar = bloop.Column(bloop.Integer, range_key=True)
-    engine.bind()
+    with local_bind():
+        engine.bind(base=base_model)
 
     user = User(id=uuid.uuid4())
     user_key = {"id": {"S": str(user.id)}}
@@ -143,10 +144,9 @@ def test_load_dump_unknown(engine):
     class NotModeled:
         pass
     obj = NotModeled()
-    user_id = uuid.uuid4()
     value = {"User": [{"age": {"N": 5},
                        "name": {"S": "foo"},
-                       "id": {"S": str(user_id)}}]}
+                       "id": {"S": str(uuid.uuid4())}}]}
 
     with pytest.raises(ValueError):
         engine._load(NotModeled, value)
@@ -628,23 +628,15 @@ def test_context(User, engine):
     # EngineViews can't bind
     with pytest.raises(RuntimeError):
         with engine.context() as eng:
-            eng.bind()
+            eng.bind(base=bloop.new_base())
 
 
-def test_unbound_engine_view(engine):
+def test_unbound_engine_view(engine, base_model):
     """Trying to mutate an unbound model through an EngineView fails"""
-    class UnboundModel(engine.model):
+    class UnboundModel(base_model):
         id = bloop.Column(bloop.String, hash_key=True)
     instance = UnboundModel(id="foo")
 
     with pytest.raises(bloop.exceptions.UnboundModel):
         with engine.context() as view:
             view._dump(UnboundModel, instance)
-
-
-def test_engine_view_model(engine):
-    """An EngineView's model is just a pointer to it's engine's model"""
-    with engine.context() as view:
-        class Model(view.model):
-            id = bloop.Column(bloop.String, hash_key=True)
-    assert Model in engine.unbound_models

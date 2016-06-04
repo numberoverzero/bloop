@@ -5,6 +5,8 @@ import bloop.filter
 import bloop.index
 import bloop.model
 import bloop.tracking
+import bloop.util
+import boto3
 import collections
 import collections.abc
 import declare
@@ -15,6 +17,7 @@ _DEFAULT_CONFIG = {
     "consistent": False,
     "prefetch": 0,
     "strict": True,
+    "session": None
 }
 
 
@@ -126,25 +129,23 @@ class _LoadManager:
 
 
 class Engine:
-    model = None
+    client = None
 
-    def __init__(self, *, session=None, **config):
-        self.client = bloop.client.Client(session=session)
+    def __init__(self, **config):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()
-        self.model = bloop.model.BaseModel(self)
-        self.unbound_models = set()
-        self.models = set()
         self.config = dict(_DEFAULT_CONFIG)
         self.config.update(config)
 
     def _dump(self, model, obj):
         """ Return a dict of the obj in DynamoDB format """
         try:
-            return self.type_engine.dump(model, obj)
+            return self.type_engine.dump(
+                model, obj, context={"engine": self})
         except declare.DeclareException:
-            if model in self.unbound_models:
+            # Best-effort check for a more helpful message
+            if issubclass(model, bloop.model.BaseModel):
                 raise bloop.exceptions.UnboundModel("load", model, obj)
             else:
                 raise ValueError(
@@ -156,9 +157,11 @@ class Engine:
 
     def _load(self, model, value):
         try:
-            return self.type_engine.load(model, value)
+            return self.type_engine.load(
+                model, value, context={"engine": self})
         except declare.DeclareException:
-            if model in self.unbound_models:
+            # Best-effort check for a more helpful message
+            if issubclass(model, bloop.model.BaseModel):
                 raise bloop.exceptions.UnboundModel("load", model, None)
             else:
                 raise ValueError(
@@ -172,29 +175,38 @@ class Engine:
                 value = self._load(column.typedef, value)
             setattr(obj, column.model_name, value)
 
-    def bind(self):
-        """ Create tables for all models that have been registered """
+    def bind(self, *, base):
+        self.client = self.client or bloop.client.Client(
+            session=self.config["session"])
+
+        """Create tables for all models off of base"""
+        # only need to verify models that haven't been
+        # bound (created/verified) already
+        def needs_verification(model):
+            # Until there are proper abstract models,
+            # hardcode to filter out the base
+            if model is base:
+                return False
+            return not bloop.tracking.is_model_verified(model)
+        subclasses = bloop.util.walk_subclasses(base)
+        unverified = set(filter(needs_verification, subclasses))
+
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
-        for model in self.unbound_models:
+        for model in unverified:
             self.client.create_table(model)
 
-        unverified = set(self.unbound_models)
-        while unverified:
-            model = unverified.pop()
-
+        for model in unverified:
             self.client.validate_table(model)
-            # If the call above didn't throw, everything's good to go.
+            # Model won't need to be verified the
+            # next time its BaseModel is bound to an engine
+            bloop.tracking.verify_model(model)
 
             self.type_engine.register(model)
             for column in model.Meta.columns:
                 self.type_engine.register(column.typedef)
             self.type_engine.bind()
-            # If nothing above threw, we can mark this model bound
-
-            self.unbound_models.remove(model)
-            self.models.add(model)
 
     def context(self, **config):
         """
@@ -233,12 +245,13 @@ class Engine:
 
         Example
         -------
+        Base = new_base()
         engine = Engine()
 
-        class HashOnly(engine.model):
+        class HashOnly(Base):
             user_id = Column(NumberType, hash_key=True)
 
-        class HashAndRange(engine.model):
+        class HashAndRange(Base):
             user_id = Column(NumberType, hash_key=True)
             game_title = Column(StringType, range_key=True)
 
@@ -307,7 +320,7 @@ class EngineView(Engine):
         self.config = dict(engine.config)
         self.config.update(config)
 
-    def bind(self):
+    def bind(self, **kwargs):
         raise RuntimeError("EngineViews can't modify engine types or bindings")
 
     def __enter__(self):
@@ -321,13 +334,12 @@ class EngineView(Engine):
         return self.__engine.client
 
     @property
-    def model(self):
-        return self.__engine.model
-
-    @property
     def type_engine(self):
         return self.__engine.type_engine
 
-    @property
-    def unbound_models(self):
-        return self.__engine.unbound_models
+
+def engine_for_profile(profile_name, **config):  # pragma: no cover
+    """Helper to simplify creating an engine for a boto config profile"""
+    return Engine(
+        session=boto3.session.Session(profile_name=profile_name),
+        **config)

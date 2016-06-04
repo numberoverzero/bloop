@@ -60,6 +60,11 @@ class String(Type):
     python_type = str
     backing_type = STRING
 
+    # No need to override dynamo_load, since all values come in as strings
+
+    def dynamo_dump(self, value, *, context=None, **kwargs):
+        return str(value)
+
 
 class UUID(String):
     python_type = uuid.UUID
@@ -80,7 +85,7 @@ class DateTime(String):
     For example, comparisons can be done in any timezone since they
     will all be converted to UTC on request and from UTC on response::
 
-        class Model(engine.model):
+        class Model(Base):
             id = Column(Integer, hash_key=True)
             date = Column(DateTime(timezone="US/Pacific"))
         engine.bind()
@@ -172,7 +177,11 @@ class Set(Type):
     """ Adapter for sets of objects """
     python_type = collections.abc.Set
 
-    def __init__(self, typedef):
+    def __init__(self, typedef=None):
+        # Default None allows the TypeEngine to call without args,
+        # and still provide a helpful error message for a required param
+        if typedef is None:
+            raise TypeError("Sets requires a type")
         self.typedef = type_instance(typedef)
         self.backing_type = typedef.backing_type + "S"
         super().__init__()
@@ -241,7 +250,11 @@ class TypedMap(Type):
     python_type = collections.abc.Mapping
     backing_type = MAP
 
-    def __init__(self, typedef):
+    def __init__(self, typedef=None):
+        # Default None allows the TypeEngine to call without args,
+        # and still provide a helpful error message for a required param
+        if typedef is None:
+            raise TypeError("TypedMap requires a type")
         self.typedef = type_instance(typedef)
         super().__init__()
 
@@ -270,7 +283,11 @@ class List(Type):
     python_type = collections.abc.Iterable
     backing_type = LIST
 
-    def __init__(self, typedef):
+    def __init__(self, typedef=None):
+        # Default None allows the TypeEngine to call without args,
+        # and still provide a helpful error message for a required param
+        if typedef is None:
+            raise TypeError("List requires a type")
         self.typedef = type_instance(typedef)
         super().__init__()
 

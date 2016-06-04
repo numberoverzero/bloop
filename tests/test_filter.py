@@ -4,13 +4,14 @@ import pytest
 import uuid
 
 
-def test_hash_only_key(engine, local_bind):
+def test_hash_only_key(engine, base_model, local_bind):
     """ key calls for a model with no range key """
 
-    class Visit(engine.model):
+    class Visit(base_model):
         hash = bloop.Column(bloop.String, hash_key=True)
         nonkey = bloop.Column(bloop.Integer)
-    engine.bind()
+    with local_bind():
+        engine.bind(base=base_model)
     q = engine.query(Visit)
 
     valid = [
@@ -65,14 +66,15 @@ def test_hash_only_key(engine, local_bind):
             q.key(condition)
 
 
-def test_hash_range_key(engine, local_bind):
+def test_hash_range_key(engine, base_model, local_bind):
     """key calls for a model with hash and range keys"""
 
-    class Visit(engine.model):
+    class Visit(base_model):
         hash = bloop.Column(bloop.String, hash_key=True)
         range = bloop.Column(bloop.Integer, range_key=True)
         nonkey = bloop.Column(bloop.Integer)
-    engine.bind()
+    with local_bind():
+        engine.bind(base=base_model)
     q = engine.query(Visit)
 
     valid = [
@@ -204,18 +206,19 @@ def test_select_projected(engine, User):
     assert results.request == expected
 
 
-def test_select_all_invalid_gsi(engine, local_bind):
+def test_select_all_invalid_gsi(engine, base_model, local_bind):
     """
     Select all query on GSI without "all" projection
     """
-    class Visit(engine.model):
+    class Visit(base_model):
         page = bloop.Column(bloop.String, hash_key=True)
         visitor = bloop.Column(bloop.Integer)
         date = bloop.Column(bloop.DateTime)
 
         by_date = bloop.GlobalSecondaryIndex(hash_key="date",
                                              projection=["visitor"])
-    engine.bind()
+    with local_bind():
+        engine.bind(base=base_model)
 
     q = engine.query(Visit.by_date)
 
@@ -268,12 +271,12 @@ def test_select_specific(engine, User):
     assert result.request == expected
 
 
-def test_select_specific_gsi_projection(engine, local_bind):
+def test_select_specific_gsi_projection(engine, base_model, local_bind):
     """
     When specific attrs are requested on a GSI without all attrs projected,
     validate that the specific attrs are available through the GSI
     """
-    class Visit(engine.model):
+    class Visit(base_model):
         page = bloop.Column(bloop.String, hash_key=True)
         visitor = bloop.Column(bloop.Integer)
         date = bloop.Column(bloop.String)
@@ -281,7 +284,8 @@ def test_select_specific_gsi_projection(engine, local_bind):
 
         by_date = bloop.GlobalSecondaryIndex(hash_key="date",
                                              projection=["visitor"])
-    engine.bind()
+    with local_bind():
+        engine.bind(base=base_model)
 
     q = engine.query(Visit.by_date).key(Visit.date == "now")
 

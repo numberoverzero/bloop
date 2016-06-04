@@ -181,8 +181,12 @@ the following are fine::
     Column(Float)
     Column(DateTime)
 
-Set requires an argument; the following is illegal::
+Set requires an argument, which is also a type::
 
+    # Ok - set of strings
+    Column(Set(String))
+
+    # Wrong - sets can't be untyped
     Column(Set)
 
 Every Set's ``backing_type`` must be one of ``SS``, ``NS``, or ``BS`` depending
@@ -222,7 +226,7 @@ False::
 Documents
 ---------
 
-While Dynamo's ``Map`` and ``List`` structures support arbitary types and
+While Dynamo's ``Map`` and ``List`` structures support arbitrary types and
 nesting, DynamoDB does not offer the ability to store enough type information
 alongside the values to unpack custom types (like DateTime, UUID) losslessly.
 For instance, ``{"S": "acd67186-8faa-48b2-9300-7f12bc969e76"}`` COULD represent
@@ -250,10 +254,10 @@ Map, you must have specified the type that loads it::
     })
 
 
-    class Item(engine.model):
+    class Item(Base):
         id = Column(Integer, hash_key=True)
         data = Column(Product)
-    engine.bind()
+    engine.bind(base=Base)
 
 Omitted keys will not be loaded from, or saved to, Dynamo.  In the above
 example, ``item.data['other']`` will not be persisted because there is no
@@ -265,10 +269,10 @@ space is unbounded::
 
     InstanceStatus = TypedMap(String)
 
-    class Cluster(engine.model):
+    class Cluster(Base):
         id = Column(Integer, hash_key=True)
         statuses = Column(InstanceStatus)
-    engine.bind()
+    engine.bind(base=Base)
 
 Now we can store an arbitrary (up to Dynamo's limits) set of keys::
 
@@ -282,10 +286,10 @@ the list must be of the chosen type.  While this doesn't leverage the full
 flexibility of the DynamoDB List type (which can store objects with different
 types) it simplifies the modeling required to load types::
 
-    class Item(engine.model):
+    class Item(Base):
         id = Column(Integer, hash_key=True)
         ratings = Column(List(Float))
-    engine.bind()
+    engine.bind(base=Bae)
 
-To create your own List type that can store arbitary types, see an example in
+To create your own List type that can store arbitrary types, see an example in
 :ref:`advanced-types`.

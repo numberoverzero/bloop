@@ -11,21 +11,22 @@ appropriate indexes and attributes.  If it did, catching exceptions would be a
 mess::
 
     # Each class definition
+    Base = new_base()
     try:
-        class Model(engine.model):
+        class Model(Base):
             id = Column(...)
             content = Column(...)
     except botocore.exceptions.ClientError, bloop.TableMismatch:
         ...
 
-Instead, models are added to the engine's ``unbound_models`` set on creation,
-and the appropriate table create commands are issued the next time ``bind()``
-is called.  After CreateTable calls are issued, the engine will poll with
-DescribeTable until the table and all its GSIs are in the ``ACTIVE`` state.
-Finally, it will verify that the existing table matches the required table for
-the model, or throw an exception.  Now the code above becomes::
+Instead, subclasses of a base model are discovered during an ``engine.bind``
+call, and CreateTable is called for any models that haven't already been bound
+through any engine.  After CreateTable calls are issued, the engine will poll
+with DescribeTable until the table and all its GSIs are in the ``ACTIVE``
+state.  Finally, it will verify that the existing table matches the required
+table for the model, or throw an exception.  Now the code above becomes::
 
-    class Model(engine.model):
+    class Model(Base):
         id = Column(...)
         content = Column(...)
 
@@ -33,7 +34,7 @@ the model, or throw an exception.  Now the code above becomes::
     ...
 
     try:
-        engine.bind()
+        engine.bind(base=Base)
     except botocore.exceptions.ClientError, bloop.TableMismatch:
         ...
 
@@ -45,7 +46,6 @@ bound.
     model; instead, you will need to manually modify or delete the table.
 
 .. seealso::
-    * :ref:`define` for options when creating models
     * :ref:`model` for info on the base model class
     * :ref:`meta` for access to generated metadata (columns, indexes...)
     * :ref:`loading` to customize how bloop loads models
@@ -111,9 +111,10 @@ context
 -------
 
 Sometimes you want to swap config for a batch of calls, without changing the
-engine's config for other callers.  Because models are tied to a single
-engine's base :ref:`model`, a new engine with different config settings would
-not be able to save or load objects from the original engine.
+engine's config for other callers.  Because the type system backing bloop
+sets up some state when it encounters new models (and columns, and custom
+typedefs), a new engine with different config settings would
+not be able to save or load objects bound to the original engine.
 
 Instead, you can use an engine view::
 
@@ -146,60 +147,6 @@ Load an object or set of objects, optionally using ConsistentReads::
 
 Load raises ``NotModified`` if any objects fail to load.  For more info on
 loading objects, see :ref:`load`.
-
-.. _model:
-
-model
------
-
-When an engine is created, a unique base model class is generated for it.  Any
-subclass of that engine's ``model``, once bound, can be loaded or dumped
-through the engine.  The same is true of any individual column, should you ever
-need to partially load or dump values (say, to manually update the tracking
-diff).
-
-Models that subclass one engine cannot be loaded through a different engine -
-even if they have identical structures.  This is because an engine represents
-a way to talk to DynamoDB, which means multiple engines can model the same
-table quite differently.
-
-For example, suppose you are migrating a legacy column from an integer-backed
-enum to a string-backed enum.  One engine might handle only writes, while
-another needs to have a custom type that can interpret both for processing::
-
-    class CompatModel(compat_engine.model):
-        id = Column(Integer, hash_key=True)
-        content = Column(CompatEnum)
-
-        class Meta:
-            table_name = 'Model'
-
-    class Model(engine.model):
-        id = Column(Integer, hash_key=True)
-        content = Column(String)
-
-    compat_engine.bind()
-    engine.bind()
-
-    def load_data(key):
-        obj = CompatModel(id=key)
-        compat_engine.load(obj)
-        return obj
-
-    def save_data(key, data):
-        obj = Model(id=key, content=data)
-        engine.save(obj)
-
-.. warning::
-    Only the base ``engine.model`` can be subclassed.  Subclassing a custom
-    model with Columns and Indexes has some opportunities for ambiguity, so
-    instead they are not supported.  Trying to subclass a custom model will
-    result in a class whose ``Meta`` contains empty ``columns`` and ``indexes``
-    attributes.
-
-.. seealso::
-    * :ref:`define` for creating models
-    * :ref:`loading` to customize how bloop loads models
 
 query
 -----

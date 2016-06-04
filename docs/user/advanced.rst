@@ -35,7 +35,6 @@ from an old model, and initializing into instances of a new model.
 
 .. seealso::
     * :ref:`model` for more details info on the base model class.
-    * :ref:`define` for more info on defining models.
 
 .. _advanced-types:
 

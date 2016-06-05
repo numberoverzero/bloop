@@ -88,16 +88,14 @@ def local_bind(engine):
 
 
 @pytest.fixture
-def User(engine, local_bind):
-    with local_bind():
-        engine.bind(base=BaseModel)
+def User(engine):
+    engine.bind(base=UserModel)
     return UserModel
 
 
 @pytest.fixture
-def ComplexModel(engine, local_bind):
-    with local_bind():
-        engine.bind(base=BaseModel)
+def ComplexModel(engine):
+    engine.bind(base=Model)
     return Model
 
 
@@ -107,7 +105,6 @@ def document_type():
 
 
 @pytest.fixture
-def Document(engine, local_bind):
-    with local_bind():
-        engine.bind(base=BaseModel)
+def Document(engine):
+    engine.bind(base=DocumentModel)
     return DocumentModel

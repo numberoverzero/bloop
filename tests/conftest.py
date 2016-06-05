@@ -1,6 +1,8 @@
 import bloop
+import bloop.client
 import contextlib
 import pytest
+from unittest.mock import Mock
 
 BaseModel = bloop.new_base()
 DocumentType = bloop.Map(**{
@@ -59,26 +61,9 @@ def noop(*a, **kw):
 
 
 @pytest.fixture
-def client(session):
-    return bloop.client.Client(session=session)
-
-
-@pytest.fixture
-def session():
-    class DummyClient:
-        pass
-
-    class DummySession:
-        def client(self, name):
-            assert name == "dynamodb"
-            return DummyClient()
-    return DummySession()
-
-
-@pytest.fixture
-def engine(client):
+def engine():
     engine = bloop.Engine()
-    engine.client = client
+    engine.client = Mock(spec=bloop.client.Client)
     return engine
 
 

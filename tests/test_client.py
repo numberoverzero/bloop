@@ -2,10 +2,18 @@ import bloop
 import bloop.client
 import bloop.exceptions
 import bloop.util
+import boto3
 import botocore
 import copy
 import pytest
 import uuid
+from unittest.mock import Mock
+
+
+@pytest.fixture
+def client():
+    session = Mock(spec=boto3.session.Session)
+    return bloop.client.Client(session=session)
 
 
 @pytest.fixture
@@ -158,7 +166,7 @@ def test_batch_get_unprocessed(User, client):
     assert response == expected_response
 
 
-def test_call_with_retries(session, client_error):
+def test_call_with_retries(client, client_error):
     max_tries = 4
     tries = 0
 
@@ -170,7 +178,7 @@ def test_call_with_retries(session, client_error):
                 operation, attempts))
         # Don't sleep at all
         return 0
-    client = bloop.client.Client(session=session, backoff_func=backoff)
+    client.backoff_func = backoff
 
     def always_raise_retryable(context):
         context["calls"] += 1

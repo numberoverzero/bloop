@@ -3,7 +3,7 @@ import botocore
 import contextlib
 import pytest
 
-
+BaseModel = bloop.new_base()
 DocumentType = bloop.Map(**{
     'Rating': bloop.Float(),
     'Stock': bloop.Integer(),
@@ -72,11 +72,11 @@ def local_bind(engine):
 
 @pytest.fixture
 def base_model():
-    return bloop.new_base()
+    return BaseModel
 
 
 @pytest.fixture
-def UnboundUser(engine, base_model):
+def User(engine, base_model, local_bind):
     class User(base_model):
         id = bloop.Column(bloop.UUID, hash_key=True)
         age = bloop.Column(bloop.Integer)
@@ -87,14 +87,9 @@ def UnboundUser(engine, base_model):
 
         by_email = bloop.GlobalSecondaryIndex(hash_key="email",
                                               projection="all")
-    return User
-
-
-@pytest.fixture
-def User(UnboundUser, engine, base_model, local_bind):
     with local_bind():
         engine.bind(base=base_model)
-    return UnboundUser
+    return User
 
 
 @pytest.fixture

@@ -122,22 +122,22 @@ def test_load_missing_attrs(User, engine):
     assert obj.name is None
 
 
-def test_load_dump_unbound(UnboundUser, engine):
-    user_id = uuid.uuid4()
-    user = UnboundUser(id=user_id, age=5, name="foo")
-    value = {"User": [{"age": {"N": 5},
-                       "name": {"S": "foo"},
-                       "id": {"S": str(user_id)}}]}
+def test_load_dump_unbound(engine):
+    class Model(bloop.new_base()):
+        id = bloop.Column(bloop.UUID, hash_key=True)
+        counter = bloop.Column(bloop.Integer)
+    obj = Model(id=uuid.uuid4(), counter=5)
+    value = {"User": [{"counter": {"N": 5}, "id": {"S": str(obj.id)}}]}
 
     with pytest.raises(bloop.exceptions.UnboundModel) as excinfo:
-        engine._load(UnboundUser, value)
-    assert excinfo.value.model is UnboundUser
+        engine._load(Model, value)
+    assert excinfo.value.model is Model
     assert excinfo.value.obj is None
 
     with pytest.raises(bloop.exceptions.UnboundModel) as excinfo:
-        engine._dump(UnboundUser, user)
-    assert excinfo.value.model is UnboundUser
-    assert excinfo.value.obj is user
+        engine._dump(Model, obj)
+    assert excinfo.value.model is Model
+    assert excinfo.value.obj is obj
 
 
 def test_load_dump_unknown(engine):

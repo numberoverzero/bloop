@@ -143,10 +143,10 @@ def SimpleModel(engine, base_model, local_bind):
 
 @pytest.fixture
 def client_error():
-    def ClientError(code):
+    def _client_error(code):
         error_response = {"Error": {
             "Code": code,
             "Message": "FooMessage"}}
         operation_name = "OperationName"
         return botocore.exceptions.ClientError(error_response, operation_name)
-    return ClientError
+    return _client_error

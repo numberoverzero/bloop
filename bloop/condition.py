@@ -126,6 +126,8 @@ class _BaseCondition:
     def __len__(self):
         return 1
 
+    __hash__ = object.__hash__
+
 
 class Condition(_BaseCondition):
     """Empty condition for iteratively building up conditions.
@@ -173,6 +175,19 @@ class _MultiCondition(_BaseCondition):
     def __len__(self):
         return sum(map(len, self.conditions))
 
+    def __eq__(self, other):
+        if not isinstance(other, _MultiCondition):
+            return False
+        if self.uname != other.uname:
+            return False
+        if len(self.conditions) != len(other.conditions):
+            return False
+        for mine, theirs in zip(self.conditions, other.conditions):
+            if mine != theirs:
+                return False
+        return True
+    __hash__ = _BaseCondition.__hash__
+
     def render(self, renderer):
         if len(self.conditions) == 1:
             return self.conditions[0].render(renderer)
@@ -212,6 +227,12 @@ class Not(_BaseCondition):
     def __len__(self):
         return len(self.condition)
 
+    def __eq__(self, other):
+        if not isinstance(other, Not):
+            return False
+        return self.condition == other.condition
+    __hash__ = _BaseCondition.__hash__
+
     def render(self, renderer):
         return "(NOT {})".format(self.condition.render(renderer))
 
@@ -240,6 +261,18 @@ class Comparison(_BaseCondition):
             self.value)
     __repr__ = __str__
 
+    def __eq__(self, other):
+        if not isinstance(other, Comparison):
+            return False
+        # Special-case because we can't use == on a column
+        if self.column is not other.column:
+            return False
+        for attr in ["comparator", "value", "path"]:
+            if getattr(self, attr) != getattr(other, attr):
+                return False
+        return True
+    __hash__ = _BaseCondition.__hash__
+
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
         vref = renderer.value_ref(self.column, self.value,
@@ -259,6 +292,18 @@ class AttributeExists(_BaseCondition):
         return "{}({}(path={}))".format(name, self.column, self.path)
     __repr__ = __str__
 
+    def __eq__(self, other):
+        if not isinstance(other, AttributeExists):
+            return False
+        # Special-case because we can't use == on a column
+        if self.column is not other.column:
+            return False
+        for attr in ["negate", "path"]:
+            if getattr(self, attr) != getattr(other, attr):
+                return False
+        return True
+    __hash__ = _BaseCondition.__hash__
+
     def render(self, renderer):
         name = "attribute_not_exists" if self.negate else "attribute_exists"
         nref = renderer.name_ref(self.column, path=self.path)
@@ -275,6 +320,18 @@ class BeginsWith(_BaseCondition):
         return "BeginsWith({}(path={}), {})".format(
             self.column, self.path, self.value)
     __repr__ = __str__
+
+    def __eq__(self, other):
+        if not isinstance(other, BeginsWith):
+            return False
+        # Special-case because we can't use == on a column
+        if self.column is not other.column:
+            return False
+        for attr in ["value", "path"]:
+            if getattr(self, attr) != getattr(other, attr):
+                return False
+        return True
+    __hash__ = _BaseCondition.__hash__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
@@ -294,6 +351,18 @@ class Contains(_BaseCondition):
             self.column, self.path, self.value)
     __repr__ = __str__
 
+    def __eq__(self, other):
+        if not isinstance(other, Contains):
+            return False
+        # Special-case because we can't use == on a column
+        if self.column is not other.column:
+            return False
+        for attr in ["value", "path"]:
+            if getattr(self, attr) != getattr(other, attr):
+                return False
+        return True
+    __hash__ = _BaseCondition.__hash__
+
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
         vref = renderer.value_ref(self.column, self.value,
@@ -312,6 +381,18 @@ class Between(_BaseCondition):
         return "Between({}(path={}), {}, {})".format(
             self.column, self.path, self.lower, self.upper)
     __repr__ = __str__
+
+    def __eq__(self, other):
+        if not isinstance(other, Between):
+            return False
+        # Special-case because we can't use == on a column
+        if self.column is not other.column:
+            return False
+        for attr in ["lower", "upper", "path"]:
+            if getattr(self, attr) != getattr(other, attr):
+                return False
+        return True
+    __hash__ = _BaseCondition.__hash__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
@@ -333,6 +414,18 @@ class In(_BaseCondition):
         values = ", ".join(str(c) for c in self.values)
         return "In({}(path={}), [{}])".format(self.column, self.path, values)
     __repr__ = __str__
+
+    def __eq__(self, other):
+        if not isinstance(other, In):
+            return False
+        # Special-case because we can't use == on a column
+        if self.column is not other.column:
+            return False
+        for attr in ["values", "path"]:
+            if getattr(self, attr) != getattr(other, attr):
+                return False
+        return True
+    __hash__ = _BaseCondition.__hash__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)

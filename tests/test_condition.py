@@ -3,6 +3,8 @@ import bloop.condition
 import pytest
 import uuid
 
+from bloop.condition import And, Or, Not
+
 
 def test_duplicate_name_refs(renderer, User):
     """ name refs are re-used for the same name """
@@ -13,7 +15,7 @@ def test_no_refs(renderer):
     """
     when name/value refs are missing, ExpressionAttributeNames/Values
     aren't populated """
-    condition = bloop.condition.And()
+    condition = And()
     expected = {"ConditionExpression": "()"}
     renderer.render(condition, "condition")
     assert renderer.rendered == expected
@@ -22,19 +24,9 @@ def test_no_refs(renderer):
 def test_condition_ops(User):
     age, name = (User.age >= 3), (User.name == "foo")
 
-    and_condition = age & name
-    assert and_condition.conditions == [age, name]
-    assert isinstance(and_condition, bloop.condition.And)
-
-    or_condition = age | name
-    assert or_condition.conditions == [age, name]
-    assert isinstance(or_condition, bloop.condition.Or)
-
-    not_condition = ~age
-    assert not_condition.condition is age
-    assert isinstance(not_condition, bloop.condition.Not)
-
-    assert len(age) == len(name) == 1
+    assert age & name == And(age, name)
+    assert age | name == Or(age, name)
+    assert ~age == Not(age)
 
 
 def test_condition_len(User):
@@ -48,51 +40,31 @@ def test_condition_len(User):
     assert len(age) == len(name) == len(not_condition) == 1
 
 
-def test_multi_shortcut(renderer, User):
+def test_multi_shortcut(User):
     """ And or Or with single conditions render as their sole condition """
     age = User.age >= 3
     condition = bloop.condition.And(age)
-    expected = {"ConditionExpression": "(#n0 >= :v1)",
-                "ExpressionAttributeNames": {"#n0": "age"},
-                "ExpressionAttributeValues": {":v1": {"N": "3"}}}
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+    assert condition.conditions == [age]
+
+    condition = bloop.condition.Or(age)
+    assert condition.conditions == [age]
 
 
-def test_and_appends(renderer, User):
+def test_multi_chains_flatten(User):
     """
     ((condition & condition) & condition) flattens the AND into one condition
     """
     age = User.age >= 3
     name = User.name == "foo"
     email = User.email != "bar"
-    conditions = [age, name, email]
 
-    condition = (age & name) & email
-    assert condition.conditions == conditions
-
-    condition = bloop.condition.Condition()
-    for c in conditions:
-        condition &= c
-    assert condition.conditions == conditions
-
-
-def test_or_appends(renderer, User):
-    """
-    ((condition | condition) | condition) flattens the OR into one condition
-    """
-    age = User.age >= 3
-    name = User.name == "foo"
-    email = User.email != "bar"
-    conditions = [age, name, email]
-
-    condition = (age | name) | email
-    assert condition.conditions == conditions
-
-    condition = bloop.condition.Condition()
-    for c in conditions:
-        condition |= c
-    assert condition.conditions == conditions
+    and_condition = bloop.condition.Condition()
+    or_condition = bloop.condition.Condition()
+    for c in [age, name, email]:
+        and_condition &= c
+        or_condition |= c
+    assert and_condition == bloop.condition.And(age, name, email)
+    assert or_condition == bloop.condition.Or(age, name, email)
 
 
 def test_not(renderer, User):
@@ -107,7 +79,7 @@ def test_not(renderer, User):
 
 def test_invalid_comparator(User):
     with pytest.raises(ValueError):
-        bloop.condition.Comparison(User.age, "foo", 5)
+        bloop.condition.Comparison(User.age, "not-a-comparator", 5)
 
 
 def test_attribute_exists(User, renderer):
@@ -192,7 +164,7 @@ def test_render_path(renderer, User):
     assert renderer.rendered == expected
 
 
-def test_path_comparitor(renderer, Document):
+def test_path_comparator(renderer, Document):
     """ Render paths for operations, comparisons, and multi-conditions """
 
     rating = Document.data["Rating"] > 0.5
@@ -215,7 +187,7 @@ def test_path_comparitor(renderer, Document):
     assert renderer.rendered == expected
 
 
-def test_typedmap_path_comparitor(renderer, engine, base_model, local_bind):
+def test_typedmap_path_comparator(renderer, engine, base_model, local_bind):
     """ TypedMap should defer to the value typedef for conditions """
     class Model(base_model):
         id = bloop.Column(bloop.Integer, hash_key=True)
@@ -269,3 +241,61 @@ def test_list_path(renderer, Document):
         'ExpressionAttributeNames': {'#n0': 'numbers'}}
     renderer.render(condition, "condition")
     assert renderer.rendered == expected
+
+
+def test_equality(Document):
+    lt = Document.id < 10
+    gt = Document.id > 12
+
+    path = Document.data["Rating"] == 3.4
+
+    # Order doesn't matter for multi conditions
+    basic_and = lt & gt
+    swapped_and = gt & lt
+    multiple_and = lt & lt & gt
+
+    basic_or = lt | gt
+    swapped_or = gt | lt
+    multiple_or = lt | lt | gt
+
+    not_lt = ~lt
+    not_gt = ~gt
+
+    not_exists_data = Document.data.is_(None)
+    not_exists_id = Document.id.is_(None)
+    exists_id = Document.id.is_not(None)
+
+    begins_hello = Document.data["Description"]["Body"].begins_with("hello")
+    begins_world = Document.data["Description"]["Body"].begins_with("world")
+    begins_numbers = Document.numbers.begins_with(8)
+
+    contains_hello = Document.data["Description"]["Body"].contains("hello")
+    contains_world = Document.data["Description"]["Body"].contains("world")
+    contains_numbers = Document.numbers.contains(9)
+
+    between_small = Document.id.between(5, 6)
+    between_big = Document.id.between(100, 200)
+    between_numbers = Document.numbers.between(set([8080]), set([8088]))
+
+    in_small = Document.id.in_([3, 7, 11])
+    in_big = Document.id.in_([123, 456])
+    in_numbers = Document.numbers.in_([120, 450])
+
+    all_conditions = [
+        lt, gt, path,
+        basic_and, swapped_and, multiple_and,
+        basic_or, swapped_or, multiple_or,
+        not_lt, not_gt,
+        not_exists_data, not_exists_id, exists_id,
+        begins_hello, begins_world, begins_numbers,
+        contains_hello, contains_world, contains_numbers,
+        between_small, between_big, between_numbers,
+        in_small, in_big, in_numbers
+    ]
+
+    for first in all_conditions:
+        for second in all_conditions:
+            if first is second:
+                assert first == second
+            else:
+                assert first != second

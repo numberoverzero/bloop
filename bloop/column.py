@@ -17,6 +17,11 @@ class _ComparisonMixin:
         # With single inheritance this looks stupid, but as a Mixin this
         # ensures we kick hashing back to the other base class so things
         # don't get fucked up, like `set()`.
+
+        # While the docs recommend using `__hash__ = some_parent.__hash__`,
+        # that won't work here - we don't know the parent when the mixin is
+        # defined.
+        # https://docs.python.org/3.1/reference/datamodel.html#object.__hash__
         return super().__hash__()
 
     def __eq__(self, value):

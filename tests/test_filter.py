@@ -137,15 +137,17 @@ def test_filter(engine):
     condition = User.email == "foo@domain.com"
 
     result = q.filter(condition).all()
-    expected = {"ScanIndexForward": True,
-                "ConsistentRead": False,
-                "Select": "ALL_ATTRIBUTES",
-                "TableName": "User",
-                "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"},
-                                              ":v3": {"S": str(user_id)}},
-                "ExpressionAttributeNames": {"#n2": "id", "#n0": "email"},
-                "KeyConditionExpression": "(#n2 = :v3)",
-                "FilterExpression": "(#n0 = :v1)"}
+    expected = {
+        "ScanIndexForward": True,
+        "ConsistentRead": False,
+        "Select": "ALL_ATTRIBUTES",
+        "TableName": "User",
+        "ExpressionAttributeValues": {
+            ":v1": {"S": "foo@domain.com"},
+            ":v3": {"S": str(user_id)}},
+        "ExpressionAttributeNames": {"#n2": "id", "#n0": "email"},
+        "KeyConditionExpression": "(#n2 = :v3)",
+        "FilterExpression": "(#n0 = :v1)"}
     assert result.request == expected
 
 
@@ -157,15 +159,16 @@ def test_iterative_filter(engine):
     vcondition = User.age == 100
 
     result = q.filter(pcondition).filter(vcondition).all()
-    expected = {"ExpressionAttributeNames": {"#n0": "age", "#n2": "id"},
-                "FilterExpression": "(#n0 = :v1)",
-                "ConsistentRead": False,
-                "TableName": "User",
-                "KeyConditionExpression": "(#n2 = :v3)",
-                "Select": "ALL_ATTRIBUTES",
-                "ScanIndexForward": True,
-                "ExpressionAttributeValues": {":v3": {"S": str(user_id)},
-                                              ":v1": {"N": "100"}}}
+    expected = {
+        "ExpressionAttributeNames": {"#n0": "age", "#n2": "id"},
+        "FilterExpression": "(#n0 = :v1)",
+        "ConsistentRead": False,
+        "TableName": "User",
+        "KeyConditionExpression": "(#n2 = :v3)",
+        "Select": "ALL_ATTRIBUTES",
+        "ScanIndexForward": True,
+        "ExpressionAttributeValues": {
+            ":v3": {"S": str(user_id)}, ":v1": {"N": "100"}}}
     assert result.request == expected
 
 
@@ -195,14 +198,15 @@ def test_select_projected(engine):
 
     # Index query sets Select -> ALL_PROJECTED_ATTRIBUTES
     results = iq.select("projected").all()
-    expected = {"ExpressionAttributeNames": {"#n0": "email"},
-                "Select": "ALL_PROJECTED_ATTRIBUTES",
-                "ScanIndexForward": True,
-                "TableName": "User",
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "IndexName": "by_email",
-                "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}},
-                "ConsistentRead": False}
+    expected = {
+        "ExpressionAttributeNames": {"#n0": "email"},
+        "Select": "ALL_PROJECTED_ATTRIBUTES",
+        "ScanIndexForward": True,
+        "TableName": "User",
+        "KeyConditionExpression": "(#n0 = :v1)",
+        "IndexName": "by_email",
+        "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}},
+        "ConsistentRead": False}
     assert results.request == expected
 
 
@@ -242,14 +246,15 @@ def test_select_all_gsi(engine):
     """
     q = engine.query(ComplexModel.by_email).key(ComplexModel.email == "foo")
     result = q.select("all").all()
-    expected = {"ScanIndexForward": True,
-                "IndexName": "by_email",
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "ConsistentRead": False,
-                "Select": "ALL_ATTRIBUTES",
-                "ExpressionAttributeValues": {":v1": {"S": "foo"}},
-                "TableName": "CustomTableName",
-                "ExpressionAttributeNames": {"#n0": "email"}}
+    expected = {
+        "ScanIndexForward": True,
+        "IndexName": "by_email",
+        "KeyConditionExpression": "(#n0 = :v1)",
+        "ConsistentRead": False,
+        "Select": "ALL_ATTRIBUTES",
+        "ExpressionAttributeValues": {":v1": {"S": "foo"}},
+        "TableName": "CustomTableName",
+        "ExpressionAttributeNames": {"#n0": "email"}}
     assert result.request == expected
 
 
@@ -258,15 +263,15 @@ def test_select_specific(engine):
     q = engine.query(User).key(User.id == user_id)
 
     result = q.select([User.email, User.joined]).all()
-    expected = {"Select": "SPECIFIC_ATTRIBUTES",
-                "ExpressionAttributeNames": {"#n0": "email", "#n1": "j",
-                                             "#n2": "id"},
-                "ScanIndexForward": True,
-                "ExpressionAttributeValues": {":v3": {"S": str(user_id)}},
-                "TableName": "User",
-                "KeyConditionExpression": "(#n2 = :v3)",
-                "ProjectionExpression": "#n0, #n1",
-                "ConsistentRead": False}
+    expected = {
+        "Select": "SPECIFIC_ATTRIBUTES",
+        "ExpressionAttributeNames": {"#n0": "email", "#n1": "j", "#n2": "id"},
+        "ScanIndexForward": True,
+        "ExpressionAttributeValues": {":v3": {"S": str(user_id)}},
+        "TableName": "User",
+        "KeyConditionExpression": "(#n2 = :v3)",
+        "ProjectionExpression": "#n0, #n1",
+        "ConsistentRead": False}
     assert result.request == expected
 
 
@@ -280,7 +285,6 @@ def test_select_specific_gsi_projection(engine):
         visitor = bloop.Column(bloop.Integer)
         date = bloop.Column(bloop.String)
         not_projected = bloop.Column(bloop.Integer)
-
         by_date = bloop.GlobalSecondaryIndex(hash_key="date",
                                              projection=["visitor"])
     engine.bind(base=Visit)
@@ -292,15 +296,16 @@ def test_select_specific_gsi_projection(engine):
         q.select([Visit.not_projected])
 
     result = q.select([Visit.visitor]).all()
-    expected = {"ExpressionAttributeNames": {"#n0": "visitor", "#n1": "date"},
-                "TableName": "Visit",
-                "IndexName": "by_date",
-                "KeyConditionExpression": "(#n1 = :v2)",
-                "ConsistentRead": False,
-                "Select": "SPECIFIC_ATTRIBUTES",
-                "ScanIndexForward": True,
-                "ExpressionAttributeValues": {":v2": {"S": "now"}},
-                "ProjectionExpression": "#n0"}
+    expected = {
+        "ExpressionAttributeNames": {"#n0": "visitor", "#n1": "date"},
+        "TableName": "Visit",
+        "IndexName": "by_date",
+        "KeyConditionExpression": "(#n1 = :v2)",
+        "ConsistentRead": False,
+        "Select": "SPECIFIC_ATTRIBUTES",
+        "ScanIndexForward": True,
+        "ExpressionAttributeValues": {":v2": {"S": "now"}},
+        "ProjectionExpression": "#n0"}
     assert result.request == expected
 
 
@@ -327,54 +332,50 @@ def test_count(engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
 
-    expected = {"TableName": "User",
-                "ConsistentRead": False,
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "Select": "COUNT",
-                "ScanIndexForward": True}
+    expected = {
+        "TableName": "User",
+        "ConsistentRead": False,
+        "KeyConditionExpression": "(#n0 = :v1)",
+        "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+        "ExpressionAttributeNames": {"#n0": "id"},
+        "Select": "COUNT",
+        "ScanIndexForward": True}
 
     def respond(request):
-        assert request == expected
         item = User(id=user_id, age=5)
         return {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine._dump(User, item)]
-        }
-    engine.client.query = respond
-
+            "Items": [engine._dump(User, item)]}
+    engine.client.query.side_effect = respond
     count = q.count()
     assert count == {"count": 1, "scanned_count": 2}
+    engine.client.query.assert_called_once_with(expected)
 
 
 def test_first(engine):
     q = engine.scan(User).filter(User.email == "foo@domain.com")
-    expected = {"ConsistentRead": False,
-                "Select": "ALL_ATTRIBUTES",
-                "TableName": "User",
-                "FilterExpression": "(#n0 = :v1)",
-                "ExpressionAttributeNames": {"#n0": "email"},
-                "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
+    expected = {
+        "ConsistentRead": False,
+        "Select": "ALL_ATTRIBUTES",
+        "TableName": "User",
+        "FilterExpression": "(#n0 = :v1)",
+        "ExpressionAttributeNames": {"#n0": "email"},
+        "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
 
     def respond(request):
-        assert request == expected
-        item = User(email="foo@domain.com")
         return {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine._dump(User, item)]
-        }
-    engine.client.scan = respond
-
+            "Items": [engine._dump(User, User(email="foo@domain.com"))]}
+    engine.client.scan.side_effect = respond
     first = q.first()
     assert first.email == "foo@domain.com"
+    engine.client.scan.assert_called_once_with(expected)
 
 
 def test_atomic_load(atomic):
-    """Queying objects in an atomic context caches the loaded condition"""
-
+    """Querying objects in an atomic context caches the loaded condition"""
     user_id = uuid.uuid4()
     q = atomic.scan(User).filter(User.email == "foo@domain.com")
 
@@ -383,8 +384,7 @@ def test_atomic_load(atomic):
         return {
             "Count": 1,
             "ScannedCount": 1,
-            "Items": [atomic._dump(User, item)]
-        }
+            "Items": [atomic._dump(User, item)]}
     atomic.client.scan = respond
     obj = q.first()
 
@@ -393,20 +393,20 @@ def test_atomic_load(atomic):
         (User.email == {"S": "foo@domain.com"}) &
         (User.id == {"S": str(user_id)}) &
         (User.joined.is_(None)) &
-        (User.name.is_(None))
-    )
+        (User.name.is_(None)))
     actual_condition = bloop.tracking.get_snapshot(obj)
     assert expected_condition == actual_condition
 
 
 def test_iter(engine):
     q = engine.scan(User).filter(User.email == "foo@domain.com").consistent
-    expected = {"ConsistentRead": True,
-                "Select": "ALL_ATTRIBUTES",
-                "TableName": "User",
-                "FilterExpression": "(#n0 = :v1)",
-                "ExpressionAttributeNames": {"#n0": "email"},
-                "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
+    expected = {
+        "ConsistentRead": True,
+        "Select": "ALL_ATTRIBUTES",
+        "TableName": "User",
+        "FilterExpression": "(#n0 = :v1)",
+        "ExpressionAttributeNames": {"#n0": "email"},
+        "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
 
     def respond(request):
         assert request == expected
@@ -414,8 +414,7 @@ def test_iter(engine):
         return {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine._dump(User, item)]
-        }
+            "Items": [engine._dump(User, item)]}
     engine.client.scan = respond
 
     results = list(q)
@@ -430,61 +429,59 @@ def test_properties(engine):
 
     # ascending
     result = q.ascending.all()
-    expected = {"Select": "ALL_ATTRIBUTES",
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "ScanIndexForward": True,
-                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
-                "TableName": "User",
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "ConsistentRead": False}
+    expected = {
+        "Select": "ALL_ATTRIBUTES",
+        "ExpressionAttributeNames": {"#n0": "id"},
+        "ScanIndexForward": True,
+        "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+        "TableName": "User",
+        "KeyConditionExpression": "(#n0 = :v1)",
+        "ConsistentRead": False}
     assert result.request == expected
 
     # descending
     result = q.descending.all()
-    expected = {"Select": "ALL_ATTRIBUTES",
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "ScanIndexForward": False,
-                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
-                "TableName": "User",
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "ConsistentRead": False}
+    expected = {
+        "Select": "ALL_ATTRIBUTES",
+        "ExpressionAttributeNames": {"#n0": "id"},
+        "ScanIndexForward": False,
+        "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+        "TableName": "User",
+        "KeyConditionExpression": "(#n0 = :v1)",
+        "ConsistentRead": False}
     assert result.request == expected
 
     # consistent
     result = q.consistent.all()
-    expected = {"Select": "ALL_ATTRIBUTES",
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "ScanIndexForward": True,
-                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
-                "TableName": "User",
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "ConsistentRead": True}
+    expected = {
+        "Select": "ALL_ATTRIBUTES",
+        "ExpressionAttributeNames": {"#n0": "id"},
+        "ScanIndexForward": True,
+        "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+        "TableName": "User",
+        "KeyConditionExpression": "(#n0 = :v1)",
+        "ConsistentRead": True}
     assert result.request == expected
 
 
 def test_query_no_key(engine):
     q = engine.query(User)
-
     with pytest.raises(ValueError):
         q.all()
 
 
 def test_query_consistent_gsi(engine):
     q = engine.query(User.by_email).key(User.email == "foo")
-
     with pytest.raises(ValueError):
         q.consistent
 
 
 def test_results_incomplete(engine):
     q = engine.query(User).key(User.id == uuid.uuid4())
-    calls = 0
 
     def respond(request):
-        nonlocal calls
-        calls += 1
         return {"Count": 1, "ScannedCount": 2}
-    engine.client.query = respond
+    engine.client.query.side_effect = respond
 
     results = q.all()
     assert not results.complete
@@ -498,7 +495,7 @@ def test_results_incomplete(engine):
 
     # Multiple iterations don't re-call the client
     list(results)
-    assert calls == 1
+    assert engine.client.query.call_count == 1
 
 
 def test_first_no_prefetch(engine):
@@ -509,14 +506,14 @@ def test_first_no_prefetch(engine):
     """
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
-
-    expected = {"TableName": "User",
-                "ConsistentRead": False,
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "Select": "ALL_ATTRIBUTES",
-                "ScanIndexForward": True}
+    expected = {
+        "TableName": "User",
+        "ConsistentRead": False,
+        "KeyConditionExpression": "(#n0 = :v1)",
+        "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+        "ExpressionAttributeNames": {"#n0": "id"},
+        "Select": "ALL_ATTRIBUTES",
+        "ScanIndexForward": True}
     continue_tokens = {None: "first", "first": "second", "second": None}
 
     def respond(request):
@@ -529,14 +526,14 @@ def test_first_no_prefetch(engine):
             "Items": [engine._dump(User, item)],
             "LastEvaluatedKey": continue_tokens[token]
         }
-    engine.client.query = respond
-
+    engine.client.query.side_effect = respond
     results = q.all()
 
     assert results.first.name is None
     # Second call doesn't fetch
     assert results.first.name is None
     assert not results.complete
+    assert engine.client.query.call_count == 1
 
 
 def test_first_no_results(engine):
@@ -549,59 +546,50 @@ def test_first_no_results(engine):
     q = engine.query(User).key(User.id == user_id)
 
     def respond(request):
-        return {
-            "Count": 1,
-            "ScannedCount": 2
-        }
-    engine.client.query = respond
+        return {"Count": 1, "ScannedCount": 2}
+    engine.client.query.side_effect = respond
 
     results = q.all()
-
     with pytest.raises(ValueError):
         results.first
     # Subsequent results skip the stepping
     with pytest.raises(ValueError):
         results.first
+    assert engine.client.query.call_count == 1
 
 
 def test_prefetch_all(engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
-    calls = 0
-    expected = {"TableName": "User",
-                "ConsistentRead": False,
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "Select": "ALL_ATTRIBUTES",
-                "ScanIndexForward": True}
+    expected = {
+        "TableName": "User",
+        "ConsistentRead": False,
+        "KeyConditionExpression": "(#n0 = :v1)",
+        "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+        "ExpressionAttributeNames": {"#n0": "id"},
+        "Select": "ALL_ATTRIBUTES",
+        "ScanIndexForward": True}
     continue_tokens = {None: "first", "first": "second", "second": None}
 
     def respond(request):
-        nonlocal calls
-        calls += 1
-
         token = request.pop("ExclusiveStartKey", None)
         assert request == expected
-        item = User(id=user_id, name=token)
-
         result = {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine._dump(User, item)],
-            "LastEvaluatedKey": continue_tokens[token]
-        }
+            "Items": [engine._dump(User, User(id=user_id, name=token))],
+            "LastEvaluatedKey": continue_tokens[token]}
         next_token = continue_tokens.get(token, None)
         if next_token:
             result["LastEvaluatedKey"] = next_token
         return result
-    engine.client.query = respond
+    engine.client.query.side_effect = respond
 
     results = q.all(prefetch="all")
 
-    assert calls == 3
     assert results.count == 3
     assert results.scanned_count == 6
+    assert engine.client.query.call_count == 3
 
 
 def test_invalid_prefetch(engine):
@@ -615,84 +603,72 @@ def test_invalid_prefetch(engine):
 def test_prefetch_first(engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
-    calls = 0
-    expected = {"TableName": "User",
-                "ConsistentRead": False,
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "Select": "ALL_ATTRIBUTES",
-                "ScanIndexForward": True}
+    expected = {
+        "TableName": "User",
+        "ConsistentRead": False,
+        "KeyConditionExpression": "(#n0 = :v1)",
+        "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+        "ExpressionAttributeNames": {"#n0": "id"},
+        "Select": "ALL_ATTRIBUTES",
+        "ScanIndexForward": True}
     continue_tokens = {None: "first", "first": None}
 
     def respond(request):
-        nonlocal calls
-        calls += 1
-
         token = request.pop("ExclusiveStartKey", None)
         assert request == expected
-        item = User(id=user_id, name=token)
-
         result = {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine._dump(User, item)],
-            "LastEvaluatedKey": continue_tokens[token]
-        }
+            "Items": [engine._dump(User, User(id=user_id, name=token))],
+            "LastEvaluatedKey": continue_tokens[token]}
         next_token = continue_tokens.get(token, None)
         if next_token:
             result["LastEvaluatedKey"] = next_token
         return result
-    engine.client.query = respond
+    engine.client.query.side_effect = respond
 
     results = q.all(prefetch=1)
 
     # Not iterated, no fetches
-    assert calls == 0
+    assert engine.client.query.call_count == 0
     # First call fetches twice, even though a result
     # is in the first response.
     results.first
-    assert calls == 2
+    assert engine.client.query.call_count == 2
 
 
 def test_prefetch_iter(engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
-    calls = 0
-    expected = {"TableName": "User",
-                "ConsistentRead": False,
-                "KeyConditionExpression": "(#n0 = :v1)",
-                "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "Select": "ALL_ATTRIBUTES",
-                "ScanIndexForward": True}
+    expected = {
+        "TableName": "User",
+        "ConsistentRead": False,
+        "KeyConditionExpression": "(#n0 = :v1)",
+        "ExpressionAttributeValues": {":v1": {"S": str(user_id)}},
+        "ExpressionAttributeNames": {"#n0": "id"},
+        "Select": "ALL_ATTRIBUTES",
+        "ScanIndexForward": True}
     continue_tokens = {None: "first", "first": "second", "second": None}
 
     def respond(request):
-        nonlocal calls
-        calls += 1
-
         token = request.pop("ExclusiveStartKey", None)
         assert request == expected
-        item = User(id=user_id, name=token)
-
         result = {
             "Count": 1,
             "ScannedCount": 2,
-            "Items": [engine._dump(User, item)],
-            "LastEvaluatedKey": continue_tokens[token]
-        }
+            "Items": [engine._dump(User, User(id=user_id, name=token))],
+            "LastEvaluatedKey": continue_tokens[token]}
         next_token = continue_tokens.get(token, None)
         if next_token:
             result["LastEvaluatedKey"] = next_token
         return result
-    engine.client.query = respond
+    engine.client.query.side_effect = respond
 
     results = q.all(prefetch=1)
 
     # Not iterated, no fetches
-    assert calls == 0
+    assert engine.client.query.call_count == 0
     # Exhaust the results
     assert len(list(results)) == 3
     # Only two continue tokens
-    assert calls == 3
+    assert engine.client.query.call_count == 3

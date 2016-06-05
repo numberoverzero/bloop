@@ -183,9 +183,8 @@ class Engine:
         # only need to verify models that haven't been
         # bound (created/verified) already
         def needs_verification(model):
-            # Until there are proper abstract models,
-            # hardcode to filter out the base
-            if model is base:
+            # Models that aren't explicitly abstract should be bound
+            if getattr(model.Meta, "abstract", False):
                 return False
             return not bloop.tracking.is_model_verified(model)
         # Make sure we're looking at models

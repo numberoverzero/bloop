@@ -5,6 +5,7 @@ import bloop.tracking
 import bloop.util
 import pytest
 import uuid
+from unittest.mock import Mock
 
 
 def test_missing_objects(User, engine):
@@ -633,18 +634,51 @@ def test_context(User, engine):
             eng.bind(base=bloop.new_base())
 
 
-def test_unbound_engine_view(engine):
+def test_unbound_engine_view():
     """Trying to mutate an unbound model through an EngineView fails"""
     class UnboundModel(bloop.new_base()):
         id = bloop.Column(bloop.String, hash_key=True)
     instance = UnboundModel(id="foo")
 
     with pytest.raises(bloop.exceptions.UnboundModel):
-        with engine.context() as view:
+        with bloop.Engine().context() as view:
             view._dump(UnboundModel, instance)
 
 
-def test_bind_non_model(engine):
+def test_bind_non_model():
     """Can't bind things that don't subclass new_base()"""
+    engine = bloop.Engine()
+    engine.client = Mock(spec=bloop.client.Client)
     with pytest.raises(ValueError):
         engine.bind(base=object())
+
+
+def test_bind_skip_abstract_models():
+    class Abstract(bloop.new_base()):
+        class Meta:
+            abstract = True
+
+    class Concrete(Abstract):
+        pass
+
+    class AlsoAbstract(Concrete):
+        class Meta:
+            abstract = True
+
+    engine = bloop.Engine()
+    engine.client = Mock(spec=bloop.client.Client)
+
+    engine.bind(base=Abstract)
+    engine.client.create_table.assert_called_once_with(Concrete)
+    engine.client.validate_table.assert_called_once_with(Concrete)
+
+
+def test_bind_concrete_base():
+    engine = bloop.Engine()
+    engine.client = Mock(spec=bloop.client.Client)
+
+    class Concrete(bloop.new_base()):
+        pass
+    engine.bind(base=Concrete)
+    engine.client.create_table.assert_called_once_with(Concrete)
+    engine.client.validate_table.assert_called_once_with(Concrete)

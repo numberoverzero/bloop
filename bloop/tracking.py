@@ -100,7 +100,7 @@ def get_update(obj):
     return diff
 
 
-def is_model_verified(model):
+def is_model_validated(model):
     return _model_tracking[model]["verified"]
 
 

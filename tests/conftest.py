@@ -17,6 +17,12 @@ DocumentType = bloop.Map(**{
 })
 
 
+class DocumentModel(BaseModel):
+    id = bloop.Column(bloop.Integer, hash_key=True)
+    data = bloop.Column(DocumentType)
+    numbers = bloop.Column(bloop.List(bloop.Integer))
+
+
 def noop(*a, **kw):
     pass
 
@@ -116,13 +122,9 @@ def document_type():
 
 @pytest.fixture
 def Document(engine, local_bind):
-    class Document(BaseModel):
-        id = bloop.Column(bloop.Integer, hash_key=True)
-        data = bloop.Column(DocumentType)
-        numbers = bloop.Column(bloop.List(bloop.Integer))
     with local_bind():
         engine.bind(base=BaseModel)
-    return Document
+    return DocumentModel
 
 
 @pytest.fixture

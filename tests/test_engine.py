@@ -642,3 +642,9 @@ def test_unbound_engine_view(engine):
     with pytest.raises(bloop.exceptions.UnboundModel):
         with engine.context() as view:
             view._dump(UnboundModel, instance)
+
+
+def test_bind_non_model(engine):
+    """Can't bind things that don't subclass new_base()"""
+    with pytest.raises(ValueError):
+        engine.bind(base=object())

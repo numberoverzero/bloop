@@ -8,7 +8,9 @@ __all__ = ["new_base", "BaseModel"]
 
 def new_base():
     """Return an unbound base model"""
-    return ModelMetaclass("Model", (BaseModel,), {})
+    cls = ModelMetaclass("Model", (BaseModel,), {})
+    cls.Meta.abstract = True
+    return cls
 
 
 class ModelMetaclass(declare.ModelMetaclass):

@@ -176,10 +176,10 @@ class Engine:
             setattr(obj, column.model_name, value)
 
     def bind(self, *, base):
+        """Create tables for all models subclassing base"""
         self.client = self.client or bloop.client.Client(
             session=self.config["session"])
 
-        """Create tables for all models off of base"""
         # only need to verify models that haven't been
         # bound (created/verified) already
         def needs_verification(model):
@@ -188,6 +188,9 @@ class Engine:
             if model is base:
                 return False
             return not bloop.tracking.is_model_verified(model)
+        # Make sure we're looking at models
+        if not isinstance(base, bloop.model.ModelMetaclass):
+            raise ValueError("base must derive from bloop.new_base()")
         subclasses = bloop.util.walk_subclasses(base)
         unverified = set(filter(needs_verification, subclasses))
 

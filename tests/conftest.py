@@ -76,8 +76,8 @@ def base_model():
 
 
 @pytest.fixture
-def User(engine, base_model, local_bind):
-    class User(base_model):
+def User(engine, local_bind):
+    class User(BaseModel):
         id = bloop.Column(bloop.UUID, hash_key=True)
         age = bloop.Column(bloop.Integer)
         name = bloop.Column(bloop.String)
@@ -88,13 +88,13 @@ def User(engine, base_model, local_bind):
         by_email = bloop.GlobalSecondaryIndex(hash_key="email",
                                               projection="all")
     with local_bind():
-        engine.bind(base=base_model)
+        engine.bind(base=BaseModel)
     return User
 
 
 @pytest.fixture
-def ComplexModel(engine, base_model, local_bind):
-    class Model(base_model):
+def ComplexModel(engine, local_bind):
+    class Model(BaseModel):
         class Meta:
             write_units = 2
             read_units = 3
@@ -110,7 +110,7 @@ def ComplexModel(engine, base_model, local_bind):
         by_joined = bloop.LocalSecondaryIndex(range_key="joined",
                                               projection=["email"])
     with local_bind():
-        engine.bind(base=base_model)
+        engine.bind(base=BaseModel)
     return Model
 
 
@@ -120,22 +120,22 @@ def document_type():
 
 
 @pytest.fixture
-def Document(engine, base_model, local_bind):
-    class Document(base_model):
+def Document(engine, local_bind):
+    class Document(BaseModel):
         id = bloop.Column(bloop.Integer, hash_key=True)
         data = bloop.Column(DocumentType)
         numbers = bloop.Column(bloop.List(bloop.Integer))
     with local_bind():
-        engine.bind(base=base_model)
+        engine.bind(base=BaseModel)
     return Document
 
 
 @pytest.fixture
-def SimpleModel(engine, base_model, local_bind):
-    class Model(base_model):
+def SimpleModel(engine, local_bind):
+    class Model(BaseModel):
         id = bloop.Column(bloop.UUID, hash_key=True)
     with local_bind():
-        engine.bind(base=base_model)
+        engine.bind(base=BaseModel)
     return Model
 
 

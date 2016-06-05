@@ -9,6 +9,8 @@ import pytest
 import uuid
 from unittest.mock import Mock
 
+from test_models import ComplexModel, User
+
 
 @pytest.fixture
 def client():
@@ -27,7 +29,7 @@ def client_error():
     return _client_error
 
 
-def test_batch_get_one_item(User, client):
+def test_batch_get_one_item(client):
     """ A single call for a single item """
     user1 = User(id=uuid.uuid4())
 
@@ -51,7 +53,7 @@ def test_batch_get_one_item(User, client):
     assert response == expected_response
 
 
-def test_batch_get_one_batch(User, client):
+def test_batch_get_one_batch(client):
     """ A single call when the number of requested items is <= batch size """
     # Simulate a full batch
     client.batch_size = 2
@@ -84,7 +86,7 @@ def test_batch_get_one_batch(User, client):
     assert response == expected_response
 
 
-def test_batch_get_paginated(User, client):
+def test_batch_get_paginated(client):
     """ Paginate requests to fit within the max batch size """
     # Minimum batch size so we can force pagination with 2 users
     client.batch_size = 1
@@ -129,7 +131,7 @@ def test_batch_get_paginated(User, client):
     assert response == expected_response
 
 
-def test_batch_get_unprocessed(User, client):
+def test_batch_get_unprocessed(client):
     """ Re-request unprocessed keys """
     user1 = User(id=uuid.uuid4())
 
@@ -240,7 +242,7 @@ def test_default_backoff():
             operation, bloop.client.DEFAULT_MAX_ATTEMPTS)
 
 
-def test_create_table(ComplexModel, client):
+def test_create_table(client):
     expected = {
         "LocalSecondaryIndexes": [
             {"Projection": {"NonKeyAttributes": ["date", "name",
@@ -278,7 +280,7 @@ def test_create_table(ComplexModel, client):
     assert called
 
 
-def test_create_raises_unknown(User, client, client_error):
+def test_create_raises_unknown(client, client_error):
     called = False
 
     def create_table(**table):
@@ -293,7 +295,7 @@ def test_create_raises_unknown(User, client, client_error):
     assert called
 
 
-def test_create_already_exists(User, client, client_error):
+def test_create_already_exists(client, client_error):
     called = False
 
     def create_table(**table):
@@ -306,7 +308,7 @@ def test_create_already_exists(User, client, client_error):
     assert called
 
 
-def test_delete_item(User, client):
+def test_delete_item(client):
     user_id = uuid.uuid4()
     request = {"Key": {"id": {"S": str(user_id)}},
                "TableName": "User",
@@ -323,7 +325,7 @@ def test_delete_item(User, client):
     assert called
 
 
-def test_delete_item_unknown_error(User, client, client_error):
+def test_delete_item_unknown_error(client, client_error):
     called = False
     user_id = uuid.uuid4()
     request = {"Key": {"id": {"S": str(user_id)}},
@@ -343,7 +345,7 @@ def test_delete_item_unknown_error(User, client, client_error):
     assert called
 
 
-def test_delete_item_condition_failed(User, client, client_error):
+def test_delete_item_condition_failed(client, client_error):
     called = False
     user_id = uuid.uuid4()
     request = {"Key": {"id": {"S": str(user_id)}},
@@ -363,7 +365,7 @@ def test_delete_item_condition_failed(User, client, client_error):
     assert called
 
 
-def test_update_item(User, client):
+def test_update_item(client):
     user_id = uuid.uuid4()
     request = {"Key": {"id": {"S": str(user_id)}},
                "TableName": "User",
@@ -380,7 +382,7 @@ def test_update_item(User, client):
     assert called
 
 
-def test_update_item_unknown_error(User, client, client_error):
+def test_update_item_unknown_error(client, client_error):
     called = False
     user_id = uuid.uuid4()
     request = {"Key": {"id": {"S": str(user_id)}},
@@ -401,7 +403,7 @@ def test_update_item_unknown_error(User, client, client_error):
     assert called
 
 
-def test_update_item_condition_failed(User, client, client_error):
+def test_update_item_condition_failed(client, client_error):
     called = False
     user_id = uuid.uuid4()
     request = {"Key": {"id": {"S": str(user_id)}},
@@ -422,7 +424,7 @@ def test_update_item_condition_failed(User, client, client_error):
     assert called
 
 
-def test_describe_table(ComplexModel, client):
+def test_describe_table(client):
     full = {
         "LocalSecondaryIndexes": [
             {"ItemCount": 7,
@@ -481,7 +483,7 @@ def test_describe_table(ComplexModel, client):
     assert called
 
 
-def test_query_scan(User, client):
+def test_query_scan(client):
     def call(**request):
         return responses[request["index"]]
 
@@ -510,7 +512,7 @@ def test_query_scan(User, client):
         assert actual == expected
 
 
-def test_validate_compares_tables(User, client):
+def test_validate_compares_tables(client):
     full = {
         "AttributeDefinitions": [
             {"AttributeType": "S", "AttributeName": "id"},
@@ -538,7 +540,7 @@ def test_validate_compares_tables(User, client):
     client.validate_table(User)
 
 
-def test_validate_checks_status(User, client):
+def test_validate_checks_status(client):
     full = {
         "AttributeDefinitions": [
             {"AttributeType": "S", "AttributeName": "id"},
@@ -572,7 +574,7 @@ def test_validate_checks_status(User, client):
     assert calls == 2
 
 
-def test_validate_checks_index_status(User, client):
+def test_validate_checks_index_status(client):
     full = {
         "AttributeDefinitions": [
             {"AttributeType": "S", "AttributeName": "id"},
@@ -607,7 +609,7 @@ def test_validate_checks_index_status(User, client):
     assert calls == 2
 
 
-def test_validate_fails(ComplexModel, client):
+def test_validate_fails(client):
     def describe_table(TableName):
         assert TableName == "CustomTableName"
         return {"Table": {}}

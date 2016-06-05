@@ -3,13 +3,15 @@ import bloop.tracking
 import pytest
 import uuid
 
+from test_models import ComplexModel, User
+
 
 def test_hash_only_key(engine):
     """ key calls for a model with no range key """
 
     class Visit(bloop.new_base()):
         hash = bloop.Column(bloop.String, hash_key=True)
-        nonkey = bloop.Column(bloop.Integer)
+        non_key = bloop.Column(bloop.Integer)
     engine.bind(base=Visit)
     q = engine.query(Visit)
 
@@ -53,11 +55,11 @@ def test_hash_only_key(engine):
         Visit.hash["path"] == "path['path']",
 
         # And with non key condition
-        ((Visit.hash == "and") & (Visit.nonkey == "nonkey")),
+        ((Visit.hash == "and") & (Visit.non_key == "non_key")),
         # And with multiple hash conditions
         ((Visit.hash == "first") & (Visit.hash == "second")),
         # And with only non key condition
-        (Visit.nonkey == "nonkey")
+        (Visit.non_key == "non_key")
     ]
 
     for condition in invalid:
@@ -71,7 +73,7 @@ def test_hash_range_key(engine):
     class Visit(bloop.new_base()):
         hash = bloop.Column(bloop.String, hash_key=True)
         range = bloop.Column(bloop.Integer, range_key=True)
-        nonkey = bloop.Column(bloop.Integer)
+        non_key = bloop.Column(bloop.Integer)
     engine.bind(base=Visit)
     q = engine.query(Visit)
 
@@ -109,10 +111,10 @@ def test_hash_range_key(engine):
         ((Visit.hash == "hash") & (Visit.range.in_(["range", "in"]))),
 
         # Valid hash, non key condition
-        ((Visit.hash == "hash") & (Visit.nonkey == "nonkey")),
+        ((Visit.hash == "hash") & (Visit.non_key == "non_key")),
         ((Visit.hash == "hash") &
          (Visit.range == "range") &
-         (Visit.nonkey == "nonkey")),
+         (Visit.non_key == "non_key")),
 
         # Multiple hash conditions
         ((Visit.hash == "hash") & (Visit.hash == "also hash")),
@@ -129,7 +131,7 @@ def test_hash_range_key(engine):
             q.key(condition)
 
 
-def test_filter(engine, User):
+def test_filter(engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
     condition = User.email == "foo@domain.com"
@@ -147,7 +149,7 @@ def test_filter(engine, User):
     assert result.request == expected
 
 
-def test_iterative_filter(engine, User):
+def test_iterative_filter(engine):
     """ iterative .filter should replace arguents """
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
@@ -167,7 +169,7 @@ def test_iterative_filter(engine, User):
     assert result.request == expected
 
 
-def test_invalid_select(engine, User):
+def test_invalid_select(engine):
     q = engine.query(User)
 
     invalid = [
@@ -182,7 +184,7 @@ def test_invalid_select(engine, User):
             q.select(select)
 
 
-def test_select_projected(engine, User):
+def test_select_projected(engine):
     # Can't use "projected" on query against table
     user_id = uuid.uuid4()
     mq = engine.query(User).key(User.id == user_id)
@@ -223,7 +225,7 @@ def test_select_all_invalid_gsi(engine):
         q.select("all")
 
 
-def test_select_strict_lsi(engine, ComplexModel):
+def test_select_strict_lsi(engine):
     """ Select all/specific on LSI without "all" projection in strict mode """
     q = engine.query(ComplexModel.by_joined)
 
@@ -234,7 +236,7 @@ def test_select_strict_lsi(engine, ComplexModel):
         q.select([ComplexModel.not_projected])
 
 
-def test_select_all_gsi(engine, ComplexModel):
+def test_select_all_gsi(engine):
     """
     Select all query on GSI with "all" projection
     """
@@ -251,7 +253,7 @@ def test_select_all_gsi(engine, ComplexModel):
     assert result.request == expected
 
 
-def test_select_specific(engine, User):
+def test_select_specific(engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
 
@@ -302,7 +304,7 @@ def test_select_specific_gsi_projection(engine):
     assert result.request == expected
 
 
-def test_select_specific_lsi(ComplexModel, engine):
+def test_select_specific_lsi(engine):
     key_condition = ComplexModel.name == "name"
     key_condition &= (ComplexModel.joined == "now")
     q = engine.query(ComplexModel.by_joined).key(key_condition)
@@ -321,7 +323,7 @@ def test_select_specific_lsi(ComplexModel, engine):
         ComplexModel.by_joined.projection_attributes)
 
 
-def test_count(engine, User):
+def test_count(engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
 
@@ -347,7 +349,7 @@ def test_count(engine, User):
     assert count == {"count": 1, "scanned_count": 2}
 
 
-def test_first(engine, User):
+def test_first(engine):
     q = engine.scan(User).filter(User.email == "foo@domain.com")
     expected = {"ConsistentRead": False,
                 "Select": "ALL_ATTRIBUTES",
@@ -370,7 +372,7 @@ def test_first(engine, User):
     assert first.email == "foo@domain.com"
 
 
-def test_atomic_load(User, atomic):
+def test_atomic_load(atomic):
     """Queying objects in an atomic context caches the loaded condition"""
 
     user_id = uuid.uuid4()
@@ -397,7 +399,7 @@ def test_atomic_load(User, atomic):
     assert expected_condition == actual_condition
 
 
-def test_iter(engine, User):
+def test_iter(engine):
     q = engine.scan(User).filter(User.email == "foo@domain.com").consistent
     expected = {"ConsistentRead": True,
                 "Select": "ALL_ATTRIBUTES",
@@ -421,7 +423,7 @@ def test_iter(engine, User):
     assert results[0].email == "foo@domain.com"
 
 
-def test_properties(engine, User):
+def test_properties(engine):
     """ ascending, descending, consistent """
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
@@ -460,21 +462,21 @@ def test_properties(engine, User):
     assert result.request == expected
 
 
-def test_query_no_key(User, engine):
+def test_query_no_key(engine):
     q = engine.query(User)
 
     with pytest.raises(ValueError):
         q.all()
 
 
-def test_query_consistent_gsi(User, engine):
+def test_query_consistent_gsi(engine):
     q = engine.query(User.by_email).key(User.email == "foo")
 
     with pytest.raises(ValueError):
         q.consistent
 
 
-def test_results_incomplete(User, engine):
+def test_results_incomplete(engine):
     q = engine.query(User).key(User.id == uuid.uuid4())
     calls = 0
 
@@ -499,7 +501,7 @@ def test_results_incomplete(User, engine):
     assert calls == 1
 
 
-def test_first_no_prefetch(User, engine):
+def test_first_no_prefetch(engine):
     """
     When there's no prefetch and a pagination token is presented,
     .first should return a result from the first page, without being marked
@@ -537,7 +539,7 @@ def test_first_no_prefetch(User, engine):
     assert not results.complete
 
 
-def test_first_no_results(User, engine):
+def test_first_no_results(engine):
     """
     When there's no prefetch and a pagination token is presented,
     .first should return a result from the first page, without being marked
@@ -562,7 +564,7 @@ def test_first_no_results(User, engine):
         results.first
 
 
-def test_prefetch_all(User, engine):
+def test_prefetch_all(engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
     calls = 0
@@ -602,7 +604,7 @@ def test_prefetch_all(User, engine):
     assert results.scanned_count == 6
 
 
-def test_invalid_prefetch(User, engine):
+def test_invalid_prefetch(engine):
     q = engine.query(User).key(User.id == uuid.uuid4())
     with pytest.raises(ValueError):
         q.all(prefetch=-1)
@@ -610,7 +612,7 @@ def test_invalid_prefetch(User, engine):
         q.all(prefetch="none")
 
 
-def test_prefetch_first(User, engine):
+def test_prefetch_first(engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
     calls = 0
@@ -653,7 +655,7 @@ def test_prefetch_first(User, engine):
     assert calls == 2
 
 
-def test_prefetch_iter(User, engine):
+def test_prefetch_iter(engine):
     user_id = uuid.uuid4()
     q = engine.query(User).key(User.id == user_id)
     calls = 0

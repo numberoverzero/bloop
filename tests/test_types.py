@@ -2,7 +2,10 @@ import arrow
 import decimal
 import pytest
 import uuid
+
 from bloop import types
+
+from test_models import DocumentType
 
 
 def symmetric_test(typedef, *pairs):
@@ -99,7 +102,6 @@ def test_binary():
 
 
 def test_sets():
-
     # Helper since sets are unordered, but dump must return an ordered list
     def check(dumped, expected):
         assert set(dumped) == expected
@@ -176,7 +178,7 @@ def test_load_dump_none():
     assert typedef._load({"S": None}) is None
 
 
-def test_map_dump(document_type):
+def test_map_dump():
     """ Map handles nested maps and custom types """
     uid = uuid.uuid4()
     now = arrow.now().to('utc')
@@ -201,11 +203,11 @@ def test_map_dump(document_type):
         'Id': {'S': str(uid)},
         'Updated': {'S': now.isoformat()}
     }
-    dumped = document_type.dynamo_dump(loaded)
+    dumped = DocumentType.dynamo_dump(loaded)
     assert dumped == expected
 
 
-def test_map_load(document_type):
+def test_map_load():
     """ Map handles nested maps and custom types """
     uid = uuid.uuid4()
     dumped = {
@@ -228,7 +230,7 @@ def test_map_load(document_type):
         'Id': uid,
         'Updated': None
     }
-    loaded = document_type.dynamo_load(dumped)
+    loaded = DocumentType.dynamo_load(dumped)
     assert loaded == expected
 
 

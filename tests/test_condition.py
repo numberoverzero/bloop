@@ -5,13 +5,15 @@ import uuid
 
 from bloop.condition import And, Or, Not
 
+from test_models import User, Document, DocumentType
+
 
 @pytest.fixture
 def renderer(engine):
     return bloop.condition.ConditionRenderer(engine)
 
 
-def test_duplicate_name_refs(renderer, User):
+def test_duplicate_name_refs(renderer):
     """ name refs are re-used for the same name """
     assert renderer.name_ref(User.age) == renderer.name_ref(User.age) == "#n0"
 
@@ -26,7 +28,7 @@ def test_no_refs(renderer):
     assert renderer.rendered == expected
 
 
-def test_condition_ops(User):
+def test_condition_ops():
     age, name = (User.age >= 3), (User.name == "foo")
 
     assert age & name == And(age, name)
@@ -34,7 +36,7 @@ def test_condition_ops(User):
     assert ~age == Not(age)
 
 
-def test_condition_len(User):
+def test_condition_len():
     age, name = (User.age >= 3), (User.name == "foo")
     and_condition = age & name
     or_condition = bloop.condition.And(age, name, age)
@@ -45,7 +47,7 @@ def test_condition_len(User):
     assert len(age) == len(name) == len(not_condition) == 1
 
 
-def test_multi_shortcut(User):
+def test_multi_shortcut():
     """ And or Or with single conditions render as their sole condition """
     age = User.age >= 3
     condition = bloop.condition.And(age)
@@ -55,7 +57,7 @@ def test_multi_shortcut(User):
     assert condition.conditions == [age]
 
 
-def test_multi_chains_flatten(User):
+def test_multi_chains_flatten():
     """
     ((condition & condition) & condition) flattens the AND into one condition
     """
@@ -72,7 +74,7 @@ def test_multi_chains_flatten(User):
     assert or_condition == bloop.condition.Or(age, name, email)
 
 
-def test_not(renderer, User):
+def test_not(renderer):
     age = ~(User.age >= 3)
     condition = bloop.condition.And(age)
     expected = {"ConditionExpression": "(NOT (#n0 >= :v1))",
@@ -82,12 +84,12 @@ def test_not(renderer, User):
     assert renderer.rendered == expected
 
 
-def test_invalid_comparator(User):
+def test_invalid_comparator():
     with pytest.raises(ValueError):
         bloop.condition.Comparison(User.age, "not-a-comparator", 5)
 
 
-def test_attribute_exists(User, renderer):
+def test_attribute_exists(renderer):
     exists = User.age.is_not(None)
     expected_exists = {"ConditionExpression": "(attribute_exists(#n0))",
                        "ExpressionAttributeNames": {"#n0": "age"}}
@@ -96,7 +98,7 @@ def test_attribute_exists(User, renderer):
     assert renderer.rendered == expected_exists
 
 
-def test_attribute_not_exists(User, renderer):
+def test_attribute_not_exists(renderer):
     not_exists = User.age.is_(None)
     expected_not_exists = {
         "ConditionExpression": "(attribute_not_exists(#n0))",
@@ -106,7 +108,7 @@ def test_attribute_not_exists(User, renderer):
     assert renderer.rendered == expected_not_exists
 
 
-def test_begins_with(renderer, User):
+def test_begins_with(renderer):
     condition = User.name.begins_with("foo")
     expected = {"ConditionExpression": "(begins_with(#n0, :v1))",
                 "ExpressionAttributeNames": {"#n0": "name"},
@@ -115,7 +117,7 @@ def test_begins_with(renderer, User):
     assert renderer.rendered == expected
 
 
-def test_contains(renderer, User):
+def test_contains(renderer):
     condition = User.name.contains("foo")
     expected = {"ConditionExpression": "(contains(#n0, :v1))",
                 "ExpressionAttributeNames": {"#n0": "name"},
@@ -124,7 +126,7 @@ def test_contains(renderer, User):
     assert renderer.rendered == expected
 
 
-def test_between(renderer, User):
+def test_between(renderer):
     condition = User.name.between("bar", "foo")
     expected = {"ConditionExpression": "(#n0 BETWEEN :v1 AND :v2)",
                 "ExpressionAttributeNames": {"#n0": "name"},
@@ -134,7 +136,7 @@ def test_between(renderer, User):
     assert renderer.rendered == expected
 
 
-def test_in(renderer, User):
+def test_in(renderer):
     condition = User.name.in_(["bar", "foo"])
     expected = {"ConditionExpression": "(#n0 IN (:v1, :v2))",
                 "ExpressionAttributeNames": {"#n0": "name"},
@@ -144,7 +146,7 @@ def test_in(renderer, User):
     assert renderer.rendered == expected
 
 
-def test_base_condition(renderer, User):
+def test_base_condition(renderer):
     """ (Condition() OP condition) is condition """
     base = bloop.condition.Condition()
     other = User.email == "foo"
@@ -160,7 +162,7 @@ def test_base_condition(renderer, User):
     assert not renderer.rendered
 
 
-def test_render_path(renderer, User):
+def test_render_path(renderer):
     """ A path should be rendered as #column.#field.#field """
     path = "foo bar baz".split()
     renderer.name_ref(User.email, path=path)
@@ -169,7 +171,7 @@ def test_render_path(renderer, User):
     assert renderer.rendered == expected
 
 
-def test_path_comparator(renderer, Document):
+def test_path_comparator(renderer):
     """ Render paths for operations, comparisons, and multi-conditions """
 
     rating = Document.data["Rating"] > 0.5
@@ -212,11 +214,11 @@ def test_typedmap_path_comparator(renderer, engine):
     assert renderer.rendered == expected
 
 
-def test_name_ref_with_path(renderer, engine, document_type):
+def test_name_ref_with_path(renderer, engine):
     """ Columns with custom names with literal periods render correctly """
     class Model(bloop.new_base()):
         id = bloop.Column(bloop.Integer, hash_key=True, name='this.is.id')
-        data = bloop.Column(document_type)
+        data = bloop.Column(DocumentType)
     engine.bind(base=Model)
 
     no_id = Model.id.is_(None)
@@ -233,7 +235,7 @@ def test_name_ref_with_path(renderer, engine, document_type):
     assert renderer.rendered == expected
 
 
-def test_list_path(renderer, Document):
+def test_list_path(renderer):
     """ render list indexes correctly """
     condition = Document.numbers[1] >= 3
     expected = {
@@ -244,7 +246,7 @@ def test_list_path(renderer, Document):
     assert renderer.rendered == expected
 
 
-def test_equality(Document):
+def test_equality():
     lt = Document.id < 10
     gt = Document.id > 12
 

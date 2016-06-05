@@ -5,15 +5,17 @@ import pytest
 from bloop import (Column, UUID, Boolean, DateTime, String,
                    LocalSecondaryIndex, GlobalSecondaryIndex, new_base)
 
+from test_models import User
 
-def test_default_model_init(User):
+
+def test_default_model_init():
     """ Missing attributes are set to `None` """
     user = User(id=uuid.uuid4(), email="user@domain.com")
     assert user.email == "user@domain.com"
     assert not hasattr(user, "name")
 
 
-def test_load_default_init(engine, User):
+def test_load_default_init(engine):
     """ The default model loader uses the model's __init__ method """
     loader_calls = 0
 
@@ -39,7 +41,7 @@ def test_load_default_init(engine, User):
     assert not hasattr(loaded_user, "extra_field")
 
 
-def test_custom_init(engine, User):
+def test_custom_init(engine):
     """ Custom Meta.init functions are not passed any arguments """
     init_called = False
 
@@ -58,7 +60,7 @@ def test_custom_init(engine, User):
     assert init_called
 
 
-def test_load_dump(engine, User):
+def test_load_dump(engine):
     """ _load and _dump should be symmetric """
 
     user_id = uuid.uuid4()
@@ -77,7 +79,7 @@ def test_load_dump(engine, User):
     assert User._dump(user, context={"engine": engine}) == serialized_user
 
 
-def test_equality(User):
+def test_equality():
     user_id = uuid.uuid4()
     user = User(id=user_id, name="name", email="user@domain.com", age=25)
     same = User(id=user_id, name="name", email="user@domain.com", age=25)
@@ -120,7 +122,7 @@ def test_meta_read_write_units():
     assert Other.Meta.read_units == 2
 
 
-def test_meta_indexes_columns(User):
+def test_meta_indexes_columns():
     """ An index should not be considered a Column, even if it subclasses """
     assert User.by_email not in set(User.Meta.columns)
     assert User.by_email in set(User.Meta.indexes)

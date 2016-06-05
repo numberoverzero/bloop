@@ -7,8 +7,10 @@ import pytest
 import uuid
 from unittest.mock import Mock
 
+from test_models import ComplexModel, User
 
-def test_missing_objects(User, engine):
+
+def test_missing_objects(engine):
     """
     When objects aren't loaded, ObjectsNotFound is raised with a list of
     missing objects
@@ -24,7 +26,7 @@ def test_missing_objects(User, engine):
     assert set(excinfo.value.objects) == set(users)
 
 
-def test_dump_key(User, engine):
+def test_dump_key(engine):
     class HashAndRange(bloop.new_base()):
         foo = bloop.Column(bloop.Integer, hash_key=True)
         bar = bloop.Column(bloop.Integer, range_key=True)
@@ -39,7 +41,7 @@ def test_dump_key(User, engine):
     assert bloop.engine._dump_key(engine, obj) == obj_key
 
 
-def test_load_object(User, engine):
+def test_load_object(engine):
     user_id = uuid.uuid4()
     expected = {"User": {"Keys": [{"id": {"S": str(user_id)}}],
                          "ConsistentRead": True}}
@@ -60,7 +62,7 @@ def test_load_object(User, engine):
     assert user.id == user_id
 
 
-def test_load_objects(User, engine):
+def test_load_objects(engine):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
     expected = {"User": {"Keys": [{"id": {"S": str(user1.id)}},
@@ -86,7 +88,7 @@ def test_load_objects(User, engine):
     assert user2.name == "bar"
 
 
-def test_load_duplicate_objects(User, engine):
+def test_load_duplicate_objects(engine):
     """Duplicate objects are handled correctly when loading"""
     user = User(id=uuid.uuid4())
     expected = {"User": {"Keys": [{"id": {"S": str(user.id)}}],
@@ -106,7 +108,7 @@ def test_load_duplicate_objects(User, engine):
     assert user.name == "foo"
 
 
-def test_load_missing_attrs(User, engine):
+def test_load_missing_attrs(engine):
     """
     When an instance of a Model is loaded into, existing attributes should be
     overwritten with new values, or if there is no new value, should be deleted
@@ -154,7 +156,7 @@ def test_load_dump_unknown(engine):
         engine._dump(NotModeled, obj)
 
 
-def test_load_missing_key(engine, User, ComplexModel):
+def test_load_missing_key(engine):
     """Trying to load objects with missing hash and range keys raises"""
     user = User(age=2)
     with pytest.raises(ValueError):
@@ -170,7 +172,7 @@ def test_load_missing_key(engine, User, ComplexModel):
             engine.load(model)
 
 
-def test_atomic_load(User, atomic):
+def test_atomic_load(atomic):
     """Loading objects in an atomic context caches the loaded condition"""
     user_id = uuid.uuid4()
     obj = User(id=user_id)
@@ -196,7 +198,7 @@ def test_atomic_load(User, atomic):
     assert actual_condition == expected_condition
 
 
-def test_update_noop_save(engine, User):
+def test_update_noop_save(engine):
     """ Saves should send all fields that have been set, every time """
     user = User(id=uuid.uuid4(), age=5)
 
@@ -219,7 +221,7 @@ def test_update_noop_save(engine, User):
     assert calls == 2
 
 
-def test_save_multiple_condition(User, engine):
+def test_save_multiple_condition(engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
     condition = User.id.is_(None)
 
@@ -239,7 +241,7 @@ def test_save_multiple_condition(User, engine):
     assert calls == 3
 
 
-def test_save_condition(User, engine):
+def test_save_condition(engine):
     user_id = uuid.uuid4()
     user = User(id=user_id)
     condition = User.id.is_(None)
@@ -254,7 +256,7 @@ def test_save_condition(User, engine):
     engine.save(user, condition=condition)
 
 
-def test_save_atomic_new(User, engine):
+def test_save_atomic_new(engine):
     """
     When an object is first created, an atomic save should expect no columns
     to exist.
@@ -279,7 +281,7 @@ def test_save_atomic_new(User, engine):
     engine.save(user)
 
 
-def test_save_atomic_update_condition(User, atomic):
+def test_save_atomic_update_condition(atomic):
     user_id = uuid.uuid4()
     user = User(id=user_id)
     bloop.tracking.sync(user, atomic)
@@ -306,7 +308,7 @@ def test_save_atomic_update_condition(User, atomic):
     assert called
 
 
-def test_save_multiple(User, engine):
+def test_save_multiple(engine):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
 
@@ -324,7 +326,7 @@ def test_save_multiple(User, engine):
     assert calls == 2
 
 
-def test_save_update_condition_key_only(User, engine):
+def test_save_update_condition_key_only(engine):
     """
     Even when the diff is empty, an UpdateItem should be issued
     (in case this is really a create - the item doesn't exist yet)
@@ -342,7 +344,7 @@ def test_save_update_condition_key_only(User, engine):
     engine.save(user, condition=condition)
 
 
-def test_save_update_condition(User, engine):
+def test_save_update_condition(engine):
     """
     Non-empty diff
     """
@@ -361,7 +363,7 @@ def test_save_update_condition(User, engine):
     engine.save(user, condition=condition)
 
 
-def test_save_update_multiple(User, engine):
+def test_save_update_multiple(engine):
     user1 = User(id=uuid.uuid4(), age=4)
     user2 = User(id=uuid.uuid4(), age=5)
 
@@ -389,7 +391,7 @@ def test_save_update_multiple(User, engine):
     assert calls == 2
 
 
-def test_save_set_del_field(User, engine):
+def test_save_set_del_field(engine):
     """ UpdateItem can REMOVE fields as well as SET """
     user = User(id=uuid.uuid4(), age=4)
 
@@ -412,7 +414,7 @@ def test_save_set_del_field(User, engine):
     engine.save(user)
 
 
-def test_save_update_del_field(User, engine):
+def test_save_update_del_field(engine):
     user = User(id=uuid.uuid4(), age=4)
 
     # Manually snapshot so we think age is persisted
@@ -432,7 +434,7 @@ def test_save_update_del_field(User, engine):
     engine.save(user)
 
 
-def test_delete_multiple_condition(User, engine):
+def test_delete_multiple_condition(engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
     condition = User.id == "foo"
     expected = [{"Key": {"id": {"S": str(user.id)}},
@@ -452,7 +454,7 @@ def test_delete_multiple_condition(User, engine):
     assert calls == 3
 
 
-def test_delete_condition(User, engine):
+def test_delete_condition(engine):
     user_id = uuid.uuid4()
     user = User(id=user_id)
     condition = User.id.is_(None)
@@ -467,7 +469,7 @@ def test_delete_condition(User, engine):
     engine.delete(user, condition=condition)
 
 
-def test_delete_multiple(User, engine):
+def test_delete_multiple(engine):
     user1 = User(id=uuid.uuid4())
     user2 = User(id=uuid.uuid4())
 
@@ -485,7 +487,7 @@ def test_delete_multiple(User, engine):
     assert calls == 2
 
 
-def test_delete_atomic(User, atomic):
+def test_delete_atomic(atomic):
     user_id = uuid.uuid4()
     user = User(id=user_id)
 
@@ -509,7 +511,7 @@ def test_delete_atomic(User, atomic):
     assert called
 
 
-def test_delete_atomic_new(User, engine):
+def test_delete_atomic_new(engine):
     """
     When an object is first created, an atomic delete should expect
     no columns to exist.
@@ -534,7 +536,7 @@ def test_delete_atomic_new(User, engine):
     engine.delete(user)
 
 
-def test_delete_new(User, engine):
+def test_delete_new(engine):
     """
     When an object is first created, a non-atomic delete shouldn't expect
     anything.
@@ -552,7 +554,7 @@ def test_delete_new(User, engine):
     engine.delete(user)
 
 
-def test_delete_atomic_condition(User, atomic):
+def test_delete_atomic_condition(atomic):
     user_id = uuid.uuid4()
     user = User(id=user_id, email='foo@bar.com')
 
@@ -580,7 +582,7 @@ def test_delete_atomic_condition(User, atomic):
     assert called
 
 
-def test_query(User, engine):
+def test_query(engine):
     """ Engine.query supports model and index-based queries """
     index_query = engine.query(User.by_email)
     assert index_query.model is User
@@ -591,7 +593,7 @@ def test_query(User, engine):
     assert model_query.index is None
 
 
-def test_scan(User, engine):
+def test_scan(engine):
     """ Engine.scan supports model and index-based queries """
     index_scan = engine.scan(User.by_email)
     assert index_scan.model is User
@@ -602,7 +604,7 @@ def test_scan(User, engine):
     assert model_scan.index is None
 
 
-def test_context(User, engine):
+def test_context(engine):
     engine.config["atomic"] = True
     user_id = uuid.uuid4()
     user = User(id=user_id, name="foo")

@@ -1,13 +1,16 @@
 import uuid
+
 import bloop.tracking
 
+from test_models import User, ComplexModel
 
-def test_init_marks(User):
+
+def test_init_marks():
     user = User(id=uuid.uuid4(), unused="unknown kwarg")
     assert bloop.tracking._obj_tracking[user]["marked"] == set([User.id])
 
 
-def test_delete_unknown(User):
+def test_delete_unknown():
     """ Even if a field that doesn't exist is deleted, it's marked """
     user = User(id=uuid.uuid4())
     try:
@@ -22,7 +25,7 @@ def test_delete_unknown(User):
     assert diff["REMOVE"] == [User.email]
 
 
-def test_get_update(User):
+def test_get_update():
     """ hash_key shouldn't be in the dumped SET dict """
     user = User(id=uuid.uuid4(), email="support@domain.com")
     diff = bloop.tracking.get_update(user)
@@ -31,7 +34,7 @@ def test_get_update(User):
     assert diff["SET"] == [(User.email, "support@domain.com")]
 
 
-def test_tracking_empty_update(ComplexModel, engine):
+def test_tracking_empty_update():
     """ no SET changes for hash and range key only """
     uid = uuid.uuid4()
     model = ComplexModel(name=uid, date="now")

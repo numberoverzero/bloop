@@ -6,6 +6,11 @@ import uuid
 from bloop.condition import And, Or, Not
 
 
+@pytest.fixture
+def renderer(engine):
+    return bloop.condition.ConditionRenderer(engine)
+
+
 def test_duplicate_name_refs(renderer, User):
     """ name refs are re-used for the same name """
     assert renderer.name_ref(User.age) == renderer.name_ref(User.age) == "#n0"

@@ -8,6 +8,17 @@ import pytest
 import uuid
 
 
+@pytest.fixture
+def client_error():
+    def _client_error(code):
+        error_response = {"Error": {
+            "Code": code,
+            "Message": "FooMessage"}}
+        operation_name = "OperationName"
+        return botocore.exceptions.ClientError(error_response, operation_name)
+    return _client_error
+
+
 def test_batch_get_one_item(User, client):
     """ A single call for a single item """
     user1 = User(id=uuid.uuid4())

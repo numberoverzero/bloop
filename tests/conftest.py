@@ -1,5 +1,4 @@
 import bloop
-import botocore
 import contextlib
 import pytest
 
@@ -21,6 +20,38 @@ class DocumentModel(BaseModel):
     id = bloop.Column(bloop.Integer, hash_key=True)
     data = bloop.Column(DocumentType)
     numbers = bloop.Column(bloop.List(bloop.Integer))
+
+
+class UserModel(BaseModel):
+    class Meta:
+        table_name = "User"
+    id = bloop.Column(bloop.UUID, hash_key=True)
+    age = bloop.Column(bloop.Integer)
+    name = bloop.Column(bloop.String)
+    email = bloop.Column(bloop.String)
+    # Field with dynamo_name != model_name
+    joined = bloop.Column(bloop.DateTime, name="j")
+
+    by_email = bloop.GlobalSecondaryIndex(hash_key="email",
+                                          projection="all")
+
+
+class Model(BaseModel):
+    class Meta:
+        write_units = 2
+        read_units = 3
+        table_name = "CustomTableName"
+
+    name = bloop.Column(bloop.UUID, hash_key=True)
+    date = bloop.Column(bloop.String, range_key=True)
+    email = bloop.Column(bloop.String)
+    joined = bloop.Column(bloop.String)
+    not_projected = bloop.Column(bloop.Integer)
+
+    by_email = bloop.GlobalSecondaryIndex(hash_key="email", read_units=4,
+                                          projection="all", write_units=5)
+    by_joined = bloop.LocalSecondaryIndex(range_key="joined",
+                                          projection=["email"])
 
 
 def noop(*a, **kw):
@@ -58,11 +89,6 @@ def atomic(engine):
 
 
 @pytest.fixture
-def renderer(engine):
-    return bloop.condition.ConditionRenderer(engine)
-
-
-@pytest.fixture
 def local_bind(engine):
     @contextlib.contextmanager
     def context():
@@ -78,38 +104,13 @@ def local_bind(engine):
 
 @pytest.fixture
 def User(engine, local_bind):
-    class User(BaseModel):
-        id = bloop.Column(bloop.UUID, hash_key=True)
-        age = bloop.Column(bloop.Integer)
-        name = bloop.Column(bloop.String)
-        email = bloop.Column(bloop.String)
-        # Field with dynamo_name != model_name
-        joined = bloop.Column(bloop.DateTime, name="j")
-
-        by_email = bloop.GlobalSecondaryIndex(hash_key="email",
-                                              projection="all")
     with local_bind():
         engine.bind(base=BaseModel)
-    return User
+    return UserModel
 
 
 @pytest.fixture
 def ComplexModel(engine, local_bind):
-    class Model(BaseModel):
-        class Meta:
-            write_units = 2
-            read_units = 3
-            table_name = "CustomTableName"
-        name = bloop.Column(bloop.UUID, hash_key=True)
-        date = bloop.Column(bloop.String, range_key=True)
-        email = bloop.Column(bloop.String)
-        joined = bloop.Column(bloop.String)
-        not_projected = bloop.Column(bloop.Integer)
-
-        by_email = bloop.GlobalSecondaryIndex(hash_key="email", read_units=4,
-                                              projection="all", write_units=5)
-        by_joined = bloop.LocalSecondaryIndex(range_key="joined",
-                                              projection=["email"])
     with local_bind():
         engine.bind(base=BaseModel)
     return Model
@@ -125,14 +126,3 @@ def Document(engine, local_bind):
     with local_bind():
         engine.bind(base=BaseModel)
     return DocumentModel
-
-
-@pytest.fixture
-def client_error():
-    def _client_error(code):
-        error_response = {"Error": {
-            "Code": code,
-            "Message": "FooMessage"}}
-        operation_name = "OperationName"
-        return botocore.exceptions.ClientError(error_response, operation_name)
-    return _client_error

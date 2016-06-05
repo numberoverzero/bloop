@@ -32,7 +32,7 @@ class ModelMetaclass(declare.ModelMetaclass):
         return model
 
 
-class BaseModel(object):
+class BaseModel:
     """
     Do not subclass directly, use new_base.
 
@@ -90,11 +90,12 @@ class BaseModel(object):
         return "{}({})".format(self.__class__.__name__, attrs)
     __repr__ = __str__
 
-    def __hash__(self):  # pragma: no cover
-        return super().__hash__()
+    __hash__ = object.__hash__
 
     def __eq__(self, other):
         """ Only checks defined columns. """
+        if self is other:
+            return True
         cls = self.__class__
         if not isinstance(other, cls):
             return False

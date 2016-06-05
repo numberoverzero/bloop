@@ -145,7 +145,7 @@ class Engine:
                 model, obj, context={"engine": self})
         except declare.DeclareException:
             # Best-effort check for a more helpful message
-            if issubclass(model, bloop.model.BaseModel):
+            if isinstance(model, bloop.model.ModelMetaclass):
                 raise bloop.exceptions.UnboundModel("load", model, obj)
             else:
                 raise ValueError(
@@ -161,7 +161,7 @@ class Engine:
                 model, value, context={"engine": self})
         except declare.DeclareException:
             # Best-effort check for a more helpful message
-            if issubclass(model, bloop.model.BaseModel):
+            if isinstance(model, bloop.model.ModelMetaclass):
                 raise bloop.exceptions.UnboundModel("load", model, None)
             else:
                 raise ValueError(
@@ -180,27 +180,34 @@ class Engine:
         self.client = self.client or bloop.client.Client(
             session=self.config["session"])
 
-        # only need to verify models that haven't been
-        # bound (created/verified) already
-        def needs_verification(model):
-            # Models that aren't explicitly abstract should be bound
-            if getattr(model.Meta, "abstract", False):
-                return False
-            return not bloop.tracking.is_model_verified(model)
         # Make sure we're looking at models
         if not isinstance(base, bloop.model.ModelMetaclass):
             raise ValueError("base must derive from bloop.new_base()")
-        subclasses = bloop.util.walk_subclasses(base)
-        unverified = set(filter(needs_verification, subclasses))
+
+        # whether the model's typedefs should be registered, and
+        # whether the model should be eligible for validation
+        def is_concrete(model):
+            # Models that aren't explicitly abstract should be bound
+            abstract = getattr(model.Meta, "abstract", False)
+            return not abstract
+
+        # whether the model needs to have create/validate calls made for its
+        # backing table
+        def is_validated(model):
+            return bloop.tracking.is_model_validated(model)
+        concrete = set(filter(is_concrete, bloop.util.walk_subclasses(base)))
+        unvalidated = concrete - set(filter(is_validated, concrete))
 
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
-        for model in unverified:
-            self.client.create_table(model)
+        for model in concrete:
+            if model in unvalidated:
+                self.client.create_table(model)
 
-        for model in unverified:
-            self.client.validate_table(model)
+        for model in concrete:
+            if model in unvalidated:
+                self.client.validate_table(model)
             # Model won't need to be verified the
             # next time its BaseModel is bound to an engine
             bloop.tracking.verify_model(model)

@@ -680,3 +680,27 @@ def test_bind_concrete_base():
     engine.bind(base=Concrete)
     engine.client.create_table.assert_called_once_with(Concrete)
     engine.client.validate_table.assert_called_once_with(Concrete)
+
+
+def test_bind_different_engines():
+    first_engine = bloop.Engine()
+    first_engine.client = Mock(spec=bloop.client.Client)
+    second_engine = bloop.Engine()
+    second_engine.client = Mock(spec=bloop.client.Client)
+
+    class Concrete(bloop.new_base()):
+        pass
+    first_engine.bind(base=Concrete)
+    second_engine.bind(base=Concrete)
+
+    # Create/Validate are only called once per model, regardless of how many
+    # times the model is bound to different engines
+    first_engine.client.create_table.assert_called_once_with(Concrete)
+    first_engine.client.validate_table.assert_called_once_with(Concrete)
+    second_engine.client.create_table.assert_not_called()
+    second_engine.client.validate_table.assert_not_called()
+
+    # The model (and its columns) are bound to each engine's TypeEngine,
+    # regardless of how many times the model has been bound already
+    assert Concrete in first_engine.type_engine.bound_types
+    assert Concrete in second_engine.type_engine.bound_types

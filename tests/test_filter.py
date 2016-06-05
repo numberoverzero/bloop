@@ -173,7 +173,7 @@ def test_invalid_select(engine, User):
     invalid = [
         "all_",
         None,
-        set(["foo", User.email]),
+        {"foo", User.email},
         set()
     ]
 

@@ -32,9 +32,7 @@ class UserModel(BaseModel):
     email = bloop.Column(bloop.String)
     # Field with dynamo_name != model_name
     joined = bloop.Column(bloop.DateTime, name="j")
-
-    by_email = bloop.GlobalSecondaryIndex(hash_key="email",
-                                          projection="all")
+    by_email = bloop.GlobalSecondaryIndex(hash_key="email", projection="all")
 
 
 class Model(BaseModel):
@@ -48,21 +46,17 @@ class Model(BaseModel):
     email = bloop.Column(bloop.String)
     joined = bloop.Column(bloop.String)
     not_projected = bloop.Column(bloop.Integer)
-
     by_email = bloop.GlobalSecondaryIndex(hash_key="email", read_units=4,
                                           projection="all", write_units=5)
     by_joined = bloop.LocalSecondaryIndex(range_key="joined",
                                           projection=["email"])
 
 
-def noop(*a, **kw):
-    pass
-
-
 @pytest.fixture
 def engine():
     engine = bloop.Engine()
     engine.client = Mock(spec=bloop.client.Client)
+    engine.bind(base=BaseModel)
     return engine
 
 
@@ -73,14 +67,12 @@ def atomic(engine):
 
 
 @pytest.fixture
-def User(engine):
-    engine.bind(base=UserModel)
+def User():
     return UserModel
 
 
 @pytest.fixture
-def ComplexModel(engine):
-    engine.bind(base=Model)
+def ComplexModel():
     return Model
 
 
@@ -90,6 +82,5 @@ def document_type():
 
 
 @pytest.fixture
-def Document(engine):
-    engine.bind(base=DocumentModel)
+def Document():
     return DocumentModel

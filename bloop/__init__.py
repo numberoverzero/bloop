@@ -18,4 +18,4 @@ __all__ = [
     "String", "TableMismatch", "TypedMap", "UnboundModel", "UUID",
     "new_base", "engine_for_profile"
 ]
-__version__ = "0.9.6"
+__version__ = "0.9.7"

@@ -269,3 +269,61 @@ def test_list_path(renderer, Document):
         'ExpressionAttributeNames': {'#n0': 'numbers'}}
     renderer.render(condition, "condition")
     assert renderer.rendered == expected
+
+
+def test_equality(Document):
+    lt = Document.id < 10
+    gt = Document.id > 12
+
+    path = Document.data["Rating"] == 3.4
+
+    # Order doesn't matter for multi conditions
+    basic_and = lt & gt
+    swapped_and = gt & lt
+    multiple_and = lt & lt & gt
+
+    basic_or = lt | gt
+    swapped_or = gt | lt
+    multiple_or = lt | lt | gt
+
+    not_lt = ~lt
+    not_gt = ~gt
+
+    not_exists_data = Document.data.is_(None)
+    not_exists_id = Document.id.is_(None)
+    exists_id = Document.id.is_not(None)
+
+    begins_hello = Document.data["Description"]["Body"].begins_with("hello")
+    begins_world = Document.data["Description"]["Body"].begins_with("world")
+    begins_numbers = Document.numbers.begins_with(8)
+
+    contains_hello = Document.data["Description"]["Body"].contains("hello")
+    contains_world = Document.data["Description"]["Body"].contains("world")
+    contains_numbers = Document.numbers.contains(9)
+
+    between_small = Document.id.between(5, 6)
+    between_big = Document.id.between(100, 200)
+    between_numbers = Document.numbers.between(set([8080]), set([8088]))
+
+    in_small = Document.id.in_([3, 7, 11])
+    in_big = Document.id.in_([123, 456])
+    in_numbers = Document.numbers.in_([120, 450])
+
+    all_conditions = [
+        lt, gt, path,
+        basic_and, swapped_and, multiple_and,
+        basic_or, swapped_or, multiple_or,
+        not_lt, not_gt,
+        not_exists_data, not_exists_id, exists_id,
+        begins_hello, begins_world, begins_numbers,
+        contains_hello, contains_world, contains_numbers,
+        between_small, between_big, between_numbers,
+        in_small, in_big, in_numbers
+    ]
+
+    for first in all_conditions:
+        for second in all_conditions:
+            if first is second:
+                assert first == second
+            else:
+                assert first != second

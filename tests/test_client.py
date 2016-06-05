@@ -1,3 +1,4 @@
+import bloop
 import bloop.client
 import bloop.exceptions
 import bloop.util
@@ -628,17 +629,19 @@ def test_validate_fails(ComplexModel, client):
     assert excinfo.value.actual == actual
 
 
-def test_validate_simple_model(SimpleModel, client):
+def test_validate_simple_model(client):
+    class SimpleModel(bloop.new_base()):
+        id = bloop.Column(bloop.UUID, hash_key=True)
     full = {
         "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
         "AttributeDefinitions": [
             {"AttributeName": "id", "AttributeType": "S"}],
-        "TableName": "Model",
+        "TableName": "SimpleModel",
         "ProvisionedThroughput": {"ReadCapacityUnits": 1,
                                   "WriteCapacityUnits": 1}}
 
     def describe_table(TableName):
-        assert TableName == "Model"
+        assert TableName == "SimpleModel"
         return {"Table": full}
     client.client.describe_table = describe_table
     client.validate_table(SimpleModel)

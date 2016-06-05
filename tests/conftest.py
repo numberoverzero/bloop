@@ -131,15 +131,6 @@ def Document(engine, local_bind):
 
 
 @pytest.fixture
-def SimpleModel(engine, local_bind):
-    class Model(BaseModel):
-        id = bloop.Column(bloop.UUID, hash_key=True)
-    with local_bind():
-        engine.bind(base=BaseModel)
-    return Model
-
-
-@pytest.fixture
 def client_error():
     def _client_error(code):
         error_response = {"Error": {

@@ -171,13 +171,13 @@ def test_load_missing_key(engine, User, ComplexModel):
             engine.load(model)
 
 
-def test_atomic_load(User, atomic, renderer):
+def test_atomic_load(User, atomic):
     """Loading objects in an atomic context caches the loaded condition"""
     user_id = uuid.uuid4()
     obj = User(id=user_id)
 
-    # Load may not return fields, in the case of missing data
-    # (or non-mapped data, in the case of multi-view tables)
+    # In the case of missing data, load may not return fields
+    # (or in the case of multi-view tables, non-mapped data)
     response = {"User": [{"age": {"N": 5},
                           "id": {"S": str(obj.id)},
                           "extra_field": {"freeform data": "not parsed"}}]}
@@ -185,21 +185,16 @@ def test_atomic_load(User, atomic, renderer):
     atomic.client.batch_get_items = lambda input: response
     atomic.load(obj)
 
-    condition = ('((#n0 = :v1) AND (attribute_not_exists(#n2)) '
-                 'AND (#n3 = :v4) AND (attribute_not_exists(#n5))'
-                 ' AND (attribute_not_exists(#n6)))')
-    expected = {
-        'ExpressionAttributeValues': {
-            ':v4': {'S': str(user_id)},
-            ':v1': {'N': '5'}},
-        'ExpressionAttributeNames': {
-            '#n2': 'email', '#n0': 'age', '#n5': 'j',
-            '#n6': 'name', '#n3': 'id'},
-        'ConditionExpression': condition}
-
+    # Cached snapshots are in dumped form
+    expected_condition = (
+        (User.age == {"N": "5"}) &
+        (User.email.is_(None)) &
+        (User.id == {"S": str(user_id)}) &
+        (User.joined.is_(None)) &
+        (User.name.is_(None))
+    )
     actual_condition = bloop.tracking.get_snapshot(obj)
-    renderer.render(actual_condition, "condition")
-    assert expected == renderer.rendered
+    assert actual_condition == expected_condition
 
 
 def test_update_noop_save(engine, User):

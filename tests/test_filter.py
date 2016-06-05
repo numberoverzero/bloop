@@ -374,7 +374,7 @@ def test_first(engine, User):
     assert first.email == "foo@domain.com"
 
 
-def test_atomic_load(User, atomic, renderer):
+def test_atomic_load(User, atomic):
     """Queying objects in an atomic context caches the loaded condition"""
 
     user_id = uuid.uuid4()
@@ -390,22 +390,15 @@ def test_atomic_load(User, atomic, renderer):
     atomic.client.scan = respond
     obj = q.first()
 
-    condition = ('((attribute_not_exists(#n0)) AND (#n1 = :v2) '
-                 'AND (#n3 = :v4) AND (attribute_not_exists(#n5)) AND '
-                 '(attribute_not_exists(#n6)))')
-    expected = {
-        'ExpressionAttributeValues': {
-            ':v4': {'S': str(user_id)},
-            ':v2': {'S': 'foo@domain.com'}},
-        'ConditionExpression': condition,
-        'ExpressionAttributeNames': {
-            '#n0': 'age', '#n1': 'email', '#n3': 'id',
-            '#n5': 'j', '#n6': 'name'}}
-
+    expected_condition = (
+        (User.age.is_(None)) &
+        (User.email == {"S": "foo@domain.com"}) &
+        (User.id == {"S": str(user_id)}) &
+        (User.joined.is_(None)) &
+        (User.name.is_(None))
+    )
     actual_condition = bloop.tracking.get_snapshot(obj)
-    renderer.render(actual_condition, "condition")
-    print(renderer.rendered)
-    assert expected == renderer.rendered
+    assert expected_condition == actual_condition
 
 
 def test_iter(engine, User):

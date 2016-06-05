@@ -259,3 +259,13 @@ def test_meta_table_name():
         id = Column(UUID, hash_key=True)
 
     assert Other.Meta.table_name == "table_name"
+
+
+def test_abstract_not_inherited():
+    base = new_base()
+
+    class Concrete(base):
+        pass
+
+    assert base.Meta.abstract
+    assert not hasattr(Concrete.Meta, "abstract")

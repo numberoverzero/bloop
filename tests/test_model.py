@@ -3,7 +3,7 @@ import uuid
 import pytest
 
 from bloop import (Column, UUID, Boolean, DateTime, String,
-                   LocalSecondaryIndex, GlobalSecondaryIndex)
+                   LocalSecondaryIndex, GlobalSecondaryIndex, new_base)
 
 
 def test_default_model_init(User):
@@ -99,18 +99,18 @@ def test_equality(User):
     assert user == same
 
 
-def test_meta_read_write_units(base_model):
+def test_meta_read_write_units():
     """
     If `read_units` or `write_units` is missing from a model's Meta,
     it defaults to 1
     """
-    class Model(base_model):
+    class Model(new_base()):
         id = Column(UUID, hash_key=True)
 
     assert Model.Meta.write_units == 1
     assert Model.Meta.read_units == 1
 
-    class Other(base_model):
+    class Other(new_base()):
         class Meta:
             read_units = 2
             write_units = 3
@@ -126,7 +126,7 @@ def test_meta_indexes_columns(User):
     assert User.by_email in set(User.Meta.indexes)
 
 
-def test_meta_keys(base_model):
+def test_meta_keys():
     """ Various combinations of hash and range keys (some impossible) """
     def hash_column():
         return Column(UUID, hash_key=True)
@@ -134,16 +134,16 @@ def test_meta_keys(base_model):
     def range_column():
         return Column(UUID, range_key=True)
 
-    class HashOnly(base_model):
+    class HashOnly(new_base()):
         h = hash_column()
 
-    class RangeOnly(base_model):
+    class RangeOnly(new_base()):
         r = range_column()
 
-    class Neither(base_model):
+    class Neither(new_base()):
         pass
 
-    class Both(base_model):
+    class Both(new_base()):
         h = hash_column()
         r = range_column()
 
@@ -159,28 +159,28 @@ def test_meta_keys(base_model):
         assert model.Meta.range_key is range_key
 
 
-def test_model_extra_keys(base_model):
+def test_model_extra_keys():
     with pytest.raises(ValueError):
-        class DoubleHash(base_model):
+        class DoubleHash(new_base()):
             id = Column(UUID, hash_key=True)
             other = Column(UUID, hash_key=True)
 
     with pytest.raises(ValueError):
-        class DoubleRange(base_model):
+        class DoubleRange(new_base()):
             id = Column(UUID, range_key=True)
             other = Column(UUID, range_key=True)
 
 
-def test_invalid_local_index(base_model):
+def test_invalid_local_index():
     with pytest.raises(ValueError):
-        class InvalidIndex(base_model):
+        class InvalidIndex(new_base()):
             id = Column(UUID, hash_key=True)
             index = LocalSecondaryIndex(range_key="id")
 
 
-def test_index_keys(base_model):
+def test_index_keys():
     """ Make sure index hash and range keys are objects, not strings """
-    class Model(base_model):
+    class Model(new_base()):
         id = Column(UUID, hash_key=True)
         other = Column(DateTime, range_key=True)
         another = Column(UUID)
@@ -196,20 +196,20 @@ def test_index_keys(base_model):
     assert Model.by_another.range_key is Model.last
 
 
-def test_local_index_no_range_key(base_model):
+def test_local_index_no_range_key():
     """ A table range_key is required to specify a LocalSecondaryIndex """
     with pytest.raises(ValueError):
-        class Model(base_model):
+        class Model(new_base()):
             id = Column(UUID, hash_key=True)
             another = Column(UUID)
             by_another = LocalSecondaryIndex(range_key="another")
 
 
-def test_index_projections(base_model):
+def test_index_projections():
     """ Make sure index projections are calculated to include table keys """
     Global, Local = GlobalSecondaryIndex, LocalSecondaryIndex
 
-    class Model(base_model):
+    class Model(new_base()):
         id = Column(UUID, hash_key=True)
         other = Column(UUID, range_key=True)
         another = Column(UUID)
@@ -243,16 +243,16 @@ def test_index_projections(base_model):
     assert Model.l_inc.projection_attributes == no_boolean
 
 
-def test_meta_table_name(base_model):
+def test_meta_table_name():
     """
     If table_name is missing from a model's Meta, use the model's __name__
     """
-    class Model(base_model):
+    class Model(new_base()):
         id = Column(UUID, hash_key=True)
 
     assert Model.Meta.table_name == "Model"
 
-    class Other(base_model):
+    class Other(new_base()):
         class Meta:
             table_name = "table_name"
             write_units = 3

@@ -71,11 +71,6 @@ def local_bind(engine):
 
 
 @pytest.fixture
-def base_model():
-    return BaseModel
-
-
-@pytest.fixture
 def User(engine, local_bind):
     class User(BaseModel):
         id = bloop.Column(bloop.UUID, hash_key=True)

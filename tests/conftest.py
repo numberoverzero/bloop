@@ -1,6 +1,5 @@
 import bloop
 import bloop.client
-import contextlib
 import pytest
 from unittest.mock import Mock
 
@@ -71,20 +70,6 @@ def engine():
 def atomic(engine):
     with engine.context(atomic=True) as atomic:
         return atomic
-
-
-@pytest.fixture
-def local_bind(engine):
-    @contextlib.contextmanager
-    def context():
-        real_create_table = engine.client.create_table
-        real_validate_table = engine.client.validate_table
-        engine.client.create_table = noop
-        engine.client.validate_table = noop
-        yield
-        engine.client.create_table = real_create_table
-        engine.client.validate_table = real_validate_table
-    return context
 
 
 @pytest.fixture

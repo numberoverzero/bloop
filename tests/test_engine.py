@@ -24,12 +24,11 @@ def test_missing_objects(User, engine):
     assert set(excinfo.value.objects) == set(users)
 
 
-def test_dump_key(User, engine, local_bind):
+def test_dump_key(User, engine):
     class HashAndRange(bloop.new_base()):
         foo = bloop.Column(bloop.Integer, hash_key=True)
         bar = bloop.Column(bloop.Integer, range_key=True)
-    with local_bind():
-        engine.bind(base=HashAndRange)
+    engine.bind(base=HashAndRange)
 
     user = User(id=uuid.uuid4())
     user_key = {"id": {"S": str(user.id)}}

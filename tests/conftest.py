@@ -4,6 +4,19 @@ import contextlib
 import pytest
 
 
+DocumentType = bloop.Map(**{
+    'Rating': bloop.Float(),
+    'Stock': bloop.Integer(),
+    'Description': bloop.Map(**{
+        'Heading': bloop.String,
+        'Body': bloop.String,
+        'Specifications': bloop.String
+    }),
+    'Id': bloop.UUID,
+    'Updated': bloop.DateTime
+})
+
+
 def noop(*a, **kw):
     pass
 
@@ -108,24 +121,14 @@ def ComplexModel(engine, base_model, local_bind):
 
 @pytest.fixture
 def document_type():
-    return bloop.Map(**{
-        'Rating': bloop.Float(),
-        'Stock': bloop.Integer(),
-        'Description': bloop.Map(**{
-            'Heading': bloop.String,
-            'Body': bloop.String,
-            'Specifications': bloop.String
-        }),
-        'Id': bloop.UUID,
-        'Updated': bloop.DateTime
-    })
+    return DocumentType
 
 
 @pytest.fixture
-def Document(engine, base_model, local_bind, document_type):
+def Document(engine, base_model, local_bind):
     class Document(base_model):
         id = bloop.Column(bloop.Integer, hash_key=True)
-        data = bloop.Column(document_type)
+        data = bloop.Column(DocumentType)
         numbers = bloop.Column(bloop.List(bloop.Integer))
     with local_bind():
         engine.bind(base=base_model)

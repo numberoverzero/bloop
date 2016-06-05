@@ -1,7 +1,10 @@
 import bloop
 import bloop.condition
-import operator
+import operator as op
 import pytest
+
+operations = [op.ne, op.eq, op.lt, op.le, op.gt, op.ge]
+operation_ids = ["!=", "==", "<", "<=", ">", ">="]
 
 
 def test_equals_alias_exists():
@@ -22,16 +25,15 @@ def test_equals_alias_exists():
     assert condition.negate is False
 
 
-def test_operators():
+@pytest.mark.parametrize("operation", operations, ids=operation_ids)
+def test_comparison(operation):
     column = bloop.Column(bloop.Integer)
     value = object()
 
-    for op in [operator.ne, operator.eq, operator.lt,
-               operator.le, operator.gt, operator.ge]:
-        condition = op(column, value)
-        assert condition.comparator is op
-        assert condition.column is column
-        assert condition.value is value
+    condition = operation(column, value)
+    assert condition.comparator is operation
+    assert condition.column is column
+    assert condition.value is value
 
 
 def test_between():

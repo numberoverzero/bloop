@@ -273,6 +273,29 @@ def test_create_table(client):
     assert client.client.create_table.call_count == 1
 
 
+def test_create_subclass(client):
+    base_model = User
+
+    # Shouldn't include base model's columns in create_table call
+    class SubModel(base_model):
+        id = bloop.Column(bloop.String, hash_key=True)
+
+    expected = {
+        'AttributeDefinitions': [
+            {'AttributeName': 'id', 'AttributeType': 'S'}],
+        'KeySchema': [{'AttributeName': 'id', 'KeyType': 'HASH'}],
+        'ProvisionedThroughput': {
+            'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1},
+        'TableName': 'SubModel'}
+
+    def create_table(**table):
+        assert bloop.util.ordered(table) == bloop.util.ordered(expected)
+
+    client.client.create_table.side_effect = create_table
+    client.create_table(SubModel)
+    assert client.client.create_table.call_count == 1
+
+
 def test_create_raises_unknown(client):
     client.client.create_table.side_effect = client_error("FooError")
 
@@ -280,6 +303,13 @@ def test_create_raises_unknown(client):
         client.create_table(User)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
     assert client.client.create_table.call_count == 1
+
+
+def test_create_abstract_raises(client):
+    abstract_model = bloop.new_base()
+    with pytest.raises(bloop.exceptions.AbstractModelException) as excinfo:
+        client.create_table(abstract_model)
+    assert excinfo.value.model is abstract_model
 
 
 def test_create_already_exists(client):

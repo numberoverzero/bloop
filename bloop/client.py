@@ -219,6 +219,8 @@ class Client(object):
         .. _create_table (DynamoDB Client):
             https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.create_table
         """
+        if model.Meta.abstract:
+            raise bloop.exceptions.AbstractModelException(model)
         table = _table_for_model(model)
         create = functools.partial(self._call_with_retries,
                                    self.client.create_table)

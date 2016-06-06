@@ -14,9 +14,10 @@ The start of any model is the base model.  You can get one through the
 
 Every model must subclass a Base (possibly indirectly - see note on abstract
 models).  The backing tables for models aren't created at class definition, but
-when the base class of a model is bound to an engine using ``engine.bind``.
-This allows you to define models and then handle the binding in a try/except
-to handle any failure modes (network failure, model mismatches).
+when the model (or any of its parent classes) is bound to an engine using
+``engine.bind``.  This allows you to define models and then handle the binding
+in a try/except to handle any failure modes (network failure, model
+mismatches).
 
 When defining a model, you can specify an optional ``Meta`` attribute within
 the class, which lets you customize properties of the table, as well as holding
@@ -62,38 +63,23 @@ columnar concerns (nullable, validation) you'll want to subclass Column and
 attach your own kwargs.
 
 .. note::
-    While abstract models are not currently implemented, you can subclass the
-    base created from ``new_base`` and use that as your base class::
+    A model is considered abstract if its ``Meta.abstract`` attribute is true.
+    The model created by ``new_base`` is always abstract.  The same rules of
+    model discovery (covered in :ref:`bind`) are followed for abstract and
+    concrete models when binding to an engine.  While abstract models can be
+    dumped and loaded into dynamo-compatible representations using an engine's
+    protected methods, ``load``, ``save``, ``delete`` will fail.
 
-        Base = new_base()
-
-        class MyCustomBase(Base):
-            def shared_function_for_all_subclasses(self):
-                ...
-        ...
-
-        class Model(MyCustomBase):
-            ...
-
-        engine.bind(base=MyCustomBase)
-
-    Be careful!  ``engine.bind`` recursively walks the subclasses of whatever
-    base you provide; if the above call was instead ``engine.bind(base=Base)``
-    then bloop would try to create a table in Dynamo for the model
-    ``MyCustomBase`` which would either fail, or create an unexpected table.
-
-    There is an existing `issue`_ to track implementation of proper abstract
-    models, which would allow models that aren't backed by tables to exist
-    anywhere along the inheritance of a base model.
-
+    Abstract models must be explicitly declared so - by default, all model
+    subclasses are assumed to be concrete.
 
 .. seealso::
     * :ref:`meta` for a full list of Meta's attributes.
     * :ref:`bind` for a detailed look at what happens when models are bound.
     * :ref:`custom-columns` for extending the Column modeling.
+    * :ref:`abstract` for limitations and examples of using abstract models
 
 .. _Limits: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html
-.. _issue: https://github.com/numberoverzero/bloop/issues/26
 
 .. _create:
 
@@ -646,6 +632,76 @@ differences:
 * Any ``key`` conditions are ignored completely when constructing the request.
 * The ``ascending`` and ``descending`` properties are ignored.
 
+
+.. _abstract::
+
+Abstract and Inheritance
+------------------------
+
+bloop supports the concept of abstract models that are not coupled to actual
+DynamoDB tables.  This can be useful when you want to leverage the usual
+benefits of inheritance, without creating some intermediate classes::
+
+    import uuid
+    from bloop import new_base, Engine, UUID, ConstraintViolation
+
+
+    class AbstractBase(new_base()):
+        """
+        base model for uuid hash_key-only models.
+        provides class method for generating persisted guaranteed
+        unique ids.
+        """
+        class Meta:
+            abstract = True
+
+        @classmethod
+        def unique(cls, engine, tries=10):
+            not_exist = cls.id.is_(None)
+            while tries:
+                try:
+                    obj = cls(id=uuid.uuid4())
+                    engine.save(obj, condition=not_exist)
+                    return obj
+                except ConstraintViolation:
+                    pass
+            raise RuntimeError("Failed to create unique object")
+
+
+    class Model(AbstractBase):
+        id = Column(UUID, hash_key=True)
+
+
+    engine = Engine()
+    engine.bind(base=AbstractBase)
+
+    instance = Model.unique(engine)
+
+abstract classes can be anywhere the inheritance chain::
+
+    Abstract = new_base():
+
+
+    class Concrete(Abstract):
+        id = Column(String, hash_key=True)
+
+
+    class AlsoAbstract(Concrete):
+        class Meta:
+            abstract = True
+
+
+    class AlsoConcrete(AlsoAbstract):
+        id = Column(UUID, hash_key=True)
+
+
+.. warning::
+
+    Currently, modelled attributes are **not** inherited, which means they do
+    not correspond to real columns in DynamoDB.  If your abstract model relies
+    on subclasses having an ``id`` column like above, then each subclass must
+    include that declaration.
+
 .. _meta:
 
 Meta
@@ -662,6 +718,8 @@ internally (like ``Meta.init``).
 
 Meta exposes the following attributes:
 
+* ``abstract`` - whether the model should be bound to a DynamoDB Table or not.
+  Defaults to False.  ``new_base`` returns an abstract model.
 * ``read_units`` and ``write_units`` - mentioned above, the table read/write
   units.  Both default to 1.
 * ``table_name`` - mentioned above, the name of the table.  Defaults to the

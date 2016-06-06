@@ -172,368 +172,211 @@ def test_load_missing_key(engine):
             engine.load(model)
 
 
-def test_atomic_load(atomic):
-    """Loading objects in an atomic context caches the loaded condition"""
-    user_id = uuid.uuid4()
-    obj = User(id=user_id)
+@pytest.mark.parametrize(
+    "atomic_mode", [True, False], ids=lambda v: "atomic:"+str(v))
+def test_load_snapshots(engine, atomic_mode):
+    """Loading builds a snapshot for future atomic operations"""
+    user = User(id=uuid.uuid4())
 
     # In the case of missing data, load may not return fields
     # (or in the case of multi-view tables, non-mapped data)
-    response = {"User": [{"age": {"N": 5},
-                          "id": {"S": str(obj.id)},
-                          "extra_field": {"freeform data": "not parsed"}}]}
-
-    atomic.client.batch_get_items = lambda input: response
-    atomic.load(obj)
+    engine.client.batch_get_items.return_value = {
+        "User": [
+            {"age": {"N": 5},
+             "id": {"S": str(user.id)},
+             "extra_field": {"freeform data": "not parsed"}}]}
+    engine.config["atomic"] = atomic_mode
+    engine.load(user)
 
     # Cached snapshots are in dumped form
     expected_condition = (
         (User.age == {"N": "5"}) &
         (User.email.is_(None)) &
-        (User.id == {"S": str(user_id)}) &
+        (User.id == {"S": str(user.id)}) &
         (User.joined.is_(None)) &
         (User.name.is_(None))
     )
-    actual_condition = bloop.tracking.get_snapshot(obj)
+    actual_condition = bloop.tracking.get_snapshot(user)
     assert actual_condition == expected_condition
 
 
-def test_update_noop_save(engine):
-    """ Saves should send all fields that have been set, every time """
+def test_save_twice(engine):
+    """Save sends full local values, not just deltas from last save"""
     user = User(id=uuid.uuid4(), age=5)
-
     expected = {
         "Key": {"id": {"S": str(user.id)}},
         "TableName": "User",
         "ExpressionAttributeNames": {"#n0": "age"},
         "ExpressionAttributeValues": {":v1": {"N": "5"}},
         "UpdateExpression": "SET #n0=:v1"}
-    calls = 0
-
-    def validate(item):
-        assert item == expected
-        nonlocal calls
-        calls += 1
-
-    engine.client.update_item = validate
     engine.save(user)
     engine.save(user)
-    assert calls == 2
+    engine.client.update_item.assert_called_with(expected)
+    assert engine.client.update_item.call_count == 2
 
 
-def test_save_multiple_condition(engine):
+def test_save_list_with_condition(engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
     condition = User.id.is_(None)
-
-    expected = [{"ConditionExpression": "(attribute_not_exists(#n0))",
-                 "ExpressionAttributeNames": {"#n0": "id"},
-                 "Key": {"id": {"S": str(user.id)}},
-                 "TableName": "User"} for user in users]
-    calls = 0
-
-    def validate(item):
-        assert item in expected
-        nonlocal calls
-        calls += 1
-
-    engine.client.update_item = validate
+    expected_calls = [
+        {"ConditionExpression": "(attribute_not_exists(#n0))",
+         "ExpressionAttributeNames": {"#n0": "id"},
+         "Key": {"id": {"S": str(user.id)}},
+         "TableName": "User"}
+        for user in users]
     engine.save(users, condition=condition)
-    assert calls == 3
+    for expected in expected_calls:
+        engine.client.update_item.assert_any_call(expected)
+    assert engine.client.update_item.call_count == 3
 
 
-def test_save_condition(engine):
-    user_id = uuid.uuid4()
-    user = User(id=user_id)
+def test_save_single_with_condition(engine):
+    user = User(id=uuid.uuid4())
     condition = User.id.is_(None)
     expected = {"TableName": "User",
                 "ExpressionAttributeNames": {"#n0": "id"},
                 "ConditionExpression": "(attribute_not_exists(#n0))",
-                "Key": {"id": {"S": str(user_id)}}}
-
-    def validate(item):
-        assert item == expected
-    engine.client.update_item = validate
+                "Key": {"id": {"S": str(user.id)}}}
     engine.save(user, condition=condition)
+    engine.client.update_item.assert_called_once_with(expected)
 
 
 def test_save_atomic_new(engine):
-    """
-    When an object is first created, an atomic save should expect no columns
-    to exist.
-    """
-    user_id = uuid.uuid4()
-    user = User(id=user_id)
+    """atomic save on new object should expect no columns to exist"""
+    user = User(id=uuid.uuid4())
     expected = {
         'ExpressionAttributeNames': {
             '#n0': 'age', '#n3': 'j', '#n1': 'email',
             '#n4': 'name', '#n2': 'id'},
-        'Key': {'id': {'S': str(user_id)}},
+        'Key': {'id': {'S': str(user.id)}},
         'TableName': 'User',
         'ConditionExpression': (
             '((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1)) '
             'AND (attribute_not_exists(#n2)) AND (attribute_not_exists(#n3))'
             ' AND (attribute_not_exists(#n4)))')}
-
-    def validate(item):
-        assert item == expected
-    engine.client.update_item = validate
     engine.config["atomic"] = True
     engine.save(user)
+    engine.client.update_item.assert_called_once_with(expected)
 
 
-def test_save_atomic_update_condition(atomic):
-    user_id = uuid.uuid4()
-    user = User(id=user_id)
+def test_save_atomic_condition(atomic):
+    user = User(id=uuid.uuid4())
+    # Pretend the id was already persisted in dynamo
     bloop.tracking.sync(user, atomic)
-
+    # Mutate a field; part of the update but not an expected condition
     user.name = "new_foo"
+    # Condition on the mutated field with a different value
+    condition = User.name == "expect_foo"
 
     expected = {
         "ExpressionAttributeNames": {"#n2": "id", "#n0": "name"},
         "TableName": "User",
-        "ExpressionAttributeValues": {":v4": {"S": "expect_foo"},
-                                      ":v1": {"S": "new_foo"},
-                                      ":v3": {"S": str(user_id)}},
+        "ExpressionAttributeValues": {
+            ":v4": {"S": "expect_foo"},
+            ":v1": {"S": "new_foo"},
+            ":v3": {"S": str(user.id)}},
         'ConditionExpression': "((#n2 = :v3) AND (#n0 = :v4))",
         "UpdateExpression": "SET #n0=:v1",
-        "Key": {"id": {"S": str(user_id)}}}
-    called = False
-
-    def validate(item):
-        nonlocal called
-        called = True
-        assert item == expected
-    atomic.client.update_item = validate
-    atomic.save(user, condition=User.name == "expect_foo")
-    assert called
+        "Key": {"id": {"S": str(user.id)}}}
+    atomic.save(user, condition=condition)
+    atomic.client.update_item.assert_called_once_with(expected)
 
 
-def test_save_multiple(engine):
-    user1 = User(id=uuid.uuid4())
-    user2 = User(id=uuid.uuid4())
-
-    expected = [
-        {"Key": {"id": {"S": str(user1.id)}}, "TableName": "User"},
-        {"Key": {"id": {"S": str(user2.id)}}, "TableName": "User"}]
-    calls = 0
-
-    def validate(item):
-        assert item in expected
-        nonlocal calls
-        calls += 1
-    engine.client.update_item = validate
-    engine.save((user1, user2))
-    assert calls == 2
-
-
-def test_save_update_condition_key_only(engine):
+def test_save_condition_key_only(engine):
     """
     Even when the diff is empty, an UpdateItem should be issued
     (in case this is really a create - the item doesn't exist yet)
     """
     user = User(id=uuid.uuid4())
     condition = User.id.is_(None)
-    expected = {"ConditionExpression": "(attribute_not_exists(#n0))",
-                "TableName": "User",
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "Key": {"id": {"S": str(user.id)}}}
-
-    def validate(item):
-        assert item == expected
-    engine.client.update_item = validate
+    expected = {
+        "ConditionExpression": "(attribute_not_exists(#n0))",
+        "TableName": "User",
+        "ExpressionAttributeNames": {"#n0": "id"},
+        "Key": {"id": {"S": str(user.id)}}}
     engine.save(user, condition=condition)
+    engine.client.update_item.assert_called_once_with(expected)
 
 
-def test_save_update_condition(engine):
-    """
-    Non-empty diff
-    """
-    user = User(id=uuid.uuid4(), age=4)
-    condition = User.id.is_(None)
-    expected = {"ConditionExpression": "(attribute_not_exists(#n2))",
-                "ExpressionAttributeNames": {"#n2": "id", "#n0": "age"},
-                "TableName": "User",
-                "Key": {"id": {"S": str(user.id)}},
-                "ExpressionAttributeValues": {":v1": {"N": "4"}},
-                "UpdateExpression": "SET #n0=:v1"}
+def test_save_set_only(engine):
+    user = User(id=uuid.uuid4())
 
-    def validate(item):
-        assert item == expected
-    engine.client.update_item = validate
-    engine.save(user, condition=condition)
-
-
-def test_save_update_multiple(engine):
-    user1 = User(id=uuid.uuid4(), age=4)
-    user2 = User(id=uuid.uuid4(), age=5)
-
-    expected = [
-        {"UpdateExpression": "SET #n0=:v1",
-         "Key": {"id": {"S": str(user1.id)}},
-         "TableName": "User",
-         "ExpressionAttributeNames": {"#n0": "age"},
-         "ExpressionAttributeValues": {":v1": {"N": "4"}}},
-        {"UpdateExpression": "SET #n0=:v1",
-         "Key": {"id": {"S": str(user2.id)}},
-         "TableName": "User",
-         "ExpressionAttributeNames": {"#n0": "age"},
-         "ExpressionAttributeValues": {":v1": {"N": "5"}}}
-    ]
-    calls = 0
-
-    def validate(item):
-        nonlocal calls
-        calls += 1
-        assert item in expected
-        expected.remove(item)
-    engine.client.update_item = validate
-    engine.save((user1, user2))
-    assert calls == 2
-
-
-def test_save_set_del_field(engine):
-    """ UpdateItem can REMOVE fields as well as SET """
-    user = User(id=uuid.uuid4(), age=4)
-
-    for field in [User.id, User.age, User.email]:
-        bloop.tracking.mark(user, field)
-
-    # Expect to see a REMOVE on age, and a SET on email
-    del user.age
+    # Expect a SET on email
     user.email = "foo@domain.com"
 
-    expected = {"Key": {"id": {"S": str(user.id)}},
-                "ExpressionAttributeNames": {"#n0": "email", "#n2": "age"},
-                "TableName": "User",
-                "UpdateExpression": "SET #n0=:v1 REMOVE #n2",
-                "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
-
-    def validate(item):
-        assert item == expected
-    engine.client.update_item = validate
+    expected = {
+        "Key": {"id": {"S": str(user.id)}},
+        "ExpressionAttributeNames": {"#n0": "email"},
+        "TableName": "User",
+        "UpdateExpression": "SET #n0=:v1",
+        "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
     engine.save(user)
+    engine.client.update_item.assert_called_once_with(expected)
 
 
-def test_save_update_del_field(engine):
+def test_save_del_only(engine):
     user = User(id=uuid.uuid4(), age=4)
 
-    # Manually snapshot so we think age is persisted
-    bloop.tracking.sync(user, engine)
-
-    # Expect to see a REMOVE on age, and a SET on email
+    # Expect a REMOVE on age
     del user.age
 
-    expected = {"Key": {"id": {"S": str(user.id)}},
-                "ExpressionAttributeNames": {"#n0": "age"},
-                "TableName": "User",
-                "UpdateExpression": "REMOVE #n0"}
-
-    def validate(item):
-        assert item == expected
-    engine.client.update_item = validate
+    expected = {
+        "Key": {"id": {"S": str(user.id)}},
+        "ExpressionAttributeNames": {"#n0": "age"},
+        "TableName": "User",
+        "UpdateExpression": "REMOVE #n0"}
     engine.save(user)
+    engine.client.update_item.assert_called_once_with(expected)
 
 
 def test_delete_multiple_condition(engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
     condition = User.id == "foo"
-    expected = [{"Key": {"id": {"S": str(user.id)}},
-                 "ExpressionAttributeValues": {":v1": {"S": "foo"}},
-                 "ExpressionAttributeNames": {"#n0": "id"},
-                 "ConditionExpression": "(#n0 = :v1)",
-                 "TableName": "User"} for user in users]
-    calls = 0
-
-    def validate(item):
-        assert item in expected
-        nonlocal calls
-        calls += 1
-
-    engine.client.delete_item = validate
+    expected_calls = [
+        {"Key": {"id": {"S": str(user.id)}},
+         "ExpressionAttributeValues": {":v1": {"S": "foo"}},
+         "ExpressionAttributeNames": {"#n0": "id"},
+         "ConditionExpression": "(#n0 = :v1)",
+         "TableName": "User"}
+        for user in users]
     engine.delete(users, condition=condition)
-    assert calls == 3
-
-
-def test_delete_condition(engine):
-    user_id = uuid.uuid4()
-    user = User(id=user_id)
-    condition = User.id.is_(None)
-    expected = {"TableName": "User",
-                "ExpressionAttributeNames": {"#n0": "id"},
-                "ConditionExpression": "(attribute_not_exists(#n0))",
-                "Key": {"id": {"S": str(user_id)}}}
-
-    def validate(item):
-        assert item == expected
-    engine.client.delete_item = validate
-    engine.delete(user, condition=condition)
-
-
-def test_delete_multiple(engine):
-    user1 = User(id=uuid.uuid4())
-    user2 = User(id=uuid.uuid4())
-
-    expected = [
-        {"Key": {"id": {"S": str(user1.id)}}, "TableName": "User"},
-        {"Key": {"id": {"S": str(user2.id)}}, "TableName": "User"}]
-    calls = 0
-
-    def validate(item):
-        assert item in expected
-        nonlocal calls
-        calls += 1
-    engine.client.delete_item = validate
-    engine.delete((user1, user2))
-    assert calls == 2
+    for expected in expected_calls:
+        engine.client.delete_item.assert_any_call(expected)
+    assert engine.client.delete_item.call_count == 3
 
 
 def test_delete_atomic(atomic):
-    user_id = uuid.uuid4()
-    user = User(id=user_id)
+    user = User(id=uuid.uuid4())
 
     # Manually snapshot so we think age is persisted
     bloop.tracking.sync(user, atomic)
 
     expected = {
         'ConditionExpression': '(#n0 = :v1)',
-        'ExpressionAttributeValues': {':v1': {'S': str(user_id)}},
+        'ExpressionAttributeValues': {':v1': {'S': str(user.id)}},
         'TableName': 'User',
-        'Key': {'id': {'S': str(user_id)}},
+        'Key': {'id': {'S': str(user.id)}},
         'ExpressionAttributeNames': {'#n0': 'id'}}
-    called = False
-
-    def validate(item):
-        nonlocal called
-        called = True
-        assert item == expected
-    atomic.client.delete_item = validate
     atomic.delete(user)
-    assert called
+    atomic.client.delete_item.assert_called_once_with(expected)
 
 
 def test_delete_atomic_new(engine):
-    """
-    When an object is first created, an atomic delete should expect
-    no columns to exist.
-    """
-    user_id = uuid.uuid4()
-    user = User(id=user_id)
+    """atomic delete on new object should expect no columns to exist"""
+    user = User(id=uuid.uuid4())
     expected = {
         'TableName': 'User',
         'ExpressionAttributeNames': {
             '#n2': 'id', '#n0': 'age', '#n4': 'name',
             '#n3': 'j', '#n1': 'email'},
-        'Key': {'id': {'S': str(user_id)}},
+        'Key': {'id': {'S': str(user.id)}},
         'ConditionExpression': (
             '((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1)) '
             'AND (attribute_not_exists(#n2)) AND (attribute_not_exists(#n3))'
             ' AND (attribute_not_exists(#n4)))')}
-
-    def validate(item):
-        assert item == expected
-    engine.client.delete_item = validate
     engine.config["atomic"] = True
     engine.delete(user)
+    engine.client.delete_item.assert_called_once_with(expected)
 
 
 def test_delete_new(engine):
@@ -546,12 +389,8 @@ def test_delete_new(engine):
     expected = {
         'TableName': 'User',
         'Key': {'id': {'S': str(user_id)}}}
-
-    def validate(item):
-        assert item == expected
-    engine.client.delete_item = validate
-    engine.config["atomic"] = False
     engine.delete(user)
+    engine.client.delete_item.assert_called_once_with(expected)
 
 
 def test_delete_atomic_condition(atomic):
@@ -571,15 +410,8 @@ def test_delete_atomic_condition(atomic):
             ':v5': {'S': 'foo'}, ':v1': {'S': 'foo@bar.com'},
             ':v3': {'S': str(user_id)}},
         'Key': {'id': {'S': str(user_id)}}}
-    called = False
-
-    def validate(item):
-        nonlocal called
-        called = True
-        assert item == expected
-    atomic.client.delete_item = validate
     atomic.delete(user, condition=User.name.is_("foo"))
-    assert called
+    atomic.client.delete_item.assert_called_once_with(expected)
 
 
 def test_query(engine):
@@ -609,18 +441,16 @@ def test_context(engine):
     user_id = uuid.uuid4()
     user = User(id=user_id, name="foo")
 
-    expected = {"TableName": "User",
-                "UpdateExpression": "SET #n0=:v1",
-                "ExpressionAttributeValues": {":v1": {"S": "foo"}},
-                "ExpressionAttributeNames": {"#n0": "name"},
-                "Key": {"id": {"S": str(user_id)}}}
-
-    def validate(item):
-        assert item == expected
-    engine.client.update_item = validate
+    expected = {
+        "TableName": "User",
+        "UpdateExpression": "SET #n0=:v1",
+        "ExpressionAttributeValues": {":v1": {"S": "foo"}},
+        "ExpressionAttributeNames": {"#n0": "name"},
+        "Key": {"id": {"S": str(user_id)}}}
 
     with engine.context(atomic=False) as eng:
         eng.save(user)
+    engine.client.update_item.assert_called_once_with(expected)
 
     # EngineViews can't bind
     with pytest.raises(RuntimeError):

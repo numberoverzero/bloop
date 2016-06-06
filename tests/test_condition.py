@@ -246,10 +246,14 @@ def test_list_path(renderer):
     assert renderer.rendered == expected
 
 
+# parametrizing conditions x conditions makes the test count explode into a
+# useless number, so we only parametrize one. This should still make isolating
+# failures easier, from O(len(conditions*conditions)) when neither
+# is parametrized to O(len(conditions))
 @pytest.mark.parametrize("condition", conditions, ids=str)
-@pytest.mark.parametrize("other", conditions, ids=str)
-def test_equality(condition, other):
-    if condition is other:
-        assert condition == other
-    else:
-        assert condition != other
+def test_equality(condition):
+    for other in conditions:
+        if condition is other:
+            assert condition == other
+        else:
+            assert condition != other

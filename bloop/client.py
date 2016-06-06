@@ -19,15 +19,14 @@ RETRYABLE_ERRORS = [
 ]
 
 
-def _default_backoff_func(operation, attempts):
+def _default_backoff_func(attempts):
     """
     Exponential backoff helper.
 
     attempts is the number of calls so far that have failed
     """
     if attempts == DEFAULT_MAX_ATTEMPTS:
-        raise RuntimeError("Failed {} after {} attempts".format(
-            operation, attempts))
+        raise RuntimeError("Failed after {} attempts".format(attempts))
     return (DEFAULT_BACKOFF_COEFF * (2 ** attempts)) / 1000.0
 
 
@@ -72,7 +71,7 @@ class Client(object):
 
     Attributes:
         client (boto3.client): Low-level client to communicate with DynamoDB
-        backoff_func (func<str, int>): Calculates the duration to wait between
+        backoff_func (func<int>): Calculates the duration to wait between
             retries.  By default, an exponential backoff function is used.
         batch_size (int): The maximum number of items to include in a batch
             request to DynamoDB.  Default value is 25, a lower limit may be
@@ -86,8 +85,8 @@ class Client(object):
     def __init__(self, session=None, backoff_func=None,
                  batch_size=MAX_BATCH_SIZE):
         """
-        backoff_func is an optional function with signature
-        (dynamo operation name, attempts so far) that should either:
+        backoff_func is an optional function that takes an int
+            (attempts so far) that should either:
             - return the number of seconds to sleep
             - raise to stop
         """
@@ -97,7 +96,6 @@ class Client(object):
         self.batch_size = batch_size
 
     def _call_with_retries(self, func, *args, **kwargs):
-        operation = func.__name__
         attempts = 1
         while True:
             try:
@@ -112,7 +110,7 @@ class Client(object):
 
             # Backoff in milliseconds
             # backoff_func will return a number of seconds to wait, or raise
-            delay = self.backoff_func(operation, attempts)
+            delay = self.backoff_func(attempts)
             time.sleep(delay)
             attempts += 1
 

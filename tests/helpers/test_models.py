@@ -1,3 +1,4 @@
+import bloop.condition
 from bloop import (
     new_base, Column, DateTime, Float, GlobalSecondaryIndex,
     Integer, List, LocalSecondaryIndex, Map, String, UUID)
@@ -58,6 +59,7 @@ def _build_conditions():
     simplifies building compound conditions;
     eases extension for new test cases
     """
+    empty = bloop.condition.Condition()
     lt = Document.id < 10
     gt = Document.id > 12
 
@@ -79,12 +81,12 @@ def _build_conditions():
     not_exists_id = Document.id.is_(None)
     exists_id = Document.id.is_not(None)
 
-    begins_hello = Document.data["Description"]["Body"].begins_with("hello")
-    begins_world = Document.data["Description"]["Body"].begins_with("world")
+    begins_hello = Document.id.begins_with("hello")
+    begins_world = Document.id.begins_with("world")
     begins_numbers = Document.numbers.begins_with(8)
 
-    contains_hello = Document.data["Description"]["Body"].contains("hello")
-    contains_world = Document.data["Description"]["Body"].contains("world")
+    contains_hello = Document.id.contains("hello")
+    contains_world = Document.id.contains("world")
     contains_numbers = Document.numbers.contains(9)
 
     between_small = Document.id.between(5, 6)
@@ -96,6 +98,7 @@ def _build_conditions():
     in_numbers = Document.numbers.in_([120, 450])
 
     conditions.update((
+        empty,
         lt, gt, path,
         basic_and, swapped_and, multiple_and,
         basic_or, swapped_or, multiple_or,

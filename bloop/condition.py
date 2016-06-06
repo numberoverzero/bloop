@@ -142,8 +142,6 @@ class _BaseCondition:
     def __len__(self):
         return 1
 
-    __hash__ = object.__hash__
-
 
 class Condition(_BaseCondition):
     """Empty condition for iteratively building up conditions.
@@ -176,6 +174,10 @@ class Condition(_BaseCondition):
 
     def __str__(self):  # pragma: no cover
         return "()"
+
+    def __eq__(self, other):
+        return isinstance(other, Condition)
+    __hash__ = _BaseCondition.__hash__
 
     def render(self, renderer):
         return None

@@ -48,7 +48,6 @@ def test_batch_get_one_item(client):
         assert RequestItems == expected_request
         return response
     client.client.batch_get_item.side_effect = handle
-    client.client.batch_get_item.__name__ = "batch_get_item"
 
     response = client.batch_get_items(request)
     assert response == expected_response
@@ -175,12 +174,11 @@ def test_call_with_retries(client, client_error):
     max_tries = 4
     tries = 0
 
-    def backoff(operation, attempts):
+    def backoff(attempts):
         nonlocal tries
         tries += 1
         if attempts == max_tries:
-            raise RuntimeError("Failed {} after {} attempts".format(
-                operation, attempts))
+            raise RuntimeError("Failed after {} attempts".format(attempts))
         # Don't sleep at all
         return 0
     client.backoff_func = backoff
@@ -232,17 +230,15 @@ def test_call_with_retries(client, client_error):
 
 
 def test_default_backoff():
-    operation = "foobar"
     attempts = range(bloop.client.DEFAULT_MAX_ATTEMPTS)
     durations = [(50.0 * (2 ** x)) / 1000.0 for x in attempts]
 
     for (attempts, expected) in zip(attempts, durations):
-        actual = bloop.client._default_backoff_func(operation, attempts)
+        actual = bloop.client._default_backoff_func(attempts)
         assert actual == expected
 
     with pytest.raises(RuntimeError):
-        bloop.client._default_backoff_func(
-            operation, bloop.client.DEFAULT_MAX_ATTEMPTS)
+        bloop.client._default_backoff_func(bloop.client.DEFAULT_MAX_ATTEMPTS)
 
 
 def test_create_table(client):
@@ -486,33 +482,19 @@ def test_describe_table(client):
     assert called
 
 
-def test_query_scan(client):
-    def call(**request):
-        return responses[request["index"]]
+@pytest.mark.parametrize("response, expected", [
+    ({}, (0, 0)),
+    ({"Count": -1}, (-1, -1)),
+    ({"ScannedCount": -1}, (0, -1)),
+    ({"Count": 1, "ScannedCount": 2}, (1, 2))
+], ids=str)
+def test_query_scan(client, response, expected):
+    client.client.query.return_value = response
+    client.client.scan.return_value = response
 
-    client.client.query = call
-    client.client.scan = call
-
-    responses = [
-        {},
-        {"Count": -1},
-        {"ScannedCount": -1},
-        {"Count": 1, "ScannedCount": 2}
-    ]
-
-    expecteds = [
-        {"Count": 0, "ScannedCount": 0},
-        {"Count": -1, "ScannedCount": -1},
-        {"Count": 0, "ScannedCount": -1},
-        {"Count": 1, "ScannedCount": 2},
-    ]
-
-    for index, expected in enumerate(expecteds):
-        actual = client.query({"index": index})
-        assert actual == expected
-
-        actual = client.scan({"index": index})
-        assert actual == expected
+    expected = {"Count": expected[0], "ScannedCount": expected[1]}
+    assert client.query({}) == expected
+    assert client.scan({}) == expected
 
 
 def test_validate_compares_tables(client):

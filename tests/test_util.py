@@ -4,22 +4,21 @@ import gc
 
 def test_weakref_default_dict():
     """Provides defaultdict behavior for a WeakKeyDictionary"""
-    index = -1
-
     class Object:
         pass
 
-    def default_factory():
-        nonlocal index
-        index += 1
-        return index
+    def counter():
+        current = 0
+        while True:
+            yield current
+            current += 1
 
-    d = bloop.util.WeakDefaultDictionary(default_factory)
+    weak_dict = bloop.util.WeakDefaultDictionary(counter().__next__)
     objs = [Object() for _ in range(3)]
 
     for i, obj in enumerate(objs):
         # default_factory is called
-        assert d[obj] == i
+        assert weak_dict[obj] == i
 
     # Interesting: deleting objs[-1] won't work here because the for loop above
     # has a ref to that object stored in the `obj` variable, which gets leaked
@@ -28,7 +27,7 @@ def test_weakref_default_dict():
     del objs[0]
     gc.collect()
     # Properly cleaning up data when gc'd
-    assert len(d) == 2
+    assert len(weak_dict) == 2
 
 
 def test_walk_subclasses():

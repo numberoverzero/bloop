@@ -1,6 +1,7 @@
 import arrow
 import uuid
 import pytest
+from unittest.mock import Mock
 
 from bloop import (Column, UUID, Boolean, DateTime, String,
                    LocalSecondaryIndex, GlobalSecondaryIndex, new_base)
@@ -17,13 +18,8 @@ def test_default_model_init():
 
 def test_load_default_init(engine):
     """ The default model loader uses the model's __init__ method """
-    loader_calls = 0
-
-    def load_user():
-        nonlocal loader_calls
-        loader_calls += 1
-        return User()
-    User.Meta.init = load_user
+    User.Meta.init = Mock()
+    User.Meta.init.return_value = User()
 
     user_id = uuid.uuid4()
     now = arrow.now()
@@ -35,48 +31,27 @@ def test_load_default_init(engine):
     }
 
     loaded_user = User._load(user, context={"engine": engine})
-    assert loader_calls == 1
     assert loaded_user.id == user_id
     assert loaded_user.joined == now
     assert not hasattr(loaded_user, "extra_field")
-
-
-def test_custom_init(engine):
-    """ Custom Meta.init functions are not passed any arguments """
-    init_called = False
-
-    def verify_no_args(*args, **kwargs):
-        nonlocal init_called
-        init_called = True
-        assert not args
-        assert not kwargs
-        return User()
-
-    User.Meta.init = verify_no_args
-
-    instance = engine._instance(User)
-    assert not hasattr(instance, "id")
-    assert not hasattr(instance, "email")
-    assert init_called
+    # No args, kwargs provided to custom init function
+    User.Meta.init.assert_called_once_with()
 
 
 def test_load_dump(engine):
     """ _load and _dump should be symmetric """
-
-    user_id = uuid.uuid4()
-    now = arrow.now()
-    user = User(id=user_id, name="name", email="user@domain.com", age=25,
-                joined=now)
-    serialized_user = {
-        "id": {"S": str(user_id)},
+    user = User(id=uuid.uuid4(), name="name", email="user@domain.com", age=25,
+                joined=arrow.now())
+    serialized = {
+        "id": {"S": str(user.id)},
         "age": {"N": "25"},
         "name": {"S": "name"},
         "email": {"S": "user@domain.com"},
-        "j": {"S": now.to("utc").isoformat()}
+        "j": {"S": user.joined.to("utc").isoformat()}
     }
 
-    assert User._load(serialized_user, context={"engine": engine}) == user
-    assert User._dump(user, context={"engine": engine}) == serialized_user
+    assert User._load(serialized, context={"engine": engine}) == user
+    assert User._dump(user, context={"engine": engine}) == serialized
 
 
 def test_equality():

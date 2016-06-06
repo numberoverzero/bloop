@@ -12,6 +12,7 @@ _CONSTRAINT_FAILURE = "Failed to meet expected condition during {}"
 _NOT_MODIFIED = "Failed to modify some obects during {}"
 _TABLE_MISMATCH = "Existing table for model {} does not match expected"
 _UNBOUND = "Failed to {} unbound model.  Did you forget to call engine.bind()?"
+_ABSTRACT = "Cannot perform operation on abstract model {}"
 
 
 class BloopException(Exception):
@@ -28,7 +29,7 @@ class ConstraintViolation(BloopException):
 
     """
     def __init__(self, operation, obj):
-        super().__init__(_CONSTRAINT_FAILURE.format(operation))
+        super().__init__(_CONSTRAINT_FAILURE.format(operation), obj)
         self.obj = obj
 
 
@@ -40,7 +41,7 @@ class NotModified(BloopException):
 
     """
     def __init__(self, operation, objects):
-        super().__init__(_NOT_MODIFIED.format(operation))
+        super().__init__(_NOT_MODIFIED.format(operation), objects)
         self.objects = list(objects)
 
 
@@ -54,7 +55,7 @@ class TableMismatch(BloopException):
         actual (dict): The actual schema of the table
     """
     def __init__(self, model, expected, actual):
-        super().__init__(_TABLE_MISMATCH.format(model))
+        super().__init__(_TABLE_MISMATCH.format(model), expected, actual)
         self.model = model
         self.expected = expected
         self.actual = actual
@@ -72,6 +73,13 @@ class UnboundModel(BloopException):
 
     """
     def __init__(self, operation, model, obj):
-        super().__init__(_UNBOUND.format(operation))
+        super().__init__(_UNBOUND.format(operation), model, obj)
         self.model = model
         self.obj = obj
+
+
+class AbstractModelException(BloopException):
+    """Raised when an operation is attempted on an abstract model"""
+    def __init__(self, model):
+        super().__init__(_ABSTRACT.format(model))
+        self.model = model

@@ -188,7 +188,7 @@ class Engine:
         # whether the model should be eligible for validation
         def is_concrete(model):
             # Models that aren't explicitly abstract should be bound
-            abstract = getattr(model.Meta, "abstract", False)
+            abstract = model.Meta.abstract
             return not abstract
 
         # whether the model needs to have create/validate calls made for its
@@ -228,7 +228,11 @@ class Engine:
         return EngineView(self, **config)
 
     def delete(self, objs, *, condition=None, atomic=None):
-        for obj in _list_of(objs):
+        objs = _list_of(objs)
+        for obj in objs:
+            if obj.Meta.abstract:
+                raise bloop.exceptions.AbstractModelException(obj)
+        for obj in objs:
             item = {"TableName": obj.Meta.table_name,
                     "Key": _dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
@@ -273,8 +277,12 @@ class Engine:
         # Load multiple instances
         engine.load(hash_only, hash_and_range)
         """
+        objs = _list_of(objs)
+        for obj in objs:
+            if obj.Meta.abstract:
+                raise bloop.exceptions.AbstractModelException(obj)
         request = _LoadManager(self, consistent=consistent)
-        for obj in _list_of(objs):
+        for obj in objs:
             request.add(obj)
         response = self.client.batch_get_items(request.wire)
 
@@ -292,10 +300,16 @@ class Engine:
             model, index = obj.model, obj
         else:
             model, index = obj, None
+        if model.Meta.abstract:
+            raise bloop.exceptions.AbstractModelException(model)
         return bloop.filter.Query(engine=self, model=model, index=index)
 
     def save(self, objs, *, condition=None, atomic=None):
-        for obj in _list_of(objs):
+        objs = _list_of(objs)
+        for obj in objs:
+            if obj.Meta.abstract:
+                raise bloop.exceptions.AbstractModelException(obj)
+        for obj in objs:
             item = {"TableName": obj.Meta.table_name,
                     "Key": _dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
@@ -320,6 +334,8 @@ class Engine:
                 model, index = obj.model, obj
         else:
             model, index = obj, None
+        if model.Meta.abstract:
+            raise bloop.exceptions.AbstractModelException(model)
         return bloop.filter.Scan(engine=self, model=model, index=index)
 
 

@@ -245,4 +245,4 @@ def test_abstract_not_inherited():
         pass
 
     assert base.Meta.abstract
-    assert not hasattr(Concrete.Meta, "abstract")
+    assert not Concrete.Meta.abstract

@@ -8,30 +8,78 @@ __all__ = ["new_base", "BaseModel"]
 
 def new_base():
     """Return an unbound base model"""
-    cls = ModelMetaclass("Model", (BaseModel,), {})
-    cls.Meta.abstract = True
-    return cls
+    model = ModelMetaclass("Model", (BaseModel,), {})
+    model.Meta.abstract = True
+    return model
 
 
 class ModelMetaclass(declare.ModelMetaclass):
-    def __new__(metaclass, name, bases, attrs):
-        model = super().__new__(metaclass, name, bases, attrs)
+    def __new__(mcs, name, bases, attrs):
+        model = super().__new__(mcs, name, bases, attrs)
         meta = model.Meta
         meta.model = model
-        _update(meta, "write_units", 1)
-        _update(meta, "read_units", 1)
+        # new_class will set abstract to true, all other models are assumed
+        # to be concrete unless specified
+        setdefault(meta, "abstract", False)
+        setdefault(meta, "write_units", 1)
+        setdefault(meta, "read_units", 1)
 
-        _setup_columns(meta)
-        _setup_indexes(meta)
+        setup_columns(meta)
+        setup_indexes(meta)
 
         # Entry point for model population. By default this is the
         # class's __init__ function. Custom models can specify the
         # Meta attr `init`, which must be a function taking no
         # arguments that returns an instance of the class
-        _update(meta, "init", model)
-        _update(meta, "table_name", model.__name__)
+        setdefault(meta, "init", model)
+        setdefault(meta, "table_name", model.__name__)
 
         return model
+
+
+def setdefault(obj, field, default):
+    """Set an object's field to default if it doesn't have a value"""
+    setattr(obj, field, getattr(obj, field, default))
+
+
+def setup_columns(meta):
+    """Filter columns from fields, identify hash and range keys"""
+
+    # This is a set instead of a list, because set uses __hash__
+    # while some list operations uses __eq__ which will break
+    # with the ComparisonMixin
+    meta.columns = set(filter(
+        lambda field: isinstance(field, bloop.column.Column), meta.fields))
+
+    meta.hash_key = None
+    meta.range_key = None
+    for column in meta.columns:
+        if column.hash_key:
+            if meta.hash_key:
+                raise ValueError("Model hash_key over-specified")
+            meta.hash_key = column
+        elif column.range_key:
+            if meta.range_key:
+                raise ValueError("Model range_key over-specified")
+            meta.range_key = column
+        column.model = meta.model
+
+
+def setup_indexes(meta):
+    """Filter indexes from fields, compute projection for each index"""
+    # This is a set instead of a list, because set uses __hash__
+    # while some list operations uses __eq__ which will break
+    # with the ComparisonMixin
+    meta.indexes = set(filter(
+        lambda field: isinstance(field, bloop.index._Index), meta.fields))
+
+    # Look up the current hash key -- which is specified by
+    # model_name, not dynamo_name -- in indexed columns and relate
+    # the proper `bloop.Column` object
+    columns = declare.index(meta.columns, "model_name")
+    for index in meta.indexes:
+        index.model = meta.model
+        index._bind(columns, meta.hash_key, meta.range_key)
 
 
 class BaseModel:
@@ -110,55 +158,3 @@ class BaseModel:
 
     def __ne__(self, other):
         return not self.__eq__(other)
-
-
-def _update(obj, field, default):
-    """Set an object's field to default if it doesn't have a value"""
-    value = getattr(obj, field, default)
-    setattr(obj, field, value)
-
-
-def _is_column(field):
-    return isinstance(field, bloop.column.Column)
-
-
-def _is_index(field):
-    return isinstance(field, bloop.index._Index)
-
-
-def _setup_columns(meta):
-    """Filter columns from fields, identify hash and range keys"""
-
-    # This is a set instead of a list, because set uses __hash__
-    # while some list operations uses __eq__ which will break
-    # with the ComparisonMixin
-    meta.columns = set(filter(_is_column, meta.fields))
-
-    meta.hash_key = None
-    meta.range_key = None
-    for column in meta.columns:
-        if column.hash_key:
-            if meta.hash_key:
-                raise ValueError("Model hash_key over-specified")
-            meta.hash_key = column
-        elif column.range_key:
-            if meta.range_key:
-                raise ValueError("Model range_key over-specified")
-            meta.range_key = column
-        column.model = meta.model
-
-
-def _setup_indexes(meta):
-    """Filter indexes from fields, compute projection for each index"""
-    # This is a set instead of a list, because set uses __hash__
-    # while some list operations uses __eq__ which will break
-    # with the ComparisonMixin
-    meta.indexes = set(filter(_is_index, meta.fields))
-
-    # Look up the current hash key -- which is specified by
-    # model_name, not dynamo_name -- in indexed columns and relate
-    # the proper `bloop.Column` object
-    columns = declare.index(meta.columns, "model_name")
-    for index in meta.indexes:
-        index.model = meta.model
-        index._bind(columns, meta.hash_key, meta.range_key)

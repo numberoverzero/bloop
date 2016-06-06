@@ -64,21 +64,23 @@ def test_datetime():
 def test_float():
     typedef = types.Float()
     d = decimal.Decimal
+    symmetric_test(
+        typedef,
+        (1.5, "1.5"),
+        (d(4)/d(3), "1.333333333333333333333333333"))
 
-    errors = [
-        (d(4/3), decimal.Inexact),
-        (d(10) ** 900, decimal.Overflow),
-        (d(0.9) ** 9000, decimal.Underflow),
+
+@pytest.mark.parametrize(
+    "value, raises",
+    [
+        (decimal.Decimal(4/3), decimal.Inexact),
+        (decimal.Decimal(10) ** 900, decimal.Overflow),
+        (decimal.Decimal(0.9) ** 9000, decimal.Underflow),
         ("Infinity", TypeError),
-        (d("NaN"), TypeError)
-    ]
-    for value, raises in errors:
-        with pytest.raises(raises):
-            typedef.dynamo_dump(value)
-
-    symmetric_test(typedef,
-                   (1.5, "1.5"),
-                   (d(4)/d(3), "1.333333333333333333333333333"))
+        (decimal.Decimal("NaN"), TypeError)])
+def test_float_errors(value, raises):
+    with pytest.raises(raises):
+        types.Float().dynamo_dump(value)
 
 
 def test_integer():
@@ -101,30 +103,17 @@ def test_binary():
     symmetric_test(typedef, (b"123", "MTIz"), (bytes(1), "AA=="))
 
 
-def test_sets():
-    # Helper since sets are unordered, but dump must return an ordered list
-    def check(dumped, expected):
-        assert set(dumped) == expected
-
-    tests = [
-        (types.Set(types.String),
-         set(["Hello", "World"]),
-         set(["Hello", "World"])),
-        (types.Set(types.Float),
-         set([4.5, 3]),
-         set(["4.5", "3"])),
-        (types.Set(types.Integer),
-         set([0, -1, 1]),
-         set(["0", "-1", "1"])),
-        (types.Set(types.Binary),
-         set([b"123", b"456"]),
-         set(["MTIz", "NDU2"]))
-    ]
-
-    for (typedef, loaded, expected) in tests:
-        dumped = typedef.dynamo_dump(loaded)
-        check(dumped, expected)
-        assert typedef.dynamo_load(expected) == loaded
+@pytest.mark.parametrize(
+    "set_type, loaded, dumped", [
+        (types.String, set(["Hello", "World"]), set(["Hello", "World"])),
+        (types.Float, set([4.5, 3]), set(["4.5", "3"])),
+        (types.Integer, set([0, -1, 1]), set(["0", "-1", "1"])),
+        (types.Binary, set([b"123", b"456"]), set(["MTIz", "NDU2"]))], ids=str)
+def test_sets(set_type, loaded, dumped):
+    typedef = types.Set(set_type)
+    assert typedef.dynamo_load(dumped) == loaded
+    # Unordered compare
+    assert set(typedef.dynamo_dump(loaded)) == dumped
 
 
 def test_set_type_instance():
@@ -138,20 +127,16 @@ def test_set_type_instance():
     assert isinstance(subclass_set.typedef, type_subclass)
 
 
-def test_bool():
+@pytest.mark.parametrize(
+    "value", [
+        1, True, object(), bool, "str",
+        False, None, 0, set(), ""
+    ], ids=repr)
+def test_bool(value):
     """ Boolean will never store/load as empty - bool(None) is False """
     typedef = types.Boolean()
-
-    truthy = [1, True, object(), bool, "str"]
-    falsy = [False, None, 0, set(), ""]
-
-    for value in truthy:
-        assert typedef.dynamo_dump(value) is True
-        assert typedef.dynamo_load(value) is True
-
-    for value in falsy:
-        assert typedef.dynamo_dump(value) is False
-        assert typedef.dynamo_load(value) is False
+    assert typedef.dynamo_dump(value) is bool(value)
+    assert typedef.dynamo_load(value) is bool(value)
 
 
 def test_list():
@@ -164,11 +149,11 @@ def test_list():
     assert typedef.dynamo_load(dumped) == loaded
 
 
-def test_required_subtypes():
+@pytest.mark.parametrize("typedef", [types.List, types.Set, types.TypedMap])
+def test_required_subtypes(typedef):
     """Typed containers require an inner type"""
-    for typeclass in [types.List, types.Set, types.TypedMap]:
-        with pytest.raises(TypeError):
-            typeclass()
+    with pytest.raises(TypeError):
+        typedef()
 
 
 def test_load_dump_none():

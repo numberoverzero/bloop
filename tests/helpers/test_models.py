@@ -33,6 +33,12 @@ class User(BaseModel):
         hash_key="email", projection="all")
 
 
+class SimpleModel(BaseModel):
+    class Meta:
+        table_name = "Simple"
+    id = bloop.Column(bloop.String, hash_key=True)
+
+
 class ComplexModel(BaseModel):
     class Meta:
         write_units = 2

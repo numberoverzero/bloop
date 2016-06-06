@@ -9,7 +9,7 @@ import pytest
 import uuid
 from unittest.mock import Mock
 
-from test_models import ComplexModel, User
+from test_models import SimpleModel, ComplexModel, User
 
 
 @pytest.fixture
@@ -18,15 +18,12 @@ def client():
     return bloop.client.Client(session=session)
 
 
-@pytest.fixture
-def client_error():
-    def _client_error(code):
-        error_response = {"Error": {
-            "Code": code,
-            "Message": "FooMessage"}}
-        operation_name = "OperationName"
-        return botocore.exceptions.ClientError(error_response, operation_name)
-    return _client_error
+def client_error(code):
+    error_response = {"Error": {
+        "Code": code,
+        "Message": "FooMessage"}}
+    operation_name = "OperationName"
+    return botocore.exceptions.ClientError(error_response, operation_name)
 
 
 def test_batch_get_one_item(client):
@@ -170,7 +167,7 @@ def test_batch_get_unprocessed(client):
     assert response == expected_response
 
 
-def test_call_with_retries(client, client_error):
+def test_call_with_retries(client):
     max_tries = 4
     tries = 0
 
@@ -268,159 +265,83 @@ def test_create_table(client):
             {"AttributeType": "S", "AttributeName": "name"},
             {"AttributeType": "S", "AttributeName": "joined"},
             {"AttributeType": "S", "AttributeName": "email"}]}
-    called = False
 
     def create_table(**table):
-        nonlocal called
-        called = True
         assert bloop.util.ordered(table) == bloop.util.ordered(expected)
-    client.client.create_table = create_table
+    client.client.create_table.side_effect = create_table
     client.create_table(ComplexModel)
-    assert called
+    assert client.client.create_table.call_count == 1
 
 
-def test_create_raises_unknown(client, client_error):
-    called = False
-
-    def create_table(**table):
-        nonlocal called
-        called = True
-        raise client_error("FooError")
-    client.client.create_table = create_table
+def test_create_raises_unknown(client):
+    client.client.create_table.side_effect = client_error("FooError")
 
     with pytest.raises(botocore.exceptions.ClientError) as excinfo:
         client.create_table(User)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
-    assert called
+    assert client.client.create_table.call_count == 1
 
 
-def test_create_already_exists(client, client_error):
-    called = False
-
-    def create_table(**table):
-        nonlocal called
-        called = True
-        raise client_error("ResourceInUseException")
-    client.client.create_table = create_table
+def test_create_already_exists(client):
+    client.client.create_table.side_effect = \
+        client_error("ResourceInUseException")
 
     client.create_table(User)
-    assert called
+    assert client.client.create_table.call_count == 1
 
 
 def test_delete_item(client):
-    user_id = uuid.uuid4()
-    request = {"Key": {"id": {"S": str(user_id)}},
-               "TableName": "User",
-               "ExpressionAttributeNames": {"#n0": "id"},
-               "ConditionExpression": "(attribute_not_exists(#n0))"}
-    called = False
-
-    def delete_item(**item):
-        nonlocal called
-        called = True
-        assert item == request
-    client.client.delete_item = delete_item
+    request = {"foo": "bar"}
     client.delete_item(request)
-    assert called
+    client.client.delete_item.assert_called_once_with(**request)
 
 
-def test_delete_item_unknown_error(client, client_error):
-    called = False
-    user_id = uuid.uuid4()
-    request = {"Key": {"id": {"S": str(user_id)}},
-               "TableName": "User",
-               "ExpressionAttributeNames": {"#n0": "id"},
-               "ConditionExpression": "(attribute_not_exists(#n0))"}
-
-    def delete_item(**item):
-        nonlocal called
-        called = True
-        raise client_error("FooError")
-    client.client.delete_item = delete_item
+def test_delete_item_unknown_error(client):
+    request = {"foo": "bar"}
+    client.client.delete_item.side_effect = client_error("FooError")
 
     with pytest.raises(botocore.exceptions.ClientError) as excinfo:
         client.delete_item(request)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
-    assert called
+    client.client.delete_item.assert_called_once_with(**request)
 
 
-def test_delete_item_condition_failed(client, client_error):
-    called = False
-    user_id = uuid.uuid4()
-    request = {"Key": {"id": {"S": str(user_id)}},
-               "TableName": "User",
-               "ExpressionAttributeNames": {"#n0": "id"},
-               "ConditionExpression": "(attribute_not_exists(#n0))"}
-
-    def delete_item(**item):
-        nonlocal called
-        called = True
-        raise client_error("ConditionalCheckFailedException")
-    client.client.delete_item = delete_item
+def test_delete_item_condition_failed(client):
+    request = {"foo": "bar"}
+    client.client.delete_item.side_effect = \
+        client_error("ConditionalCheckFailedException")
 
     with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
         client.delete_item(request)
     assert excinfo.value.obj == request
-    assert called
+    client.client.delete_item.assert_called_once_with(**request)
 
 
 def test_update_item(client):
-    user_id = uuid.uuid4()
-    request = {"Key": {"id": {"S": str(user_id)}},
-               "TableName": "User",
-               "ExpressionAttributeNames": {"#n0": "id"},
-               "ConditionExpression": "(attribute_not_exists(#n0))"}
-    called = False
-
-    def update_item(**item):
-        nonlocal called
-        called = True
-        assert item == request
-    client.client.update_item = update_item
+    request = {"foo": "bar"}
     client.update_item(request)
-    assert called
+    client.client.update_item.assert_called_once_with(**request)
 
 
-def test_update_item_unknown_error(client, client_error):
-    called = False
-    user_id = uuid.uuid4()
-    request = {"Key": {"id": {"S": str(user_id)}},
-               "TableName": "User",
-               "ExpressionAttributeNames": {"#n0": "id"},
-               "ConditionExpression": "(attribute_not_exists(#n0))"}
-
-    def update_item(**item):
-        nonlocal called
-        called = True
-        assert item == request
-        raise client_error("FooError")
-    client.client.update_item = update_item
+def test_update_item_unknown_error(client):
+    request = {"foo": "bar"}
+    client.client.update_item.side_effect = client_error("FooError")
 
     with pytest.raises(botocore.exceptions.ClientError) as excinfo:
         client.update_item(request)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
-    assert called
+    client.client.update_item.assert_called_once_with(**request)
 
 
-def test_update_item_condition_failed(client, client_error):
-    called = False
-    user_id = uuid.uuid4()
-    request = {"Key": {"id": {"S": str(user_id)}},
-               "TableName": "User",
-               "ExpressionAttributeNames": {"#n0": "id"},
-               "ConditionExpression": "(attribute_not_exists(#n0))"}
-
-    def update_item(**item):
-        nonlocal called
-        called = True
-        assert item == request
-        raise client_error("ConditionalCheckFailedException")
-    client.client.update_item = update_item
+def test_update_item_condition_failed(client):
+    request = {"foo": "bar"}
+    client.client.update_item.side_effect = \
+        client_error("ConditionalCheckFailedException")
 
     with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
         client.update_item(request)
     assert excinfo.value.obj == request
-    assert called
+    client.client.update_item.assert_called_once_with(**request)
 
 
 def test_describe_table(client):
@@ -468,18 +389,12 @@ def test_describe_table(client):
     lsi = expected["LocalSecondaryIndexes"][0]
     lsi.pop("ItemCount")
     lsi.pop("IndexSizeBytes")
-    called = False
 
-    def describe_table(TableName):
-        nonlocal called
-        called = True
-        assert TableName == ComplexModel.Meta.table_name
-        return {"Table": full}
-    client.client.describe_table = describe_table
+    client.client.describe_table.return_value = {"Table": full}
 
-    actual = client.describe_table(ComplexModel)
-    assert actual == expected
-    assert called
+    assert client.describe_table(ComplexModel) == expected
+    client.client.describe_table.assert_called_once_with(
+        TableName=ComplexModel.Meta.table_name)
 
 
 @pytest.mark.parametrize("response, expected", [
@@ -498,6 +413,7 @@ def test_query_scan(client, response, expected):
 
 
 def test_validate_compares_tables(client):
+    # Hardcoded to protect against bugs in bloop.client._table_for_model
     full = {
         "AttributeDefinitions": [
             {"AttributeType": "S", "AttributeName": "id"},
@@ -518,136 +434,50 @@ def test_validate_compares_tables(client):
              "Projection": {"ProjectionType": "ALL"}}],
         "TableName": "User"}
 
-    def describe_table(TableName):
-        assert TableName == "User"
-        return {"Table": full}
-    client.client.describe_table = describe_table
+    client.client.describe_table.return_value = {"Table": full}
     client.validate_table(User)
+    client.client.describe_table.assert_called_once_with(TableName="User")
 
 
 def test_validate_checks_status(client):
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeType": "S", "AttributeName": "id"},
-            {"AttributeType": "S", "AttributeName": "email"}],
-        "KeySchema": [{"KeyType": "HASH", "AttributeName": "id"}],
-        "ProvisionedThroughput": {"ReadCapacityUnits": 1,
-                                  "WriteCapacityUnits": 1,
-                                  "NumberOfDecreasesToday": 4},
-        "GlobalSecondaryIndexes": [
-            {"ItemCount": 7,
-             "IndexSizeBytes": 8,
-             "IndexName": "by_email",
-             "ProvisionedThroughput": {
-                 "NumberOfDecreasesToday": 3,
-                 "ReadCapacityUnits": 1,
-                 "WriteCapacityUnits": 1},
-             "KeySchema": [{"KeyType": "HASH", "AttributeName": "email"}],
-             "Projection": {"ProjectionType": "ALL"}}],
-        "TableName": "User"}
-    calls = 0
+    # Don't care about the value checking, just want to observe retries
+    # based on busy tables or indexes
+    full = bloop.client._table_for_model(User)
 
-    def describe_table(TableName):
-        nonlocal calls
-        calls += 1
-        if calls < 2:
-            return {"Table": {"TableStatus": "CREATING"}}
-        return {"Table": full}
-
-    client.client.describe_table = describe_table
+    client.client.describe_table.side_effect = [
+        {"Table": {"TableStatus": "CREATING"}},
+        {"Table": {"GlobalSecondaryIndexes": [{"IndexStatus": "CREATING"}]}},
+        {"Table": full}
+    ]
     client.validate_table(User)
-    assert calls == 2
-
-
-def test_validate_checks_index_status(client):
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeType": "S", "AttributeName": "id"},
-            {"AttributeType": "S", "AttributeName": "email"}],
-        "KeySchema": [{"KeyType": "HASH", "AttributeName": "id"}],
-        "ProvisionedThroughput": {"ReadCapacityUnits": 1,
-                                  "WriteCapacityUnits": 1,
-                                  "NumberOfDecreasesToday": 4},
-        "GlobalSecondaryIndexes": [
-            {"ItemCount": 7,
-             "IndexSizeBytes": 8,
-             "IndexName": "by_email",
-             "ProvisionedThroughput": {
-                 "NumberOfDecreasesToday": 3,
-                 "ReadCapacityUnits": 1,
-                 "WriteCapacityUnits": 1},
-             "KeySchema": [{"KeyType": "HASH", "AttributeName": "email"}],
-             "Projection": {"ProjectionType": "ALL"}}],
-        "TableName": "User"}
-    calls = 0
-
-    def describe_table(TableName):
-        nonlocal calls
-        calls += 1
-        if calls < 2:
-            return {"Table": {
-                "GlobalSecondaryIndexes": [{"IndexStatus": "CREATING"}]}}
-        return {"Table": full}
-
-    client.client.describe_table = describe_table
-    client.validate_table(User)
-    assert calls == 2
+    client.client.describe_table.assert_called_with(TableName="User")
+    assert client.client.describe_table.call_count == 3
 
 
 def test_validate_fails(client):
-    def describe_table(TableName):
-        assert TableName == "CustomTableName"
-        return {"Table": {}}
-
-    expected = {
-        "KeySchema": [
-            {"AttributeName": "name", "KeyType": "HASH"},
-            {"AttributeName": "date", "KeyType": "RANGE"}],
-        "TableName": "CustomTableName",
-        "ProvisionedThroughput":
-            {"ReadCapacityUnits": 3, "WriteCapacityUnits": 2},
-        "LocalSecondaryIndexes": [{
-            "KeySchema": [
-                {"AttributeName": "name", "KeyType": "HASH"},
-                {"AttributeName": "joined", "KeyType": "RANGE"}],
-            "Projection": {
-                "ProjectionType": "INCLUDE",
-                "NonKeyAttributes": ["joined", "email", "name", "date"]},
-            "IndexName": "by_joined"}],
-        "GlobalSecondaryIndexes": [{
-            "KeySchema": [{"AttributeName": "email", "KeyType": "HASH"}],
-            "Projection": {"ProjectionType": "ALL"},
-            "ProvisionedThroughput":
-                {"ReadCapacityUnits": 4, "WriteCapacityUnits": 5},
-            "IndexName": "by_email"}],
-        "AttributeDefinitions": [
-            {"AttributeName": "name", "AttributeType": "S"},
-            {"AttributeName": "date", "AttributeType": "S"},
-            {"AttributeName": "email", "AttributeType": "S"},
-            {"AttributeName": "joined", "AttributeType": "S"}]}
-    actual = {}
-    ordered = bloop.util.ordered
-    client.client.describe_table = describe_table
+    """dynamo returns a json document that doesn't match the expected table"""
+    client.client.describe_table.return_value = {"Table": {}}
     with pytest.raises(bloop.exceptions.TableMismatch) as excinfo:
         client.validate_table(ComplexModel)
+
+    # Exception includes the model that failed
     assert excinfo.value.model is ComplexModel
+    # Exception should include the full table description that was expected
+    ordered = bloop.util.ordered
+    expected = bloop.client._table_for_model(ComplexModel)
     assert ordered(excinfo.value.expected) == ordered(expected)
-    assert excinfo.value.actual == actual
+    # And the actual table that was returned
+    assert excinfo.value.actual == {}
 
 
 def test_validate_simple_model(client):
-    class SimpleModel(bloop.new_base()):
-        id = bloop.Column(bloop.UUID, hash_key=True)
     full = {
         "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
         "AttributeDefinitions": [
             {"AttributeName": "id", "AttributeType": "S"}],
-        "TableName": "SimpleModel",
+        "TableName": "Simple",
         "ProvisionedThroughput": {"ReadCapacityUnits": 1,
                                   "WriteCapacityUnits": 1}}
-
-    def describe_table(TableName):
-        assert TableName == "SimpleModel"
-        return {"Table": full}
-    client.client.describe_table = describe_table
+    client.client.describe_table.return_value = {"Table": full}
     client.validate_table(SimpleModel)
+    client.client.describe_table.assert_called_once_with(TableName="Simple")

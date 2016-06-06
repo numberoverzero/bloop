@@ -489,12 +489,17 @@ def test_bind_skip_abstract_models():
         class Meta:
             abstract = True
 
+    class AlsoConcrete(AlsoAbstract):
+        pass
+
     engine = bloop.Engine()
     engine.client = Mock(spec=bloop.client.Client)
 
     engine.bind(base=Abstract)
-    engine.client.create_table.assert_called_once_with(Concrete)
-    engine.client.validate_table.assert_called_once_with(Concrete)
+    engine.client.create_table.assert_any_call(Concrete)
+    engine.client.validate_table.assert_any_call(Concrete)
+    engine.client.create_table.assert_any_call(AlsoConcrete)
+    engine.client.validate_table.assert_any_call(AlsoConcrete)
 
 
 def test_bind_concrete_base():

@@ -47,10 +47,13 @@ def test_batch_get_one_item(client):
     def handle(RequestItems):
         assert RequestItems == expected_request
         return response
-    client.client.batch_get_item = handle
+    client.client.batch_get_item.side_effect = handle
+    client.client.batch_get_item.__name__ = "batch_get_item"
 
     response = client.batch_get_items(request)
     assert response == expected_response
+    client.client.batch_get_item.assert_called_once_with(
+        RequestItems=expected_request)
 
 
 def test_batch_get_one_batch(client):

@@ -95,14 +95,14 @@ class Column(declare.Field, _ComparisonMixin):
         kwargs['typedef'] = typedef
         super().__init__(**kwargs)
 
-    def __str__(self):  # pragma: no cover
+    def __repr__(self):  # pragma: no cover
         attrs = ["model_name", "dynamo_name", "hash_key", "range_key"]
 
         def _attr(attr):
             return "{}={}".format(attr, getattr(self, attr))
         attrs = ", ".join(_attr(attr) for attr in attrs)
         return "{}({})".format(self.__class__.__name__, attrs)
-    __repr__ = __str__
+    __str__ = __repr__
 
     @property
     def dynamo_name(self):

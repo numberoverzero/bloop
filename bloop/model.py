@@ -145,6 +145,7 @@ def _setup_columns(meta):
             if meta.range_key:
                 raise ValueError("Model range_key over-specified")
             meta.range_key = column
+        column.model = meta.model
 
 
 def _setup_indexes(meta):

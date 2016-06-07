@@ -633,7 +633,7 @@ differences:
 * The ``ascending`` and ``descending`` properties are ignored.
 
 
-.. _abstract::
+.. _abstract:
 
 Abstract and Inheritance
 ------------------------

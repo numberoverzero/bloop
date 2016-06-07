@@ -11,8 +11,7 @@ matrix:
 
 install: pip install tox coveralls
 
-script:
-  - echo $TOXENV; tox -e $TOX_ENV
+script: tox -e $TOXENV
 
 after_success: coveralls
 

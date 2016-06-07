@@ -1,15 +1,19 @@
 language: python
-python: 3.5
-env:
-    - TOX_ENV=py34
-    - TOX_ENV=py35
-    - TOX_ENV=docs
-install:
-    - pip install tox coveralls
-script:
-    - tox -e $TOX_ENV
-after_success:
-- coveralls
+
+matrix:
+    include:
+        - python: 3.4
+          env: TOXENV=py34
+        - python: 3.5
+          env: TOXENV=py35
+        - env: TOXENV=docs
+
+install: pip install tox coveralls
+
+script: tox -e $TOX_ENV
+
+after_success: coveralls
+
 notifications:
   slack:
     secure: XZ9C7sBBWsCBKWZY2nDBkaCaePqbb3ham+FLtXTiaRCq+rfl5Q3Effm91YvKmT2i/7rqXjgDb8moVA9NEBF1SLsZlMMVdvY7BIDwf21m26Nm/a3Z0VdTxexAUp4N6O6SqRVua+XcDuYvEWBpDAksiLlbHlI+Z1aQiEHvQx0UqW0=

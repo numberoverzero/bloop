@@ -535,3 +535,28 @@ def test_bind_different_engines():
     # regardless of how many times the model has been bound already
     assert Concrete in first_engine.type_engine.bound_types
     assert Concrete in second_engine.type_engine.bound_types
+
+
+@pytest.mark.parametrize("op, plural", [
+        ("save", True), ("load", True), ("delete", True),
+        ("scan", False), ("query", False)], ids=str)
+def test_unbound_operations_raise(engine, op, plural):
+    class Abstract(bloop.new_base()):
+        class Meta:
+            abstract = True
+        id = bloop.Column(bloop.Integer, hash_key=True)
+    engine.bind(base=Abstract)
+    engine.bind(base=User)
+
+    abstract = Abstract(id=5)
+    concrete = User(age=5)
+
+    with pytest.raises(bloop.exceptions.AbstractModelException) as excinfo:
+        operation = getattr(engine, op)
+        operation(abstract)
+    assert excinfo.value.model is abstract
+    if plural:
+        with pytest.raises(bloop.exceptions.AbstractModelException) as excinfo:
+            operation = getattr(engine, op)
+            operation([abstract, concrete])
+        assert excinfo.value.model is abstract

@@ -1,16 +1,18 @@
 language: python
 
 matrix:
-    include:
-        - python: 3.4
-          env: TOXENV=py34
-        - python: 3.5
-          env: TOXENV=py35
-        - env: TOXENV=docs
+  include:
+    - python: 3.4
+      env: TOXENV=py34
+    - python: 3.5
+      env: TOXENV=py35
+    - python: 3.4
+      env: TOXENV=docs
 
 install: pip install tox coveralls
 
-script: tox -e $TOX_ENV
+script:
+  - echo $TOXENV; tox -e $TOX_ENV
 
 after_success: coveralls
 

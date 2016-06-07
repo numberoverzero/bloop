@@ -142,6 +142,28 @@ def test_load_dump_unbound(engine):
     assert excinfo.value.obj is obj
 
 
+def test_load_dump_subclass(engine):
+    """Only the immediate Columns of a model should be dumped"""
+
+    class Admin(User):
+        admin_id = bloop.Column(bloop.Integer, hash_key=True)
+    engine.bind(base=User)
+
+    admin = Admin(admin_id=3)
+    # Set an attribute that would be a column on the parent class, but should
+    # have no meaning for the subclass
+    admin.email = "admin@domain.com"
+
+    dumped_admin = {"admin_id": {"N": "3"}}
+    assert engine._dump(Admin, admin) == dumped_admin
+
+    # Inject a value that would have meaning for a column on the parent class,
+    # but should not be loaded for the subclass
+    dumped_admin["email"] = {"S": "support@foo.com"}
+    same_admin = engine._load(Admin, dumped_admin)
+    assert not hasattr(same_admin, "email")
+
+
 def test_load_dump_unknown(engine):
     class NotModeled:
         pass

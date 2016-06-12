@@ -70,7 +70,8 @@ class Client(object):
         * `DynamoDB API Reference`_
 
     Attributes:
-        client (boto3.client): Low-level client to communicate with DynamoDB
+        boto_client (boto3.client): Low-level client to communicate
+            with DynamoDB
         backoff_func (func<int>): Calculates the duration to wait between
             retries.  By default, an exponential backoff function is used.
         batch_size (int): The maximum number of items to include in a batch
@@ -82,7 +83,7 @@ class Client(object):
     .. _DynamoDB API Reference:
         http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Operations.html
     """
-    def __init__(self, session=None, backoff_func=None,
+    def __init__(self, boto_client=None, backoff_func=None,
                  batch_size=MAX_BATCH_SIZE):
         """
         backoff_func is an optional function that takes an int
@@ -91,7 +92,7 @@ class Client(object):
             - raise to stop
         """
         # Fall back to the global session
-        self.client = (session or boto3).client("dynamodb")
+        self.boto_client = boto_client or boto3.client("dynamodb")
         self.backoff_func = backoff_func or _default_backoff_func
         self.batch_size = batch_size
 
@@ -175,7 +176,7 @@ class Client(object):
         """
         response = {}
         get_batch = functools.partial(self._call_with_retries,
-                                      self.client.batch_get_item)
+                                      self.boto_client.batch_get_item)
         request_batches = _partition_batch_get_input(self.batch_size, items)
 
         for request_batch in request_batches:
@@ -223,7 +224,7 @@ class Client(object):
             raise bloop.exceptions.AbstractModelException(model)
         table = _table_for_model(model)
         create = functools.partial(self._call_with_retries,
-                                   self.client.create_table)
+                                   self.boto_client.create_table)
         try:
             create(**table)
         except botocore.exceptions.ClientError as error:
@@ -254,7 +255,7 @@ class Client(object):
         .. _delete_item (DynamoDB Client):
             https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.delete_item
         """
-        self._modify_item(self.client.delete_item, "delete", item)
+        self._modify_item(self.boto_client.delete_item, "delete", item)
 
     def describe_table(self, model):
         """Load the schema for a model's table, stripping out useless metadata.
@@ -293,7 +294,7 @@ class Client(object):
 
         """
         description = self._call_with_retries(
-            self.client.describe_table,
+            self.boto_client.describe_table,
             TableName=model.Meta.table_name)["Table"]
 
         # We don't care about a bunch of the returned attributes, and want to
@@ -322,10 +323,10 @@ class Client(object):
         return table
 
     def query(self, request):
-        return self._filter(self.client.query, request)
+        return self._filter(self.boto_client.query, request)
 
     def scan(self, request):
-        return self._filter(self.client.scan, request)
+        return self._filter(self.boto_client.scan, request)
 
     def update_item(self, item):
         """Update an item in DynamoDB.  Only modify given values.
@@ -349,7 +350,7 @@ class Client(object):
         .. _update_item (DynamoDB Client):
             https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.update_item
         """
-        self._modify_item(self.client.update_item, "update", item)
+        self._modify_item(self.boto_client.update_item, "update", item)
 
     def validate_table(self, model):
         """Busy poll until table is ACTIVE.  Raises on schema mismatch.

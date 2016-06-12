@@ -2,7 +2,6 @@ import bloop
 import bloop.client
 import bloop.exceptions
 import bloop.util
-import boto3
 import botocore
 import copy
 import pytest
@@ -14,8 +13,10 @@ from test_models import SimpleModel, ComplexModel, User
 
 @pytest.fixture
 def client():
-    session = Mock(spec=boto3.session.Session)
-    return bloop.client.Client(session=session)
+    # No spec since clients are generated dynamically.
+    # We could use botocore.client.BaseClient but it's so generic
+    # that we don't gain any useful inspections
+    return bloop.client.Client(boto_client=Mock())
 
 
 def client_error(code):
@@ -44,11 +45,11 @@ def test_batch_get_one_item(client):
     def handle(RequestItems):
         assert RequestItems == expected_request
         return response
-    client.client.batch_get_item.side_effect = handle
+    client.boto_client.batch_get_item.side_effect = handle
 
     response = client.batch_get_items(request)
     assert response == expected_response
-    client.client.batch_get_item.assert_called_once_with(
+    client.boto_client.batch_get_item.assert_called_once_with(
         RequestItems=expected_request)
 
 
@@ -79,7 +80,7 @@ def test_batch_get_one_batch(client):
     def handle(RequestItems):
         assert RequestItems == expected_request
         return response
-    client.client.batch_get_item = handle
+    client.boto_client.batch_get_item = handle
 
     response = client.batch_get_items(request)
     assert response == expected_response
@@ -122,7 +123,7 @@ def test_batch_get_paginated(client):
         calls += 1
         assert RequestItems == expected
         return response
-    client.client.batch_get_item = handle
+    client.boto_client.batch_get_item = handle
 
     response = client.batch_get_items(request)
 
@@ -159,7 +160,7 @@ def test_batch_get_unprocessed(client):
         calls += 1
         assert RequestItems == expected
         return response
-    client.client.batch_get_item = handle
+    client.boto_client.batch_get_item = handle
 
     response = client.batch_get_items(request)
 
@@ -268,9 +269,9 @@ def test_create_table(client):
 
     def create_table(**table):
         assert bloop.util.ordered(table) == bloop.util.ordered(expected)
-    client.client.create_table.side_effect = create_table
+    client.boto_client.create_table.side_effect = create_table
     client.create_table(ComplexModel)
-    assert client.client.create_table.call_count == 1
+    assert client.boto_client.create_table.call_count == 1
 
 
 def test_create_subclass(client):
@@ -291,18 +292,18 @@ def test_create_subclass(client):
     def create_table(**table):
         assert bloop.util.ordered(table) == bloop.util.ordered(expected)
 
-    client.client.create_table.side_effect = create_table
+    client.boto_client.create_table.side_effect = create_table
     client.create_table(SubModel)
-    assert client.client.create_table.call_count == 1
+    assert client.boto_client.create_table.call_count == 1
 
 
 def test_create_raises_unknown(client):
-    client.client.create_table.side_effect = client_error("FooError")
+    client.boto_client.create_table.side_effect = client_error("FooError")
 
     with pytest.raises(botocore.exceptions.ClientError) as excinfo:
         client.create_table(User)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
-    assert client.client.create_table.call_count == 1
+    assert client.boto_client.create_table.call_count == 1
 
 
 def test_create_abstract_raises(client):
@@ -313,65 +314,65 @@ def test_create_abstract_raises(client):
 
 
 def test_create_already_exists(client):
-    client.client.create_table.side_effect = \
+    client.boto_client.create_table.side_effect = \
         client_error("ResourceInUseException")
 
     client.create_table(User)
-    assert client.client.create_table.call_count == 1
+    assert client.boto_client.create_table.call_count == 1
 
 
 def test_delete_item(client):
     request = {"foo": "bar"}
     client.delete_item(request)
-    client.client.delete_item.assert_called_once_with(**request)
+    client.boto_client.delete_item.assert_called_once_with(**request)
 
 
 def test_delete_item_unknown_error(client):
     request = {"foo": "bar"}
-    client.client.delete_item.side_effect = client_error("FooError")
+    client.boto_client.delete_item.side_effect = client_error("FooError")
 
     with pytest.raises(botocore.exceptions.ClientError) as excinfo:
         client.delete_item(request)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
-    client.client.delete_item.assert_called_once_with(**request)
+    client.boto_client.delete_item.assert_called_once_with(**request)
 
 
 def test_delete_item_condition_failed(client):
     request = {"foo": "bar"}
-    client.client.delete_item.side_effect = \
+    client.boto_client.delete_item.side_effect = \
         client_error("ConditionalCheckFailedException")
 
     with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
         client.delete_item(request)
     assert excinfo.value.obj == request
-    client.client.delete_item.assert_called_once_with(**request)
+    client.boto_client.delete_item.assert_called_once_with(**request)
 
 
 def test_update_item(client):
     request = {"foo": "bar"}
     client.update_item(request)
-    client.client.update_item.assert_called_once_with(**request)
+    client.boto_client.update_item.assert_called_once_with(**request)
 
 
 def test_update_item_unknown_error(client):
     request = {"foo": "bar"}
-    client.client.update_item.side_effect = client_error("FooError")
+    client.boto_client.update_item.side_effect = client_error("FooError")
 
     with pytest.raises(botocore.exceptions.ClientError) as excinfo:
         client.update_item(request)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
-    client.client.update_item.assert_called_once_with(**request)
+    client.boto_client.update_item.assert_called_once_with(**request)
 
 
 def test_update_item_condition_failed(client):
     request = {"foo": "bar"}
-    client.client.update_item.side_effect = \
+    client.boto_client.update_item.side_effect = \
         client_error("ConditionalCheckFailedException")
 
     with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
         client.update_item(request)
     assert excinfo.value.obj == request
-    client.client.update_item.assert_called_once_with(**request)
+    client.boto_client.update_item.assert_called_once_with(**request)
 
 
 def test_describe_table(client):
@@ -420,10 +421,10 @@ def test_describe_table(client):
     lsi.pop("ItemCount")
     lsi.pop("IndexSizeBytes")
 
-    client.client.describe_table.return_value = {"Table": full}
+    client.boto_client.describe_table.return_value = {"Table": full}
 
     assert client.describe_table(ComplexModel) == expected
-    client.client.describe_table.assert_called_once_with(
+    client.boto_client.describe_table.assert_called_once_with(
         TableName=ComplexModel.Meta.table_name)
 
 
@@ -434,8 +435,8 @@ def test_describe_table(client):
     ({"Count": 1, "ScannedCount": 2}, (1, 2))
 ], ids=str)
 def test_query_scan(client, response, expected):
-    client.client.query.return_value = response
-    client.client.scan.return_value = response
+    client.boto_client.query.return_value = response
+    client.boto_client.scan.return_value = response
 
     expected = {"Count": expected[0], "ScannedCount": expected[1]}
     assert client.query({}) == expected
@@ -464,9 +465,9 @@ def test_validate_compares_tables(client):
              "Projection": {"ProjectionType": "ALL"}}],
         "TableName": "User"}
 
-    client.client.describe_table.return_value = {"Table": full}
+    client.boto_client.describe_table.return_value = {"Table": full}
     client.validate_table(User)
-    client.client.describe_table.assert_called_once_with(TableName="User")
+    client.boto_client.describe_table.assert_called_once_with(TableName="User")
 
 
 def test_validate_checks_status(client):
@@ -474,19 +475,19 @@ def test_validate_checks_status(client):
     # based on busy tables or indexes
     full = bloop.client._table_for_model(User)
 
-    client.client.describe_table.side_effect = [
+    client.boto_client.describe_table.side_effect = [
         {"Table": {"TableStatus": "CREATING"}},
         {"Table": {"GlobalSecondaryIndexes": [{"IndexStatus": "CREATING"}]}},
         {"Table": full}
     ]
     client.validate_table(User)
-    client.client.describe_table.assert_called_with(TableName="User")
-    assert client.client.describe_table.call_count == 3
+    client.boto_client.describe_table.assert_called_with(TableName="User")
+    assert client.boto_client.describe_table.call_count == 3
 
 
 def test_validate_fails(client):
     """dynamo returns a json document that doesn't match the expected table"""
-    client.client.describe_table.return_value = {"Table": {}}
+    client.boto_client.describe_table.return_value = {"Table": {}}
     with pytest.raises(bloop.exceptions.TableMismatch) as excinfo:
         client.validate_table(ComplexModel)
 
@@ -508,6 +509,7 @@ def test_validate_simple_model(client):
         "TableName": "Simple",
         "ProvisionedThroughput": {"ReadCapacityUnits": 1,
                                   "WriteCapacityUnits": 1}}
-    client.client.describe_table.return_value = {"Table": full}
+    client.boto_client.describe_table.return_value = {"Table": full}
     client.validate_table(SimpleModel)
-    client.client.describe_table.assert_called_once_with(TableName="Simple")
+    client.boto_client.describe_table.assert_called_once_with(
+        TableName="Simple")

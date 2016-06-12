@@ -8,7 +8,7 @@ with open(os.path.join(HERE, "README.rst")) as f:
 
 
 def get_version():
-    with open("bloop/__init__.py") as f:
+    with open(os.path.join(HERE, "bloop/__init__.py")) as f:
         for line in f:
             if line.startswith("__version__"):
                 return eval(line.split("=")[-1])

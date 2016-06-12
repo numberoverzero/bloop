@@ -1,23 +1,24 @@
-Patterns and Examples
-=====================
+Patterns
+========
 
-Connecting to DynamoDB Local
-----------------------------
+DynamoDB Local
+--------------
 
 ::
 
     import boto3
     import bloop
 
-    boto_client = boto3.client("dynamodb", endpoint="http://127.0.0.1:8000")
+    boto_client = boto3.client(
+        "dynamodb", endpoint="http://127.0.0.1:8000")
     client = bloop.Client(boto_client=boto_client)
     engine = bloop.Engine(client=client)
 
     ...
 
 
-Generic "if not exist" condition
---------------------------------
+Generic "if not exist"
+----------------------
 
 ::
 

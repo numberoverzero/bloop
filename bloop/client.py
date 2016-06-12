@@ -83,7 +83,7 @@ class Client(object):
     .. _DynamoDB API Reference:
         http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Operations.html
     """
-    def __init__(self, session=None, backoff_func=None,
+    def __init__(self, boto_client=None, backoff_func=None,
                  batch_size=MAX_BATCH_SIZE):
         """
         backoff_func is an optional function that takes an int
@@ -92,7 +92,7 @@ class Client(object):
             - raise to stop
         """
         # Fall back to the global session
-        self.boto_client = (session or boto3).client("dynamodb")
+        self.boto_client = boto_client or boto3.client("dynamodb")
         self.backoff_func = backoff_func or _default_backoff_func
         self.batch_size = batch_size
 

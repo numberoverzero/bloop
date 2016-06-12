@@ -2,7 +2,6 @@ import bloop
 import bloop.client
 import bloop.exceptions
 import bloop.util
-import boto3
 import botocore
 import copy
 import pytest
@@ -14,8 +13,10 @@ from test_models import SimpleModel, ComplexModel, User
 
 @pytest.fixture
 def client():
-    session = Mock(spec=boto3.session.Session)
-    return bloop.client.Client(session=session)
+    # No spec since clients are generated dynamically.
+    # We could use botocore.client.BaseClient but it's so generic
+    # that we don't gain any useful inspections
+    return bloop.client.Client(boto_client=Mock())
 
 
 def client_error(code):

@@ -19,4 +19,4 @@ __all__ = [
     "Map", "NotModified", "Set", "String", "TableMismatch", "TypedMap",
     "UnboundModel", "UUID", "new_base", "engine_for_profile"
 ]
-__version__ = "0.9.10"
+__version__ = "0.9.11"

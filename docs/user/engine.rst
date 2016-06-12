@@ -54,20 +54,22 @@ bound.
 client
 ------
 
-By default bloop will let boto determine what credentials should be used.  When
-you want to use a named profile, or connect to a different region, you can
-provide a `boto3 session`_ to the engine at initialization::
+By default bloop will let boto3 determine what credentials should be used.
+When you want to use a named profile, or connect to a different region, you can
+build a custom boto3 client, and wrap it in the bloop Client::
 
     import boto3
     import bloop
 
-    session = boto3.session.Session(profile_name='not-default-profile')
-    engine = bloop.Engine(session=session)
+    # Customize your connection here
+    boto_client = boto3.client(...)
 
-You should never need to interact with the engine's client directly; the
-interface exposed does not translate 1:1 to the boto3 client interface.
+    # Wrap the boto3 client and inject into the engine
+    bloop_client = bloop.Client(boto_client=boto_client)
+    engine = bloop.Engine(client=bloop_client)
 
-.. _boto3 session: http://boto3.readthedocs.org/en/latest/reference/core/session.html
+Generally, you should only need to interact with bloop's client layer when
+using a custom boto3 client.
 
 .. _config:
 

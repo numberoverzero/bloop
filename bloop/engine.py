@@ -16,8 +16,7 @@ _DEFAULT_CONFIG = {
     "atomic": False,
     "consistent": False,
     "prefetch": 0,
-    "strict": True,
-    "session": None
+    "strict": True
 }
 
 
@@ -131,10 +130,12 @@ class _LoadManager:
 class Engine:
     client = None
 
-    def __init__(self, **config):
+    def __init__(self, client=None, **config):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = declare.TypeEngine.unique()
+
+        self.client = client
         self.config = dict(_DEFAULT_CONFIG)
         self.config.update(config)
 
@@ -177,8 +178,9 @@ class Engine:
 
     def bind(self, *, base):
         """Create tables for all models subclassing base"""
-        self.client = self.client or bloop.client.Client(
-            session=self.config["session"])
+        # If not manually configured, use a default bloop.Client
+        # with the default boto3.client("dynamodb")
+        self.client = self.client or bloop.client.Client()
 
         # Make sure we're looking at models
         if not isinstance(base, bloop.model.ModelMetaclass):

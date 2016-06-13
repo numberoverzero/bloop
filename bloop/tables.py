@@ -1,4 +1,6 @@
-__all__ = ["create_request", "expected_description", "sanitize_description"]
+__all__ = [
+    "create_request", "expected_description",
+    "sanitized_description", "simple_status"]
 
 
 def attribute_definitions(model):
@@ -94,8 +96,99 @@ def create_request(model):
 
 
 def expected_description(model):
-    pass
+    # Right now, we expect the exact same thing as create_request
+    # This doesn't include statuses (table, indexes) since that's
+    # pulled out by the polling mechanism
+    table = create_request(model)
+    return table
 
 
-def sanitize_description(description):
-    pass
+def sanitized_description(description):
+    # We don't need to match most of what comes back from describe_table
+    # This monster structure carefully extracts the exact fields that bloop
+    # will compare against, without picking up any new fields that
+    # describe_table may start returning.
+
+    # Without this, describe_table could return a new piece of metadata
+    # and break all table verification because our expected table doesn't
+    # include the new field.
+
+    # This also simplifies the post-processing logic by inserting empty lists
+    # for missing values from the wire.
+    table = {
+        "AttributeDefinitions": [
+            {"AttributeName": attr_definition["AttributeName"],
+             "AttributeType": attr_definition["AttributeType"]}
+            for attr_definition in description["AttributeDefinitions"]
+        ],
+        "GlobalSecondaryIndexes": [
+            {"IndexName": gsi["IndexName"],
+             "KeySchema": [
+                 {"AttributeName": gsi_key["AttributeName"],
+                  "KeyType": gsi_key["KeyType"]}
+                 for gsi_key in gsi["KeySchema"]
+                 ],
+             "Projection": {
+                 "NonKeyAttributes":
+                     gsi["Projection"].get("NonKeyAttributes", []),
+                 "ProjectionType": gsi["Projection"]["ProjectionType"]
+             },
+             "ProvisionedThroughput": {
+                 "ReadCapacityUnits":
+                     gsi["ProvisionedThroughput"]["ReadCapacityUnits"],
+                 "WriteCapacityUnits":
+                     gsi["ProvisionedThroughput"]["WriteCapacityUnits"]
+             }}
+            for gsi in description.get("GlobalSecondaryIndexes", [])
+        ],
+        "KeySchema": [
+            {"AttributeName": table_key["AttributeName"],
+             "KeyType": table_key["KeyType"]}
+            for table_key in description["KeySchema"]
+        ],
+        "LocalSecondaryIndexes": [
+            {"IndexName": lsi["IndexName"],
+             "KeySchema": [
+                 {"AttributeName": lsi_key["AttributeName"],
+                  "KeyType": lsi_key["KeyType"]}
+                 for lsi_key in lsi["KeySchema"]
+                 ],
+             "Projection": {
+                 "NonKeyAttributes":
+                     lsi["Projection"].get("NonKeyAttributes", []),
+                 "ProjectionType": lsi["Projection"]["ProjectionType"]
+             }}
+            for lsi in description.get("LocalSecondaryIndexes", [])
+        ],
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits":
+                description["ProvisionedThroughput"]["ReadCapacityUnits"],
+            "WriteCapacityUnits":
+                description["ProvisionedThroughput"]["WriteCapacityUnits"]
+        },
+        "TableName": description["TableName"]
+    }
+
+    # Safe to concatenate here since we won't be removing items from the
+    # combined list, but modifying the mutable dicts within
+    indexes = table["GlobalSecondaryIndexes"] + table["LocalSecondaryIndexes"]
+    for index in indexes:
+        if not index["Projection"]["NonKeyAttributes"]:
+            index["Projection"].pop("NonKeyAttributes")
+
+    if not table["GlobalSecondaryIndexes"]:
+        table.pop("GlobalSecondaryIndexes")
+    if not table["LocalSecondaryIndexes"]:
+        table.pop("LocalSecondaryIndexes")
+
+    return table
+
+
+def simple_status(description):
+    status = "ACTIVE"
+    if description.get("TableStatus") != "ACTIVE":
+        status = "BLOOP_NOT_ACTIVE"
+    for index in description.get("GlobalSecondaryIndexes", []):
+        if index.get("IndexStatus") != "ACTIVE":
+            status = "BLOOP_NOT_ACTIVE"
+    return status

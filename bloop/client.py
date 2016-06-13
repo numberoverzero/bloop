@@ -1,5 +1,6 @@
 import bloop.column
 import bloop.exceptions
+import bloop.tables
 import bloop.util
 import boto3
 import botocore
@@ -221,7 +222,7 @@ class Client(object):
         """
         if model.Meta.abstract:
             raise bloop.exceptions.AbstractModelException(model)
-        table = _table_for_model(model)
+        table = bloop.tables.create_request(model)
         create = functools.partial(self._call_with_retries,
                                    self.boto_client.create_table)
         try:

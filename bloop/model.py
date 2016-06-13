@@ -67,11 +67,16 @@ def setup_columns(meta):
 
 def setup_indexes(meta):
     """Filter indexes from fields, compute projection for each index"""
-    # This is a set instead of a list, because set uses __hash__
-    # while some list operations uses __eq__ which will break
+    # These are sets instead of lists, because sets use __hash__
+    # while some list operations use __eq__ which will break
     # with the ComparisonMixin
-    meta.indexes = set(filter(
-        lambda field: isinstance(field, bloop.index._Index), meta.fields))
+    meta.gsis = set(filter(
+        lambda field: isinstance(field, bloop.index.GlobalSecondaryIndex),
+        meta.fields))
+    meta.lsis = set(filter(
+        lambda field: isinstance(field, bloop.index.LocalSecondaryIndex),
+        meta.fields))
+    meta.indexes = set.union(meta.gsis, meta.lsis)
 
     # Look up the current hash key -- which is specified by
     # model_name, not dynamo_name -- in indexed columns and relate

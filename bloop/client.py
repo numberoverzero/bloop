@@ -1,6 +1,5 @@
 import bloop.column
 import bloop.exceptions
-import bloop.index
 import bloop.util
 import boto3
 import botocore
@@ -406,9 +405,7 @@ def _attribute_definitions(model):
 
 def _global_secondary_indexes(model):
     gsis = []
-    for index in filter(
-        lambda i: isinstance(i, bloop.index.GlobalSecondaryIndex),
-            model.Meta.indexes):
+    for index in model.Meta.gsis:
         gsi_key_schema = _key_schema(index=index)
         provisioned_throughput = {
             "WriteCapacityUnits": index.write_units,
@@ -458,9 +455,7 @@ def _key_schema(*, index=None, model=None):
 
 def _local_secondary_indexes(model):
     lsis = []
-    for index in filter(
-        lambda i: isinstance(i, bloop.index.LocalSecondaryIndex),
-            model.Meta.indexes):
+    for index in model.Meta.lsis:
         lsi_key_schema = _key_schema(index=index)
 
         lsis.append({

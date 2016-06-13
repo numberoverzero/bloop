@@ -10,7 +10,9 @@ DynamoDB Local
     import bloop
 
     boto_client = boto3.client(
-        "dynamodb", endpoint="http://127.0.0.1:8000")
+        "dynamodb",
+        endpoint="http://127.0.0.1:8000",
+        region_name="us-west-2")
     client = bloop.Client(boto_client=boto_client)
     engine = bloop.Engine(client=client)
 

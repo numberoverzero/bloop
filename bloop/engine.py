@@ -6,10 +6,11 @@ import bloop.index
 import bloop.model
 import bloop.tracking
 import bloop.util
-import boto3
 import collections
 import collections.abc
 import declare
+
+__all__ = ["Engine", "EngineView"]
 
 _MISSING = object()
 _DEFAULT_CONFIG = {
@@ -20,7 +21,7 @@ _DEFAULT_CONFIG = {
 }
 
 
-def _list_of(objs):
+def list_of(objs):
     """ wrap single elements in a list """
     if isinstance(objs, str):  # pragma: no cover
         return [objs]
@@ -30,12 +31,12 @@ def _list_of(objs):
         return [objs]
 
 
-def _value_of(column):
-    """ _value_of({"S": "Space Invaders"}) -> "Space Invaders" """
+def value_of(column):
+    """ value_of({"S": "Space Invaders"}) -> "Space Invaders" """
     return next(iter(column.values()))
 
 
-def _dump_key(engine, obj):
+def dump_key(engine, obj):
     """
     dump the hash (and range, if there is one) key(s) of an object into
     a dynamo-friendly format.
@@ -62,7 +63,7 @@ def _dump_key(engine, obj):
     return key
 
 
-def _config(engine, key, value):
+def config(engine, key, value):
     """Return a given config value unless it's None.
 
     In that case, fall back to the engine's config value."""
@@ -71,7 +72,7 @@ def _config(engine, key, value):
     return value
 
 
-class _LoadManager:
+class LoadManager:
     """
     The load operation involves a double indexing to provide O(1)
     lookup from a table name and dictionary of attributes.
@@ -85,7 +86,7 @@ class _LoadManager:
     """
     def __init__(self, engine, consistent):
         self.engine = engine
-        self.consistent = _config(engine, "consistent", consistent)
+        self.consistent = config(engine, "consistent", consistent)
         self.indexed_objects = {}
         # If there are any objects in this set after popping all the items
         # from a response, then the remaining items were not processed.
@@ -106,7 +107,7 @@ class _LoadManager:
             self.indexed_objects[table_name] = {}
 
         # key is {dynamo_name: {dynamo_type: value}, ...} for hash/range keys
-        key = _dump_key(self.engine, obj)
+        key = dump_key(self.engine, obj)
         self.wire[table_name]["Keys"].append(key)
 
         # The table key shape gives us a way to find the object in O(1)
@@ -114,14 +115,14 @@ class _LoadManager:
         if not table_exists:
             self.table_keys[table_name] = list(key.keys())
 
-        index = tuple(_value_of(k) for k in key.values())
+        index = tuple(value_of(k) for k in key.values())
         self.indexed_objects[table_name][index] = obj
         self.objects.add(obj)
 
     def pop(self, table_name, item):
         objects = self.indexed_objects[table_name]
         keys = self.table_keys[table_name]
-        index = tuple(_value_of(item[k]) for k in keys)
+        index = tuple(value_of(item[k]) for k in keys)
         obj = objects.get(index)
         self.objects.remove(obj)
         return obj
@@ -230,17 +231,17 @@ class Engine:
         return EngineView(self, **config)
 
     def delete(self, objs, *, condition=None, atomic=None):
-        objs = _list_of(objs)
+        objs = list_of(objs)
         for obj in objs:
             if obj.Meta.abstract:
                 raise bloop.exceptions.AbstractModelException(obj)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name,
-                    "Key": _dump_key(self, obj)}
+                    "Key": dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
 
             item_condition = bloop.condition.Condition()
-            if _config(self, "atomic", atomic):
+            if config(self, "atomic", atomic):
                 item_condition &= bloop.tracking.get_snapshot(obj)
             if condition:
                 item_condition &= condition
@@ -279,11 +280,11 @@ class Engine:
         # Load multiple instances
         engine.load(hash_only, hash_and_range)
         """
-        objs = _list_of(objs)
+        objs = list_of(objs)
         for obj in objs:
             if obj.Meta.abstract:
                 raise bloop.exceptions.AbstractModelException(obj)
-        request = _LoadManager(self, consistent=consistent)
+        request = LoadManager(self, consistent=consistent)
         for obj in objs:
             request.add(obj)
         response = self.client.batch_get_items(request.wire)
@@ -307,20 +308,20 @@ class Engine:
         return bloop.filter.Query(engine=self, model=model, index=index)
 
     def save(self, objs, *, condition=None, atomic=None):
-        objs = _list_of(objs)
+        objs = list_of(objs)
         for obj in objs:
             if obj.Meta.abstract:
                 raise bloop.exceptions.AbstractModelException(obj)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name,
-                    "Key": _dump_key(self, obj)}
+                    "Key": dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
 
             diff = bloop.tracking.get_update(obj)
             renderer.update(diff)
 
             item_condition = bloop.condition.Condition()
-            if _config(self, "atomic", atomic):
+            if config(self, "atomic", atomic):
                 item_condition &= bloop.tracking.get_snapshot(obj)
             if condition:
                 item_condition &= condition
@@ -363,10 +364,3 @@ class EngineView(Engine):
     @property
     def type_engine(self):
         return self.__engine.type_engine
-
-
-def engine_for_profile(profile_name, **config):  # pragma: no cover
-    """Helper to simplify creating an engine for a boto config profile"""
-    return Engine(
-        session=boto3.session.Session(profile_name=profile_name),
-        **config)

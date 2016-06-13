@@ -1,9 +1,9 @@
 import bloop
 import bloop.client
 import bloop.exceptions
+import bloop.tables
 import bloop.util
 import botocore
-import copy
 import pytest
 import uuid
 from unittest.mock import Mock
@@ -232,11 +232,11 @@ def test_default_backoff():
     durations = [(50.0 * (2 ** x)) / 1000.0 for x in attempts]
 
     for (attempts, expected) in zip(attempts, durations):
-        actual = bloop.client._default_backoff_func(attempts)
+        actual = bloop.client.default_backoff_func(attempts)
         assert actual == expected
 
     with pytest.raises(RuntimeError):
-        bloop.client._default_backoff_func(bloop.client.DEFAULT_MAX_ATTEMPTS)
+        bloop.client.default_backoff_func(bloop.client.DEFAULT_MAX_ATTEMPTS)
 
 
 def test_create_table(client):
@@ -376,54 +376,11 @@ def test_update_item_condition_failed(client):
 
 
 def test_describe_table(client):
-    full = {
-        "LocalSecondaryIndexes": [
-            {"ItemCount": 7,
-             "IndexSizeBytes": 8,
-             "Projection": {"NonKeyAttributes": ["date", "name",
-                                                 "email", "joined"],
-                            "ProjectionType": "INCLUDE"},
-             "IndexName": "by_joined",
-             "KeySchema": [
-                 {"KeyType": "HASH", "AttributeName": "name"},
-                 {"KeyType": "RANGE", "AttributeName": "joined"}]}],
-        "ProvisionedThroughput": {"ReadCapacityUnits": 3,
-                                  "WriteCapacityUnits": 2,
-                                  "NumberOfDecreasesToday": 4},
-        "GlobalSecondaryIndexes": [
-            {"IndexArn": "arn:aws:dynamodb:us-west-2:*:*",
-             "ItemCount": 7,
-             "IndexSizeBytes": 8,
-             "Projection": {"ProjectionType": "ALL"},
-             "IndexName": "by_email",
-             "ProvisionedThroughput": {"ReadCapacityUnits": 4,
-                                       "WriteCapacityUnits": 5,
-                                       "NumberOfDecreasesToday": 6},
-             "KeySchema": [{"KeyType": "HASH", "AttributeName": "email"}]}],
-        "TableName": "CustomTableName",
-        "KeySchema": [
-            {"KeyType": "HASH", "AttributeName": "name"},
-            {"KeyType": "RANGE", "AttributeName": "date"}],
-        "AttributeDefinitions": [
-            {"AttributeType": "S", "AttributeName": "date"},
-            {"AttributeType": "S", "AttributeName": "name"},
-            {"AttributeType": "S", "AttributeName": "joined"},
-            {"AttributeType": "S", "AttributeName": "email"}]}
+    """client.describe_table is a passthrough with retries"""
+    client.boto_client.describe_table.return_value = \
+        {"Table": {"test": "value"}}
 
-    expected = copy.deepcopy(full)
-    expected["ProvisionedThroughput"].pop("NumberOfDecreasesToday")
-    gsi = expected["GlobalSecondaryIndexes"][0]
-    gsi.pop("ItemCount")
-    gsi.pop("IndexSizeBytes")
-    gsi.pop("IndexArn")
-    gsi["ProvisionedThroughput"].pop("NumberOfDecreasesToday")
-    lsi = expected["LocalSecondaryIndexes"][0]
-    lsi.pop("ItemCount")
-    lsi.pop("IndexSizeBytes")
-
-    client.boto_client.describe_table.return_value = {"Table": full}
-
-    assert client.describe_table(ComplexModel) == expected
+    assert client.describe_table(ComplexModel) == {"test": "value"}
     client.boto_client.describe_table.assert_called_once_with(
         TableName=ComplexModel.Meta.table_name)
 
@@ -445,27 +402,11 @@ def test_query_scan(client, response, expected):
 
 def test_validate_compares_tables(client):
     # Hardcoded to protect against bugs in bloop.client._table_for_model
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeType": "S", "AttributeName": "id"},
-            {"AttributeType": "S", "AttributeName": "email"}],
-        "KeySchema": [{"KeyType": "HASH", "AttributeName": "id"}],
-        "ProvisionedThroughput": {"ReadCapacityUnits": 1,
-                                  "WriteCapacityUnits": 1,
-                                  "NumberOfDecreasesToday": 4},
-        "GlobalSecondaryIndexes": [
-            {"ItemCount": 7,
-             "IndexSizeBytes": 8,
-             "IndexName": "by_email",
-             "ProvisionedThroughput": {
-                 "NumberOfDecreasesToday": 3,
-                 "ReadCapacityUnits": 1,
-                 "WriteCapacityUnits": 1},
-             "KeySchema": [{"KeyType": "HASH", "AttributeName": "email"}],
-             "Projection": {"ProjectionType": "ALL"}}],
-        "TableName": "User"}
+    description = bloop.tables.expected_description(User)
+    description["TableStatus"] = "ACTIVE"
+    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
 
-    client.boto_client.describe_table.return_value = {"Table": full}
+    client.boto_client.describe_table.return_value = {"Table": description}
     client.validate_table(User)
     client.boto_client.describe_table.assert_called_once_with(TableName="User")
 
@@ -473,11 +414,15 @@ def test_validate_compares_tables(client):
 def test_validate_checks_status(client):
     # Don't care about the value checking, just want to observe retries
     # based on busy tables or indexes
-    full = bloop.client._table_for_model(User)
+    full = bloop.tables.expected_description(User)
+    full["TableStatus"] = "ACTIVE"
+    full["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
 
     client.boto_client.describe_table.side_effect = [
         {"Table": {"TableStatus": "CREATING"}},
-        {"Table": {"GlobalSecondaryIndexes": [{"IndexStatus": "CREATING"}]}},
+        {"Table": {"TableStatus": "ACTIVE",
+                   "GlobalSecondaryIndexes": [
+                       {"IndexStatus": "CREATING"}]}},
         {"Table": full}
     ]
     client.validate_table(User)
@@ -487,29 +432,54 @@ def test_validate_checks_status(client):
 
 def test_validate_fails(client):
     """dynamo returns a json document that doesn't match the expected table"""
-    client.boto_client.describe_table.return_value = {"Table": {}}
+    client.boto_client.describe_table.return_value = \
+        {"Table": {"TableStatus": "ACTIVE"}}
     with pytest.raises(bloop.exceptions.TableMismatch) as excinfo:
-        client.validate_table(ComplexModel)
+        client.validate_table(SimpleModel)
 
     # Exception includes the model that failed
-    assert excinfo.value.model is ComplexModel
+    assert excinfo.value.model is SimpleModel
     # Exception should include the full table description that was expected
     ordered = bloop.util.ordered
-    expected = bloop.client._table_for_model(ComplexModel)
+    expected = bloop.tables.expected_description(SimpleModel)
     assert ordered(excinfo.value.expected) == ordered(expected)
-    # And the actual table that was returned
-    assert excinfo.value.actual == {}
+    # And the actual table that was returned - the unsanitized description,
+    # since the parsing failed
+    assert excinfo.value.actual == {"TableStatus": "ACTIVE"}
 
 
 def test_validate_simple_model(client):
     full = {
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
         "AttributeDefinitions": [
             {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
         "TableName": "Simple",
-        "ProvisionedThroughput": {"ReadCapacityUnits": 1,
-                                  "WriteCapacityUnits": 1}}
+        "TableStatus": "ACTIVE"}
     client.boto_client.describe_table.return_value = {"Table": full}
     client.validate_table(SimpleModel)
     client.boto_client.describe_table.assert_called_once_with(
         TableName="Simple")
+
+
+def test_validate_mismatch(client):
+    """dynamo returns a valid document but it doesn't match"""
+    full = bloop.tables.expected_description(SimpleModel)
+    full["TableStatus"] = "ACTIVE"
+
+    full["TableName"] = "wrong table name"
+
+    client.boto_client.describe_table.return_value = {"Table": full}
+    with pytest.raises(bloop.exceptions.TableMismatch) as excinfo:
+        client.validate_table(SimpleModel)
+
+    # Exception includes the model that failed
+    assert excinfo.value.model is SimpleModel
+    # Exception should include the full table description that was expected
+    ordered = bloop.util.ordered
+    expected = bloop.tables.expected_description(SimpleModel)
+    assert ordered(excinfo.value.expected) == ordered(expected)
+    # And the actual table that was returned
+    del full["TableStatus"]
+    assert excinfo.value.actual == full

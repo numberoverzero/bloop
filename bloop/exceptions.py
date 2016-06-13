@@ -8,6 +8,10 @@ automatically recover from that failure.
 
 """
 
+__all__ = [
+    "AbstractModelException", "BloopException", "ConstraintViolation",
+    "NotModified", "TableMismatch", "UnboundModel"]
+
 _CONSTRAINT_FAILURE = "Failed to meet expected condition during {}"
 _NOT_MODIFIED = "Failed to modify some obects during {}"
 _TABLE_MISMATCH = "Existing table for model {} does not match expected"
@@ -18,6 +22,13 @@ _ABSTRACT = "Cannot perform operation on abstract model {}"
 class BloopException(Exception):
     """Base exception for blanket catching"""
     pass
+
+
+class AbstractModelException(BloopException):
+    """Raised when an operation is attempted on an abstract model"""
+    def __init__(self, model):
+        super().__init__(_ABSTRACT.format(model))
+        self.model = model
 
 
 class ConstraintViolation(BloopException):
@@ -76,10 +87,3 @@ class UnboundModel(BloopException):
         super().__init__(_UNBOUND.format(operation), model, obj)
         self.model = model
         self.obj = obj
-
-
-class AbstractModelException(BloopException):
-    """Raised when an operation is attempted on an abstract model"""
-    def __init__(self, model):
-        super().__init__(_ABSTRACT.format(model))
-        self.model = model

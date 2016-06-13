@@ -4,12 +4,11 @@ import bloop.tables
 import bloop.util
 import boto3
 import botocore
-import enum
 import functools
 import time
 
+__all__ = ["Client"]
 
-TABLE_STATUS = enum.Enum("TABLE_STATUS", ["Busy", "Ready"])
 DEFAULT_BACKOFF_COEFF = 50.0
 DEFAULT_MAX_ATTEMPTS = 4
 MAX_BATCH_SIZE = 25
@@ -19,7 +18,7 @@ RETRYABLE_ERRORS = [
 ]
 
 
-def _default_backoff_func(attempts):
+def default_backoff_func(attempts):
     """
     Exponential backoff helper.
 
@@ -30,7 +29,7 @@ def _default_backoff_func(attempts):
     return (DEFAULT_BACKOFF_COEFF * (2 ** attempts)) / 1000.0
 
 
-def _partition_batch_get_input(batch_size, items):
+def partition_batch_get_input(batch_size, items):
     """ Takes a batch_get input and partitions into 25 object chunks """
     chunk = {}
     count = 0
@@ -93,7 +92,7 @@ class Client(object):
         """
         # Fall back to the global session
         self.boto_client = boto_client or boto3.client("dynamodb")
-        self.backoff_func = backoff_func or _default_backoff_func
+        self.backoff_func = backoff_func or default_backoff_func
         self.batch_size = batch_size
 
     def _call_with_retries(self, func, *args, **kwargs):
@@ -177,7 +176,7 @@ class Client(object):
         response = {}
         get_batch = functools.partial(self._call_with_retries,
                                       self.boto_client.batch_get_item)
-        request_batches = _partition_batch_get_input(self.batch_size, items)
+        request_batches = partition_batch_get_input(self.batch_size, items)
 
         for request_batch in request_batches:
             # After the first call, request_batch is the
@@ -258,21 +257,7 @@ class Client(object):
         self._modify_item(self.boto_client.delete_item, "delete", item)
 
     def describe_table(self, model):
-        """Load the schema for a model's table, stripping out useless metadata.
-
-        The following attributes are not included:
-            * TableName
-            * ProvisionedThroughput
-            * KeySchema
-            * AttributeDefinitions
-            * GlobalSecondaryIndexes
-            * LocalSecondaryIndexes
-            * TableStatus
-            * The following attributes of a GSI/LSI:
-              * ItemCount
-              * IndexSizeBytes
-              * IndexArn
-              * ProvisionedThroughput > NumberOfDecreasesToday
+        """Load the schema for a model's table.
 
         Args:
             model: subclass of an :class:`bloop.model.BaseModel`
@@ -295,32 +280,8 @@ class Client(object):
         """
         description = self._call_with_retries(
             self.boto_client.describe_table,
-            TableName=model.Meta.table_name)["Table"]
-
-        # We don't care about a bunch of the returned attributes, and want to
-        # massage the returned value to match `_table_for_model` that's passed
-        # to `Client.create_table` so we can compare them with `ordered`
-        fields = ["TableName", "ProvisionedThroughput", "KeySchema",
-                  "AttributeDefinitions", "GlobalSecondaryIndexes",
-                  "LocalSecondaryIndexes", "TableStatus"]
-        junk_index_fields = ["ItemCount", "IndexSizeBytes", "IndexArn"]
-        table = {}
-        for field in fields:
-            value = description.get(field, None)
-            if value is not None:
-                table[field] = value
-        table.get("ProvisionedThroughput", {}).pop(
-            "NumberOfDecreasesToday", None)
-
-        for index in table.get("GlobalSecondaryIndexes", []):
-            for field in junk_index_fields:
-                index.pop(field, None)
-            index.get("ProvisionedThroughput", {}).pop(
-                "NumberOfDecreasesToday", None)
-        for index in table.get("LocalSecondaryIndexes", []):
-            for field in junk_index_fields:
-                index.pop(field, None)
-        return table
+            TableName=model.Meta.table_name)
+        return description["Table"]
 
     def query(self, request):
         return self._filter(self.boto_client.query, request)
@@ -370,133 +331,14 @@ class Client(object):
             * :meth:`.create_table`
             * :meth:`.describe_table`
         """
-        expected = _table_for_model(model)
-        status = TABLE_STATUS.Busy
-        while status is TABLE_STATUS.Busy:
-            actual = self.describe_table(model)
-            status = _table_status(actual)
+        expected = bloop.tables.expected_description(model)
+        status = "BLOOP_NOT_ACTIVE"
+        while status == "BLOOP_NOT_ACTIVE":
+            description = self.describe_table(model)
+            status = bloop.tables.simple_status(description)
+        try:
+            actual = bloop.tables.sanitized_description(description)
+        except KeyError:
+            raise bloop.exceptions.TableMismatch(model, expected, description)
         if bloop.util.ordered(actual) != bloop.util.ordered(expected):
             raise bloop.exceptions.TableMismatch(model, expected, actual)
-
-
-def _attribute_definitions(model):
-    """ Only include table and index hash/range keys """
-    dedupe_attrs = set()
-    attrs = []
-
-    def add_column(column):
-        if column is None:
-            return
-        if column in dedupe_attrs:
-            return
-        dedupe_attrs.add(column)
-        attrs.append({
-            "AttributeType": column.typedef.backing_type,
-            "AttributeName": column.dynamo_name
-        })
-
-    add_column(model.Meta.hash_key)
-    add_column(model.Meta.range_key)
-
-    for index in model.Meta.indexes:
-        add_column(index.hash_key)
-        add_column(index.range_key)
-    return attrs
-
-
-def _global_secondary_indexes(model):
-    gsis = []
-    for index in model.Meta.gsis:
-        gsi_key_schema = _key_schema(index=index)
-        provisioned_throughput = {
-            "WriteCapacityUnits": index.write_units,
-            "ReadCapacityUnits": index.read_units
-        }
-
-        gsis.append({
-            "ProvisionedThroughput": provisioned_throughput,
-            "Projection": _index_projection(index),
-            "IndexName": index.dynamo_name,
-            "KeySchema": gsi_key_schema
-        })
-    return gsis
-
-
-def _index_projection(index):
-    projection = {
-        "ProjectionType": index.projection,
-        "NonKeyAttributes": [
-            column.dynamo_name for column in index.projection_attributes
-        ]
-    }
-    if index.projection != "INCLUDE" or not projection["NonKeyAttributes"]:
-        projection.pop("NonKeyAttributes")
-    return projection
-
-
-def _key_schema(*, index=None, model=None):
-    if index:
-        hash_key = index.hash_key
-        range_key = index.range_key
-    # model
-    else:
-        hash_key = model.Meta.hash_key
-        range_key = model.Meta.range_key
-    schema = [{
-        "AttributeName": hash_key.dynamo_name,
-        "KeyType": "HASH"
-    }]
-    if range_key:
-        schema.append({
-            "AttributeName": range_key.dynamo_name,
-            "KeyType": "RANGE"
-        })
-    return schema
-
-
-def _local_secondary_indexes(model):
-    lsis = []
-    for index in model.Meta.lsis:
-        lsi_key_schema = _key_schema(index=index)
-
-        lsis.append({
-            "Projection": _index_projection(index),
-            "IndexName": index.dynamo_name,
-            "KeySchema": lsi_key_schema
-        })
-    return lsis
-
-
-def _table_for_model(model):
-    """ Return the expected table dict for a given model. """
-    table = {
-        "TableName": model.Meta.table_name,
-        "ProvisionedThroughput": {
-            "WriteCapacityUnits": model.Meta.write_units,
-            "ReadCapacityUnits": model.Meta.read_units
-        },
-        "KeySchema": _key_schema(model=model),
-        "AttributeDefinitions": _attribute_definitions(model),
-        "GlobalSecondaryIndexes": _global_secondary_indexes(model),
-        "LocalSecondaryIndexes": _local_secondary_indexes(model)
-    }
-    if not table["GlobalSecondaryIndexes"]:
-        table.pop("GlobalSecondaryIndexes")
-    if not table["LocalSecondaryIndexes"]:
-        table.pop("LocalSecondaryIndexes")
-    return table
-
-
-def _table_status(table):
-    """
-    Returns BUSY if table or any GSI is not ACTIVE, otherwise READY
-
-    mutates table - pops status entries
-    """
-    status = TABLE_STATUS.Ready
-    if table.pop("TableStatus", "ACTIVE") != "ACTIVE":
-        status = TABLE_STATUS.Busy
-    for index in table.get("GlobalSecondaryIndexes", []):
-        if index.pop("IndexStatus", "ACTIVE") != "ACTIVE":
-            status = TABLE_STATUS.Busy
-    return status

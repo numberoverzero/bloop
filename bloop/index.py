@@ -1,8 +1,10 @@
 import collections.abc
 import declare
 
+__all__ = ["GlobalSecondaryIndex", "LocalSecondaryIndex"]
 
-def _validate_projection(projection):
+
+def validate_projection(projection):
     invalid = ValueError("Index projections must be either 'keys_only', 'all',"
                          " or an iterable of model attributes to include.")
     # String check first since it is also an Iterable
@@ -20,7 +22,7 @@ def _validate_projection(projection):
     return projection
 
 
-def _update_non_empty(group, iterable):
+def update_non_empty(group, iterable):
     """Cull falsey (None) objects from an iterable before adding to a set"""
     group.update(obj for obj in iterable if obj)
 
@@ -34,7 +36,7 @@ class _Index(declare.Field):
         super().__init__(**kwargs)
 
         # projection_attributes will be set up in `_bind`
-        self.projection = _validate_projection(projection)
+        self.projection = validate_projection(projection)
 
     @property
     def dynamo_name(self):
@@ -53,7 +55,7 @@ class _Index(declare.Field):
 
         # All projections include keys
         keys = (model_hash, model_range, self.hash_key, self.range_key)
-        _update_non_empty(projected, keys)
+        update_non_empty(projected, keys)
 
         if self.projection == "ALL":
             projected.update(columns.values())

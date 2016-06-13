@@ -109,6 +109,8 @@ def test_sanitize_expected():
                 'ReadCapacityUnits': 1,
                 'WriteCapacityUnits': 1}}],
         'ProvisionedThroughput': {
+            'LastDecreaseDateTime': 'EXTRA_FIELD',
+            'LastIncreaseDateTime': 'EXTRA_FIELD',
             'NumberOfDecreasesToday': 'EXTRA_FIELD',
             'ReadCapacityUnits': 1,
             'WriteCapacityUnits': 1},

@@ -3,6 +3,8 @@ import bloop.tracking
 import declare
 import operator
 
+__all__ = ["Column"]
+
 
 class _ComparisonMixin:
     def __init__(self, *, path=None, obj=None, **kwargs):

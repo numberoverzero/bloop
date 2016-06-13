@@ -3,6 +3,10 @@
 import operator
 
 
+__all__ = [
+    "And", "AttributeExists", "BeginsWith", "Between", "Comparison",
+    "Condition", "ConditionRenderer", "Contains", "In", "Not", "Or"]
+
 EXPRESSION_KEYS = {
     "condition": "ConditionExpression",
     "filter": "FilterExpression",
@@ -10,7 +14,7 @@ EXPRESSION_KEYS = {
 }
 
 
-def _printable_name(column, path):  # pragma: no cover
+def printable_name(column, path):  # pragma: no cover
     """Provided for debug output when rendering conditions"""
     model_name = column.model.__name__
     name = "{}.{}".format(model_name, column.model_name)
@@ -289,7 +293,7 @@ class Comparison(_BaseCondition):
             self.value)
 
     def __str__(self):  # pragma: no cover
-        name = _printable_name(self.column, self.path)
+        name = printable_name(self.column, self.path)
         return "({} {} {})".format(
             name, self.comparator_strings[self.comparator], self.value)
 
@@ -324,7 +328,7 @@ class AttributeExists(_BaseCondition):
         return "{}({}(path={}))".format(name, self.column, self.path)
 
     def __str__(self):  # pragma: no cover
-        name = _printable_name(self.column, self.path)
+        name = printable_name(self.column, self.path)
         return "({} {} None)".format(
             name, "is" if self.negate else "is not")
 
@@ -357,7 +361,7 @@ class BeginsWith(_BaseCondition):
             self.column, self.path, self.value)
 
     def __str__(self):  # pragma: no cover
-        name = _printable_name(self.column, self.path)
+        name = printable_name(self.column, self.path)
         return "({} begins with {})".format(name, self.value)
 
     def __eq__(self, other):
@@ -390,7 +394,7 @@ class Contains(_BaseCondition):
             self.column, self.path, self.value)
 
     def __str__(self):  # pragma: no cover
-        name = _printable_name(self.column, self.path)
+        name = printable_name(self.column, self.path)
         return "({} contains {})".format(name, self.value)
 
     def __eq__(self, other):
@@ -424,7 +428,7 @@ class Between(_BaseCondition):
             self.column, self.path, self.lower, self.upper)
 
     def __str__(self):  # pragma: no cover
-        name = _printable_name(self.column, self.path)
+        name = printable_name(self.column, self.path)
         return "({} between [{},{}])".format(name, self.lower, self.upper)
 
     def __eq__(self, other):
@@ -460,7 +464,7 @@ class In(_BaseCondition):
         return "In({}(path={}), [{}])".format(self.column, self.path, values)
 
     def __str__(self):  # pragma: no cover
-        name = _printable_name(self.column, self.path)
+        name = printable_name(self.column, self.path)
         return "({} in {})".format(name, list(self.values))
 
     def __eq__(self, other):

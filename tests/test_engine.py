@@ -34,11 +34,11 @@ def test_dump_key(engine):
 
     user = User(id=uuid.uuid4())
     user_key = {"id": {"S": str(user.id)}}
-    assert bloop.engine._dump_key(engine, user) == user_key
+    assert bloop.engine.dump_key(engine, user) == user_key
 
     obj = HashAndRange(foo=4, bar=5)
     obj_key = {"bar": {"N": "5"}, "foo": {"N": "4"}}
-    assert bloop.engine._dump_key(engine, obj) == obj_key
+    assert bloop.engine.dump_key(engine, obj) == obj_key
 
 
 def test_load_object(engine):

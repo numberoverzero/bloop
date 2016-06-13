@@ -2,8 +2,10 @@ import bloop.column
 import bloop.index
 import bloop.util
 import declare
-_MISSING = object()
+
 __all__ = ["new_base", "BaseModel"]
+
+_MISSING = object()
 
 
 def new_base():

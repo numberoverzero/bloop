@@ -5,6 +5,8 @@ import bloop.tracking
 import bloop.util
 import operator
 
+__all__ = ["Query", "Scan"]
+
 SELECT_MODES = {
     "all": "ALL_ATTRIBUTES",
     "projected": "ALL_PROJECTED_ATTRIBUTES",
@@ -13,12 +15,12 @@ SELECT_MODES = {
 }
 
 
-def _consume(iter):
+def consume(iter):
     for _ in iter:
         pass
 
 
-def _validate_hash_key_condition(condition):
+def validate_hash_key_condition(condition):
     # 1 Must be comparison
     if (isinstance(condition, bloop.condition.Comparison) and
             # 2 Must be EQ compariator
@@ -29,7 +31,7 @@ def _validate_hash_key_condition(condition):
     raise ValueError("KeyCondition must be EQ, without any document paths")
 
 
-def _validate_range_key_condition(condition):
+def validate_range_key_condition(condition):
     if isinstance(condition, (bloop.condition.BeginsWith,
                               bloop.condition.Between)):
         return True
@@ -40,7 +42,7 @@ def _validate_range_key_condition(condition):
     raise ValueError("Invalid KeyCondition {}".format(condition))
 
 
-def _validate_key_condition(key_condition, hash_column, range_column):
+def validate_key_condition(key_condition, hash_column, range_column):
     # 0. Must specify at least a hash condition
     if not key_condition:
         raise ValueError("At least one key condition (hash) is required")
@@ -48,7 +50,7 @@ def _validate_key_condition(key_condition, hash_column, range_column):
     # 1. Comparison condition, single column
     if isinstance(key_condition, bloop.condition.Comparison):
         # 1.1 Comparison, EQ, no path
-        _validate_hash_key_condition(key_condition)
+        validate_hash_key_condition(key_condition)
         # 1.2 Must be a condition on hash_column
         if key_condition.column is not hash_column:
             raise ValueError("KeyCondition must compare against hash column")
@@ -75,11 +77,11 @@ def _validate_key_condition(key_condition, hash_column, range_column):
                 if has_hash_condition:
                     raise ValueError(
                         "Must specify a condition on the hash key")
-                _validate_hash_key_condition(subcondition)
+                validate_hash_key_condition(subcondition)
                 has_hash_condition = True
             elif subcondition.column is range_column:
                 # 2.3 Range conditions can be <,<=,>,>=,==, Between, BeginsWith
-                _validate_range_key_condition(subcondition)
+                validate_range_key_condition(subcondition)
             else:
                 # 2.4 Conditions must be against hash or range columns
                 msg = "Non-key condition {} passed as KeyCondition"
@@ -93,7 +95,7 @@ def _validate_key_condition(key_condition, hash_column, range_column):
         raise ValueError("KeyCondition must be EQ or AND")
 
 
-def _validate_prefetch(value):
+def validate_prefetch(value):
     invalid = ValueError("prefetch must be 'all' or a non-negative int")
     if value != "all":
         try:
@@ -105,7 +107,7 @@ def _validate_prefetch(value):
     return value
 
 
-def _validate_select_mode(select):
+def validate_select_mode(select):
     invalid = ValueError("Must specify 'all', 'projected', or"
                          " a list of column objects to select")
     if not select:
@@ -121,7 +123,7 @@ def _validate_select_mode(select):
     return select
 
 
-def _is_select_exact(index, engine):
+def is_select_exact(index, engine):
     """
     Returns True if :
     1) The filter is on a GSI, or an LSI and the engine is strict
@@ -282,7 +284,7 @@ class _Filter(object):
         hash_column = obj.hash_key
         range_column = obj.range_key
 
-        _validate_key_condition(condition, hash_column, range_column)
+        validate_key_condition(condition, hash_column, range_column)
 
         other = self._copy()
         other._key_condition = condition
@@ -292,12 +294,12 @@ class _Filter(object):
         """
         columns must be "all", "projected", or a list of `bloop.Column` objects
         """
-        select = _validate_select_mode(columns)
+        select = validate_select_mode(columns)
         # False for non-index queries.
         # True if we need to query exactly, but the index's projection
         # doesn't support fetching all attributes.  Invalid to select all,
         # possibly valid to select specific.
-        is_exact = _is_select_exact(self.index, self.engine)
+        is_exact = is_select_exact(self.index, self.engine)
 
         if select == "projected":
             if not self.index:
@@ -362,7 +364,7 @@ class FilterResult(object):
     """
     def __init__(self, prefetch, call, request, engine, model, expected):
         self._call = call
-        self._prefetch = _validate_prefetch(prefetch)
+        self._prefetch = validate_prefetch(prefetch)
         self.request = request
         self.engine = engine
         self.model = model
@@ -376,7 +378,7 @@ class FilterResult(object):
 
         # Kick off the full execution
         if prefetch == "all":
-            _consume(self)
+            consume(self)
 
     @property
     def complete(self):
@@ -410,9 +412,9 @@ class FilterResult(object):
         # Fully exhaust the filter before returning an iterator
         elif self._prefetch == "all":
             # Give self._continue a chance to be not None
-            _consume(self._step())
+            consume(self._step())
             while self._continue:
-                _consume(self._step())
+                consume(self._step())
             self._complete = True
             return iter(self.results)
         # Lazy load, prefetching as necessary

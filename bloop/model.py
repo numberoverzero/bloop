@@ -112,7 +112,7 @@ class BaseModel:
                 setattr(self, column.model_name, value)
 
     @classmethod
-    def _load(cls, attrs, *, context=None, **kwargs):
+    def _load(cls, attrs, *, context, **kwargs):
         """ dict (dynamo name) -> obj """
         obj = cls.Meta.init()
         # We want to expect the exact attributes that are passed,
@@ -125,7 +125,7 @@ class BaseModel:
         return obj
 
     @classmethod
-    def _dump(cls, obj, *, context=None, **kwargs):
+    def _dump(cls, obj, *, context, **kwargs):
         """ obj -> dict """
         attrs = {}
         engine = context["engine"].type_engine
@@ -133,7 +133,8 @@ class BaseModel:
             value = getattr(obj, column.model_name, None)
             # Missing expected column - None is equivalent to empty
             if value is not None:
-                attrs[column.dynamo_name] = engine.dump(column.typedef, value)
+                attrs[column.dynamo_name] = engine.dump(
+                    column.typedef, value, context=context)
         return attrs
 
     def __str__(self):  # pragma: no cover

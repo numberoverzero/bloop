@@ -11,8 +11,8 @@ from test_models import DocumentType
 def symmetric_test(typedef, *pairs):
     """ Test any number of load/dump pairs for a symmetric `Type` instance """
     for (loaded, dumped) in pairs:
-        assert typedef.dynamo_load(dumped) == loaded
-        assert typedef.dynamo_dump(loaded) == dumped
+        assert typedef.dynamo_load(dumped, context={}) == loaded
+        assert typedef.dynamo_dump(loaded, context={}) == dumped
 
 
 def test_load_dump_best_effort():
@@ -23,8 +23,10 @@ def test_load_dump_best_effort():
         python_type = float
 
     typedef = MyType()
-    assert typedef._load({"NOT_FOO": "not_a_float"}) == "not_a_float"
-    assert typedef._dump("not_a_float") == {"FOO": "not_a_float"}
+    assert "not_a_float" == typedef._load(
+        {"NOT_FOO": "not_a_float"}, context={})
+    assert {"FOO": "not_a_float"} == typedef._dump(
+        "not_a_float", context={})
 
 
 def test_string():
@@ -46,17 +48,20 @@ def test_datetime():
     now = arrow.now()
 
     # Not a symmetric type
-    assert typedef.dynamo_load(now.isoformat()) == now
-    assert typedef.dynamo_dump(now) == now.to("utc").isoformat()
+    assert typedef.dynamo_load(now.isoformat(), context={}) == now
+    assert typedef.dynamo_dump(now, context={}) == now.to("utc").isoformat()
 
-    assert typedef.dynamo_load(now.to(tz).isoformat()) == now
-    assert typedef.dynamo_dump(now.to(tz)) == now.to("utc").isoformat()
+    assert now == typedef.dynamo_load(
+        now.to(tz).isoformat(), context={})
+    assert now.to("utc").isoformat() == typedef.dynamo_dump(
+        now.to(tz), context={})
 
     # Should load values in the given timezone.
     # Because arrow objects compare equal regardless of timezone, we
     # isoformat each to compare the rendered strings (which preserve tz).
     local_typedef = types.DateTime(timezone=tz)
-    loaded_as_string = local_typedef.dynamo_load(now.isoformat()).isoformat()
+    loaded_as_string = local_typedef.dynamo_load(
+        now.isoformat(), context={}).isoformat()
     now_with_tz_as_string = now.to(tz).isoformat()
     assert loaded_as_string == now_with_tz_as_string
 
@@ -80,7 +85,7 @@ def test_float():
         (decimal.Decimal("NaN"), TypeError)])
 def test_float_errors(value, raises):
     with pytest.raises(raises):
-        types.Float().dynamo_dump(value)
+        types.Float().dynamo_dump(value, context={})
 
 
 def test_integer():
@@ -91,11 +96,11 @@ def test_integer():
 
     symmetric_test(typedef, (4, "4"))
 
-    assert typedef.dynamo_dump(4.5) == "4"
-    assert typedef.dynamo_load("4") == 4
+    assert typedef.dynamo_dump(4.5, context={}) == "4"
+    assert typedef.dynamo_load("4", context={}) == 4
 
     # Corrupted data is truncated
-    assert typedef.dynamo_load("4.5") == 4
+    assert typedef.dynamo_load("4.5", context={}) == 4
 
 
 def test_binary():
@@ -111,9 +116,9 @@ def test_binary():
         (types.Binary, set([b"123", b"456"]), set(["MTIz", "NDU2"]))], ids=str)
 def test_sets(set_type, loaded, dumped):
     typedef = types.Set(set_type)
-    assert typedef.dynamo_load(dumped) == loaded
+    assert typedef.dynamo_load(dumped, context={}) == loaded
     # Unordered compare
-    assert set(typedef.dynamo_dump(loaded)) == dumped
+    assert set(typedef.dynamo_dump(loaded, context={})) == dumped
 
 
 def test_set_type_instance():
@@ -135,8 +140,8 @@ def test_set_type_instance():
 def test_bool(value):
     """ Boolean will never store/load as empty - bool(None) is False """
     typedef = types.Boolean()
-    assert typedef.dynamo_dump(value) is bool(value)
-    assert typedef.dynamo_load(value) is bool(value)
+    assert typedef.dynamo_dump(value, context={}) is bool(value)
+    assert typedef.dynamo_load(value, context={}) is bool(value)
 
 
 def test_list():
@@ -144,9 +149,9 @@ def test_list():
     loaded = [uuid.uuid4() for _ in range(5)]
     expected = [{"S": str(id)} for id in loaded]
 
-    dumped = typedef.dynamo_dump(loaded)
+    dumped = typedef.dynamo_dump(loaded, context={})
     assert dumped == expected
-    assert typedef.dynamo_load(dumped) == loaded
+    assert typedef.dynamo_load(dumped, context={}) == loaded
 
 
 @pytest.mark.parametrize("typedef", [types.List, types.Set, types.TypedMap])
@@ -159,8 +164,8 @@ def test_required_subtypes(typedef):
 def test_load_dump_none():
     """ Loading or dumping None returns None """
     typedef = types.String()
-    assert typedef._dump(None) == {"S": None}
-    assert typedef._load({"S": None}) is None
+    assert typedef._dump(None, context={}) == {"S": None}
+    assert typedef._load({"S": None}, context={}) is None
 
 
 def test_map_dump():
@@ -188,7 +193,7 @@ def test_map_dump():
         'Id': {'S': str(uid)},
         'Updated': {'S': now.isoformat()}
     }
-    dumped = DocumentType.dynamo_dump(loaded)
+    dumped = DocumentType.dynamo_dump(loaded, context={})
     assert dumped == expected
 
 
@@ -215,7 +220,7 @@ def test_map_load():
         'Id': uid,
         'Updated': None
     }
-    loaded = DocumentType.dynamo_load(dumped)
+    loaded = DocumentType.dynamo_load(dumped, context={})
     assert loaded == expected
 
 
@@ -233,5 +238,5 @@ def test_typedmap():
         'now': {'S': now.isoformat()},
         'later': {'S': later.isoformat()}
     }
-    assert typedef.dynamo_dump(loaded) == dumped
-    assert typedef.dynamo_load(dumped) == loaded
+    assert typedef.dynamo_dump(loaded, context={}) == dumped
+    assert typedef.dynamo_load(dumped, context={}) == loaded

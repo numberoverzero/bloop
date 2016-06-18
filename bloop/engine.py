@@ -140,11 +140,12 @@ class Engine:
         self.config = dict(_DEFAULT_CONFIG)
         self.config.update(config)
 
-    def _dump(self, model, obj):
+    def _dump(self, model, obj, context=None):
         """ Return a dict of the obj in DynamoDB format """
         try:
-            return self.type_engine.dump(
-                model, obj, context={"engine": self})
+            context = context or {"engine": self}
+            return context["engine"].type_engine.dump(
+                model, obj, context=context)
         except declare.DeclareException:
             # Best-effort check for a more helpful message
             if isinstance(model, bloop.model.ModelMetaclass):
@@ -157,10 +158,11 @@ class Engine:
         """ Return an instance of a given model """
         return self._load(model, {})
 
-    def _load(self, model, value):
+    def _load(self, model, value, context=None):
         try:
-            return self.type_engine.load(
-                model, value, context={"engine": self})
+            context = context or {"engine": self}
+            return context["engine"].type_engine.load(
+                model, value, context=context)
         except declare.DeclareException:
             # Best-effort check for a more helpful message
             if isinstance(model, bloop.model.ModelMetaclass):
@@ -169,12 +171,14 @@ class Engine:
                 raise ValueError(
                     "Failed to load unknown model {}".format(model))
 
-    def _update(self, obj, attrs, expected):
+    def _update(self, obj, attrs, expected, context=None):
         """ Push values by dynamo_name into an object """
+        context = context or {"engine": self}
         for column in expected:
             value = attrs.get(column.dynamo_name, None)
             if value is not None:
-                value = self._load(column.typedef, value)
+                value = context["engine"]._load(
+                    column.typedef, value, context=context)
             setattr(obj, column.model_name, value)
 
     def bind(self, *, base):
@@ -218,7 +222,7 @@ class Engine:
             self.type_engine.register(model)
             for column in model.Meta.columns:
                 self.type_engine.register(column.typedef)
-            self.type_engine.bind()
+            self.type_engine.bind(context={"engine": self})
 
     def context(self, **config):
         """

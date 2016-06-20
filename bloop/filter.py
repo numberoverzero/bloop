@@ -1,8 +1,8 @@
 import bloop.column
 import bloop.condition
+import bloop.exceptions
 import bloop.index
 import bloop.tracking
-import bloop.util
 import operator
 
 __all__ = ["Query", "Scan"]
@@ -14,6 +14,11 @@ SELECT_MODES = {
     "count": "COUNT"
 }
 
+INVALID_SELECT = ValueError("Select must be 'all', 'projected', 'count', or a list of column objects to select")
+INVALID_PREFETCH = ValueError("Prefetch must be a non-negative int")
+INVALID_LIMIT = ValueError("Limit must be a non-negative int")
+INVALID_FILTER = ValueError("Filter must be a condition or None")
+
 
 def consume(iter):
     for _ in iter:
@@ -23,7 +28,7 @@ def consume(iter):
 def validate_hash_key_condition(condition):
     # 1 Must be comparison
     if (isinstance(condition, bloop.condition.Comparison) and
-            # 2 Must be EQ compariator
+            # 2 Must be EQ comparator
             (condition.comparator is operator.eq) and
             # 3 Must not have a path component
             (not condition.path)):
@@ -42,7 +47,7 @@ def validate_range_key_condition(condition):
     raise ValueError("Invalid KeyCondition {}".format(condition))
 
 
-def validate_key_condition(key_condition, hash_column, range_column):
+def validate_key(key_condition, hash_column, range_column):
     # 0. Must specify at least a hash condition
     if not key_condition:
         raise ValueError("At least one key condition (hash) is required")
@@ -95,32 +100,31 @@ def validate_key_condition(key_condition, hash_column, range_column):
         raise ValueError("KeyCondition must be EQ or AND")
 
 
-def validate_prefetch(value):
-    invalid = ValueError("prefetch must be 'all' or a non-negative int")
-    if value != "all":
-        try:
-            value = int(value)
-            if value < 0:
-                raise invalid
-        except ValueError:
-            raise invalid
-    return value
+def validate_prefetch(prefetch):
+    try:
+        if int(prefetch) < 0:
+            raise INVALID_PREFETCH
+    except (TypeError, ValueError):
+        raise INVALID_PREFETCH
+    return int(prefetch)
 
 
-def validate_select_mode(select):
-    invalid = ValueError("Must specify 'all', 'projected', or"
-                         " a list of column objects to select")
-    if not select:
-            raise invalid
-    if isinstance(select, str):
-        select = select.lower()
-        if select not in ["all", "projected"]:
-            raise invalid
-    else:
-        select = list(select)
-        if not bloop.util.areinstance(select, bloop.column.Column):
-            raise invalid
-    return select
+def validate_select(select):
+    if select.lower() in {"all", "projected", "count"}:
+        return select
+    are_columns = all(map(lambda s: isinstance(s, bloop.column.Column), select))
+    if len(select) > 1 and are_columns:
+        return select
+    raise INVALID_SELECT
+
+
+def validate_limit(limit):
+    try:
+        if int(limit) < 0:
+            raise INVALID_LIMIT
+    except (TypeError, ValueError):
+        raise INVALID_LIMIT
+    return int(limit)
 
 
 def is_select_exact(index, engine):
@@ -136,6 +140,263 @@ def is_select_exact(index, engine):
     is_exact = (not requires_exact) or (index.projection == "ALL")
     return is_exact
 
+
+# ====================================================================================================================
+
+
+class Filter:
+    def __init__(
+            self, *, engine, mode, model, index, strict, prefetch, consistent=False,
+            forward=True, limit=None, key=None, filter=None, select=None):
+        self.engine = engine
+        self.mode = mode
+        self.model = model
+        self.index = index
+        self.strict = strict
+
+        self._prefetch = prefetch
+        self._consistent = consistent
+        self._forward = forward
+        self._limit = limit
+
+        self._key = key
+        self._filter = filter
+        self._select = select
+
+    def copy(self):
+        """Convenience method for building specific queries off of a shared base query."""
+        return Filter(
+            engine=self.engine, mode=self.mode, model=self.model, index=self.index, strict=self.strict,
+            prefetch=self._prefetch, consistent=self._consistent, forward=self._forward, limit=self._limit,
+            key=self._key, filter=self._filter, select=self._select)
+
+    def key(self, value):
+        """Key conditions are only required for queries; there is no key condition for a scan.
+
+        A key condition must include at least an equality (==) condition on the hash key of the index or model.
+        A range condition on the index or model is allowed, and can be one of <,<=,>,>=,==, Between, BeginsWith
+        There can be at most 1 hash condition and 1 range condition.
+        They must be specified together.
+        """
+        # TODO refactor key validation
+        validate_key(self.model, self.index, value)
+        self._key = value
+        return self
+
+    def select(self, value):
+        """Which columns to load in the query/scan.
+
+        When searching against a model, this can be "all" or a subset of the model's columns.
+        When searching against a GSI, this can be "projected" or a subset of the GSI's projected columns.
+        When searching against a LSI, this can be "all" (if not using strict queries), "projected", or:
+            1) a subset of the LSI's projected columns (if using strict queries)
+            2) a subset of the model's columns (if not using strict queries)
+
+        Note that against an LSI, "all" or a superset of the projected columns of the LSI will incur an additional
+        read against the table to fetch the non-indexed columns.
+        """
+        # TODO refactor select validation
+        self._select = validate_select(self.model, self.index, value)
+        return self
+
+    def filter(self, value):
+        """Filtering is done server-side; as such, there may be empty pages to iterate before an instance is returned.
+
+        DynamoDB applies the Limit before the FilterExpression.
+            If a table with 10 rows only matches the filter on the 6th row, and a scan has a limit of 5,
+            the scan will return no results.
+        """
+        # None is allowed for clearing a FilterExpression
+        if isinstance(value, (type(None), bloop.condition._BaseCondition)):
+            raise INVALID_FILTER
+        self._filter = value
+        return self
+
+    def consistent(self, value):
+        """Whether ConsistentReads should be used.  Note that ConsistentReads cannot be used against a GSI"""
+        value = bool(value)
+        if value and isinstance(self.index, bloop.index.GlobalSecondaryIndex):
+            raise ValueError("Can't use ConsistentRead with a GlobalSecondaryIndex")
+        self._consistent = value
+        return self
+
+    def forward(self, value):
+        """Whether a query is performed forwards or backwards.  Note that scans cannot be performed in reverse"""
+        if self.mode == "scan":
+            raise ValueError("Can't set ScanIndexForward for scan operations, only queries")
+        self._forward = bool(value)
+        return self
+
+    def limit(self, value):
+        """From DynamoDB: The maximum number of items to evaluate (not necessarily the number of matching items).
+
+        Limit should be used when you want to return NO MORE THAN a given value, with the intention that there may not
+        be any results at all.  To instead limit the number of items returned, stop iterating the results of .build()
+        after the desired number of results.
+
+        For example, to iterate over the rows that meet a given FilterExpression from the first 30 rows:
+            for result in engine.query(...).limit(30).filter(...).build():
+                # process item
+
+        However, to get the first 30 results that meet a given FilterExpression:
+            results = engine.query(...).filter(...).build()
+            for i, result in enumerate(results):
+                if i == 30:
+                    break
+                # process item
+
+        """
+        try:
+            if int(value) < 0:
+                raise INVALID_LIMIT
+        except (TypeError, ValueError):
+            raise INVALID_LIMIT
+        self._limit = int(value)
+        return self
+
+    def prefetch(self, value):
+        """Number of items (not pages) to preload.
+
+        Because a FilterExpression can cause the returned pages of a query to be empty, multiple calls may be made just
+        to return one item.  This value is how many items should be loaded each time the iterator advances
+        (with an unknown number of continue calls to yield the next item)
+        """
+
+        try:
+            if int(value) < 0:
+                raise INVALID_PREFETCH
+        except (TypeError, ValueError):
+            raise INVALID_PREFETCH
+        self._prefetch = int(value)
+        return self
+
+    def one(self):
+        """Returns the single item that matches the scan/query.
+
+        If there is not exactly one matching result, raises ConstraintViolation.
+        """
+        f = self.copy().prefetch(0).build()
+        iterator = iter(f)
+        constraint_not_met = bloop.exceptions.ConstraintViolation(f.mode + ".one", f.prepared_request)
+        try:
+            first = next(iterator)
+        except StopIteration:
+            raise constraint_not_met
+
+        # Try to load another item.  If there is only one result, this should
+        # raise StopIteration.  Finding another element means there wasn't a
+        # unique result for the query, and we should fail.
+        try:
+            next(iterator)
+        except StopIteration:
+            return first
+        else:
+            raise constraint_not_met
+
+    def first(self):
+        """Returns the first item that matches the scan/query.
+
+        If there is not at least one matching result, raises ConstraintViolation.
+        """
+        f = self.copy().prefetch(0).build()
+        iterator = iter(f)
+        try:
+            return next(iterator)
+        except StopIteration:
+            raise bloop.exceptions.ConstraintViolation(f.mode + ".first", f.prepared_request)
+
+    def build(self):
+        """Return a FilterIterator which can be iterated (and reset) to execute the query/scan.
+
+        Usage:
+
+            iterator = engine.query(...).build()
+
+            # No work done yet
+            iterator.count  # 0
+            iterator.scanned_count  # 0
+
+            # Execute the full query
+            for _ in iterator:
+                pass
+            iterator.scanned_count  # > 0
+
+            # Reset the query for re-execution, possibly returning different results
+            iterator.reset()
+            iterator.scanned_count  # 0
+        """
+        prepared_request = {
+            "ConsistentRead": self._consistent,
+            "Limit": self._limit,
+            "ScanIndexForward": self._forward,
+            "Select": SELECT_MODES[self._select],
+            "TableName": self.model.Meta.table_name,
+        }
+        # Scans are always forward
+        if self.mode == "scan":
+            del prepared_request["ScanIndexForward"]
+        # Only send useful limits (omit 0 for no limit)
+        if self._limit < 1:
+            del prepared_request["Limit"]
+        # Only set IndexName if this is a query on an index
+        if self.index:
+            prepared_request["IndexName"] = self.index.dynamo_name
+            # Can't perform consistent reads on a GSI
+            if isinstance(self.index, bloop.index.GlobalSecondaryIndex):
+                del prepared_request["ConsistentRead"]
+        renderer = bloop.condition.ConditionRenderer(self.engine)
+        # Render any FilterExpression
+        if self._filter:
+            renderer.render(self._filter, mode="filter")
+        # Render any ProjectionExpression
+        if self._select not in {"all", "projected"}:
+            renderer.projection(self._select)
+        prepared_request.update(renderer.rendered)
+
+        if self.mode == "query":
+            # Query MUST have a key condition
+            if self._key is None:
+                raise ValueError("Query must specify at least a hash key condition")
+            renderer.render(self._key, mode="key")
+            prepared_request.update(renderer.rendered)
+        # Scan MOST NOT have a key condition
+        elif self._key is not None:
+            raise ValueError("Scan cannot have a key condition")
+
+        # TODO compute which columns are expected from each query, to properly track missing values vs not loaded
+        loaded_columns = set()
+        return FilterIterator(self.engine, self.model, prepared_request, loaded_columns, self.mode, self._prefetch)
+
+
+class FilterIterator:
+        def __init__(self, engine, model, prepared_request, loaded_columns, mode, prefetch):
+            self.engine = engine
+            self.model = model
+            self.prepared_request = prepared_request
+            self.loaded_columns = loaded_columns
+            self.mode = mode
+            self.prefetch = prefetch
+
+            self._count = {"Count": 0, "ScannedCount": 0}
+
+        def __iter__(self):
+            # TODO implement __iter__
+            pass
+
+        @property
+        def count(self):
+            return self._count["Count"]
+
+        @property
+        def scanned_count(self):
+            return self._count["ScannedCount"]
+
+        def reset(self):
+            self._count["Count"] = self._count["ScannedCount"] = 0
+            self.prepared_request.pop("ExclusiveStartKey", None)
+
+
+# ====================================================================================================================
 
 class _Filter(object):
     """Base class for Scan and Query."""
@@ -284,7 +545,7 @@ class _Filter(object):
         hash_column = obj.hash_key
         range_column = obj.range_key
 
-        validate_key_condition(condition, hash_column, range_column)
+        validate_key(condition, hash_column, range_column)
 
         other = self._copy()
         other._key_condition = condition
@@ -294,7 +555,7 @@ class _Filter(object):
         """
         columns must be "all", "projected", or a list of `bloop.Column` objects
         """
-        select = validate_select_mode(columns)
+        select = validate_select(columns)
         # False for non-index queries.
         # True if we need to query exactly, but the index's projection
         # doesn't support fetching all attributes.  Invalid to select all,

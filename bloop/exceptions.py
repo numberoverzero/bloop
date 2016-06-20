@@ -12,7 +12,7 @@ __all__ = [
     "AbstractModelException", "BloopException", "ConstraintViolation",
     "NotModified", "TableMismatch", "UnboundModel"]
 
-_CONSTRAINT_FAILURE = "Failed to meet expected condition during {}"
+_CONSTRAINT_FAILURE = "Failed to meet required condition during {}"
 _NOT_MODIFIED = "Failed to modify some obects during {}"
 _TABLE_MISMATCH = "Existing table for model {} does not match expected"
 _UNBOUND = "Failed to {} unbound model.  Did you forget to call engine.bind()?"
@@ -32,7 +32,10 @@ class AbstractModelException(BloopException):
 
 
 class ConstraintViolation(BloopException):
-    """Raised when a condition is not met during put/update/delete.
+    """Raised when a condition is not met.
+
+     This is thrown when an explicit condition passed to load/save/delete fails, an atomic operation fails,
+     or an implicit query/scan condition fails (one/first)
 
     Attributes:
         obj (dict): The dict that was sent to dynamodb and failed some

@@ -146,7 +146,7 @@ def is_select_exact(index, engine):
 
 class Filter:
     def __init__(
-            self, *, engine, mode, model, index, strict, prefetch, consistent=False,
+            self, *, engine, mode, model, index, strict, prefetch=0, consistent=False,
             forward=True, limit=None, key=None, filter=None, select=None):
         self.engine = engine
         self.mode = mode
@@ -465,7 +465,7 @@ class _Filter(object):
         request.update(renderer.rendered)
         return request
 
-    def all(self, prefetch=None):
+    def all(self, prefetch=0):
         """Creates the FilterResult that will lazy load the results of the
         scan/query.
 
@@ -487,8 +487,6 @@ class _Filter(object):
                 results.scanned_count
 
         """
-        if prefetch is None:
-            prefetch = self.engine.config["prefetch"]
         # dynamo.client.query or dynamo.client.scan
         call = getattr(self.engine.client, self.filter_type)
         renderer = bloop.condition.ConditionRenderer(self.engine)

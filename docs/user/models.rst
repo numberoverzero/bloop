@@ -616,8 +616,6 @@ from ``all``::
 
 .. seealso::
     * The ``strict`` option in :ref:`config` to prevent double reads on LSIs
-    * The ``prefetch`` option in :ref:`config` to control how lazily results
-      are loaded.
 
 .. _FilterExpression: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#FilteringResults
 

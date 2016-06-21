@@ -16,7 +16,6 @@ _MISSING = object()
 _DEFAULT_CONFIG = {
     "atomic": False,
     "consistent": False,
-    "prefetch": 0,
     "strict": True
 }
 

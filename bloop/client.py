@@ -121,8 +121,7 @@ class Client(object):
         # When updating count, ScannedCount is omitted unless it differs
         # from Count; thus we need to default to assume that the
         # ScannedCount is equal to the Count
-        count = response.get("Count", 0)
-        response["Count"] = count
+        count = response.setdefault("Count", 0)
         response["ScannedCount"] = response.get("ScannedCount", count)
         return response
 

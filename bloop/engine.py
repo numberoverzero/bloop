@@ -301,14 +301,19 @@ class Engine:
         if request.objects:
             raise bloop.exceptions.NotModified("load", request.objects)
 
-    def query(self, obj):
+    def query(self, obj, consistent=None):
         if isinstance(obj, bloop.index._Index):
             model, index = obj.model, obj
+            select = "projected"
         else:
             model, index = obj, None
+            select = "all"
         if model.Meta.abstract:
             raise bloop.exceptions.AbstractModelException(model)
-        return bloop.filter.Query(engine=self, model=model, index=index)
+
+        return bloop.filter.Filter(
+            engine=self, mode="query", model=model, index=index, strict=self.config["strict"], select=select,
+            consistent=config(self, "consistent", consistent))
 
     def save(self, objs, *, condition=None, atomic=None):
         objs = list_of(objs)
@@ -335,14 +340,18 @@ class Engine:
 
             bloop.tracking.sync(obj, self)
 
-    def scan(self, obj):
+    def scan(self, obj, consistent=None):
         if isinstance(obj, bloop.index._Index):
-                model, index = obj.model, obj
+            model, index = obj.model, obj
+            select = "projected"
         else:
             model, index = obj, None
+            select = "all"
         if model.Meta.abstract:
             raise bloop.exceptions.AbstractModelException(model)
-        return bloop.filter.Scan(engine=self, model=model, index=index)
+        return bloop.filter.Filter(
+            engine=self, mode="query", model=model, index=index, strict=self.config["strict"], select=select,
+            consistent=config(self, "consistent", consistent))
 
 
 class EngineView(Engine):

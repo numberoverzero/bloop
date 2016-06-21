@@ -147,6 +147,7 @@ def test_load_dump_subclass(engine):
 
     class Admin(User):
         admin_id = bloop.Column(bloop.Integer, hash_key=True)
+        other = bloop.Column(bloop.Integer)
     engine.bind(base=User)
 
     admin = Admin(admin_id=3)

@@ -15,13 +15,6 @@ def ordered(obj):
         return obj
 
 
-def areinstance(lst, types):
-    for obj in lst:
-        if not isinstance(obj, types):
-            return False
-    return True
-
-
 def walk_subclasses(cls):
     classes = set([cls])
     visited = set()

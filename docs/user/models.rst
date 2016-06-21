@@ -286,7 +286,7 @@ To check between two dates::
     tweets = (engine.query(Tweet)
                     .key(Tweet.user == '@nsa')
                     .filter(yesterday)
-                    .all())
+                    .build())
 
 In fact, the ``key`` function above is using an equality condition.
 
@@ -415,13 +415,13 @@ With atomic updates::
 
 Additionally, you don't need to keep track of which attributes were loaded by
 the operation that generated the object.  Because a query may not return all
-attributes of the object, you would erroneously expect an empty value when the
+attributes of the object, that would erroneously expect an empty value when the
 operation could never populate those attributes.  For example, say the
 following only loads the ``hash`` and ``range`` attributes of the model::
 
-    instance = (engine.query(Model.some_index)
-                      .key((Model.hash == 0) & (Model.range == 1))
-                      .first())
+    instance = engine.query(Model.some_index) \
+                      .key((Model.hash == 0) & (Model.range == 1)) \
+                      .first()
 
 This instance hasn't loaded the ``foo`` attribute, even though there's a value
 persisted in dynamo.  Naively building a condition, for foo and bar, you'd have
@@ -445,46 +445,87 @@ constrain operations on attributes that may not have been loaded.  Using the
 same model above where ``foo`` is a non-key attribute that's not loaded from a
 query::
 
-    instance = (engine.query(Model.some_index)
-                      .key(Model.hash == 1)
-                      .first())
+    instance = engine.query(Model.some_index) \
+                     .key(Model.hash == 1) \
+                     .first()
 
     big_foo = Model.foo >= 500
     engine.save(instance, condition=big_foo, atomic=True)
 
 .. seealso::
-    The ``atomic`` option in :ref:`config` to enable/disable atomic
-    conditions for save and delete.
+    The ``atomic`` option in :ref:`config` to enable/disable atomic conditions for save and delete.
 
 .. _query:
+.. _scan:
 
-Query
------
+Query and Scan
+--------------
 
-Queries can be constructed against tables or an index of the table using the
-same syntax::
+Queries and Scans are constructed using nearly identical syntax.  Some minor exceptions:
+
+* Query MUST have a ``key`` condition, while Scan MUST NOT have a ``key`` condition.
+  Otherwise, ``first``, ``one``, and ``build`` will raise ``ValueError``.
+* Trying to set ``forward`` on a Scan will raise a ``ValueError`` (there is no ordering option for scans)
+
+Queries against tables or indexes are constructed using the same syntax::
 
     table_query = engine.query(Model)
+    table_scan = engine.scan(Model)
+
     index_query = engine.query(Model.some_index)
+    index_scan = engine.scan(Model.some_index)
 
-Queries are constructed by chaining methods together.  This includes key
-conditions, filter conditions, select methods, and properties to enable
-consistent reads and control query order.
+Queries are constructed by chaining methods together in the usual builder pattern.  This includes key conditions,
+filter conditions, select, limit, prefetch, forward, consistent::
 
-Because each chained call returns a copy of the query, it's possible to create
-re-usable base queries::
+    q = engine.query(Model.by_some_gsi) \
+              .key(Model.gsi_hash_key == "value") \
+              .filter(Model.non_key_attr.begins_with("something")) \
+              .select("projected") \
+              .limit(200) \
+              .prefetch(5) \
+              .forward(True) \
+              .consistent(False)
 
-    base_query = engine.query(Model).consistent.ascending
+When you are done building a query, you can get a stateful iterator, the first result, or exactly one result::
 
-    for obj in base_query.key(Model.hash == 1).all():
+    # Can inspect count, scanned, exhausted
+    iterator = q.build()
+    for i, obj in enumerate(iterator):
+        if i > 4:
+            break
+    # scanned can be greater than count if using a FilterExpression
+    print(iterator.count)
+    print(iterator.scanned)
+    # Reset an iterator to re-execute the query/scan
+    print(iterator.exhausted)
+    iterator.reset()
+
+
+    try:
+        first = q.first()
+    except bloop.ConstraintViolation:
+        # 0 results
+
+
+    try:
+        one = q.one()
+    except bloop.ConstraintViolation:
+        # 0 results, or more than 1 result
+
+
+To create re-usable base queries, use the ``copy`` method::
+
+    q = engine.query(Model).consistent(True).forward(False)
+
+    for obj in q.copy().key(Model.hash == 1).build():
         ...
-    for obj in base_query.key(Model.hash == 2).all():
+    for obj in q.copy().key(Model.hash == 2).build():
         ...
 
-The ``key`` method takes a condition on the hash key.  You may optionally
-include a range key condition.  Not all operators are supported for key
-conditions.  An equality condition on the hash key MUST be provided.  Valid
-conditions against the range key are::
+The ``key`` method takes a condition on the hash key (or ``None`` to clear).  You may optionally include a range key
+condition.  Not all operators are supported for key conditions.  An equality condition on the hash key MUST be
+provided.  Valid conditions against the range key are::
 
     ==, <=, <, >=, >, begins_with, between
 
@@ -493,154 +534,138 @@ To include a range key condition, use the bitwise AND operator::
     hash_condition = Model.hash == 1
     range_condition = Model.range == 2
 
-    query = base_query.key(hash_condition & range_condition)
+    query = q.copy().key(hash_condition & range_condition)
 
-With the ``filter`` method you can construct a `FilterExpression`_ using the
-same :ref:`conditions` that you use everywhere else.  Unlike the ``key``
-method, you may use any condition type.
+With the ``filter`` method you can construct a `FilterExpression`_ using the same :ref:`conditions` that you use
+everywhere else.  Unlike the ``key`` method, you may use any condition type.  You can use ``None`` to clear a filter.
 
-From the API reference: `A filter expression lets you apply conditions to the
-data after it is queried or scanned, but before it is returned to you. Only the
-items that meet your conditions are returned.`
+From the API reference: `A filter expression lets you apply conditions to the data after it is queried or scanned, but
+before it is returned to you. Only the items that meet your conditions are returned.`
 
 A few examples::
 
-    query = base_query.filter(Model.foo >= 100)
-    query = base_query.filter(Model.bar.contains('hello'))
+    query = q.copy().filter(Model.foo >= 100)
+    query = q.copy().filter(Model.bar.contains('hello'))
 
     # AND multiple conditions
-    query = base_query.filter(Model.foo.is_(None) &
-                              Model.bar.in_([1, 2]))
+    query = q.copy().filter(Model.foo.is_(None) &
+                     Model.bar.in_([1, 2]))
 
-By default, **projected** attributes are loaded for a query against a
-SecondaryIndex and **all** attributes are loaded for a table query.  You can
-change the set of attributes to be loaded with the ``select`` method::
+By default, **projected** attributes are loaded for a query against a SecondaryIndex and **all** attributes are loaded
+for a table query.  You can change the set of attributes to be loaded with the ``select`` method::
 
     projected = base_query.select('projected')
     everything = base_query.select('all')
 
-You may specify a set of attributes to load by passing a list of
-column objects::
+You may specify a set of attributes to load by passing an iterable of column objects::
 
     specific = base_query.select([Model.foo, Model,bar])
 
-There are a few combinations of ``select`` options and table/index
-configurations that are invalid.  All of the following will raise an exception:
+There are a few combinations of ``select`` options and table/index configurations that are invalid.  All of the
+following will raise a ``ValueError``:
 
 * ``projected`` for a non-index query
 * ``all`` against a GlobalSecondaryIndex whose projection is not ``all``
+* ``all`` against a LSI whose projection is not ``all`` **and the strict option is enabled**
 * list of columns against a GSI where the requested columns are not projected
-* ``all`` against a LSI **and the strict option is enabled**
-* list of columns against a LSI where the requested columns are not projected
-  **and the strict option is enabled**
+* list of columns against a LSI where the requested columns are not projected **and the strict option is enabled**
 
-In the first case, only a SecondaryIndex has a projection.  ``projected`` has
-no meaning for a table query.
+In the first case, ``projected`` has no meaning for a table query.
 
-While it's possible for a GSI with a key-only projection to include all
-attributes, this is not guaranteed to be true forever.  Instead of behavior
-subtly changing when a column is added, bloop refuses to assume.
+While it's possible for a GSI with a key-only projection to include all attributes, this is not guaranteed to be true
+forever.  Instead of behavior subtly changing when a column is added, bloop refuses to assume.
 
-When a query against a GSI requests attributes that are not projected into the
-index, the Dynamo will raise.  Because GSIs have their own read units, a
-second read against the table is not performed for you.
+When a query against a GSI requests attributes that are not projected into the index, the Dynamo will raise.  Because
+GSIs have their own read units, a second read against the table is not performed for you.
 
 When strict is enabled, LSIs perform the same checks as GSIs.  Without strict,
-**Dynamo will incur an additional read per item** to load the requested
-attributes.
+**Dynamo will incur an additional read per item** to load the requested attributes.
 
 .. tip::
 
-    Currently ``strict`` defaults to ``True``, deviating from Dynamo's default
-    behavior.  It is **HIGHLY** recommended to keep ``strict=True``, as it can
-    be hard to plan which LSI queries will incur additional reads - an
-    inconspicuous code change that adds a new attribute to a query's ``select``
-    may suddenly cause a critical-path query to double in consumed read units.
+    Currently ``strict`` defaults to ``True``, deviating from Dynamo's default behavior.  It is **HIGHLY** recommended
+    to keep ``strict=True``, as it can be hard to plan which LSI queries will incur additional reads - an
+    inconspicuous code change that adds a new attribute to a query's ``select`` may suddenly cause a critical-path
+    query to double in consumed read units.
 
-To execute a query, either iterate the query object or use the ``all`` method::
+To execute a query, use the ``build`` method::
 
-    for result in query:
+    for result in query.build():
         print(result.foo)
 
     # Keep a reference to the result container
-    results = query.all()
+    results = query.build()
     for result in results:
         ...
+    print(results.scanned)
 
-Each iteration of the query will result in a new set of calls to Dynamo;
-whereas iterating over the return from ``all()`` will iterate over a cached
-set of calls to Dynamo.  Additionally, the object returned from ``all``
-provides metadata about the query, including ``count`` and ``scanned_count``
-attributes::
+Each iteration of the query will result in a new set of calls to DynamoDB.  If you want to iterate the results multiple
+times, you should store the results in a list or other data structure.  The object returned from ``build``
+also provides metadata about the query, including ``count`` and ``scanned`` attributes, which map to the
+``"Count"`` and ``"ScannedCount"`` json keys, respectively::
 
-    results = query.all()
+    iterator = query.build()
 
-    # Raises, since the query is not fully iterated
-    results.count
+    # Hasn't started calling DynamoDB yet
+    assert iterator.count == 0
 
     # exhaust the query
-    list(results)
-    print(results.count, results.scanned_count)
+    results = list(iterator)
+    print(iterator.count, iterator.scanned)
+    assert iterator.exhausted
 
-    # iterating the results object will iterate the
-    # cached results, NOT re-issue the query to Dynamo
-    for result in results:
+    # to iterate multiple times, either
+    # 1) store the result in a list (above)
+
+    # 2) reset the iterator, to re-execute the query against DynamoDB
+    iterator.reset()
+    for value in iterator:
         ...
 
-You may optionally specify a ``prefetch`` value when calling ``all``, that
-controls how paginated results are loaded.  The default prefetch is 0, which
-means pages are only loaded as the previous results are consumed from the
-iterator.  This is useful when you are only interested in the first result of
-a query, or otherwise may not need the full set of results::
+    # 3) build a new iterator from the query
+    new_iterator = query.build()
+    for value in new_iterator:
+        ...
 
-    results = query.all(prefetch=0)
+You may optionally specify a ``prefetch`` to control how many rows are buffered.  Each time you step the iterator,
+if the buffer had less objects than your prefetch value, it will continue following pagination tokens until the buffer
+reaches the desired prefetch number (or it hits the end of the query).  Then, it will yield back elements until the
+buffer drains.  When you ask for the next item after the buffer drains, it will again fetch until the buffer is full.
 
-If you know you need all results, and the set of results is small, you may want
-to pre-load all values from Dynamo before continuing::
+Note that this is not a **page** prefetch, but an **item** prefetch.  DynamoDB will only consider 25 items per call,
+and a FilterExpression may filter out all 25 results before the response is sent back, which will give an empty page,
+possibly with a continuation token.  Bloop will follow any number of continuation tokens until it fills the prefetch
+buffer.  DynamoDB docs mention that if you notice a big difference between ``count`` and ``scanned``, your query/scan
+did a lot of extra work (relative the result set size) and you may want to consider modifying your query.
 
-    results = query.all(prefetch='all')
+Specifying a prefetch is the same as any other query parameter::
 
-Finally, you may want to load a certain number of pages in advance::
+    query.prefetch(3)
 
-    results = query.all(prefetch=3)
-    results = query.all(prefetch=10)
+You must specify a non-negative int.  0 will fetch results as they're requested - a small amount of buffering will
+occur, as items per page can fluctuate from 0-25.
+
+Note that prefetch is a client-side directive, and controls the buffer size for the stateful filter iterator.  This is
+unlike ``limit``, a server-side limit (before the FilterExpression is applied).
+
+``limit`` is the maximum number of items DynamoDB will process and run through a FilterExpression.  If your limit is 50
+on a scan where the first 50 items don't match your FilterExpression, you will find 0 results even if the next 50
+would match the FilterExpression.
 
 
-You can also fetch the first result from a query directly, or from the return
-from ``all``::
-
-    first = base_query.first()
-
-    results = query.all(prefetch=0)
-    first = results.first
 
 .. seealso::
     * The ``strict`` option in :ref:`config` to prevent double reads on LSIs
-    * The ``prefetch`` option in :ref:`config` to control how lazily results
-      are loaded.
 
 .. _FilterExpression: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#FilteringResults
-
-.. _scan:
-
-Scan
-----
-
-Scan has the same interface as :ref:`query` above, with the following
-differences:
-
-* Any ``key`` conditions are ignored completely when constructing the request.
-* The ``ascending`` and ``descending`` properties are ignored.
-
 
 .. _abstract:
 
 Abstract and Inheritance
 ------------------------
 
-bloop supports the concept of abstract models that are not coupled to actual
-DynamoDB tables.  This can be useful when you want to leverage the usual
-benefits of inheritance, without creating some intermediate classes::
+bloop supports the concept of abstract models that are not coupled to actual DynamoDB tables.  This can be useful when
+you want to leverage the usual benefits of inheritance, without creating some intermediate classes::
 
     import uuid
     from bloop import new_base, Engine, UUID, ConstraintViolation
@@ -677,7 +702,7 @@ benefits of inheritance, without creating some intermediate classes::
 
     instance = Model.unique(engine)
 
-abstract classes can be anywhere the inheritance chain::
+Abstract classes can be anywhere the inheritance chain::
 
     Abstract = new_base():
 
@@ -697,9 +722,8 @@ abstract classes can be anywhere the inheritance chain::
 
 .. warning::
 
-    Currently, modelled attributes are **not** inherited, which means they do
-    not correspond to real columns in DynamoDB.  If your abstract model relies
-    on subclasses having an ``id`` column like above, then each subclass must
+    Currently, modelled attributes are **not** inherited, which means they do not correspond to real columns in
+    DynamoDB.  If your abstract model relies on subclasses having an ``id`` column like above, then each subclass must
     include that declaration.
 
 .. _meta:
@@ -708,27 +732,22 @@ Meta
 ----
 
 .. warning::
-    Modifying the generated values in a model's ``Meta`` will result in
-    **bad things**, including things like not saving attributes, loading values
-    incorrectly, and kicking your dog.
+    Modifying the generated values in a model's ``Meta`` will result in **bad things**, including things like not
+    saving attributes, loading values incorrectly, and kicking your dog.
 
-Discussed above, the ``Meta`` attribute of a model class stores info about the
-table (read and write units, the table name) as well as metadata used by bloop
-internally (like ``Meta.init``).
+Discussed above, the ``Meta`` attribute of a model class stores info about the table (read and write units, the table
+name) as well as metadata used by bloop internally (like ``Meta.init``).
 
 Meta exposes the following attributes:
 
 * ``abstract`` - whether the model should be bound to a DynamoDB Table or not.
   Defaults to False.  ``new_base`` returns an abstract model.
-* ``read_units`` and ``write_units`` - mentioned above, the table read/write
-  units.  Both default to 1.
-* ``table_name`` - mentioned above, the name of the table.  Defaults to the
-  class name.
-* ``init`` - covered in detail in :ref:`loading`, this is the entry point
-  bloop uses when creating new instances of a model.  It is NOT used during
+* ``read_units`` and ``write_units`` - mentioned above, the table read/write units.  Both default to 1.
+* ``table_name`` - mentioned above, the name of the table.  Defaults to the class name.
+* ``init`` - covered in detail in :ref:`loading`, this is the entry point bloop uses when creating new instances of a
+  model.  It is NOT used during load, which is settings values on existing instances of the model.
   ``bloop.load`` which updates attributes on existing instances.
 * ``columns`` - a ``set`` of ``Column`` objects that are part of the model.
 * ``indexes`` - a ``set`` of ``Index`` objects that are part of the model.
 * ``hash_key`` - the ``Column`` that is the model's hash key.
-* ``range_key`` - the ``Column`` that is the model's range key.  ``None`` if
-  there is no range key for the table.
+* ``range_key`` - the ``Column`` that is the model's range key.  ``None`` if there is no range key for the table.

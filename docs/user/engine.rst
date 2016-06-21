@@ -82,8 +82,7 @@ Engine's config attribute.  By default, the following are set::
     engine.config = {
         "atomic": False,
         "consistent": False,
-        "prefetch": 0,
-        "strict": True,
+        "strict": True
     }
 
 Setting ``atomic`` to ``True`` will append a condition to every save and delete
@@ -94,12 +93,6 @@ the save or delete operations.  For more information, see :ref:`atomic` and
 
 Setting ``consistent`` to True will make ``load`` and ``query`` use
 `Strongly Consistent Reads`_ instead of eventually consistent reads.
-
-The ``prefetch`` option controls how many pages are fetched at a time during
-queries and scans.  By default each page is loaded as necessary, allowing you
-to stop following continuation tokens if you only need a partial query.  You
-can set this to a positive integer to pre-fetch that number of pages at a time,
-or to ``'all'`` to fully iterate the query in one blocking call.
 
 Setting ``strict`` to ``False`` will allow queries and scans against LSIs to
 consume additional read units against the table.  By default strict queries
@@ -160,7 +153,7 @@ Query a table or index::
     query = query.key(Model.hash == value)
     query = query.filter(Model.column.contains(value))
 
-    for result in query.all():
+    for result in query.build():
         ...
 
     print(query.first())
@@ -182,7 +175,7 @@ Scan a table or index::
     scan = engine.scan(Model.index)
     scan = scan.filter(Model.column.between(low, high))
 
-    for result in scan.all():
+    for result in scan.build():
         ...
 
     print(scan.first())

@@ -141,20 +141,40 @@ def is_select_exact(index, engine):
     is_exact = (not requires_exact) or (index.projection == "ALL")
     return is_exact
 
+# ====================================================================================================================
+# ABOVE: old helpers to remove
+# HERE: new helpers
+
+
+def expected_columns_for(model, index, select):
+    if isinstance(select, str):
+        if select == "all":
+            return model.Meta.columns
+        elif select == "projected":
+            return index.projection_attributes
+        # "count"
+        else:
+            return set()
+    # Otherwise this is a list of specific attributes.
+    # It's not a problem if the query returns more attributes than we select, since
+    # engine._update will only load the expected columns from the result.
+    else:
+        return select
 
 # ====================================================================================================================
 
 
 class Filter:
     def __init__(
-            self, *, engine, mode, model, index, strict, prefetch=0, consistent=False,
-            forward=True, limit=None, key=None, filter=None, select=None):
+            self, *, engine, mode, model, index, strict, select, prefetch=0,
+            consistent=False, forward=True, limit=0, key=None, filter=None):
         self.engine = engine
         self.mode = mode
         self.model = model
         self.index = index
         self.strict = strict
 
+        self._select = select
         self._prefetch = prefetch
         self._consistent = consistent
         self._forward = forward
@@ -162,14 +182,13 @@ class Filter:
 
         self._key = key
         self._filter = filter
-        self._select = select
 
     def copy(self):
         """Convenience method for building specific queries off of a shared base query."""
         return Filter(
             engine=self.engine, mode=self.mode, model=self.model, index=self.index, strict=self.strict,
-            prefetch=self._prefetch, consistent=self._consistent, forward=self._forward, limit=self._limit,
-            key=self._key, filter=self._filter, select=self._select)
+            select=self._select, prefetch=self._prefetch, consistent=self._consistent, forward=self._forward,
+            limit=self._limit, key=self._key, filter=self._filter)
 
     def key(self, value):
         """Key conditions are only required for queries; there is no key condition for a scan.
@@ -369,21 +388,21 @@ class Filter:
         elif self._key is not None:
             raise ValueError("Scan cannot have a key condition")
 
-        # TODO compute which columns are expected from each query, to properly track missing values vs not loaded
-        loaded_columns = set()
         # Apply rendered expressions: KeyExpression, FilterExpression, ProjectionExpression
         prepared_request.update(renderer.rendered)
+        # Compute the expected columns for this filter
+        expected_columns = expected_columns_for(self.model, self.index, self._select)
         return FilterIterator(
             engine=self.engine, model=self.model, prepared_request=prepared_request,
-            loaded_columns=loaded_columns, mode=self.mode, prefetch=self._prefetch)
+            expected_columns=expected_columns, mode=self.mode, prefetch=self._prefetch)
 
 
 class FilterIterator:
-        def __init__(self, *, engine, model, prepared_request, loaded_columns, mode, prefetch):
+        def __init__(self, *, engine, model, prepared_request, expected_columns, mode, prefetch):
             self.engine = engine
             self.model = model
             self.prepared_request = prepared_request
-            self.loaded_columns = loaded_columns
+            self.expected_columns = expected_columns
             self.mode = mode
             self.prefetch = prefetch
 

@@ -8,8 +8,8 @@ from test_models import ComplexModel
 def query(engine):
     return bloop.filter.Filter(
         engine=engine, mode="query", model=ComplexModel, index=ComplexModel.by_email, strict=False,
-        prefetch=3, consistent=True, forward=False, limit=4, key=(ComplexModel.name == "foo"),
-        filter=(ComplexModel.email.contains("@")), select={ComplexModel.date})
+        select={ComplexModel.date}, prefetch=3, consistent=True, forward=False, limit=4,
+        key=(ComplexModel.name == "foo"), filter=(ComplexModel.email.contains("@")))
 
 
 def test_copy(query):
@@ -273,6 +273,35 @@ def test_build_scan_key(query):
         query.build()
     assert str(excinfo.value) == "Scan cannot have a key condition"
 
+
+def test_build_expected_all(query):
+    query.index = None
+    query.select("all")
+    expected_columns = query.build().expected_columns
+    assert expected_columns == ComplexModel.Meta.columns
+
+
+def test_build_expected_projected(query):
+    query.index = ComplexModel.by_email
+    query.select("projected")
+    expected_columns = query.build().expected_columns
+    assert expected_columns == ComplexModel.by_email.projection_attributes
+
+
+def test_build_expected_count(query):
+    """No expected columns for a count"""
+    query.select("count")
+    expected_columns = query.build().expected_columns
+    assert expected_columns == set()
+
+
+def test_build_expected_specific(query):
+    selected = {ComplexModel.date, ComplexModel.email}
+    # Query on the table so all attributes are available
+    query.index = None
+    query.select(selected)
+    expected_columns = query.build().expected_columns
+    assert expected_columns == selected
 
 # TODO test FilterIterator.__iter__
 # TODO test FilterIterator.count

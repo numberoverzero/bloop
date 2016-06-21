@@ -10,7 +10,6 @@ __all__ = ["Query", "Scan"]
 SELECT_MODES = {
     "all": "ALL_ATTRIBUTES",
     "projected": "ALL_PROJECTED_ATTRIBUTES",
-    "specific": "SPECIFIC_ATTRIBUTES",
     "count": "COUNT"
 }
 
@@ -181,7 +180,7 @@ class Filter:
         They must be specified together.
         """
         # TODO refactor key validation
-        validate_key(self.model, self.index, value)
+        # validate_key(self.model, self.index, value)
         self._key = value
         return self
 
@@ -198,7 +197,8 @@ class Filter:
         read against the table to fetch the non-indexed columns.
         """
         # TODO refactor select validation
-        self._select = validate_select(self.model, self.index, value)
+        # validate_select(self.model, self.index, value)
+        self._select = value
         return self
 
     def filter(self, value):
@@ -326,51 +326,60 @@ class Filter:
             iterator.reset()
             iterator.scanned_count  # 0
         """
+        renderer = bloop.condition.ConditionRenderer(self.engine)
         prepared_request = {
             "ConsistentRead": self._consistent,
             "Limit": self._limit,
             "ScanIndexForward": self._forward,
-            "Select": SELECT_MODES[self._select],
             "TableName": self.model.Meta.table_name,
         }
-        # Scans are always forward
-        if self.mode == "scan":
-            del prepared_request["ScanIndexForward"]
-        # Only send useful limits (omit 0 for no limit)
-        if self._limit < 1:
-            del prepared_request["Limit"]
         # Only set IndexName if this is a query on an index
         if self.index:
             prepared_request["IndexName"] = self.index.dynamo_name
             # Can't perform consistent reads on a GSI
             if isinstance(self.index, bloop.index.GlobalSecondaryIndex):
                 del prepared_request["ConsistentRead"]
-        renderer = bloop.condition.ConditionRenderer(self.engine)
-        # Render any FilterExpression
+
+        # Only send useful limits (omit 0 for no limit)
+        if self._limit < 1:
+            del prepared_request["Limit"]
+
+        # Scans are always forward
+        if self.mode == "scan":
+            del prepared_request["ScanIndexForward"]
+
+        # FilterExpression
         if self._filter:
             renderer.render(self._filter, mode="filter")
-        # Render any ProjectionExpression
-        if self._select not in {"all", "projected"}:
-            renderer.projection(self._select)
-        prepared_request.update(renderer.rendered)
 
+        # Select, ProjectionExpression
+        if self._select not in {"all", "projected", "count"}:
+            renderer.projection(self._select)
+            prepared_request["Select"] = "SPECIFIC_ATTRIBUTES"
+        else:
+            prepared_request["Select"] = SELECT_MODES[self._select]
+
+        # KeyExpression
         if self.mode == "query":
             # Query MUST have a key condition
             if self._key is None:
                 raise ValueError("Query must specify at least a hash key condition")
             renderer.render(self._key, mode="key")
-            prepared_request.update(renderer.rendered)
-        # Scan MOST NOT have a key condition
+        # Scan MUST NOT have a key condition
         elif self._key is not None:
             raise ValueError("Scan cannot have a key condition")
 
         # TODO compute which columns are expected from each query, to properly track missing values vs not loaded
         loaded_columns = set()
-        return FilterIterator(self.engine, self.model, prepared_request, loaded_columns, self.mode, self._prefetch)
+        # Apply rendered expressions: KeyExpression, FilterExpression, ProjectionExpression
+        prepared_request.update(renderer.rendered)
+        return FilterIterator(
+            engine=self.engine, model=self.model, prepared_request=prepared_request,
+            loaded_columns=loaded_columns, mode=self.mode, prefetch=self._prefetch)
 
 
 class FilterIterator:
-        def __init__(self, engine, model, prepared_request, loaded_columns, mode, prefetch):
+        def __init__(self, *, engine, model, prepared_request, loaded_columns, mode, prefetch):
             self.engine = engine
             self.model = model
             self.prepared_request = prepared_request

@@ -109,7 +109,170 @@ def test_prefetch(query, prefetch):
 
 # TODO test Filter.one
 # TODO test Filter.first
-# TODO test Filter.build
+
+def test_build_gsi_consistent_read(query):
+    """Queries on a GSI can't be consistent"""
+    query.index = ComplexModel.by_email
+    # Can't use builder function - assume it was provided at __init__
+    query._consistent = True
+    prepared_request = query.build().prepared_request
+    assert "ConsistentRead" not in prepared_request
+
+
+def test_build_lsi_consistent_read(query):
+    query.index = ComplexModel.by_joined
+    # Can't use builder function - assume it was provided at __init__
+    query.consistent(False)
+    prepared_request = query.build().prepared_request
+    assert prepared_request["ConsistentRead"] is False
+
+
+def test_build_no_limit(query):
+    query.limit(0)
+    prepared_request = query.build().prepared_request
+    assert "Limit" not in prepared_request
+
+
+def test_build_limit(query):
+    query.limit(4)
+    prepared_request = query.build().prepared_request
+    assert prepared_request["Limit"] == 4
+
+
+def test_build_scan_forward(query):
+    query.mode = "scan"
+    # Can't have a key condition on scan
+    query.key(None)
+
+    prepared_request = query.build().prepared_request
+    assert "ScanIndexForward" not in prepared_request
+
+
+def test_build_query_forward(query):
+    query.forward(False)
+    prepared_request = query.build().prepared_request
+    assert prepared_request["ScanIndexForward"] is False
+
+
+def test_build_table_name(query):
+    """TableName is always set"""
+    # On an index...
+    query.mode = "query"
+    query.index = ComplexModel.by_email
+    prepared_request = query.build().prepared_request
+    assert prepared_request["TableName"] == ComplexModel.Meta.table_name
+
+    # On the table...
+    query.index = None
+    prepared_request = query.build().prepared_request
+    assert prepared_request["TableName"] == ComplexModel.Meta.table_name
+
+    # On scan...
+    query.mode = "scan"
+    # Can't have a key condition on scan
+    query.key(None)
+
+    prepared_request = query.build().prepared_request
+    assert prepared_request["TableName"] == ComplexModel.Meta.table_name
+
+
+def test_build_no_index_name(query):
+    """IndexName isn't set on table queries"""
+    query.index = None
+    prepared_request = query.build().prepared_request
+    assert "IndexName" not in prepared_request
+
+
+def test_build_index_name(query):
+    query.index = ComplexModel.by_joined
+    prepared_request = query.build().prepared_request
+    assert prepared_request["IndexName"] == "by_joined"
+
+
+def test_build_filter(query):
+    condition = ComplexModel.email.contains("@")
+    query.filter(condition)
+    prepared_request = query.build().prepared_request
+    # Filters are rendered first, so these name and value ids are stable
+    assert prepared_request["FilterExpression"] == "(contains(#n0, :v1))"
+    assert prepared_request["ExpressionAttributeNames"]["#n0"] == "email"
+    assert prepared_request["ExpressionAttributeValues"][":v1"] == {"S": "@"}
+
+
+def test_build_no_filter(query):
+    query.filter(None)
+    prepared_request = query.build().prepared_request
+    assert "FilterExpression" not in prepared_request
+
+
+def test_build_select_columns(query):
+    query.select({ComplexModel.date})
+    prepared_request = query.build().prepared_request
+    assert prepared_request["Select"] == "SPECIFIC_ATTRIBUTES"
+    assert prepared_request["ExpressionAttributeNames"]["#n2"] == "date"
+    assert prepared_request["ProjectionExpression"] == "#n2"
+
+
+def test_build_select_all(query):
+    query.index = None
+    query.select("all")
+    prepared_request = query.build().prepared_request
+    assert prepared_request["Select"] == "ALL_ATTRIBUTES"
+    assert "ProjectionExpression" not in prepared_request
+
+
+def test_build_select_projected(query):
+    query.index = ComplexModel.by_email
+    query.select("projected")
+    prepared_request = query.build().prepared_request
+    assert prepared_request["Select"] == "ALL_PROJECTED_ATTRIBUTES"
+    assert "ProjectionExpression" not in prepared_request
+
+
+def test_build_select_count(query):
+    query.select("count")
+    prepared_request = query.build().prepared_request
+    assert prepared_request["Select"] == "COUNT"
+    assert "ProjectionExpression" not in prepared_request
+
+
+def test_build_query_no_key(query):
+    # Bypass any validation on the key condition
+    query.mode = "query"
+    query._key = None
+
+    with pytest.raises(ValueError) as excinfo:
+        query.build()
+    assert str(excinfo.value) == "Query must specify at least a hash key condition"
+
+
+def test_build_query_key(query):
+    query.mode = "query"
+    query.key(ComplexModel.name == "foo")
+
+    prepared_request = query.build().prepared_request
+    assert prepared_request["KeyConditionExpression"] == "(#n3 = :v4)"
+    assert prepared_request["ExpressionAttributeNames"]["#n3"] == "name"
+    assert prepared_request["ExpressionAttributeValues"][":v4"] == {"S": "foo"}
+
+
+def test_build_scan_no_key(query):
+    query.mode = "scan"
+    query.key(None)
+
+    prepared_request = query.build().prepared_request
+    assert "KeyConditionExpression" not in prepared_request
+
+
+def test_build_scan_key(query):
+    # Bypass any validation on the key condition
+    query.mode = "scan"
+    query._key = ComplexModel.name == "foo"
+
+    with pytest.raises(ValueError) as excinfo:
+        query.build()
+    assert str(excinfo.value) == "Scan cannot have a key condition"
+
 
 # TODO test FilterIterator.__iter__
 # TODO test FilterIterator.count

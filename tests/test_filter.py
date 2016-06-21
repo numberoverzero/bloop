@@ -185,20 +185,43 @@ def test_select_all_table(query):
 
 
 def test_select_all_gsi(query):
-    """Can't select all on a GSI"""
+    """
+    Can select all on a GSI iff its projection is all.
+    Otherwise, it fails (even if the selected attribute are all of them)
+    """
     query.index = ComplexModel.by_email
+    query.select("all")
+    assert query._select == "all"
+
+    # use a model with a GSI without "all" projection
+    query.model = ProjectedIndexes
+    query.index = ProjectedIndexes.by_gsi
     with pytest.raises(ValueError) as excinfo:
         query.select("all")
     assert str(excinfo.value) == "Can't select 'all' on a GSI or strict LSI"
 
 
 def test_select_all_strict_lsi(query):
-    """Can't select all on a strict LSI (would incur additional reads)"""
+    """Can't select all on a strict LSI without "all" projection (would incur additional reads)"""
     query.index = ComplexModel.by_joined
     query.strict = True
     with pytest.raises(ValueError) as excinfo:
         query.select("all")
     assert str(excinfo.value) == "Can't select 'all' on a GSI or strict LSI"
+
+
+def test_select_all_strict_lsi_projection(query):
+    """No problem selecting all on this strict LSI because its projection is all"""
+    class Model(bloop.new_base()):
+        id = bloop.Column(bloop.Integer, hash_key=True)
+        foo = bloop.Column(bloop.Integer, range_key=True)
+        bar = bloop.Column(bloop.Integer)
+        by_lsi = bloop.LocalSecondaryIndex(range_key="bar", projection="all")
+
+    query.model = Model
+    query.index = Model.by_lsi
+    query.select("all")
+    assert query._select == "all"
 
 
 def test_select_all_lsi(query):

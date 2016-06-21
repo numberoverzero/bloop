@@ -36,13 +36,14 @@ Query or scan by column values::
     email = 'foo@bar.com'
     yesterday = arrow.now().replace(days=-1)
 
-    account = engine.query(Account.by_email)\
-                   .key(Account.email == email)\
+    account = engine.query(Account.by_email) \
+                   .key(Account.email == email) \
                    .first()
-    tweets = engine.query(Tweet)\
-                   .key(Tweet.account == account.id)
+    tweets = engine.query(Tweet) \
+                   .key(Tweet.account == account.id) \
+                   .filter(Tweet.date >= yesterday)
 
-    for tweet in tweets.filter(Tweet.date >= yesterday):
+    for tweet in tweets.build():
         print(tweet.content)
 
 

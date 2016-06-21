@@ -45,10 +45,13 @@ def validate_select_for(model, index, strict, select):
             # Table query, all is fine
             if index is None:
                 return select
-            # LSIs are allowed, but only when queries aren't strict
+            # LSIs are allowed when queries aren't strict
             if isinstance(index, bloop.index.LocalSecondaryIndex) and not strict:
                 return select
-            # GSIs and strict LSIs can't load all attributes
+            # GSIs and strict LSIs can load all attributes if they project all
+            elif index.projection == "ALL":
+                return select
+            # Out of luck
             else:
                 raise ValueError("Can't select 'all' on a GSI or strict LSI")
         elif select == "projected":

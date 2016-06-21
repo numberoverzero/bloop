@@ -82,7 +82,7 @@ Engine's config attribute.  By default, the following are set::
     engine.config = {
         "atomic": False,
         "consistent": False,
-        "strict": True,
+        "strict": True
     }
 
 Setting ``atomic`` to ``True`` will append a condition to every save and delete
@@ -153,7 +153,7 @@ Query a table or index::
     query = query.key(Model.hash == value)
     query = query.filter(Model.column.contains(value))
 
-    for result in query.all():
+    for result in query.build():
         ...
 
     print(query.first())
@@ -175,7 +175,7 @@ Scan a table or index::
     scan = engine.scan(Model.index)
     scan = scan.filter(Model.column.between(low, high))
 
-    for result in scan.all():
+    for result in scan.build():
         ...
 
     print(scan.first())

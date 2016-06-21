@@ -405,8 +405,6 @@ def test_prefetch(query, prefetch):
     assert query._prefetch == prefetch
 
 
-# TODO test Filter.one
-
 def test_one_no_results(simple_query, engine):
     """one raises when there are no results"""
     engine.client.query.return_value = {"Count": 0, "ScannedCount": 6, "Items": []}
@@ -445,7 +443,30 @@ def test_one_exact(simple_query, engine):
     assert engine.client.query.call_count == 1
 
 
-# TODO test Filter.first
+def test_first_no_results(simple_query, engine):
+    """first raises when there are no results"""
+    engine.client.query.return_value = {"Count": 0, "ScannedCount": 6, "Items": []}
+
+    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
+        simple_query.first()
+    same_prepared_request = simple_query.build()._prepared_request
+    same_prepared_request["ExclusiveStartKey"] = None
+    assert excinfo.value.args[0] == "Failed to meet required condition during query.first"
+    assert excinfo.value.obj == same_prepared_request
+    assert engine.client.query.call_count == 1
+
+
+def test_first_extra_results(simple_query, engine):
+    """first returns the first result, even when there are multiple values"""
+    engine.client.query.return_value = {
+        "Count": 2, "ScannedCount": 6,
+        "Items": [{"id": {"S": "first"}}, {"id": {"S": "second"}}]}
+
+    result = simple_query.first()
+    assert result.id == "first"
+    assert engine.client.query.call_count == 1
+
+
 def test_build_gsi_consistent_read(query):
     """Queries on a GSI can't be consistent"""
     query.index = ComplexModel.by_email

@@ -264,7 +264,7 @@ class Filter:
         """
         f = self.copy().prefetch(0).build()
         iterator = iter(f)
-        constraint_not_met = bloop.exceptions.ConstraintViolation(f.mode + ".one", f.prepared_request)
+        constraint_not_met = bloop.exceptions.ConstraintViolation(f._mode + ".one", f._prepared_request)
         try:
             first = next(iterator)
         except StopIteration:
@@ -290,7 +290,7 @@ class Filter:
         try:
             return next(iterator)
         except StopIteration:
-            raise bloop.exceptions.ConstraintViolation(f.mode + ".first", f.prepared_request)
+            raise bloop.exceptions.ConstraintViolation(f._mode + ".first", f._prepared_request)
 
     def build(self):
         """Return a FilterIterator which can be iterated (and reset) to execute the query/scan.

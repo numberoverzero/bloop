@@ -406,8 +406,46 @@ def test_prefetch(query, prefetch):
 
 
 # TODO test Filter.one
-# TODO test Filter.first
 
+def test_one_no_results(simple_query, engine):
+    """one raises when there are no results"""
+    engine.client.query.return_value = {"Count": 0, "ScannedCount": 6, "Items": []}
+
+    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
+        simple_query.one()
+    same_prepared_request = simple_query.build()._prepared_request
+    same_prepared_request["ExclusiveStartKey"] = None
+    assert excinfo.value.args[0] == "Failed to meet required condition during query.one"
+    assert excinfo.value.obj == same_prepared_request
+    assert engine.client.query.call_count == 1
+
+
+def test_one_extra_results(simple_query, engine):
+    """one raises when there are too many results"""
+    engine.client.query.return_value = {
+        "Count": 2, "ScannedCount": 6,
+        "Items": [{"id": {"S": "first"}}, {"id": {"S": "second"}}]}
+
+    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
+        simple_query.one()
+    same_prepared_request = simple_query.build()._prepared_request
+    same_prepared_request["ExclusiveStartKey"] = None
+    assert excinfo.value.args[0] == "Failed to meet required condition during query.one"
+    assert excinfo.value.obj == same_prepared_request
+    assert engine.client.query.call_count == 1
+
+
+def test_one_exact(simple_query, engine):
+    """one returns when there is exactly one value in the full query"""
+    engine.client.query.return_value = {"Count": 1, "ScannedCount": 6, "Items": [{"id": {"S": "unique"}}]}
+
+    result = simple_query.one()
+    assert result.id == "unique"
+
+    assert engine.client.query.call_count == 1
+
+
+# TODO test Filter.first
 def test_build_gsi_consistent_read(query):
     """Queries on a GSI can't be consistent"""
     query.index = ComplexModel.by_email
@@ -603,7 +641,6 @@ def test_build_expected_specific(query):
     assert expected_columns == selected
 
 
-# TODO test FilterIterator.__iter__
 def test_iter_reset(query):
     iterator = query.build()
     iterator._state["exhausted"] = True

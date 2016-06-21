@@ -1,7 +1,21 @@
+import bloop
 import bloop.filter
 import pytest
 
-from test_models import ComplexModel
+from test_models import ComplexModel, User
+
+
+# Provides a gsi and lsi with constrained projections for testing Filter.select validation
+class ProjectedIndexes(bloop.new_base()):
+    h = bloop.Column(bloop.Integer, hash_key=True)
+    r = bloop.Column(bloop.Integer, range_key=True)
+    both = bloop.Column(bloop.String)
+    neither = bloop.Column(bloop.String)
+    gsi_only = bloop.Column(bloop.String)
+    lsi_only = bloop.Column(bloop.String)
+
+    by_gsi = bloop.GlobalSecondaryIndex(hash_key="h", projection=["both", "gsi_only"])
+    by_lsi = bloop.LocalSecondaryIndex(range_key="r", projection=["both", "lsi_only"])
 
 
 @pytest.fixture
@@ -10,6 +24,13 @@ def query(engine):
         engine=engine, mode="query", model=ComplexModel, index=ComplexModel.by_email, strict=False,
         select={ComplexModel.date}, prefetch=3, consistent=True, forward=False, limit=4,
         key=(ComplexModel.name == "foo"), filter=(ComplexModel.email.contains("@")))
+
+
+@pytest.fixture
+def projection_query(engine):
+    return bloop.filter.Filter(
+        engine=engine, mode="query", model=ProjectedIndexes, index=None, strict=False,
+        select="all", prefetch=3, consistent=True, forward=False, limit=4, key=None, filter=None)
 
 
 def test_copy(query):
@@ -22,7 +43,156 @@ def test_copy(query):
 
 
 # TODO test Filter.key
-# TODO test Filter.select
+
+
+def test_select_count(query):
+    query.select("count")
+    assert query._select == "count"
+
+
+def test_select_all_table(query):
+    query.index = None
+    query.select("all")
+    assert query._select == "all"
+
+
+def test_select_all_gsi(query):
+    """Can't select all on a GSI"""
+    query.index = ComplexModel.by_email
+    with pytest.raises(ValueError) as excinfo:
+        query.select("all")
+    assert str(excinfo.value) == "Can't select 'all' on a GSI or strict LSI"
+
+
+def test_select_all_strict_lsi(query):
+    """Can't select all on a strict LSI (would incur additional reads)"""
+    query.index = ComplexModel.by_joined
+    query.strict = True
+    with pytest.raises(ValueError) as excinfo:
+        query.select("all")
+    assert str(excinfo.value) == "Can't select 'all' on a GSI or strict LSI"
+
+
+def test_select_all_lsi(query):
+    """Even though extra reads are incurred, a non-strict LSI can query all"""
+    query.index = ComplexModel.by_joined
+    query.strict = False
+    query.select("all")
+    assert query._select == "all"
+
+
+def test_select_projected_table(query):
+    """Can't select projected on a non-index query"""
+    query.index = None
+    with pytest.raises(ValueError) as excinfo:
+        query.select("projected")
+    assert str(excinfo.value) == "Can't query projected attributes without an index"
+
+
+def test_select_projected_index(query):
+    """Any index can select projected"""
+    # GSI
+    query.index = ComplexModel.by_email
+    query.select("projected")
+    assert query._select == "projected"
+
+    # LSI
+    query.index = ComplexModel.by_joined
+    query.strict = False
+    query.select("projected")
+    assert query._select == "projected"
+
+    # Strict LSI
+    query.index = ComplexModel.by_joined
+    query.strict = True
+    query.select("projected")
+    assert query._select == "projected"
+
+
+def test_select_unknown(query):
+    with pytest.raises(ValueError) as excinfo:
+        query.select("foobar")
+    assert str(excinfo.value) == "Unknown select mode 'foobar'"
+
+
+def test_select_empty(query):
+    """Can't specify an empty set of columns to load"""
+    with pytest.raises(ValueError) as excinfo:
+        query.select([])
+    assert str(excinfo.value) == "Must specify at least one column to load"
+
+
+def test_select_wrong_model(query):
+    """All columns must be part of the model being queried"""
+    with pytest.raises(ValueError) as excinfo:
+        query.select([User.email])
+    assert str(excinfo.value) == "Select must be all, projected, count, or an iterable of columns on the model"
+
+
+def test_select_non_column(query):
+    """All selections must be columns"""
+    with pytest.raises(ValueError) as excinfo:
+        query.select([ComplexModel.email, ComplexModel.date, object()])
+    assert str(excinfo.value) == "Select must be all, projected, count, or an iterable of columns on the model"
+
+
+def test_select_specific_table(query):
+    """Any subset of a table query is valid"""
+    selected = [
+        ComplexModel.name, ComplexModel.date, ComplexModel.email,
+        ComplexModel.joined, ComplexModel.not_projected]
+    query.select(selected)
+    assert query._select == set(selected)
+
+
+def test_select_gsi_subset(projection_query):
+    """Subset of GSI projection_attributes is valid"""
+    projection_query.index = ProjectedIndexes.by_gsi
+    # ProjectedIndexes.h is available since it's part of the hash/range key of the index
+    selected = [ProjectedIndexes.gsi_only, ProjectedIndexes.both, ProjectedIndexes.h]
+    projection_query.select(selected)
+    assert projection_query._select == set(selected)
+
+
+def test_select_gsi_superset(projection_query):
+    """Superset of GSI projection_attributes fails, can't outside projection"""
+    projection_query.index = ProjectedIndexes.by_gsi
+    # ProjectedIndexes.neither isn't projected into the GSI
+    selected = [ProjectedIndexes.gsi_only, ProjectedIndexes.neither]
+    with pytest.raises(ValueError) as excinfo:
+        projection_query.select(selected)
+    assert str(excinfo.value) == "Tried to select a superset of the GSI's projected columns"
+
+
+def test_select_strict_lsi_subset(projection_query):
+    """Subset of strict LSI projection_attributes is valid"""
+    projection_query.index = ProjectedIndexes.by_lsi
+    projection_query.strict = True
+    # ProjectedIndexes.h is available since it's part of the hash/range key of the index
+    selected = [ProjectedIndexes.lsi_only, ProjectedIndexes.both, ProjectedIndexes.h]
+    projection_query.select(selected)
+    assert projection_query._select == set(selected)
+
+
+def test_select_strict_lsi_superset(projection_query):
+    """Superset of strict LSI projection_attributes fails, can't outside projection"""
+    projection_query.index = ProjectedIndexes.by_lsi
+    projection_query.strict = True
+    # ProjectedIndexes.neither isn't projected into the LSI
+    selected = [ProjectedIndexes.lsi_only, ProjectedIndexes.neither]
+    with pytest.raises(ValueError) as excinfo:
+        projection_query.select(selected)
+    assert str(excinfo.value) == "Tried to select a superset of the LSI's projected columns in strict mode"
+
+
+def test_select_non_strict_lsi_superset(projection_query):
+    """Superset of non-strict LSI projection_attributes is valid, will incur additional reads"""
+    projection_query.index = ProjectedIndexes.by_lsi
+    projection_query.strict = False
+    selected = [ProjectedIndexes.lsi_only, ProjectedIndexes.neither]
+    projection_query.select(selected)
+    assert projection_query._select == set(selected)
+
 
 def test_filter_not_condition(query):
     with pytest.raises(ValueError) as excinfo:

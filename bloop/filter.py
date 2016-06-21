@@ -161,6 +161,61 @@ def expected_columns_for(model, index, select):
     else:
         return select
 
+
+def validate_select_for(model, index, strict, select):
+    if isinstance(select, str):
+        if select == "count":
+            return select
+        elif select == "all":
+            # Table query, all is fine
+            if index is None:
+                return select
+            # LSIs are allowed, but only when queries aren't strict
+            if isinstance(index, bloop.index.LocalSecondaryIndex) and not strict:
+                return select
+            # GSIs and strict LSIs can't load all attributes
+            else:
+                raise ValueError("Can't select 'all' on a GSI or strict LSI")
+        elif select == "projected":
+            # Table queries don't have projected attributes
+            if index is None:
+                raise ValueError("Can't query projected attributes without an index")
+            # projected is valid for any index
+            return select
+        # Unknown select mode
+        else:
+            raise ValueError("Unknown select mode '{}'".format(select))
+    # Since it's not a string, we're in specific column territory.
+    select = set(select)
+    # Can't specify no columns
+    if not select:
+        raise ValueError("Must specify at least one column to load")
+    # Make sure the iterable is only of columns on this model
+    if not all((s in model.Meta.columns) for s in select):
+        raise ValueError("Select must be all, projected, count, or an iterable of columns on the model")
+    # Table query, any subset of 'all' is valid
+    if index is None:
+        return select
+    elif isinstance(index, bloop.index.GlobalSecondaryIndex):
+        # Selected columns must be a subset of projection_attributes
+        if select <= index.projection_attributes:
+            return select
+        raise ValueError("Tried to select a superset of the GSI's projected columns")
+    # LSI
+    else:
+        # Unlike a GSI, the LSI can load a superset of the projection, and DynamoDB will happily do this.
+        # Unfortunately, it will also incur an additional read per row.  Strict mode checks the cardinality of the
+        # requested columns against the LSI's projection_attributes, just like a GSI.
+
+        # When strict mode is disabled, however, any selection is valid (just like a table query)
+        if not strict:
+            return select
+        # Strict mode - selected columns must be a subset of projection_attributes
+        if select <= index.projection_attributes:
+            return select
+        raise ValueError("Tried to select a superset of the LSI's projected columns in strict mode")
+
+
 # ====================================================================================================================
 
 
@@ -211,13 +266,12 @@ class Filter:
         When searching against a LSI, this can be "all" (if not using strict queries), "projected", or:
             1) a subset of the LSI's projected columns (if using strict queries)
             2) a subset of the model's columns (if not using strict queries)
+        For any search, "count" is allowed.
 
         Note that against an LSI, "all" or a superset of the projected columns of the LSI will incur an additional
         read against the table to fetch the non-indexed columns.
         """
-        # TODO refactor select validation
-        # validate_select(self.model, self.index, value)
-        self._select = value
+        self._select = validate_select_for(self.model, self.index, self.strict, value)
         return self
 
     def filter(self, value):

@@ -1,3 +1,121 @@
+import bloop.filter
+import pytest
+
+from test_models import ComplexModel
+
+
+@pytest.fixture
+def query(engine):
+    return bloop.filter.Filter(
+        engine=engine, mode="query", model=ComplexModel, index=ComplexModel.by_email, strict=False,
+        prefetch=3, consistent=True, forward=False, limit=4, key=(ComplexModel.name == "foo"),
+        filter=(ComplexModel.email.contains("@")), select={ComplexModel.date})
+
+
+def test_copy(query):
+    # Use non-defaults so we don't get false positives on missing attributes
+    same = query.copy()
+    attrs = [
+        "engine", "mode", "model", "index", "strict",
+        "_prefetch", "_consistent", "_forward", "_limit", "_key", "_filter", "_select"]
+    assert all(map(lambda a: (getattr(query, a) == getattr(same, a)), attrs))
+
+
+# TODO test Filter.key
+# TODO test Filter.select
+
+def test_filter_not_condition(query):
+    with pytest.raises(ValueError) as excinfo:
+        query.filter("should be a condition")
+    assert str(excinfo.value) == "Filter must be a condition or None"
+
+
+def test_filter_none(query):
+    """None is allowed, for clearing an existing filter"""
+    assert query._filter is not None
+    query.filter(None)
+    assert query._filter is None
+
+
+def test_filter_compound(query):
+    new_condition = (ComplexModel.not_projected == "foo") & (ComplexModel.name.is_not(None))
+    query.filter(new_condition)
+    assert query._filter is new_condition
+
+
+def test_consistent_gsi_raises(query):
+    """Can't use consistent queries on a GSI"""
+    query.index = ComplexModel.by_email
+
+    with pytest.raises(ValueError) as excinfo:
+        query.consistent(True)
+    assert str(excinfo.value) == "Can't use ConsistentRead with a GlobalSecondaryIndex"
+
+    with pytest.raises(ValueError):
+        query.consistent(False)
+
+
+def test_consistent(query):
+    query.index = None
+    new_value = not query._consistent
+    query.consistent(new_value)
+    assert query._consistent == new_value
+
+
+def test_forward_scan(query):
+    """Can't set forward on a scan"""
+    query.mode = "scan"
+
+    with pytest.raises(ValueError) as excinfo:
+        query.forward(True)
+    assert str(excinfo.value) == "Can't set ScanIndexForward for scan operations, only queries"
+
+    with pytest.raises(ValueError):
+        query.forward(False)
+
+
+def test_forward(query):
+    query.mode = "query"
+    new_value = not query._forward
+    query.forward(new_value)
+    assert query._forward == new_value
+
+
+@pytest.mark.parametrize("limit", [-5, None, object()])
+def test_illegal_limit(query, limit):
+    with pytest.raises(ValueError) as excinfo:
+        query.limit(limit)
+    assert str(excinfo.value) == "Limit must be a non-negative int"
+
+
+@pytest.mark.parametrize("limit", [0, 3])
+def test_limit(query, limit):
+    query.limit(limit)
+    assert query._limit == limit
+
+
+@pytest.mark.parametrize("prefetch", [-5, None, object()])
+def test_illegal_prefetch(query, prefetch):
+    with pytest.raises(ValueError) as excinfo:
+        query.prefetch(prefetch)
+    assert str(excinfo.value) == "Prefetch must be a non-negative int"
+
+
+@pytest.mark.parametrize("prefetch", [0, 3])
+def test_prefetch(query, prefetch):
+    query.prefetch(prefetch)
+    assert query._prefetch == prefetch
+
+
+# TODO test Filter.one
+# TODO test Filter.first
+# TODO test Filter.build
+
+# TODO test FilterIterator.__iter__
+# TODO test FilterIterator.count
+# TODO test FilterIterator.scanned_count
+# TODO test FilterIterator.reset
+
 # import bloop
 # import bloop.tracking
 # import pytest

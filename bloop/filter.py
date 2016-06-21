@@ -15,9 +15,11 @@ SELECT_MODES = {
 }
 
 INVALID_SELECT = ValueError("Select must be 'all', 'projected', 'count', or a list of column objects to select")
-INVALID_PREFETCH = ValueError("Prefetch must be a non-negative int")
-INVALID_LIMIT = ValueError("Limit must be a non-negative int")
 INVALID_FILTER = ValueError("Filter must be a condition or None")
+INVALID_CONSISTENT = ValueError("Can't use ConsistentRead with a GlobalSecondaryIndex")
+INVALID_FORWARD = ValueError("Can't set ScanIndexForward for scan operations, only queries")
+INVALID_LIMIT = ValueError("Limit must be a non-negative int")
+INVALID_PREFETCH = ValueError("Prefetch must be a non-negative int")
 
 
 def consume(iter):
@@ -207,23 +209,22 @@ class Filter:
             the scan will return no results.
         """
         # None is allowed for clearing a FilterExpression
-        if isinstance(value, (type(None), bloop.condition._BaseCondition)):
+        if not isinstance(value, (type(None), bloop.condition._BaseCondition)):
             raise INVALID_FILTER
         self._filter = value
         return self
 
     def consistent(self, value):
         """Whether ConsistentReads should be used.  Note that ConsistentReads cannot be used against a GSI"""
-        value = bool(value)
-        if value and isinstance(self.index, bloop.index.GlobalSecondaryIndex):
-            raise ValueError("Can't use ConsistentRead with a GlobalSecondaryIndex")
-        self._consistent = value
+        if isinstance(self.index, bloop.index.GlobalSecondaryIndex):
+            raise INVALID_CONSISTENT
+        self._consistent = bool(value)
         return self
 
     def forward(self, value):
         """Whether a query is performed forwards or backwards.  Note that scans cannot be performed in reverse"""
         if self.mode == "scan":
-            raise ValueError("Can't set ScanIndexForward for scan operations, only queries")
+            raise INVALID_FORWARD
         self._forward = bool(value)
         return self
 

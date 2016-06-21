@@ -26,7 +26,7 @@ def consume(iter):
         pass
 
 
-def validate_hash_key_condition(condition):
+def validate_hash_key_condition_old(condition):
     # 1 Must be comparison
     if (isinstance(condition, bloop.condition.Comparison) and
             # 2 Must be EQ comparator
@@ -37,7 +37,7 @@ def validate_hash_key_condition(condition):
     raise ValueError("KeyCondition must be EQ, without any document paths")
 
 
-def validate_range_key_condition(condition):
+def validate_range_key_condition_old(condition):
     if isinstance(condition, (bloop.condition.BeginsWith,
                               bloop.condition.Between)):
         return True
@@ -56,7 +56,7 @@ def validate_key(key_condition, hash_column, range_column):
     # 1. Comparison condition, single column
     if isinstance(key_condition, bloop.condition.Comparison):
         # 1.1 Comparison, EQ, no path
-        validate_hash_key_condition(key_condition)
+        validate_hash_key_condition_old(key_condition)
         # 1.2 Must be a condition on hash_column
         if key_condition.column is not hash_column:
             raise ValueError("KeyCondition must compare against hash column")
@@ -83,11 +83,11 @@ def validate_key(key_condition, hash_column, range_column):
                 if has_hash_condition:
                     raise ValueError(
                         "Must specify a condition on the hash key")
-                validate_hash_key_condition(subcondition)
+                validate_hash_key_condition_old(subcondition)
                 has_hash_condition = True
             elif subcondition.column is range_column:
                 # 2.3 Range conditions can be <,<=,>,>=,==, Between, BeginsWith
-                validate_range_key_condition(subcondition)
+                validate_range_key_condition_old(subcondition)
             else:
                 # 2.4 Conditions must be against hash or range columns
                 msg = "Non-key condition {} passed as KeyCondition"
@@ -216,6 +216,48 @@ def validate_select_for(model, index, strict, select):
         raise ValueError("Tried to select a superset of the LSI's projected columns in strict mode")
 
 
+def validate_hash_key_condition(condition, hash_column):
+    return (
+        # 1) Comparison
+        isinstance(condition, bloop.condition.Comparison) and
+        # 2) ==
+        condition.comparator is operator.eq and
+        # 3) hash_column
+        condition.column is hash_column)
+
+
+def validate_range_key_condition(condition, range_column):
+    # Valid comparators are EQ | LE | LT | GE | GT -- not NE
+    is_comparison = isinstance(condition, bloop.condition.Comparison) and (condition.comparator is not operator.ne)
+    # ... or begins_with, or between
+    is_special_condition = isinstance(condition, (bloop.condition.BeginsWith, bloop.condition.Between))
+    return (is_comparison or is_special_condition) and condition.column is range_column
+
+
+def validate_key_for(model, index, key):
+    hash_column = (index or model.Meta).hash_key
+    range_column = (index or model.Meta).range_key
+    # Allow None so that Filter.key(None) clears the condition (intermediate queries, base queries...)
+    if key is None:
+        return key
+    if isinstance(key, bloop.condition.And) and len(key) == 2:
+        # Instead of some cleverness, brute force validate the two allowed permutations.
+
+        # 1) AND(hash_condition, range_condition)
+        if (validate_hash_key_condition(key.conditions[0], hash_column) and
+                validate_range_key_condition(key.conditions[1], range_column)):
+            return key
+        # 2) AND(range_condition, hash_condition)
+        if (validate_hash_key_condition(key.conditions[1], hash_column) and
+                validate_range_key_condition(key.conditions[0], range_column)):
+            return key
+        raise ValueError("Key condition must contain exactly 1 hash condition, at most 1 range condition")
+
+    # Looking at a single condition (or at least, not an AND)
+    if validate_hash_key_condition(key, hash_column):
+        return key
+    raise ValueError("Key condition must contain exactly 1 hash condition, at most 1 range condition")
+
 # ====================================================================================================================
 
 
@@ -253,9 +295,7 @@ class Filter:
         There can be at most 1 hash condition and 1 range condition.
         They must be specified together.
         """
-        # TODO refactor key validation
-        # validate_key(self.model, self.index, value)
-        self._key = value
+        self._key = validate_key_for(self.model, self.index, value)
         return self
 
     def select(self, value):

@@ -4,6 +4,49 @@ import pytest
 
 from test_models import ComplexModel, User
 
+valid_hash_conditions = [
+    # condition, index
+    (ComplexModel.name == "foo", None),
+    (ComplexModel.email == "foo", ComplexModel.by_email),
+    (ComplexModel.name == "foo", ComplexModel.by_joined)
+]
+invalid_hash_conditions = [
+    ComplexModel.name <= "foo",
+    ComplexModel.name < "foo",
+    ComplexModel.name >= "foo",
+    ComplexModel.name > "foo",
+    ComplexModel.name != "foo",
+    ComplexModel.name.begins_with("foo"),
+    ComplexModel.name.between("foo", "bar"),
+    ComplexModel.name.contains("foo"),
+    ComplexModel.name.in_(["foo", "bar"]),
+    ComplexModel.name.is_(None),
+    ComplexModel.name.is_not(None)
+]
+
+valid_range_conditions = [
+    ComplexModel.date == "now",
+    ComplexModel.date <= "now",
+    ComplexModel.date < "now",
+    ComplexModel.date >= "now",
+    ComplexModel.date > "now",
+    ComplexModel.date.begins_with("foo"),
+    ComplexModel.date.between("foo", "bar")
+]
+invalid_range_conditions = [
+    # Can't use operator.ne
+    ComplexModel.date != "now",
+    # ... or contains
+    ComplexModel.date.contains("foo"),
+    # ... or in
+    ComplexModel.date.in_(["foo", "bar"]),
+    # ... or attribute (not)exists
+    ComplexModel.date.is_(None),
+    ComplexModel.date.is_not(None),
+    # Not the range key for the model
+    ComplexModel.email == "foo"
+]
+
 
 # Provides a gsi and lsi with constrained projections for testing Filter.select validation
 class ProjectedIndexes(bloop.new_base()):
@@ -42,7 +85,85 @@ def test_copy(query):
     assert all(map(lambda a: (getattr(query, a) == getattr(same, a)), attrs))
 
 
-# TODO test Filter.key
+def test_key_none(query):
+    """None can be used to clear an existing key condition"""
+    old_condition = query._key
+    assert old_condition is not None  # guard false positives from query fixture changing
+    query.key(None)
+    assert query._key is None
+
+
+@pytest.mark.parametrize("condition", [False, 0, bloop.Condition()], ids=repr)
+def test_key_falsey(query, condition):
+    """Can't use any falsey value to clear conditions, must be exactly None"""
+    with pytest.raises(ValueError) as excinfo:
+        query.key(condition)
+    assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
+
+
+def test_key_wrong_hash(query):
+    """Condition is against a hash_key, but not for the index being queried"""
+    query.index = ComplexModel.by_email
+
+    with pytest.raises(ValueError) as excinfo:
+        query.key(ComplexModel.name == "foo")  # table hash_key, not index hash_key
+    assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
+
+
+def test_key_and_one_value(query):
+    """If the key condition is an AND, it must have exactly 2 values; even if its sole value is valid on its own"""
+    query.index = None
+    condition = bloop.condition.And(ComplexModel.name == "foo")
+    with pytest.raises(ValueError) as excinfo:
+        query.key(condition)
+    assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
+
+
+def test_key_and_three_values(query):
+    """Redundant values aren't collapsed"""
+    query.index = None
+    condition = (ComplexModel.name == "foo") & (ComplexModel.date == "now") & (ComplexModel.name == "foo")
+    with pytest.raises(ValueError) as excinfo:
+        query.key(condition)
+    assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
+
+
+@pytest.mark.parametrize("condition", invalid_range_conditions, ids=str)
+def test_key_invalid_range_condition(query, condition):
+    query.index = None
+    # Attach a valid hash_key condition, so that we're only failing on the range_key condition
+    condition &= (ComplexModel.name == "foo")
+    with pytest.raises(ValueError) as excinfo:
+        query.key(condition)
+    assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
+
+
+@pytest.mark.parametrize("condition", valid_range_conditions, ids=str)
+def test_key_and_valid_range(query, condition):
+    query.index = None
+    condition &= (ComplexModel.name == "foo")
+    query.key(condition)
+    assert query._key == condition
+
+    # Test reversed order
+    condition.conditions = condition.conditions[::-1]
+    query.key(condition)
+    assert query._key == condition
+
+
+@pytest.mark.parametrize("condition", invalid_hash_conditions, ids=str)
+def test_key_invalid_hash(query, condition):
+    query.index = None
+    with pytest.raises(ValueError) as excinfo:
+        query.key(condition)
+    assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
+
+
+@pytest.mark.parametrize("condition, index", valid_hash_conditions, ids=str)
+def test_key_valid_hash(query, condition, index):
+    query.index = index
+    query.key(condition)
+    assert query._key == condition
 
 
 def test_select_count(query):
@@ -251,7 +372,7 @@ def test_forward(query):
     assert query._forward == new_value
 
 
-@pytest.mark.parametrize("limit", [-5, None, object()])
+@pytest.mark.parametrize("limit", [-5, None, object()], ids=str)
 def test_illegal_limit(query, limit):
     with pytest.raises(ValueError) as excinfo:
         query.limit(limit)
@@ -264,7 +385,7 @@ def test_limit(query, limit):
     assert query._limit == limit
 
 
-@pytest.mark.parametrize("prefetch", [-5, None, object()])
+@pytest.mark.parametrize("prefetch", [-5, None, object()], ids=str)
 def test_illegal_prefetch(query, prefetch):
     with pytest.raises(ValueError) as excinfo:
         query.prefetch(prefetch)
@@ -418,6 +539,7 @@ def test_build_query_no_key(query):
 
 def test_build_query_key(query):
     query.mode = "query"
+    query.index = None
     query.key(ComplexModel.name == "foo")
 
     prepared_request = query.build().prepared_request

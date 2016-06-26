@@ -1,65 +1,100 @@
-Better living through declarative modeling
-=================================================
+Bloop: DynamoDB Modeling
+========================
 
-DynamoDB is great.  Unfortunately, it requires some `tricky code`_ for common
-operations.  **It doesn't need to be like this**.
+DynamoDB's concurrency model is great, but using it correctly is tedious and unforgiving.  Bloop manages that complexity for you.
 
-Bloop's declarative modeling enables `simpler code`_, while still
-exposing advanced DynamoDB features like `conditional saves`_ and
-`atomic updates`_.
+Features
+--------
 
-.. warning::
-    While fully usable, bloop is still pre-1.0 software and has **no**
-    backwards compatibility guarantees until the 1.0 release occurs!
+* Simple declarative modeling
+* Extensible type system, useful built-in types
+* Safe expression-based wire format
+* Simple atomic operations
+* Diff-based saves
+* Expressive conditions
 
-----
+Installation
+------------
+::
 
-Define some models:
+    pip install bloop
 
-.. literalinclude:: code/models.py
+Quickstart
+----------
 
-Create an instance::
+First, define and bind our model::
 
-    account = Account(id=uuid.uuid4(), name='@garybernhardt',
-                      email='foo@bar.com')
-    tweet = Tweet(
-        account=account.id, id='600783770925420546', date=arrow.now(),
-        content=(
-            'Consulting service: you bring your big data problems'
-            ' to me, I say "your data set fits in RAM", you pay me'
-            ' $10,000 for saving you $500,000.'))
+    from bloop import (
+        Engine, Column, UUID, String,
+        GlobalSecondaryIndex, new_base)
+    Base = new_base()
 
-    engine.save([account, tweet])
 
-Query or scan by column values::
+    class Account(Base):
+        class Meta:
+            read_units = 5
+            write_units = 2
+        id = Column(UUID, hash_key=True)
+        name = Column(String)
+        email = Column(String)
+        by_email = GlobalSecondaryIndex(hash_key='email')
 
-    email = 'foo@bar.com'
-    yesterday = arrow.now().replace(days=-1)
+    engine = Engine()
+    engine.bind(base=Base)
 
-    account = engine.query(Account.by_email) \
-                   .key(Account.email == email) \
-                   .first()
-    tweets = engine.query(Tweet) \
-                   .key(Tweet.account == account.id) \
-                   .filter(Tweet.date >= yesterday)
+Save an instance, load by key, and get the first query result::
 
-    for tweet in tweets.build():
-        print(tweet.content)
+    account = Account(
+        id=uuid.uuid4(),
+        name='username',
+        email='foo@bar.com')
+    engine.save(account)
+
+
+    same_account = Account(id=account.id)
+    engine.load(same_account)
+
+
+    q = engine.query(Account.by_email) \
+              .key(Account.email == "foo@bar.com")
+    also_same = q.first()
+
+Kick it up a notch with conditional operations::
+
+    # Exactly the same save as above, but now we
+    # fail if the id isn't unique.
+    if_not_exist = Account.id.is_(None)
+    engine.save(account, condition=if_not_exist)
+
+
+    # Update the account, as long as the name hasn't changed
+    same_username = Account.name == "username"
+    account.email = "new@email.com"
+    engine.save(account, condition=same_username)
+
+
+    # Delete the account, as long as none of the fields have
+    # changed since we last loaded the account
+    engine.delete(account, atomic=True)
 
 
 .. toctree::
     :hidden:
     :maxdepth: 2
 
-    user/installation
-    user/quickstart
-    user/models
-    user/engine
+    user/declarative_modeling
+    user/save_load_delete
+    user/query_scan
+    user/conditions
+    user/atomic
+    user/indexes
     user/types
+    user/configuration
     user/patterns
     user/advanced
-    dev/contributing
+    user/sample_calls
     dev/internals
+
 
 .. _tricky code: https://gist.github.com/numberoverzero/f0633e71a6b0f3f6132e
 .. _simpler code: https://gist.github.com/numberoverzero/94c939b4106e88b13e83

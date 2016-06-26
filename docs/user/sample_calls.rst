@@ -1,4 +1,4 @@
-Custom Types
+Sample Calls
 ============
 
 TODO

@@ -39,6 +39,7 @@ pygments_style = 'sphinx'
 html_theme = 'alabaster'
 
 html_theme_options = {
+    'fixed_sidebar': True,
     'github_user': 'numberoverzero',
     'github_repo': 'bloop',
     'github_banner': True,
@@ -47,7 +48,7 @@ html_theme_options = {
     'analytics_id': 'UA-65843067-1'
 }
 html_theme_path = [alabaster.get_path()]
-html_static_path = []
+html_static_path = ['_static']
 html_sidebars = {
     '**': [
         'about.html',

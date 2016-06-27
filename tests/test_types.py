@@ -16,17 +16,15 @@ def symmetric_test(typedef, *pairs):
 
 
 def test_load_dump_best_effort():
-    """ can_* are not called when trying to load values """
+    """can_* are not called when trying to load values"""
 
     class MyType(types.Type):
         backing_type = "FOO"
         python_type = float
 
     typedef = MyType()
-    assert "not_a_float" == typedef._load(
-        {"NOT_FOO": "not_a_float"}, context={})
-    assert {"FOO": "not_a_float"} == typedef._dump(
-        "not_a_float", context={})
+    assert "not_a_float" == typedef._load({"NOT_FOO": "not_a_float"}, context={})
+    assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={})
 
 
 def test_string():
@@ -51,17 +49,14 @@ def test_datetime():
     assert typedef.dynamo_load(now.isoformat(), context={}) == now
     assert typedef.dynamo_dump(now, context={}) == now.to("utc").isoformat()
 
-    assert now == typedef.dynamo_load(
-        now.to(tz).isoformat(), context={})
-    assert now.to("utc").isoformat() == typedef.dynamo_dump(
-        now.to(tz), context={})
+    assert now == typedef.dynamo_load(now.to(tz).isoformat(), context={})
+    assert now.to("utc").isoformat() == typedef.dynamo_dump(now.to(tz), context={})
 
     # Should load values in the given timezone.
     # Because arrow objects compare equal regardless of timezone, we
     # isoformat each to compare the rendered strings (which preserve tz).
     local_typedef = types.DateTime(timezone=tz)
-    loaded_as_string = local_typedef.dynamo_load(
-        now.isoformat(), context={}).isoformat()
+    loaded_as_string = local_typedef.dynamo_load(now.isoformat(), context={}).isoformat()
     now_with_tz_as_string = now.to(tz).isoformat()
     assert loaded_as_string == now_with_tz_as_string
 
@@ -69,10 +64,7 @@ def test_datetime():
 def test_float():
     typedef = types.Float()
     d = decimal.Decimal
-    symmetric_test(
-        typedef,
-        (1.5, "1.5"),
-        (d(4)/d(3), "1.333333333333333333333333333"))
+    symmetric_test(typedef, (1.5, "1.5"), (d(4)/d(3), "1.333333333333333333333333333"))
 
 
 @pytest.mark.parametrize(
@@ -89,11 +81,8 @@ def test_float_errors(value, raises):
 
 
 def test_integer():
-    """
-    Integer is a thin wrapper over Float that exposes non-decimal objects
-    """
+    """Integer is a thin wrapper over Float that exposes non-decimal objects"""
     typedef = types.Integer()
-
     symmetric_test(typedef, (4, "4"))
 
     assert typedef.dynamo_dump(4.5, context={}) == "4"
@@ -122,7 +111,7 @@ def test_sets(set_type, loaded, dumped):
 
 
 def test_set_type_instance():
-    """ Set can take an instance of a Type as well as a Type subclass """
+    """Set can take an instance of a Type as well as a Type subclass"""
     type_instance = types.String()
     instance_set = types.Set(type_instance)
     assert instance_set.typedef is type_instance
@@ -132,13 +121,17 @@ def test_set_type_instance():
     assert isinstance(subclass_set.typedef, type_subclass)
 
 
-@pytest.mark.parametrize(
-    "value", [
-        1, True, object(), bool, "str",
-        False, None, 0, set(), ""
-    ], ids=repr)
+def test_set_illegal_backing_type():
+    """The backing type for a set MUST be one of S/N/B, not BOOL"""
+    for typedef in [types.Boolean, types.Set(types.Integer)]:
+        with pytest.raises(TypeError) as excinfo:
+            types.Set(typedef)
+        assert "Set's typedef must be backed by" in str(excinfo.value)
+
+
+@pytest.mark.parametrize("value", [1, True, object(), bool, "str", False, None, 0, set(), ""], ids=repr)
 def test_bool(value):
-    """ Boolean will never store/load as empty - bool(None) is False """
+    """Boolean will never store/load as empty - bool(None) is False"""
     typedef = types.Boolean()
     assert typedef.dynamo_dump(value, context={}) is bool(value)
     assert typedef.dynamo_load(value, context={}) is bool(value)
@@ -162,14 +155,14 @@ def test_required_subtypes(typedef):
 
 
 def test_load_dump_none():
-    """ Loading or dumping None returns None """
+    """Loading or dumping None returns None"""
     typedef = types.String()
     assert typedef._dump(None, context={}) == {"S": None}
     assert typedef._load({"S": None}, context={}) is None
 
 
 def test_map_dump():
-    """ Map handles nested maps and custom types """
+    """Map handles nested maps and custom types"""
     uid = uuid.uuid4()
     now = arrow.now().to('utc')
     loaded = {
@@ -198,7 +191,7 @@ def test_map_dump():
 
 
 def test_map_load():
-    """ Map handles nested maps and custom types """
+    """Map handles nested maps and custom types"""
     uid = uuid.uuid4()
     dumped = {
         'Rating': {'N': '0.5'},
@@ -225,7 +218,7 @@ def test_map_load():
 
 
 def test_typedmap():
-    """ TypedMap handles arbitary keys and values """
+    """TypedMap handles arbitary keys and values"""
     typedef = types.TypedMap(types.DateTime)
 
     now = arrow.now().to('utc')

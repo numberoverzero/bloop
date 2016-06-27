@@ -25,24 +25,26 @@ DYNAMODB_CONTEXT = decimal.Context(
 
 
 class Type(declare.TypeDefinition):
-    def _load(self, value, *, context, **kwargs):
+    def _load(self, value, **kwargs):
         """
         take a {type: value} dictionary from dynamo and return a python value
         """
         value = next(iter(value.values()))
         if value is None:
             return None
-        return self.dynamo_load(value, context=context, **kwargs)
+        return self.dynamo_load(value, **kwargs)
 
-    def _dump(self, value, *, context, **kwargs):
+    def _dump(self, value, **kwargs):
         """
         dump a python value to a {type: value} dictionary for dynamo storage
         """
         if value is None:
             return {self.backing_type: None}
-        return {
-            self.backing_type:
-                self.dynamo_dump(value, context=context, **kwargs)}
+        return {self.backing_type: self.dynamo_dump(value, **kwargs)}
+
+    def _register(self, engine):
+        """Called when the type is registered with an engine."""
+        super()._register(engine)
 
     def dynamo_load(self, value, *, context, **kwargs):
         return value
@@ -183,6 +185,8 @@ class Set(Type):
         if typedef is None:
             raise TypeError("Sets requires a type")
         self.typedef = type_instance(typedef)
+        if typedef.backing_type not in ["N", "S", "B"]:
+            raise TypeError("Set's typedef must be backed by one of N/S/B but was '{}'".format(typedef.backing_type))
         self.backing_type = typedef.backing_type + "S"
         super().__init__()
 
@@ -211,9 +215,7 @@ class Map(Type):
     backing_type = MAP
 
     def __init__(self, **types):
-        self.types = {
-            k: type_instance(t) for k, t in types.items()
-        }
+        self.types = {k: type_instance(t) for k, t in types.items()}
         super().__init__()
 
     def __getitem__(self, key):
@@ -268,15 +270,11 @@ class TypedMap(Type):
 
     def dynamo_load(self, values, *, context, **kwargs):
         load = self.typedef._load
-        return {
-            k: load(v, context=context, **kwargs) for k, v in values.items()
-        }
+        return {k: load(v, context=context, **kwargs) for k, v in values.items()}
 
     def dynamo_dump(self, values, *, context, **kwargs):
         dump = self.typedef._dump
-        return {
-            k: dump(v, context=context, **kwargs) for k, v in values.items()
-        }
+        return {k: dump(v, context=context, **kwargs) for k, v in values.items()}
 
 
 class List(Type):

@@ -5,6 +5,7 @@ import pkg_resources
 extensions = [
     'alabaster',
     'sphinx.ext.autodoc',
+    'sphinx.ext.intersphinx',
     'sphinx.ext.viewcode',
     'sphinx.ext.napoleon'
 ]
@@ -57,3 +58,5 @@ html_sidebars = {
         'searchbox.html'
     ]
 }
+
+intersphinx_mapping = {'python': ('https://docs.python.org/3.6', None)}

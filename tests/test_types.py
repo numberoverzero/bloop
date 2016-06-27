@@ -1,5 +1,6 @@
 import arrow
 import decimal
+import declare
 import pytest
 import uuid
 
@@ -16,7 +17,7 @@ def symmetric_test(typedef, *pairs):
 
 
 def test_load_dump_best_effort():
-    """can_* are not called when trying to load values"""
+    """python_type is an informational field, and doesn't check types on load/dump"""
 
     class MyType(types.Type):
         backing_type = "FOO"
@@ -129,6 +130,20 @@ def test_set_illegal_backing_type():
         assert "Set's typedef must be backed by" in str(excinfo.value)
 
 
+def test_set_registered():
+    """set registers its typedef so loading/dumping happens properly"""
+    type_engine = declare.TypeEngine.unique()
+    string_type = types.String()
+    string_set_type = types.Set(string_type)
+
+    type_engine.bind()
+    assert string_type not in type_engine.bound_types
+
+    type_engine.register(string_set_type)
+    type_engine.bind()
+    assert string_type in type_engine.bound_types
+
+
 @pytest.mark.parametrize("value", [1, True, object(), bool, "str", False, None, 0, set(), ""], ids=repr)
 def test_bool(value):
     """Boolean will never store/load as empty - bool(None) is False"""
@@ -218,7 +233,7 @@ def test_map_load():
 
 
 def test_typedmap():
-    """TypedMap handles arbitary keys and values"""
+    """TypedMap handles arbitrary keys and values"""
     typedef = types.TypedMap(types.DateTime)
 
     now = arrow.now().to('utc')

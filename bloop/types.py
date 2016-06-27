@@ -26,18 +26,14 @@ DYNAMODB_CONTEXT = decimal.Context(
 
 class Type(declare.TypeDefinition):
     def _load(self, value, **kwargs):
-        """
-        take a {type: value} dictionary from dynamo and return a python value
-        """
+        """take a {type: value} dictionary from dynamo and return a python value"""
         value = next(iter(value.values()))
         if value is None:
             return None
         return self.dynamo_load(value, **kwargs)
 
     def _dump(self, value, **kwargs):
-        """
-        dump a python value to a {type: value} dictionary for dynamo storage
-        """
+        """dump a python value to a {type: value} dictionary for dynamo storage"""
         if value is None:
             return {self.backing_type: None}
         return {self.backing_type: self.dynamo_dump(value, **kwargs)}
@@ -160,7 +156,7 @@ class Binary(Type):
 
 
 def subclassof(C, B):
-    """ Wrap issubclass to return True/False without throwing TypeError """
+    """Wrap issubclass to return True/False without throwing TypeError"""
     try:
         return issubclass(C, B)
     except TypeError:
@@ -168,7 +164,7 @@ def subclassof(C, B):
 
 
 def type_instance(typedef):
-    """ Returns an instance of a type class, or the instance if provided """
+    """Returns an instance of a type class, or the instance if provided"""
     if subclassof(typedef, Type):
         # Type class passed, create no-arg instance
         typedef = typedef()
@@ -176,7 +172,7 @@ def type_instance(typedef):
 
 
 class Set(Type):
-    """ Adapter for sets of objects """
+    """Adapter for sets of objects"""
     python_type = collections.abc.Set
 
     def __init__(self, typedef=None):
@@ -189,6 +185,10 @@ class Set(Type):
             raise TypeError("Set's typedef must be backed by one of N/S/B but was '{}'".format(typedef.backing_type))
         self.backing_type = typedef.backing_type + "S"
         super().__init__()
+
+    def _register(self, engine):
+        """Register the set's type"""
+        engine.register(self.typedef)
 
     def dynamo_load(self, value, *, context, **kwargs):
         load = self.typedef.dynamo_load

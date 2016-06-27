@@ -1,10 +1,10 @@
 Bloop: DynamoDB Modeling
-========================
+^^^^^^^^^^^^^^^^^^^^^^^^
 
 DynamoDB's concurrency model is great, but using it correctly is tedious and unforgiving.  Bloop manages that complexity for you.
 
 Features
---------
+========
 
 * Simple declarative modeling
 * Extensible type system, useful built-in types
@@ -14,13 +14,13 @@ Features
 * Expressive conditions
 
 Installation
-------------
+============
 ::
 
     pip install bloop
 
 Quickstart
-----------
+==========
 
 First, define and bind our model::
 
@@ -80,7 +80,7 @@ Kick it up a notch with conditional operations::
 
 .. toctree::
     :hidden:
-    :maxdepth: 2
+    :maxdepth: 3
 
     user/declarative_modeling
     user/save_load_delete
@@ -89,6 +89,7 @@ Kick it up a notch with conditional operations::
     user/atomic
     user/indexes
     user/types
+    user/custom_types
     user/configuration
     user/patterns
     user/advanced

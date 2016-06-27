@@ -40,7 +40,6 @@ pygments_style = 'sphinx'
 html_theme = 'alabaster'
 
 html_theme_options = {
-    'fixed_sidebar': True,
     'github_user': 'numberoverzero',
     'github_repo': 'bloop',
     'github_banner': True,

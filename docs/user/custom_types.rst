@@ -316,8 +316,10 @@ Its usage is exactly the same as any other type::
     admin_engine.bind(base=PlayerReport)
     user_engine.bind(base=PlayerReport)
 
-    user_report = PlayerReport(id=0, reported_by="victim", description="someone is cheating!")
-    user_engine.save(user_report)
+    report = PlayerReport(
+        id=0, reported_by="victim",
+        description="someone is cheating!")
+    user_engine.save(report)
 
     admin_report = PlayerReport(id=0)
     admin_engine.load(admin_report)

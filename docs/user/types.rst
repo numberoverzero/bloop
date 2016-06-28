@@ -89,10 +89,10 @@ Backed by the ``String`` type, this stores a UUID as its string representation. 
 
     import uuid
 
-    uuid_type = UUID()
+    u = UUID()
     some_id = uuid.uuid4()
 
-    uuid_type.dynamo_dump(some_id)  # "8f5ec651-5997-4843-ad6f-065c22fd8971"
+    u.dynamo_dump(some_id)  # "8f5ec651-5997-4843-ad6f-065c22fd8971"
 
 DateTime
 --------
@@ -140,19 +140,62 @@ its parent type::
 List and Document Types
 =======================
 
-These hold multiple values, in different ways.
+Unlike the types above, these types are non-scalar and can hold multiple values.  DynamoDB introduced document types
+Map and List, which provide path lookups -- ``some_column[0]`` and ``some_column["foo"]["bar"]``.
 
 .. _user-set-type:
 
 Set
 ---
 
-Can be a set of anything, backed by String Set, Numeric Set, or Binary Set.
+Unlike the scalar types above, ``Set`` is a dependent type; that is, you must provide the type of the items in the set.
+The set type can be ``String``, ``Binary``, ``Float``, or any subclass thereof (more generally, it can be any type
+whose ``backing_type`` is one of ``S``, ``N``, or ``B``).  This is because the DynamoDB set type must be one of ``SS``,
+``SN``, or ``SB``.
+
+When loading or dumping a set, the inner type's load and dump functions will be used for each item in the set.  If the
+set type does not need any arguments, you may provide the class instead of an instance::
+
+    # type class uses no-arg __init__
+    float_set = Set(Float)
+    # type instance is used directly
+    timestamp_set = Set(DateTime(timezone="US/Pacific"))
+
+    # This fails, because the inner type is
+    # backed by BOOL, not S, N, or B
+    Set(Boolean())
+
+    floats = set([3.5, 2, -1.0])
+    float_set.dynamo_dump(floats)  # ["3.5", "2", "-1.0"]
 
 List
 ----
 
-Single type, backed by native DynamoDB LIST.
+While DynamoDB's ``LIST`` type allows any combination of types, bloop's built-in ``List`` type requires you to
+constrain the list to a single type.  This type is constructed the same way as ``Set`` above.
+
+While it is possible to dump differently typed objects through a List to DynamoDB, there isn't enough type information
+when loading a list to tell subclasses apart.  That means that we can't tell if the string
+``2016-06-28T05:18:02.633634+00:00`` should be loaded as a ``String`` or as a ``DateTime``, without bloop using
+some additional overhead to store that type information alongside the data.
+
+This is too high an overhead for bloop in general; the type system is general enough that you can define your own
+List type that supports unmapped types (perhaps by wrapping each type so that it stores the type information alongside
+the data).
+
+::
+
+    # type class uses no-arg __init__
+    float_list = List(Float)
+    # type instance is used directly
+    timestamp_list = List(DateTime(timezone="US/Pacific"))
+
+    # This is fine; List's inner type can be anything,
+    # including another List
+    List(Boolean())
+
+    floats = [3.5, 2, -1.0]
+    float_list.dynamo_dump(floats)  # ["3.5", "2", "-1.0"]
 
 Map
 ---

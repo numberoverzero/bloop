@@ -16,7 +16,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 project = 'bloop'
-copyright = '2015, Joe Cross'
+copyright = '2016, Joe Cross'
 author = 'Joe Cross'
 
 

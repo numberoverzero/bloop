@@ -1,3 +1,5 @@
+.. _user-custom-types:
+
 Custom Types
 ^^^^^^^^^^^^
 
@@ -277,8 +279,11 @@ and one for admins) and return appropriate functions for both.
 
 By implementing a custom ``bind`` you may remove the need to implement the ``_load`` and ``_dump`` functions::
 
-    class AdminType:
-        def bind(self, engine, *, **config):
+    import declare
+
+
+    class AdminType(declare.TypeDefinition):
+        def bind(self, engine, **config):
             # Note the difference; the first arg is the
             # underlying declare.TypeEngine, while the
             # engine in config is the bloop.Engine

@@ -58,4 +58,7 @@ html_sidebars = {
     ]
 }
 
-intersphinx_mapping = {'python': ('https://docs.python.org/3.6', None)}
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3.6', None),
+    'arrow': ('https://arrow.readthedocs.io/en/latest/', None)
+}

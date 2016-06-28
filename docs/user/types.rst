@@ -79,24 +79,63 @@ it takes no args.  It will coerce any value using ``bool``::
 Derived Types
 =============
 
-These are built off of the primitive types above.
+These types provide a convenient mapping to python objects for common patterns (unique identifiers, timestamps).
 
 UUID
 ----
 
-Built off of string
+Backed by the ``String`` type, this stores a UUID as its string representation.  It can handle any
+:py:class:`uuid.UUID`, and its constructor takes no args::
+
+    import uuid
+
+    uuid_type = UUID()
+    some_id = uuid.uuid4()
+
+    uuid_type.dynamo_dump(some_id)  # "8f5ec651-5997-4843-ad6f-065c22fd8971"
 
 DateTime
 --------
 
-Stored as ISO8601 UTC string
+DateTime is backed by the ``String`` type and maps to an :py:class:`arrow.arrow.Arrow` object.  While the loaded values
+can be instructed to use a particular timezone, values are always stored in UTC ISO8601_ to enable the full range of
+comparison operators.
+
+::
+
+    import arrow
+    u = DateTime()
+    p = DateTime(timezone="US/Pacific")
+
+    now_str = "2016-06-28T05:18:02.633634+00:00"
+    now = arrow.get(now_str)
+
+    # Both stored in UTC
+    u.dynamo_dump(now)  # "2016-06-28T05:18:02.633634+00:00"
+    p.dynamo_dump(now)  #  "2016-06-28T05:18:02.633634+00:00"
+
+    # When loaded, they use the specified timezone
+    u.dynamo_load(now_str)  # <Arrow [2016-06-28T05:18:02.633634+00:00]>
+    p.dynamo_load(now_str)  #  <Arrow [2016-06-27T22:18:02.633634-07:00]>
+
+.. _ISO8601: https://en.wikipedia.org/wiki/ISO_8601
 
 .. _user-integer-type:
 
 Integer
 -------
 
-Truncates values with ``int`` before passing them to Float.
+Integer is a very thin wrapper around the ``Float`` type, and simply calls ``int()`` on the values passed to and from
+its parent type::
+
+    int_type = Integer()
+    int_type.dynamo_dump(3.5)  # "3"
+    int_type.dynamo_dump(5)  # "5"
+
+    # Even if the stored value in Dynamo is a float,
+    # this type truncates it on load
+    int_type.dynamo_load("3.5")  # 3
+    int_type.dynamo_load("5")  # 5
 
 List and Document Types
 =======================

@@ -174,14 +174,18 @@ List
 While DynamoDB's ``LIST`` type allows any combination of types, bloop's built-in ``List`` type requires you to
 constrain the list to a single type.  This type is constructed the same way as ``Set`` above.
 
-While it is possible to dump differently typed objects through a List to DynamoDB, there isn't enough type information
-when loading a list to tell subclasses apart.  That means that we can't tell if the string
-``2016-06-28T05:18:02.633634+00:00`` should be loaded as a ``String`` or as a ``DateTime``, without bloop using
-some additional overhead to store that type information alongside the data.
+This limitation exists because there isn't enough type information when loading a list to tell subclasses apart.
+That means that we can't tell if the string ``2016-06-28T05:18:02.633634+00:00`` should be loaded as a ``String`` or
+as a ``DateTime``.
 
-This is too high an overhead for bloop in general; the type system is general enough that you can define your own
-List type that supports unmapped types (perhaps by wrapping each type so that it stores the type information alongside
-the data).
+While bloop could store type information next to the data (or in additional columns), the first option forces bloop's
+type patterns on every client that talks to your DynamoDB instance, and both options consume additional space that you
+may not be able to spare.  Storing type information also opens up the potential for pickle-like vulnerabilities, and
+violates the idea that the same data can be interpreted by different bloop engines (through binding different load
+functions).
+
+If you need to support multiple types in lists, the type system is general enough that you can define your own
+List type, that stores the type information of each object when your type is dumped to Dynamo.
 
 ::
 
@@ -190,9 +194,8 @@ the data).
     # type instance is used directly
     timestamp_list = List(DateTime(timezone="US/Pacific"))
 
-    # This is fine; List's inner type can be anything,
-    # including another List
-    List(Boolean())
+    # This is fine; List's inner type can be any type
+    List(List(Boolean()))
 
     floats = [3.5, 2, -1.0]
     float_list.dynamo_dump(floats)  # ["3.5", "2", "-1.0"]

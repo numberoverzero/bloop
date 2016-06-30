@@ -31,8 +31,10 @@ Define some models:
 
     import arrow
     import uuid
-    from bloop import (Engine, Column, Integer, DateTime, UUID,
-                       GlobalSecondaryIndex, String, new_base)
+    from bloop import (
+        Engine, Column, Integer, DateTime, UUID,
+        GlobalSecondaryIndex, String, new_base)
+
     Base = new_base()
     engine = Engine()
 

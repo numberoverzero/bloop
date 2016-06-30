@@ -16,7 +16,9 @@ In rare cases, you may want to implement ``bind`` to provide engine-specific pai
 Quick example
 =============
 
-Here's a trivial type that prepends a string with its length.  So ``"hello world"`` is stored as ``"11:hello world"``::
+Here's a trivial type that prepends a string with its length.  So ``"hello world"`` is stored as ``"11:hello world"``:
+
+.. code-block:: python
 
     class LengthString(bloop.String):
         def __init__(self, sep=":"):
@@ -33,7 +35,9 @@ Here's a trivial type that prepends a string with its length.  So ``"hello world
             return super().dynamo_dump(
                 prefix + value, context=context, **kwargs)
 
-We can now use our custom type anywhere a String would be allowed::
+We can now use our custom type anywhere a String would be allowed:
+
+.. code-block:: python
 
     class SomeModel(bloop.new_base()):
         id = Column(LengthString("|"), hash_key=True)
@@ -51,7 +55,9 @@ This is stored in Dynamo like so:
 | 11\|hello world | 13:hello, world! |
 +-----------------+------------------+
 
-Because the ``dynamo_load`` function strips the length prefix off, it's not present when loading from DynamoDB::
+Because the ``dynamo_load`` function strips the length prefix off, it's not present when loading from DynamoDB:
+
+.. code-block:: python
 
   obj = SomeModel(id="hello world")
   engine.load(obj)
@@ -84,7 +90,9 @@ arbitrarily typed values, is useless for an Object Mapper which enforces types p
 Base Type
 =========
 
-Before diving into the available types, here's the structure of the base ``Type``::
+Before diving into the available types, here's the structure of the base ``Type``:
+
+.. code-block:: python
 
     class Type(declare.TypeDefinition):
         python_type = None
@@ -137,7 +145,9 @@ Unlike ``python_type``, this field is **required** and must be one of the types 
 used to dump a value eg. ``"some string"`` into the proper DynamoDB wire format ``{"S": "some string"}``.  Usually,
 you'll want to define this on your custom type.  In some cases, however, you won't know this value until the type is
 instantiated.  For example, the built-in :ref:`user-set-type` type constructs the backing type based on its inner
-type's backing type with roughly the following::
+type's backing type with roughly the following:
+
+.. code-block:: python
 
     def __init__(self, typedef=None):
         if typedef is None:
@@ -157,7 +167,9 @@ None.  If you want to handle ``None``, you will need to implement ``_load`` your
 
 The bloop engine that is loading the value can always be accessed through ``context["engine"]``; this is useful to
 return different values depending on how the engine is configured, or performing chained operations.  For example, you
-could implement a reference type that loads a value from a different model like so::
+could implement a reference type that loads a value from a different model like so:
+
+.. code-block:: python
 
     class ReferenceType(bloop.Type):
         def __init__(self, model=None, blob_name=None):
@@ -179,7 +191,9 @@ could implement a reference type that loads a value from a different model like 
             context["engine"].load(obj)
             return obj
 
-And its usage::
+And its usage:
+
+.. code-block:: python
 
     class Data(bloop.new_base()):
         id = Column(String, hash_key=True)
@@ -198,7 +212,9 @@ And its usage::
 The exact reverse of ``dynamo_load``, this method takes the modeled value and turns it a string that contains a
 DynamoDB-compatible format for the given backing value.  For binary objects, this means base64 encoding the value.
 
-For the ``ReferenceType`` defined above, here is the corresponding ``dynamo_dump``::
+For the ``ReferenceType`` defined above, here is the corresponding ``dynamo_dump``:
+
+.. code-block:: python
 
     def dynamo_dump(self, value, *, context, **kwargs):
         # value is an instance of the loaded object,
@@ -240,7 +256,9 @@ need to implement ``_register`` if your custom type has a reference to another t
 
 For example, the built-in :ref:`user-set-type` uses a type passed as an argument during ``__init__`` to load and dump
 values from a String Set, Number Set, or Binary Set.  To ensure the type engine can handle the nested load/dump calls
-for that type, it implements ``_register`` like so::
+for that type, it implements ``_register`` like so:
+
+.. code-block:: python
 
     class Set(Type):
         """Adapter for sets of objects"""
@@ -277,7 +295,9 @@ doesn't know about a particular type.  You may store a custom config value on yo
 a full or partial load.  You may want to associate different engines with particular views of data (say, one for users
 and one for admins) and return appropriate functions for both.
 
-By implementing a custom ``bind`` you may remove the need to implement the ``_load`` and ``_dump`` functions::
+By implementing a custom ``bind`` you may remove the need to implement the ``_load`` and ``_dump`` functions:
+
+.. code-block:: python
 
     import declare
 
@@ -307,7 +327,9 @@ By implementing a custom ``bind`` you may remove the need to implement the ``_lo
             # Users can modify this field but only admins can view it
             return value
 
-Its usage is exactly the same as any other type::
+Its usage is exactly the same as any other type:
+
+.. code-block:: python
 
     class PlayerReport(bloop.new_base()):
         id = Column(Integer, hash_key=True)
@@ -341,7 +363,9 @@ Here are two simple enum types that can be built off existing types with minimal
 the :ref:`user-integer-type` type and consumes little space, while the second is based on :ref:`user-string-type` and
 stores the Enum values.
 
-For both examples, let's say we have the following :py:class:`enum.Enum`::
+For both examples, let's say we have the following :py:class:`enum.Enum`:
+
+.. code-block:: python
 
     import enum
     class Color(enum.Enum):
@@ -355,7 +379,7 @@ Integer Enum
 In this type, dump will transform ``Color -> int`` using ``color.value`` and hand the int to ``super``.  Meanwhile,
 load will transform ``int -> Color`` using ``Color(value)`` where value comes from ``super``.
 
-::
+.. code-block:: python
 
     class EnumType(bloop.Integer):
         def __init__(self, enum_cls=None):
@@ -372,7 +396,9 @@ load will transform ``int -> Color`` using ``Color(value)`` where value comes fr
             value = super().dynamo_load(value, context=context, **kwargs)
             return self.enum_cls(value)
 
-Usage::
+Usage:
+
+.. code-block:: python
 
     class Shirt(new_base()):
         id = Column(String, hash_key=True)
@@ -397,7 +423,7 @@ String Enum
 This will look remarkably similar, with the only difference that ``Enum.name`` gives us a string, and ``Enum[value]``
 gives us an enum value by string.
 
-::
+.. code-block:: python
 
     class EnumType(bloop.String):
         def __init__(self, enum_cls=None):
@@ -414,7 +440,9 @@ gives us an enum value by string.
             value = super().dynamo_load(value, context=context, **kwargs)
             return self.enum_cls[value]
 
-And usage is exactly the same::
+And usage is exactly the same:
+
+.. code-block:: python
 
     class Shirt(new_base()):
         id = Column(String, hash_key=True)
@@ -437,7 +465,9 @@ Stored in DynamoDB as:
 RSA Example
 ===========
 
-This is a quick type for storing a public RSA key in binary::
+This is a quick type for storing a public RSA key in binary:
+
+.. code-block:: python
 
     from Crypto.PublicKey import RSA
 
@@ -454,7 +484,9 @@ This is a quick type for storing a public RSA key in binary::
             value = value.exportKey(format="DER")
             return super().dynamo_dump(value, context=context, **kwargs)
 
-Usage::
+Usage:
+
+.. code-block:: python
 
     class PublicKey(bloop.new_base()):
         id = Column(String, hash_key=True)

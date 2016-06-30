@@ -19,7 +19,9 @@ String
 Since everything has to become a string to build the request body, this is the simplest type.  String is one of three
 base types that can be used as a hash or range key.
 
-The constructor takes no args, and values are stored in DynamoDB 1:1 with their python type::
+The constructor takes no args, and values are stored in DynamoDB 1:1 with their python type:
+
+.. code-block:: python
 
     # equivalent
     Column(String)
@@ -34,7 +36,9 @@ Binary
 Binary data corresponds to the ``bytes`` type in python, sent over the wire as a base64 encoded string, and stored in
 DynamoDB as bytes.  Binary is one of three base types that can be used as a hash or range key.
 
-The constructor takes no args::
+The constructor takes no args:
+
+.. code-block:: python
 
     # equivalent
     Column(Binary)
@@ -54,7 +58,9 @@ but makes the translation easier for some uses).
 
 You should absolutely review the documentation_ before using python floats, as errors can be subtle.
 
-The constructor takes no args::
+The constructor takes no args:
+
+.. code-block:: python
 
     # equivalent
     Column(Float)
@@ -70,7 +76,9 @@ Boolean
 -------
 
 Unlike String, Binary, and Float, the Boolean type cannot be used as a hash or range key.  Like the other basic types,
-it takes no args.  It will coerce any value using ``bool``::
+it takes no args.  It will coerce any value using ``bool``:
+
+.. code-block:: python
 
     bool_type = Boolean()
     bool_type.dynamo_dump(["foo", "bar"])  # true
@@ -85,7 +93,9 @@ UUID
 ----
 
 Backed by the ``String`` type, this stores a UUID as its string representation.  It can handle any
-:py:class:`uuid.UUID`, and its constructor takes no args::
+:py:class:`uuid.UUID`, and its constructor takes no args:
+
+.. code-block:: python
 
     import uuid
 
@@ -101,7 +111,7 @@ DateTime is backed by the ``String`` type and maps to an :py:class:`arrow.arrow.
 can be instructed to use a particular timezone, values are always stored in UTC ISO8601_ to enable the full range of
 comparison operators.
 
-::
+.. code-block:: python
 
     import arrow
     u = DateTime()
@@ -126,7 +136,9 @@ Integer
 -------
 
 Integer is a very thin wrapper around the ``Float`` type, and simply calls ``int()`` on the values passed to and from
-its parent type::
+its parent type:
+
+.. code-block:: python
 
     int_type = Integer()
     int_type.dynamo_dump(3.5)  # "3"
@@ -154,7 +166,9 @@ whose ``backing_type`` is one of ``S``, ``N``, or ``B``).  This is because the D
 ``SN``, or ``SB``.
 
 When loading or dumping a set, the inner type's load and dump functions will be used for each item in the set.  If the
-set type does not need any arguments, you may provide the class instead of an instance::
+set type does not need any arguments, you may provide the class instead of an instance:
+
+.. code-block:: python
 
     # type class uses no-arg __init__
     float_set = Set(Float)
@@ -168,10 +182,12 @@ set type does not need any arguments, you may provide the class instead of an in
     floats = set([3.5, 2, -1.0])
     float_set.dynamo_dump(floats)  # ["3.5", "2", "-1.0"]
 
+.. _user-list-type:
+
 List
 ----
 
-While DynamoDB's ``LIST`` type allows any combination of types, bloop's built-in ``List`` type requires you to
+While DynamoDB's ``List`` type allows any combination of types, bloop's built-in ``List`` type requires you to
 constrain the list to a single type.  This type is constructed the same way as ``Set`` above.
 
 This limitation exists because there isn't enough type information when loading a list to tell subclasses apart.
@@ -187,7 +203,7 @@ functions).
 If you need to support multiple types in lists, the type system is general enough that you can define your own
 List type, that stores the type information of each object when your type is dumped to Dynamo.
 
-::
+.. code-block:: python
 
     # type class uses no-arg __init__
     float_list = List(Float)
@@ -203,9 +219,90 @@ List type, that stores the type information of each object when your type is dum
 Map
 ---
 
-General document that expects a type for each key.
+Like the List type above, ``Map`` is a restricted subset of the general DynamoDB ``Map`` and only loads/dumps the
+modeled structure you specify.  For more information on why bloop does not support arbitrary types in Maps, see the
+:ref:`user-list-type` type above.
+
+You construct a map type through ``**kwargs``, where each key is the document key, and each value is a type definition
+or type instance (``DateTime`` or ``DateTime(timezone="...")``).  There is no restriction on what types can be used for
+keys, including nested maps and other document-based types.
+
+.. code-block:: python
+
+    ProductData = Map(**{
+        'Rating': Float(),
+        'Stock': Integer(),
+        'Description': Map(**{
+            'Heading': String,
+            'Body': String,
+            'Specifications': String
+        }),
+        'Id': UUID,
+        'Updated': DateTime
+    })
+
+
+    class Product(new_base()):
+        id = Column(Integer, hash_key=True)
+        old_data = Column(ProductData)
+        new_data = Column(ProductData)
 
 TypedMap
 --------
 
-Map with a single type for values.  Any number of string keys.
+Like ``Map`` above, ``TypedMap`` is not a general map for any typed data.  Unlike Map however, TypedMap allows an
+arbitrary number of keys, so long as all of the values have the same type.  This is useful when you are storing data
+under user-provided keys, or mapping for an unknown key size.
+
+As with List and Map, you can nest TypedMaps.  For example, storing the event data for an unknown number of
+instances might look something like:
+
+.. code-block:: python
+
+    # Modeling some events
+    # -----------------------------------
+    # The unpacking dict above can also just be
+    # direct kwargs
+    EventCounter = Map(
+        last=DateTime,
+        count=Integer,
+        source_ips=Set(String))
+
+
+    class Metric(new_base()):
+        name = Column(String, hash_key=True)
+        host_events = Column(TypedMap(EventCounter))
+
+
+    # Initial save, during service setup
+    # -----------------------------------
+    metric = Metric(name="email-campaign-2016-06-29")
+    metric.host_events = {}
+    engine.save(metric)
+
+
+    # Recording an event during request handler
+    # -----------------------------------
+    host_name = "api.control-plane.host-1"
+    metric = Metric(name="...")
+    engine.load(metric)
+
+    # If there were no events, create an empty dict
+    events = metric.host_events.get(host_name)
+    if events is None:
+        events = {
+            "count": 0,
+            "source_ips": set()
+        }
+        metric.host_events[host_name] = events
+
+    # Record this requester event
+    events["count"] += 1
+    events["last"] = arrow.now()
+    events["source_ips"].add(request.get_ip())
+
+    # Atomic save helps us here because DynamoDB doesn't
+    # support multiple updates with overlapping paths yet:
+    # https://github.com/numberoverzero/bloop/issues/28
+    # https://forums.aws.amazon.com/message.jspa?messageID=711992
+    engine.save(metric, atomic=True)

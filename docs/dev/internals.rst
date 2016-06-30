@@ -10,7 +10,9 @@ keys were used to fetch them.  A double index allows O(1) lookups. The second
 hash key takes O(K) to build, where K is the number of keys for the object
 (either 1 for a hash-only table, or 2 for a hash + range key).
 
-Objects are sent in a dict that looks like::
+Objects are sent in a dict that looks like:
+
+.. code-block:: python
 
     {
         "table_name": {
@@ -27,7 +29,9 @@ Objects are sent in a dict that looks like::
         ...
     }
 
-And returned in a similar dict::
+And returned in a similar dict:
+
+.. code-block:: python
 
     {
         "table_name": {
@@ -55,11 +59,15 @@ and for each table (table name -> key names).  Then the lookup is as follows:
 
 
 A table "objects" with a hash_key named "first" and range key named "last"
-(assume that the dynamo and model names are the same)::
+(assume that the dynamo and model names are the same):
+
+.. code-block:: python
 
     instance = Foo(first="foo", last="bar")
 
-This will be loaded as::
+This will be loaded as:
+
+.. code-block:: python
 
     table_keys = {"objects": ("first", "last")}
     indexed_objects = {"objects": {("foo", "bar"): instance}}
@@ -71,7 +79,9 @@ This will be loaded as::
         }
     }
 
-And the response will contain::
+And the response will contain:
+
+.. code-block:: python
 
     response = {
         "objects": {
@@ -85,12 +95,16 @@ And the response will contain::
         }
     }
 
-Processing this object will first find the table_key for "objects"::
+Processing this object will first find the table_key for "objects":
+
+.. code-block:: python
 
     ("first", "last")
 
 And then pull the corresponding values from the item in that order, to
-construct the object index::
+construct the object index:
+
+.. code-block:: python
 
     indexed_objects["objects"][("foo", "bar")]
 

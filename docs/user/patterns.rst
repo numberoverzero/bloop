@@ -6,7 +6,7 @@ DynamoDB Local
 
 Connect to a local DynamoDB instance.
 
-::
+.. code-block:: python
 
     import boto3
     import bloop
@@ -29,7 +29,7 @@ Generic "if not exist"
 
 Condition to ensure an object's hash (or hash + range) key are not set (item doesn't exist).
 
-::
+.. code-block:: python
 
     def if_not_exist(obj):
         hash_key = obj.Meta.hash_key

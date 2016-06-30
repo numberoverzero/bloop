@@ -22,7 +22,12 @@ Installation
 Quickstart
 ==========
 
-First, define and bind our model::
+First, define and bind our model:
+
+.. code-block:: python
+
+    import uuid
+
 
     from bloop import (
         Engine, Column, UUID, String,
@@ -42,7 +47,9 @@ First, define and bind our model::
     engine = Engine()
     engine.bind(base=Base)
 
-Save an instance, load by key, and get the first query result::
+Save an instance, load by key, and get the first query result:
+
+.. code-block:: python
 
     account = Account(
         id=uuid.uuid4(),
@@ -59,7 +66,9 @@ Save an instance, load by key, and get the first query result::
               .key(Account.email == "foo@bar.com")
     also_same = q.first()
 
-Kick it up a notch with conditional operations::
+Kick it up a notch with conditional operations:
+
+.. code-block:: python
 
     # Exactly the same save as above, but now we
     # fail if the id isn't unique.

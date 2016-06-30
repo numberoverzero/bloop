@@ -29,8 +29,6 @@ Define some models:
 
 .. code-block:: python
 
-    import arrow
-    import uuid
     from bloop import (
         Column, DateTime, Engine, GlobalSecondaryIndex,
         Integer, String, UUID, new_base)
@@ -70,6 +68,9 @@ Define some models:
 Create an instance:
 
 .. code-block:: python
+
+    import arrow
+    import uuid
 
     account = Account(id=uuid.uuid4(), name='@garybernhardt',
                       email='foo@bar.com')

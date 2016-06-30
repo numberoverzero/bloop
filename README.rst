@@ -25,7 +25,9 @@ Installation
 Usage
 -----
 
-Define some models::
+Define some models:
+
+.. code-block:: python
 
     import arrow
     import uuid
@@ -63,7 +65,9 @@ Define some models::
     engine.bind(base=Base)
 
 
-Create an instance::
+Create an instance:
+
+.. code-block:: python
 
     account = Account(id=uuid.uuid4(), name='@garybernhardt',
                       email='foo@bar.com')
@@ -76,7 +80,9 @@ Create an instance::
 
     engine.save([account, tweet])
 
-Query or scan by column values::
+Query or scan by column values:
+
+.. code-block:: python
 
     email = 'foo@bar.com'
     yesterday = arrow.now().replace(days=-1)

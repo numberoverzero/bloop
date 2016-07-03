@@ -130,10 +130,10 @@ class LoadManager:
 class Engine:
     client = None
 
-    def __init__(self, client=None, **config):
+    def __init__(self, client=None, type_engine=None, **config):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
-        self.type_engine = declare.TypeEngine.unique()
+        self.type_engine = type_engine or declare.TypeEngine.unique()
 
         self.client = client
         self.config = dict(_DEFAULT_CONFIG)

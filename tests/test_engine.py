@@ -3,6 +3,7 @@ import bloop.engine
 import bloop.exceptions
 import bloop.tracking
 import bloop.util
+import declare
 import pytest
 import uuid
 from unittest.mock import Mock
@@ -10,11 +11,17 @@ from unittest.mock import Mock
 from test_models import ComplexModel, User
 
 
+def test_shared_type_engine():
+    """Engine can use a specific type_engine to share bound instances"""
+    type_engine = declare.TypeEngine.unique()
+    first = bloop.Engine(type_engine=type_engine)
+    second = bloop.Engine(type_engine=type_engine)
+
+    assert first.type_engine is second.type_engine
+
+
 def test_missing_objects(engine):
-    """
-    When objects aren't loaded, ObjectsNotFound is raised with a list of
-    missing objects
-    """
+    """When objects aren't loaded, ObjectsNotFound is raised with a list of missing objects"""
     # Patch batch_get_items to return no results
     engine.client.batch_get_items = lambda *a, **kw: {}
 

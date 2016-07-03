@@ -10,7 +10,7 @@ import collections
 import collections.abc
 import declare
 
-__all__ = ["Engine", "EngineView"]
+__all__ = ["Engine"]
 
 _MISSING = object()
 _DEFAULT_CONFIG = {
@@ -223,16 +223,6 @@ class Engine:
                 self.type_engine.register(column.typedef)
             self.type_engine.bind(context={"engine": self})
 
-    def context(self, **config):
-        """
-        with engine.context(atomic=True, consistent=True) as atomic:
-            atomic.load(obj)
-            del obj.foo
-            obj.bar += 1
-            atomic.save(obj)
-        """
-        return EngineView(self, **config)
-
     def delete(self, objs, *, condition=None, atomic=None):
         objs = list_of(objs)
         for obj in objs:
@@ -352,27 +342,3 @@ class Engine:
         return bloop.filter.Filter(
             engine=self, mode="query", model=model, index=index, strict=self.config["strict"], select=select,
             consistent=config(self, "consistent", consistent))
-
-
-class EngineView(Engine):
-    def __init__(self, engine, **config):
-        self.__engine = engine
-        self.config = dict(engine.config)
-        self.config.update(config)
-
-    def bind(self, **kwargs):
-        raise RuntimeError("EngineViews can't modify engine types or bindings")
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, *exc):
-        return False
-
-    @property
-    def client(self):
-        return self.__engine.client
-
-    @property
-    def type_engine(self):
-        return self.__engine.type_engine

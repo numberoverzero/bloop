@@ -466,39 +466,6 @@ def test_scan(engine):
     assert model_scan.index is None
 
 
-def test_context(engine):
-    engine.config["atomic"] = True
-    user_id = uuid.uuid4()
-    user = User(id=user_id, name="foo")
-
-    expected = {
-        "TableName": "User",
-        "UpdateExpression": "SET #n0=:v1",
-        "ExpressionAttributeValues": {":v1": {"S": "foo"}},
-        "ExpressionAttributeNames": {"#n0": "name"},
-        "Key": {"id": {"S": str(user_id)}}}
-
-    with engine.context(atomic=False) as eng:
-        eng.save(user)
-    engine.client.update_item.assert_called_once_with(expected)
-
-    # EngineViews can't bind
-    with pytest.raises(RuntimeError):
-        with engine.context() as eng:
-            eng.bind(base=bloop.new_base())
-
-
-def test_unbound_engine_view():
-    """Trying to mutate an unbound model through an EngineView fails"""
-    class UnboundModel(bloop.new_base()):
-        id = bloop.Column(bloop.String, hash_key=True)
-    instance = UnboundModel(id="foo")
-
-    with pytest.raises(bloop.exceptions.UnboundModel):
-        with bloop.Engine().context() as view:
-            view._dump(UnboundModel, instance)
-
-
 def test_bind_non_model():
     """Can't bind things that don't subclass new_base()"""
     engine = bloop.Engine()

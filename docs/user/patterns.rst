@@ -1,8 +1,8 @@
 Common Patterns
-===============
+^^^^^^^^^^^^^^^
 
 DynamoDB Local
---------------
+==============
 
 Connect to a local DynamoDB instance.
 
@@ -25,7 +25,7 @@ Connect to a local DynamoDB instance.
     `this issue <https://github.com/numberoverzero/bloop/issues/43>`_.
 
 Generic "if not exist"
-----------------------
+======================
 
 Condition to ensure an object's hash (or hash + range) key are not set (item doesn't exist).
 
@@ -44,3 +44,27 @@ Condition to ensure an object's hash (or hash + range) key are not set (item doe
     # Usage
     tweet = Tweet(account=uuid.uuid4(), id="numberoverzero", ...)
     engine.save(tweet, condition=if_not_exist(tweet))
+
+Engine Configuration
+====================
+
+This is a simple function to create a copy of an engine, but with slightly different config.
+
+.. code-block:: python
+
+    def using_config(engine, **config):
+        return bloop.Engine(
+            type_engine=engine.type_engine,
+            client=engine.client,
+            config=dict(engine.config, **config))
+
+For example, let's say you use strict queries to control your consumed throughput, but some legacy code still
+needs to load everything from an LSI:
+
+.. code-block:: python
+
+    relaxed = using_config(engine, strict=False)
+    scan = relaxed.scan(Model.some_lsi).select("all").build()
+    for entry in scan:
+        # References to engine still use strict queries
+        process(engine, entry)

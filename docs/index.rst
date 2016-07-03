@@ -92,17 +92,16 @@ Kick it up a notch with conditional operations:
     :maxdepth: 3
 
     user/declarative_modeling
-    user/save_load_delete
-    user/query_scan
+    user/modifying_objects
+    user/retrieving_objects
     user/conditions
     user/atomic
     user/indexes
     user/types
     user/custom_types
     user/configuration
+    user/debugging
     user/patterns
-    user/advanced
-    user/sample_calls
     dev/internals
 
 

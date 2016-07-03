@@ -1,4 +1,0 @@
-Query and Scan
-==============
-
-TODO

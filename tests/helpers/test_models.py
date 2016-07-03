@@ -29,8 +29,7 @@ class User(BaseModel):
     name = Column(String)
     email = Column(String)
     joined = Column(DateTime, name="j")
-    by_email = GlobalSecondaryIndex(
-        hash_key="email", projection="all")
+    by_email = GlobalSecondaryIndex(hash_key="email", projection="all")
 
 
 class SimpleModel(BaseModel):
@@ -50,10 +49,8 @@ class ComplexModel(BaseModel):
     email = Column(String)
     joined = Column(String)
     not_projected = Column(Integer)
-    by_email = GlobalSecondaryIndex(
-        hash_key="email", read_units=4, projection="all", write_units=5)
-    by_joined = LocalSecondaryIndex(
-        range_key="joined", projection=["email"])
+    by_email = GlobalSecondaryIndex(hash_key="email", read_units=4, projection="all", write_units=5)
+    by_joined = LocalSecondaryIndex(range_key="joined", projection=["email"])
 
 conditions = set()
 

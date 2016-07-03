@@ -4,12 +4,12 @@ import pytest
 
 def test_dynamo_name():
     """ Returns model name unless dynamo name is specified """
-    index = bloop.index._Index(bloop.Integer)
+    index = bloop.index._Index()
     # Normally set when a class is defined
     index.model_name = "foo"
     assert index.dynamo_name == "foo"
 
-    index = bloop.index._Index(bloop.Integer, name="foo")
+    index = bloop.index._Index(name="foo")
     index.model_name = "bar"
     assert index.dynamo_name == "foo"
 
@@ -45,9 +45,34 @@ def test_lsi_missing_range_key():
         bloop.index.LocalSecondaryIndex()
 
 
-def test_lsi_read_write_units():
+def test_lsi_init_throughput():
+    """Can't set throughput when creating an LSI"""
     with pytest.raises(ValueError):
         bloop.index.LocalSecondaryIndex(range_key="range", write_units=1)
 
     with pytest.raises(ValueError):
         bloop.index.LocalSecondaryIndex(range_key="range", read_units=1)
+
+
+def test_lsi_delegates_throughput():
+    """LSI read_units, write_units delegate to model.Meta"""
+    class Model(bloop.new_base()):
+        name = bloop.Column(bloop.String, hash_key=True)
+        other = bloop.Column(bloop.String, range_key=True)
+        joined = bloop.Column(bloop.String)
+        by_joined = bloop.LocalSecondaryIndex(range_key="joined")
+
+    meta = Model.Meta
+    lsi = Model.by_joined
+
+    # Getters pass through
+    meta.write_units = "meta.write_units"
+    meta.read_units = "meta.read_units"
+    assert lsi.write_units == meta.write_units
+    assert lsi.read_units == meta.read_units
+
+    # Setters pass through
+    lsi.write_units = "lsi.write_units"
+    lsi.read_units = "lsi.read_units"
+    assert lsi.write_units == meta.write_units
+    assert lsi.read_units == meta.read_units

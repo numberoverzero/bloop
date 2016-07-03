@@ -9,10 +9,11 @@ _MISSING = object()
 
 
 def new_base():
-    """Return an unbound base model"""
-    model = ModelMetaclass("Model", (BaseModel,), {})
-    model.Meta.abstract = True
-    return model
+    """Return an unbound, abstract base model"""
+    class Model(BaseModel, metaclass=ModelMetaclass):
+        class Meta:
+            abstract = True
+    return Model
 
 
 class ModelMetaclass(declare.ModelMetaclass):
@@ -80,13 +81,8 @@ def setup_indexes(meta):
         meta.fields))
     meta.indexes = set.union(meta.gsis, meta.lsis)
 
-    # Look up the current hash key -- which is specified by
-    # model_name, not dynamo_name -- in indexed columns and relate
-    # the proper `bloop.Column` object
-    columns = declare.index(meta.columns, "model_name")
     for index in meta.indexes:
-        index.model = meta.model
-        index._bind(columns, meta.hash_key, meta.range_key)
+        index._bind(meta.model)
 
 
 class BaseModel:

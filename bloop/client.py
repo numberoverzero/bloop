@@ -40,9 +40,7 @@ def partition_batch_get_input(batch_size, items):
             # clears in the middle of iterating this table's keys.
             table = chunk.get(table_name, None)
             if table is None:
-                table = chunk[table_name] = {
-                    "ConsistentRead": consistent_read,
-                    "Keys": []}
+                table = chunk[table_name] = {"ConsistentRead": consistent_read, "Keys": []}
             table["Keys"].append(key)
             count += 1
             if count >= batch_size:
@@ -82,8 +80,7 @@ class Client(object):
     .. _DynamoDB API Reference:
         http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Operations.html
     """
-    def __init__(self, boto_client=None, backoff_func=None,
-                 batch_size=MAX_BATCH_SIZE):
+    def __init__(self, boto_client=None, backoff_func=None, batch_size=MAX_BATCH_SIZE):
         """
         backoff_func is an optional function that takes an int
             (attempts so far) that should either:
@@ -173,13 +170,11 @@ class Client(object):
 
         """
         response = {}
-        get_batch = functools.partial(self._call_with_retries,
-                                      self.boto_client.batch_get_item)
+        get_batch = functools.partial(self._call_with_retries, self.boto_client.batch_get_item)
         request_batches = partition_batch_get_input(self.batch_size, items)
 
         for request_batch in request_batches:
-            # After the first call, request_batch is the
-            # UnprocessedKeys from the first call
+            # After the first call, request_batch is the UnprocessedKeys from the first call
             while request_batch:
                 batch_response = get_batch(RequestItems=request_batch)
                 items = batch_response.get("Responses", {}).items()
@@ -221,8 +216,7 @@ class Client(object):
         if model.Meta.abstract:
             raise bloop.exceptions.AbstractModelException(model)
         table = bloop.tables.create_request(model)
-        create = functools.partial(self._call_with_retries,
-                                   self.boto_client.create_table)
+        create = functools.partial(self._call_with_retries, self.boto_client.create_table)
         try:
             create(**table)
         except botocore.exceptions.ClientError as error:
@@ -277,9 +271,7 @@ class Client(object):
             https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.describe_table
 
         """
-        description = self._call_with_retries(
-            self.boto_client.describe_table,
-            TableName=model.Meta.table_name)
+        description = self._call_with_retries(self.boto_client.describe_table, TableName=model.Meta.table_name)
         return description["Table"]
 
     def query(self, request):

@@ -13,7 +13,7 @@ need to implement ``_load``, ``_dump``, and ``_register``.
 In rare cases, you may want to implement ``bind`` to provide engine-specific pairs of ``_load``/``_dump`` functions.
 
 
-Quick example
+Quick Example
 =============
 
 Here's a trivial type that prepends a string with its length.  So ``"hello world"`` is stored as ``"11:hello world"``:

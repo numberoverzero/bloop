@@ -1,14 +1,17 @@
 Internals
-=========
+^^^^^^^^^
 
 Loading
--------
+=======
 
 A bit of cleverness is required to load instances of different models, since
 the blobs that are returned have no way to be associated with the objects whose
 keys were used to fetch them.  A double index allows O(1) lookups. The second
 hash key takes O(K) to build, where K is the number of keys for the object
 (either 1 for a hash-only table, or 2 for a hash + range key).
+
+Wire Format
+-----------
 
 Objects are sent in a dict that looks like:
 
@@ -48,6 +51,9 @@ And returned in a similar dict:
         # more tables
         ...
     }
+
+O(1) Lookup
+-----------
 
 To associate returned values with input objects without an O(N) scan per
 object, we create indexes for each object (table name -> key values -> obj)
@@ -110,12 +116,39 @@ construct the object index:
 
 Which finally, can be used to look up the object in indexed_objects.
 
+Multi-model tables
+------------------
+
+TODO Loading the same table row for two models
+
 Tracking
---------
+========
+
+Synchronized
+------------
+
+TODO
+
+Snapshots
+---------
+
+TODO
+
+Marking
+-------
 
 TODO
 
 Binding
--------
+=======
+
+Model Declaration
+-----------------
 
 TODO
+
+Engine Binding
+--------------
+
+TODO
+

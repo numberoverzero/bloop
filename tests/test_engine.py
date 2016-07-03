@@ -1,3 +1,5 @@
+import arrow
+
 import bloop
 import bloop.engine
 import bloop.exceptions
@@ -228,6 +230,54 @@ def test_load_snapshots(engine, atomic_mode):
     )
     actual_condition = bloop.tracking.get_snapshot(user)
     assert actual_condition == expected_condition
+
+
+def test_load_shared_table(engine):
+    """
+    Two different models backed by the same table try to load the same hash key.
+    They share the column "shared" but load the content differently
+    """
+    base = bloop.new_base()
+
+    class FirstModel(base):
+        class Meta:
+            table_name = "SharedTable"
+        id = bloop.Column(bloop.String, hash_key=True)
+        first = bloop.Column(bloop.String)
+        as_date = bloop.Column(bloop.DateTime, name="shared")
+
+    class SecondModel(base):
+        class Meta:
+            table_name = "SharedTable"
+
+        id = bloop.Column(bloop.String, hash_key=True)
+        second = bloop.Column(bloop.String)
+        as_string = bloop.Column(bloop.String, name="shared")
+    engine.bind(base=base)
+
+    user_id = "user"
+    now = arrow.now()
+    now_str = now.to("utc").isoformat()
+    engine.client.batch_get_items.return_value = {
+        "SharedTable": [{
+            "id": {"S": user_id},
+            "first": {"S": "first"},
+            "second": {"S": "second"},
+            "shared": {"S": now_str}
+        }]}
+
+    first = FirstModel(id=user_id)
+    second = SecondModel(id=user_id)
+
+    engine.load([first, second])
+
+    expected_first = FirstModel(id=user_id, first="first", as_date=now)
+    expected_second = SecondModel(id=user_id, second="second", as_string=now_str)
+
+    assert first == expected_first
+    assert second == expected_second
+    assert not hasattr(first, "second")
+    assert not hasattr(second, "first")
 
 
 def test_save_twice(engine):

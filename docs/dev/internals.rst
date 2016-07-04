@@ -56,20 +56,25 @@ And returned in a similar dict:
         ...
     }
 
-Necessary Helpers
+Utility Functions
 -----------------
 
 Before we get started, there are a few helper functions that will keep the code cleaner; these mostly shuffle dicts
 into different dicts, pull out values, or drop the dynamo types from a dict to create lists or tuples.
 
-First, we'll use this in every algorithm, to pull specific fields out of the attribute blob to compare keys with:
+First, we'll use this to pull specific fields out of the attribute blob to compare keys with:
 
 .. code-block:: python
 
     def extract_key(key_shape, item):
+        """('a', 'b'), {'a': 'f', 'b': 'g', 'c': 'h'} ->
+               {'a': 'f', 'b': 'g'}
+           (Doesn't pull out the ``c`` field)
+        """
         return {field: item[field] for field in key_shape}
 
-Next, there's a simple method to drop the dynamo_type from a dict and get the single value:
+Next, there's a simple method to drop the dynamo_type from a dict and get the single value.  We need this because
+``.values()`` of a key is still an iterable of dicts, and un-hashable:
 
 .. code-block:: python
 
@@ -77,450 +82,351 @@ Next, there's a simple method to drop the dynamo_type from a dict and get the si
         """{'S': 'Space Invaders'}) -> 'Space Invaders'"""
         return next(iter(some_dict.values()))
 
-Without this, the ``.values()`` of ``key`` is still an iterable of dicts, and un-hashable as a key.  This is the
-easiest way to get a value out of a dict without creating an intermediate list or other structure.
 
-Finally, to easily construct a hashable index from a key:
+Finally, this will create a tuple of the inner values of a key, so that we can use it as the key in our dicts.  We
+use ``sorted`` because ``dict.values()`` doesn't guarantee stability:
 
 .. code-block:: python
 
     def index_for(key):
+        """{'id': {'S': 'foo'}, 'range': {'S': 'bar'}} ->
+               ('foo', 'bar')
+        """
         return tuple(sorted(value_of(k) for k in key.values()))
 
-For example, it will turn ``{"id": {"S": "foo"}, "range": {"S": "bar"}}`` into ``("bar", "foo")``.  Note that
-``sorted`` is needed for stability - there is no guarantee that ``dict.values()`` will return the same order when the
-index is constructed for the request, and when it is reconstructed to unpack.
+We'll also need a function that gets the key in dynamo's format from an object.  It needs to check that the object has
+all the key values; that is, if the object's model has a range key but it's missing on the object, we can't build a
+valid key for the object.  It also needs to handle models with and without range keys.  Because this one is mostly
+error checking and conditionals, it's just pseudocode.  Check out ``dump_key`` in engine.py for the full code.
 
-Naive Single Table
-------------------
+::
 
-To get to the current implementation, let's walk through the progression of algorithms.  First, the naive O(N^2)
-method for 1:1 modeling and single-model batch loading.  We can make a convenient assumption since there's only one
-table name; the 1:1 modeling doesn't really help us, since bloop loads into existing instances of objects instead
-of loading blobs through the model class.
+    def dump_key(engine, obj):
+        meta = obj.Meta
+        hash_key, range_key = meta.hash_key, meta.range_key
+        get hash_value from obj @ hash_key
+        if hash_value is missing:
+            raise
 
-.. code-block:: python
+        key = {hash_key.dynamo_name: dump(hash_value)}
 
-    # build request
-    table_name = objects[0].Meta.table_name
-    request = {table_name: {"Keys": []}}
-    keys = request[table_name]["Keys"]
-    for obj in objects:
-        key = dump_key(obj)
-        # O(N) unless we flatten key
-        if key not in keys:
-            keys.append(key)
+        if range_key:
+            range_value = getattr(obj, range_key.model_name, MISSING)
+            get range_value from obj @ range_key
+            if range_value is missing:
+                raise
+            key[range_key.dynamo_name] = dump(range_value))
+        return key
 
-    # paginate, retries, UnprocessedKeys
-    response = send(request)
+Pseudocode
+----------
 
-    # unpack response
-    items = response["Responses"][table_name]
+The algorithm is pretty straightforward::
 
-    # single table makes it easy to build a list of
-    # attributes that are part of the key
-    key_shape = list(dump_key(objects[0].keys()))
+    ObjectIndex = {TableName: {Index: set(Object)}}
+    TableIndex = {TableName: KeyShape}
+    Request = {TableName: {"Keys": [Key]}}
 
-    # O(N^2)
-    for item in items:
-        item_key = extract_key(key_shape, item)
-        for obj in objects:
-            obj_key = dump_key(obj)
-            if obj_key == item_key:
-                unpack_into(obj, item)
+    NameFrom(Object => TableName
+    DumpKey(Object) => Key
+    ShapeOf(Key) => KeyShape
+    IndexFrom(Key) => Index
+    IndexFor(KeyShape, Blob) => Index
+    UnpackBlob(Blob, Object) => None
 
-Note that this doesn't track which objects fail to load; we'll need to move to an indexed solution for that.
 
-Indexed Single Table
---------------------
+    for Object in Input
+        TableName = NameFrom(Object)
+        Key = DumpKey(Object)
+        KeyShape = ShapeOf(Key)
+        Index = IndexFrom(Key)
 
-Notice that in the Naive Single Table above, we dump the key N+1 times - once for the request, and once for each
-item in the response.  If we store the flattened key as an index, we can drop the inner loop , convert ``item_key``
-into an index, and jump right to the object in ``object_index``.
+        ObjectIndex[TableName][Index].add(Object)
+        TableIndex[TableName] = KeyShape
+        Request[TableName]["Keys"].append(Key)
 
-.. code-block:: python
+    Response = Call(Request)
 
-    # build request
-    table_name = objects[0].Meta.table_name
-    object_index = {}
-    request = {table_name: {"Keys": []}}
-    keys = request[table_name]["Keys"]
-    for obj in objects:
-        key = dump_key(obj)
-        index = index_for(key)
-        # O(1) because we have a flattened key!  Woo!
-        if index not in object_index:
-            keys.append(key)
-            object_index[index] = obj
+    for TableName, Blobs in Response.items()
+        for Blob in Blobs
+            KeyShape = TableIndex[TableName]
+            Index = IndexFor(KeyShape, Blob)
 
-    # paginate, retries, UnprocessedKeys
-    response = send(request)
+            Objects = ObjectIndex[TableName][Index]
+            for Object in Objects
+                UnpackBlob(Blob, Object)
 
-    # unpack response
-    items = response["Responses"][table_name]
+The bookkeeping details are omitted:
 
-    # single table makes it easy to build a list of
-    # attributes that are part of the key
-    key_shape = list(dump_key(objects[0].keys()))
+* Create new dicts in TableIndex
+* Create new dicts in ObjectIndex[TableName]
+* Create new sets in ObjectIndex[TableName][Index]
+* Pop empty ObjectIndex[TableName] to track missing objects
+* Flatten remaining objects in ObjectIndex[\*][\*][\*] to raise NotModified
 
-    # O(N)
-    for item in items:
-        item_key = extract_key(key_shape, item)
-        index = index_for(item_key)
-        obj = object_index.pop(index)
-        unpack_into(obj, item)
+Layout
+------
 
-    # Because we pop from the index, any values left weren't found
-    if object_index:
-        raise NotFound(list(object_index.values()))
-
-Still pretty good, but this will silently break on two objects that have the same key:
+First, the function signature is:
 
 .. code-block:: python
 
-    first = Model(id="foo")
-    second = Model(id="foo")
-    engine.load([first, second])
+    def load(self, objs, consistent=None):
 
-The load will build an index for ``second`` of ``("foo",)`` but that already exists, so it's not added to the request,
-and not inserted into the index.  The call will succeed, because the index only has one item to load, and there's only
-one item in the response.
+``objs`` can either be a single object, or an iterable of objects.  We'll use the consistent value unless it's
+``None``, in which case we'll fall back to the engine's config value.
 
-M:N Single Table
-----------------
-
-This is only a minor jump; instead of ``{index: obj}`` we'll track ``{index: [obj]``.
-Our missing objects logic is still the same - we're just unpacking each blob into one or more objects, and can still
-pop the index when we're done with it.
+This is the shell we'll inject the algorithm above into; it sets up our indexes and request, guards against trying to
+load abstract models, and flattening the ObjectIndex if any objects aren't loaded.  The ``TODO``\s mark where we'll
+build the request and unpack the response.
 
 .. code-block:: python
 
-    # build request
-    table_name = objects[0].Meta.table_name
-    object_index = {}
-    request = {table_name: {"Keys": []}}
-    keys = request[table_name]["Keys"]
-    for obj in objects:
-        key = dump_key(obj)
-        index = index_for(key)
-        # O(1) because we have a flattened key!  Woo!
-        if index not in object_index:
-            object_index[index] = set()
-            # Only append the key the
-            # first time we see it
-            keys.append(key)
-        object_index[index].add(obj)
+    consistent = config(self, "consistent", consistent)
+    objs = set_of(objs)
+    for obj in objs:
+        if obj.Meta.abstract:
+            raise bloop.exceptions.AbstractModelException(obj)
 
-    # paginate, retries, UnprocessedKeys
-    response = send(request)
+    table_index, object_index, request = {}, {}, {}
 
-    # unpack response
-    items = response["Responses"][table_name]
-
-    # single table makes it easy to build a list of
-    # attributes that are part of the key
-    key_shape = list(dump_key(objects[0].keys()))
-
-    # O(N)
-    for item in items:
-        item_key = extract_key(key_shape, item)
-        index = index_for(item_key)
-        # No new logic here, just iterating a list
-        # of objects instead of unpacking one
-        for obj in object_index.pop(index):
-            unpack_into(obj, item)
-
-    # Because we pop from the index, any values left weren't found
-    if object_index:
-        raise NotFound(list(object_index.values()))
-
-M:N Multiple Tables
--------------------
-
-Pretty good, but we're still relying on having one table name.  Generalizing this one will require removing the single
-table assumption, which is currently part of:
-
-* How we build the request - This isn't too bad, just insert a new dict to hold ``{"Keys": []}`` when the table name
-  isn't in the request.
-* How we build the index - This is complex, since associating table -> index -> object will require us to keep the key
-  shape for each table, and then the index for each set of objects for each table.
-* How we find the key shape from a blob - This is easy once we have the index building above.
-
-========
-Notation
-========
-
-You should be familiar with the meaning of key shape, key values, index from above.  To describe the new indexed,
-I'm going to introduce a few symbols::
-
-    <T>         table name
-    <O>         single object to load
-    <Item>      attribute blob from DynamoDB
-    <K>         key value in the wire format
-    <KS>        flattened key shape for table <T>
-    <I>         tuple of values to map <O> <==> <T,KS,KV> <==> <Item>
-
-With those, our indexes are::
-
-    TableIndex  {<T>: <KS>}
-    ObjectIndex {<T>: {<I>: [<O>]}}
-    Request     {<T>: {"Keys": [<K>]}}
-
-================
-Applied Notation
-================
-
-Let's go through what the values above will be during a load, for the following objects:
-
-.. code-block:: python
-
-    # Don't do this
-    from bloop import *
-
-
-    class Model(new_base()):
-        class Meta:
-            table_name = "My-Table-Name"
-        id = Column(String, hash_key=True)
-        sort = Column(String, range_key=True)
-        data = Column(Integer)
-    engine = Engine()
-    engine.bind(base=Model)
-
-    obj = Model(id="foo", sort="bar")
-    engine.load([obj])
-
-While we build the request::
-
-    <T>         "My-Table-Name"
-    <O>         obj
-    <K>         {"id": {"S": "foo"}, "sort": {"S": "bar"}}
-    <KS>        ["id", "sort"]
-    <I>         ("foo", "bar")
-    TableIndex  {"My-Table-Name": ["id", "sort"]}
-    ObjectIndex {"My-Table-Name": {("foo", "bar"): set(obj)}}
-    Request     {"My-Table-Name": {"Keys": set(<K>)}}
-
-While we unpack the response::
-
-    <T>         "My-Table-Name"
-    <O>         obj
-    <Item>      {"data": ..., "sort": {"S": "bar"}, "id": {"S": "foo"}}
-    <K>         {"id": {"S": "foo"}, "sort": {"S": "bar"}}
-    <KS>        ["id", "sort"]
-    <I>         ("foo", "bar")
-    TableIndex  {"My-Table-Name": ["id", "sort"]}
-    ObjectIndex {"My-Table-Name": {("foo", "bar"): set(obj)}}
-
-=======================
-Creating the TableIndex
-=======================
-
-Up until now, we've just been using a simplified ``ObjectIndex`` that doesn't have the outer dict of table names.
-This let us construct the key shape once before we parsed the results, like this:
-
-.. code-block:: python
-
-    key_shape = list(dump_key(objects[0].keys()))
-
-Now, there are many key shapes.  We can get the table name from the response, which we use to look up the key shape:
-
-.. code-block:: python
-
-    response = call(request)
-
-    for table_name, item in response["Responses"].items():
-        # get key_shape from table_name
-
-To build the TableIndex, we'll insert the key shape if the table hasn't been seen yet.  At the same time, we'll need a
-new dict in the wire request, since there's no longer a single ``{"Keys": []}`` dict in the request:
-
-.. code-block:: python
-
-    object_index = {}
-    table_index = {}
-
-    # build request
-    request = {}
-    for obj in objects:
-        table_name = obj.Meta.table_name
-        key = dump_key(obj)
-        index = index_for(key)
-
-        # new table!  save the key_shape, and create
-        # a new Keys dict in the request
-        if table_name not in table_index:
-            key_shape = list(sorted(key.keys()))
-            table_index[table_name] = key_shape
-            request[table_name] = {"Keys": []}
-
-Next, we can't check ``if index not in object_index`` because we have multiple tables; object_index gained a level,
-so we'll add this line to the check above to prime the object_index when we see a new table:
-
-.. code-block:: python
-
-    for obj in objects:
+    for obj in objs:
+        # TODO
         ...
 
-        if table_name not in table_index:
-            ...
-            # New line - prep an empty dict for <I> -> set(<O>)
-            object_index[table_name] = {}
+    response = self.client.batch_get_items(request)
 
-Now we can do nearly the same index check - create a set of indexed objects if this is the first one, and then always
-add to the existing set.  Like above, we'll only append the key to the request one time:
-
-.. code-block:: python
-
-    for obj in objects:
-        ...
-
-        if table_name not in table_index:
+    for table_name, blobs in response.items():
+        for blob in blobs:
+            # TODO
             ...
 
-        if index not in object_index[table_name]:
-            # Insert key once
-            request[table_name]["Keys"].append(key)
-            # New list of indexed objects
-            object_index[table_name][index] = set()
-        object_index[table_name][index].add(obj)
-
-===================
-Tracking not loaded
-===================
-
-Before, we popped keys from object_index and checked if it was empty at the end, but we can't do that anymore.  We're
-only popping the inner keys, and the object_index won't be empty unless there are no table keys.  That is, the
-following is not empty, even though we loaded all the objects:
-
-.. code-block:: python
-
-    # bool(object_index) is True, no longer equivalent to empty
-    object_index = {
-        "SomeTable": {},
-        "AnotherTable": {},
-        "AlsoEmpty": {}
-    }
-
-There are a few ways to solve this, such as keeping a set of all objects, and removing each when its index is loaded.
-Another way would be to pop the table dict from the object index when it's empty, and then flatten any remaining sets.
-Bloop uses the latter, to save on space:
-
-.. code-block:: python
-
-    not_loaded = set()
-    for index in object_index.values():
-        for index_set in index.values():
-            not_loaded.update(index_set)
-    if not_loaded:
-        raise bloop.exceptions.NotModified("load", not_loaded)
-
-======================
-Unpacking the response
-======================
-
-Now that we have the TableIndex, we just need to change our iterator to grab the key as well, then look up the
-key_shape in the TableIndex instead of pre-computing it outside the loop.
-
-To start, we'll drop the hardcoded table_name.  Our unpacking is now:
-
-.. code-block:: python
-
-    # unpack response
-    tables = response["Responses"]
-
-    for table_name, items in tables.items():
-        key_shape = table_index[table_name]
-
-The rest of the code is about the same, with an extra level in the object_index for table_name:
-
-.. code-block:: python
-
-    for table_name, items in tables.items():
-        key_shape = table_index[table_name]
-
-        # Still building the index the same way
-        item_key = extract_key(key_shape, item)
-        index = index_for(item_key)
-
-        # look up the index on the table's object index
-        for obj in object_index[table_name].pop(index):
-            unpack_into(obj, item)
-
-For the simple cleanup logic, we'd have an ``objects.remove(obj)`` after the unpack, so the object is considered
-loaded.  For the more complex cleanup, we'd try to clean up the table from the object_index if it's empty:
-
-.. code-block:: python
-
-    for ...:
-
-        for obj in object_index[table_name].pop(index):
-            ...
-        # If this pops all the tables, object_index will be empty
-        if not object_index[table_name]:
-            object_index.pop(table_name)
-
-    # If any table indexes are left in the object_index,
-    # then we failed to load the objects under that index
+    # Flatten objects that weren't loaded and raise
     if object_index:
-        # Flatten the object_index into a single set.
-        ...
-
-============
-All together
-============
-
-Here's the final M:N multi-table loader, with a space-efficient ``not_loaded`` check:
-
-.. code-block:: python
-
-    object_index = {}
-    table_index = {}
-
-    # build request
-    request = {}
-    for obj in set(objects):
-        table_name = obj.Meta.table_name
-        key = dump_key(obj)
-        index = index_for(key)
-
-        # new table
-        if table_name not in table_index:
-            key_shape = list(key.keys())
-            table_index[table_name] = key_shape
-            request[table_name] = {"Keys": []}
-
-        if index not in object_index[table_name]:
-            # insert key once
-            request[table_name]["Keys"].append(key)
-            # new list of indexed objects
-            object_index[table_name][index] = set()
-        object_index[table_name][index].add(obj)
-
-    # unpack response
-    tables = response["Responses"]
-
-    for table_name, items in tables.items():
-        key_shape = table_index[table_name]
-
-        # Still building the index the same way
-        item_key = extract_key(key_shape, item)
-        index = index_for(item_key)
-
-        # look up the index on the table's object index
-        for obj in object_index[table_name].pop(index):
-            unpack_into(obj, item)
-        # If this pops all the tables, object_index will be empty
-        if not object_index[table_name]:
-            object_index.pop(table_name)
-
-    if object_index:
-        # Flatten the object_index into a single set and raise
         not_loaded = set()
         for index in object_index.values():
             for index_set in index.values():
                 not_loaded.update(index_set)
         raise bloop.exceptions.NotModified("load", not_loaded)
+
+Building the Request
+--------------------
+
+The first portion of the pseudocode above translates very closely to the actual implementation, although we need to
+take care of missing keys the first time we see a new table or key within a table.  For now, let's just translate the
+pseudocode.  Here's the section we care about::
+
+    for Object in Input
+        TableName = NameFrom(Object)
+        Key = DumpKey(Object)
+        KeyShape = ShapeOf(Key)
+        Index = IndexFrom(Key)
+
+        ObjectIndex[TableName][Index].add(Object)
+        TableIndex[TableName] = KeyShape
+        Request[TableName]["Keys"].append(Key)
+
+This becomes:
+
+.. code-block:: python
+
+    for obj in objs:
+        table_name = obj.Meta.table_name
+        key = dump_key(self, obj)
+        key_shape = list(sorted(key.keys()))
+        index = index_for(key)
+
+        table_index[table_name] = key_shape
+        object_index[table_name][index].add(obj)
+        request[table_name]["Keys"].append(key)
+
+Aside from creating the nested dicts where necessary, there are two things we need to fix.  First, there will only
+ever be one ``key_shape`` for a given table; we don't want to recompute this for every object, especially since loading
+multiple objects from the same table is a common pattern.  We'll move that into wherever we check for new tables.
+Second, and more pressing, is that we unconditionally append to the request's keys.  For most cases this will be fine,
+but consider the following two objects:
+
+.. code-block:: python
+
+    some_user = User(id=from_database)
+    another_user = User(id=from_input)
+    engine.load([some_user, another_user])
+
+If the ids are the same, we'll insert the same key into the request table twice!  If this doesn't fail with DynamoDB
+(which can occur if the objects get split into two different batches) it will cause us to double load the values.  For
+the built-in types this is fine, but any custom type may not expect ``Type.load`` to be idempotent.  We must put the
+append in the same check we use for new indexes within a table.
+
+We don't have to worry about the same object appearing in the source list, twice, because we converted the input to
+a set when it came in:
+
+.. code-block:: python
+
+    def load(self, objs, ...):
+        objs = set_of(objs)
+        ...
+
+    # This is safe
+    engine.load([some_obj, some_obj])
+
+First, we'll handle new table names.  We can move the key shape in here as well, so that we don't do it per object, but
+per unique model.
+
+.. code-block:: python
+
+    if table_name not in object_index:
+        # Inlined key_shape
+        table_index[table_name] = list(sorted(key.keys()))
+        # We'll handle the inner {index: set} in
+        # the new index block below
+        object_index[table_name] = {}
+        # Don't put the key in the new list yet;
+        # Take care of it on new index below
+        request[table_name] = {
+            "Keys": [], "ConsistentRead": consistent}
+
+While we could have set ``"Keys"`` to ``[key]`` it would prevent us from doing an append in the next check we'll add:
+
+.. code-block:: python
+
+    if index not in object_index[table_name]:
+        request[table_name]["Keys"].append(key)
+        object_index[table_name][index] = set()
+
+If we haven't pushed this key into the request yet (and we'll come in here if it's a new table) then we set add it to
+the request once, and create a new set for objects that have the same (table_name, index).
+
+Because we use a set for the object_index's inner dicts, we can still do an unconditional add:
+
+.. code-block:: python
+
+    object_index[table_name][index].add(obj)
+
+Putting it all together in the shell above, we now have:
+
+.. code-block:: python
+
+    consistent = config(self, "consistent", consistent)
+    objs = set_of(objs)
+    for obj in objs:
+        if obj.Meta.abstract:
+            raise bloop.exceptions.AbstractModelException(obj)
+
+    table_index, object_index, request = {}, {}, {}
+
+    for obj in objs:
+        table_name = obj.Meta.table_name
+        key = dump_key(self, obj)
+        index = index_for(key)
+
+        if table_name not in object_index:
+            table_index[table_name] = list(sorted(key.keys()))
+            object_index[table_name] = {}
+            request[table_name] = {
+                "Keys": [], "ConsistentRead": consistent}
+
+        if index not in object_index[table_name]:
+            request[table_name]["Keys"].append(key)
+            object_index[table_name][index] = set()
+        object_index[table_name][index].add(obj)
+
+    response = self.client.batch_get_items(request)
+
+    for table_name, blobs in response.items():
+        for blob in blobs:
+            # TODO
+            ...
+
+    # Flatten objects that weren't loaded and raise
+    if object_index:
+        not_loaded = set()
+        for index in object_index.values():
+            for index_set in index.values():
+                not_loaded.update(index_set)
+        raise bloop.exceptions.NotModified("load", not_loaded)
+
+Unpacking the Response
+----------------------
+
+This translates more easily from our pseudocode, since we won't have to create any new nested structures, and can
+simply iterate and fetch from the indexes.  Here's that section of pseudocode again::
+
+    for TableName, Blobs in Response.items()
+        for Blob in Blobs
+            KeyShape = TableIndex[TableName]
+            Index = IndexFor(KeyShape, Blob)
+
+            Objects = ObjectIndex[TableName][Index]
+            for Object in Objects
+                UnpackBlob(Blob, Object)
+
+This becomes:
+
+.. code-block:: python
+
+    for table_name, blobs in response.items():
+        for blob in blobs:
+            key_shape = table_index[table_name]
+            key = extract_key(key_shape, blob)
+            index = index_for(key)
+
+            for obj in object_index[table_name].pop(index):
+                self._update(obj, blob, obj.Meta.columns)
+                bloop.tracking.sync(obj, self)
+            # See note below
+            if not object_index[table_name]:
+                    object_index.pop(table_name)
+
+The only thing we added was popping the table dict from the object index if it's empty, so that we can quickly tell
+if there are missing objects.  With that, we have the full load function:
+
+.. code-block:: python
+
+    def load(self, objs, consistent=None):
+        consistent = config(self, "consistent", consistent)
+        objs = set_of(objs)
+        for obj in objs:
+            if obj.Meta.abstract:
+                raise bloop.exceptions.AbstractModelException(obj)
+
+        table_index, object_index, request = {}, {}, {}
+
+        for obj in objs:
+            table_name = obj.Meta.table_name
+            key = dump_key(self, obj)
+            index = index_for(key)
+
+            if table_name not in object_index:
+                table_index[table_name] = list(sorted(key.keys()))
+                object_index[table_name] = {}
+                request[table_name] = {
+                    "Keys": [], "ConsistentRead": consistent}
+
+            if index not in object_index[table_name]:
+                request[table_name]["Keys"].append(key)
+                object_index[table_name][index] = set()
+            object_index[table_name][index].add(obj)
+
+        response = self.client.batch_get_items(request)
+
+        for table_name, blobs in response.items():
+            for blob in blobs:
+                key_shape = table_index[table_name]
+                key = extract_key(key_shape, blob)
+                index = index_for(key)
+
+                for obj in object_index[table_name].pop(index):
+                    self._update(obj, blob, obj.Meta.columns)
+                    bloop.tracking.sync(obj, self)
+                if not object_index[table_name]:
+                    object_index.pop(table_name)
+
+        if object_index:
+            not_loaded = set()
+            for index in object_index.values():
+                for index_set in index.values():
+                    not_loaded.update(index_set)
+            raise bloop.exceptions.NotModified("load", not_loaded)
 
 Tracking
 ========

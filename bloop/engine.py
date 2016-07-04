@@ -12,8 +12,8 @@ import declare
 
 __all__ = ["Engine"]
 
-_MISSING = object()
-_DEFAULT_CONFIG = {
+MISSING = object()
+DEFAULT_CONFIG = {
     "atomic": False,
     "consistent": False,
     "strict": True
@@ -54,13 +54,13 @@ def dump_key(engine, obj):
     """
     meta = obj.Meta
     hash_key, range_key = meta.hash_key, meta.range_key
-    hash_value = getattr(obj, hash_key.model_name, _MISSING)
-    if hash_value is _MISSING:
+    hash_value = getattr(obj, hash_key.model_name, MISSING)
+    if hash_value is MISSING:
         raise ValueError("Must specify a value for the hash attribute '{}'".format(hash_key.model_name))
     key = {hash_key.dynamo_name: engine._dump(hash_key.typedef, hash_value)}
     if range_key:
-        range_value = getattr(obj, range_key.model_name, _MISSING)
-        if range_value is _MISSING:
+        range_value = getattr(obj, range_key.model_name, MISSING)
+        if range_value is MISSING:
             raise ValueError("Must specify a value for the range attribute '{}'".format(range_key.model_name))
         key[range_key.dynamo_name] = engine._dump(range_key.typedef, range_value)
     return key
@@ -84,7 +84,7 @@ class Engine:
         self.type_engine = type_engine or declare.TypeEngine.unique()
 
         self.client = client
-        self.config = dict(_DEFAULT_CONFIG)
+        self.config = dict(DEFAULT_CONFIG)
         self.config.update(config)
 
     def _dump(self, model, obj, context=None):
@@ -238,14 +238,14 @@ class Engine:
 
         response = self.client.batch_get_items(request)
 
-        for table_name, items in response.items():
-            for item in items:
+        for table_name, blobs in response.items():
+            for blob in blobs:
                 key_shape = table_index[table_name]
-                key = extract_key(key_shape, item)
+                key = extract_key(key_shape, blob)
                 index = index_for(key)
 
                 for obj in object_index[table_name].pop(index):
-                    self._update(obj, item, obj.Meta.columns)
+                    self._update(obj, blob, obj.Meta.columns)
                     bloop.tracking.sync(obj, self)
                 if not object_index[table_name]:
                     object_index.pop(table_name)

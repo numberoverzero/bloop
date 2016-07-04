@@ -131,7 +131,8 @@ The algorithm is pretty straightforward::
     DumpKey(Object) => Key
     ShapeOf(Key) => KeyShape
     IndexFrom(Key) => Index
-    IndexFor(KeyShape, Blob) => Index
+    ExtractKey(KeyShape, Blob) => Key
+    IndexFor(Key, Blob) => Index
     UnpackBlob(Blob, Object) => None
 
 
@@ -150,7 +151,8 @@ The algorithm is pretty straightforward::
     for TableName, Blobs in Response.items()
         for Blob in Blobs
             KeyShape = TableIndex[TableName]
-            Index = IndexFor(KeyShape, Blob)
+            Key = ExtractKey(KeyShape, Blob)
+            Index = IndexFor(Key, Blob)
 
             Objects = ObjectIndex[TableName][Index]
             for Object in Objects
@@ -222,9 +224,9 @@ pseudocode.  Here's the section we care about::
         KeyShape = ShapeOf(Key)
         Index = IndexFrom(Key)
 
-        ObjectIndex[TableName][Index].add(Object)
         TableIndex[TableName] = KeyShape
         Request[TableName]["Keys"].append(Key)
+        ObjectIndex[TableName][Index].add(Object)
 
 This becomes:
 
@@ -237,8 +239,8 @@ This becomes:
         index = index_for(key)
 
         table_index[table_name] = key_shape
-        object_index[table_name][index].add(obj)
         request[table_name]["Keys"].append(key)
+        object_index[table_name][index].add(obj)
 
 Aside from creating the nested dicts where necessary, there are two things we need to fix.  First, there will only
 ever be one ``key_shape`` for a given table; we don't want to recompute this for every object, especially since loading
@@ -275,7 +277,7 @@ per unique model.
 .. code-block:: python
 
     if table_name not in object_index:
-        # Inlined key_shape
+        # In-lined key_shape
         table_index[table_name] = list(sorted(key.keys()))
         # We'll handle the inner {index: set} in
         # the new index block below
@@ -296,11 +298,7 @@ While we could have set ``"Keys"`` to ``[key]`` it would prevent us from doing a
 If we haven't pushed this key into the request yet (and we'll come in here if it's a new table) then we set add it to
 the request once, and create a new set for objects that have the same (table_name, index).
 
-Because we use a set for the object_index's inner dicts, we can still do an unconditional add:
-
-.. code-block:: python
-
-    object_index[table_name][index].add(obj)
+Because we use a set for the object_index's inner dicts, we can still do an unconditional add for the object index.
 
 Putting it all together in the shell above, we now have:
 
@@ -354,7 +352,8 @@ simply iterate and fetch from the indexes.  Here's that section of pseudocode ag
     for TableName, Blobs in Response.items()
         for Blob in Blobs
             KeyShape = TableIndex[TableName]
-            Index = IndexFor(KeyShape, Blob)
+            Key = ExtractKey(KeyShape, Blob)
+            Index = IndexFor(Key, Blob)
 
             Objects = ObjectIndex[TableName][Index]
             for Object in Objects

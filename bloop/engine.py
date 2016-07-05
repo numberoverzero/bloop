@@ -142,20 +142,19 @@ class Engine:
 
         # whether the model needs to have create/validate calls made for its
         # backing table
-        def is_validated(model):
-            return bloop.tracking.is_model_validated(model)
+        def is_verified(model):
+            return bloop.tracking.is_model_verified(model)
         concrete = set(filter(is_concrete, bloop.util.walk_subclasses(base)))
-        unvalidated = concrete - set(filter(is_validated, concrete))
+        unverified = concrete - set(filter(is_verified, concrete))
 
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
-        for model in concrete:
-            if model in unvalidated:
-                self.client.create_table(model)
+        for model in unverified:
+            self.client.create_table(model)
 
         for model in concrete:
-            if model in unvalidated:
+            if model in unverified:
                 self.client.validate_table(model)
             # Model won't need to be verified the
             # next time its BaseModel is bound to an engine

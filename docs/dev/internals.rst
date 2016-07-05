@@ -430,6 +430,45 @@ if there are missing objects.  With that, we have the full load function:
 Tracking
 ========
 
+The tracking system is used for any metadata on models and their instances that shouldn't be exposed to users, and
+so can't be stored on the instance/class/class.Meta.  It uses :py:class:`weakref.WeakKeyDictionary`\s so
+that any tracking is cleaned up when the objects are.  A normal dict would hold a reference to the object forever,
+leaking memory for every instance of a model.
+
+Models
+------
+
+Right now, the only tracking on models is whether the class has been verified against its backing table.
+
+.. code-block:: python
+
+    tracking.is_model_verified(model) -> bool
+    tracking.verify_model(model) -> None
+
+Usage is as you'd expect.  You should only call ``verify_model`` on a model that has been verified.  Currently, there
+is no way to mark a model as unverified.
+
+Here's a sample that shortcuts the create/describe if the model's verified, and verifies the model on success:
+
+.. code-block:: python
+
+    def prepare(model):
+        # No work to do, model already verified
+        if tracking.is_model_verified(model):
+            return
+
+        # Assume either call will raise on failure
+        create_table(model)
+        validate_table(model)
+
+        tracking.verify_model(model)
+
+This is the same pattern that ``Engine.bind`` uses when iterating the base's subclasses, so that
+CreateTable/DescribeTable aren't called more than once for each model.
+
+Note that the verified flag is tied to the class, not the backing table.  If two models are backed by the same table,
+both will have to verify that the table matches their expectation.
+
 Synchronized
 ------------
 

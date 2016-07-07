@@ -129,8 +129,7 @@ class BaseModel:
             value = getattr(obj, column.model_name, None)
             # Missing expected column - None is equivalent to empty
             if value is not None:
-                attrs[column.dynamo_name] = engine.dump(
-                    column.typedef, value, context=context)
+                attrs[column.dynamo_name] = engine.dump(column.typedef, value, context=context)
         return attrs
 
     def __str__(self):  # pragma: no cover

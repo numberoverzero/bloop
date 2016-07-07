@@ -580,13 +580,81 @@ the query expected to find.
 Binding
 =======
 
+There are two stages where the modeling pieces are bound together: when a subclass of an instance of
+``bloop.new_base()`` is created, and when an engine binds a model (and all its subclasses).
+
+The two stages are not related, except that they share the name, and are a process of associating information between
+components: models and columns in the first, and models and tables in the second.
+
 Model Declaration
 -----------------
 
-TODO
+Columns and Indexes are bound to a class at declaration; that is, when a subclass of some ``bloop.new_base()`` instance
+is defined:
+
+.. code-block:: python
+
+    MyBase = bloop.new_base()
+
+
+    class MyModel(MyBase):
+        # After this line executes there will be an entry
+        # "id": Column(Integer, hash_key=True) in the
+        # attrs dict that is used to construct the
+        # MyModel class.
+        id = Column(Integer, hash_key=True)
+
+        # Column isn't bound yet, so it doesn't have a model_name
+        # or dynamo_name at this point
+        pass
+    # The binding happens here, when the class declaration
+    # finishes, and the metaclass is called to create a new
+    # subclass of (in this case) MyBase.
+
+The class that ``new_base`` creates is a mix of ``model.BaseClass`` and the metaclass ``ModelMetaclass``.
+``BaseClass`` provides the default model scaffolding: ``_load``, ``_dump``, ``__init__``, and ``__str__``,
+``__repr__``, and ``__eq__`` all use ``Meta.columns`` to render and compare using the modeled columns of the class.
+
+During class creation in ``ModelMetaclass``, columns are associated to the model by setting the column's model_name.
+This is also where checks are performed to ensure there's exactly one column with ``hash_key=True``, and at most one
+column with ``range_key=True``.  Next, any indexes are associated with the model through the index's ``_bind`` method:
+
+.. code-block:: python
+
+    _Index._bind(self, model) -> None
+
+Until now, the index's ``hash_key`` and ``range_key`` attributes have been strings (or ``None``, depending on type).
+
+The ``_bind`` call will replace these with the appropriate Column instances from the model's ``Meta.columns``,
+searching by the ``model_name`` attribute.  This makes it possible to pass ``_Index`` or ``model.Meta`` to a method
+that will access the hash and range key attributes without special-casing the type it gets.
+
+Next the indexes ``projection_attributes`` are computed, based on the kwarg ``projection`` provided when the index was
+created.  For ``projection="all"`` this will simply be ``Meta.columns``.  For ``projection="keys_only"`` this will be
+the table hash and range keys, and the indexes hash and range keys (filtering out empty keys).
+
+When a list of strings is provided, they indicate the columns (by model name) to include in ``projection_attributes``,
+and the projection is set to ``"include"``.  In this case, the projection attributes is the set of columns by model
+name, and the keys of the table and the index (these are always projected into the index).
 
 Engine Binding
 --------------
 
-TODO
+The second binding happens when ``Engine.bind(base=SomeBase)`` is called with a base class.  This walks the subclasses
+of the provided class to discover all models deriving from it (see ``util.walk_subclasses``), and then create and
+validate the tables in DynamoDB against the expected tables for the models.
 
+Two subsets are calculated from the set of subclasses: ``concrete`` and ``unverified``.  Concrete is any model where
+``model.Meta.abstract == False``, while unverified is any concrete model where ``not tracking.is_verified(model)``.
+
+First, a CreateTable is issued for each unverified model.  These calls don't wait for the table to be created, so that
+multiple tables can be created at the same time.
+
+For each unverified model, a busy poll against DescribeTable will wait for the model's table to be in a ready state
+before comparing the returned description against the expected description for the model (see bloop/tables.py).
+
+If the descriptions match, the model is marked as verified so the model's table doesn't need to be checked again.
+Each concrete model and the Type of each column is then registered in the Engine's backing declare.TypeEngine.
+
+Finally the ``type_engine`` is bound, with the engine available in the ``context`` parameter for any types that want
+to create ``_load``, ``_dump`` functions based on the engine that is using them.

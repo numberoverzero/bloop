@@ -16,7 +16,7 @@ def ordered(obj):
 
 
 def walk_subclasses(cls):
-    classes = set([cls])
+    classes = {cls}
     visited = set()
     while classes:
         cls = classes.pop()

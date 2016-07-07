@@ -469,20 +469,113 @@ CreateTable/DescribeTable aren't called more than once for each model.
 Note that the verified flag is tied to the class, not the backing table.  If two models are backed by the same table,
 both will have to verify that the table matches their expectation.
 
-Synchronized
-------------
+Object Marking
+--------------
 
-TODO
+To build the set of columns to update during a save, bloop records when the ``__set__`` or ``_del__`` descriptors are
+called on a specific model.  Like model verification, marking is strictly additive; once a column is set or deleted
+on an instance, that column will be included in the UpdateItem call (possible as a DEL instead of SET).
 
-Snapshots
----------
+.. code-block:: python
 
-TODO
+    tracking.mark(obj, column) -> None
 
-Marking
--------
+All of bloop's column tracking is done by two calls to ``tracking.mark``:
 
-TODO
+#. Once during ``Column.set(self, obj, value)``
+#. Once during ``Column.del(self, obj)``
+
+These are syntactic sugar over the descriptor protocol, provided by ``declare.Field``, and map to ``__set__`` and
+``__del__`` respectively.
+
+To load an attribute dict in dynamo's wire format into an instance of a class:
+
+.. code-block:: python
+
+    ``Engine._update(obj: Any, attrs: Dict, expected: Iterable)``
+
+Where ``expected`` is an iterable of ``Column`` instances, usually some subset of ``obj.Meta.columns``.  This iterable
+acts as a whitelist for keys to extract from ``attrs``, and indicates which columns *should* have been present, so
+that you don't set None on a column that wasn't loaded (for instance, a non-projected column on a GSI query).
+
+=======================
+Intention and Ambiguity
+=======================
+
+There are a few ways to handle tracking columns; most users will come in with a slightly different expectation of how
+changes are preserved and communicated.  Instead of trying to accommodate all expectations through config options,
+bloop tries to optimize for two things:
+
+#. Minimize damage when the system doesn't match the user's expectation
+#. Minimize deviation from user's expectations by trying to conform to the maximum overlap
+   between different expectations
+
+Without going into the particular behaviors that different systems encourage, and how bloop tries to conform to them,
+here are bloop's intentions for how changes should be relayed to DynamoDB.
+
+`In the following, "local object" refers to an object that didn't come from a query or scan and has never been loaded
+from or saved to DynamoDB.  Local objects may not even be valid (for instance, the hash key isn't set).  The opposite,
+"remote object" is any object that came from a query or scan, or has been loaded from or saved to DynamoDB.  The local
+state can still be invalid, say by deleting the hash key after loading it.  Regardless, some portion of its data may
+have come from DynamoDB, or been saved to DynamoDB.`
+
+If the user never sets or deletes a column on a local object, then that column is **not** included in the UpdateItem
+during a save.  This is one of the blurriest cases, since we can't tell `"I don't care what that column is"` from `"I
+didn't explicitly delete this since it isn't set, and I want it that way"`. The first rule
+basically exists because of this case.  It's much worse to delete the column in DynamoDB when the user expects the
+column to have its previous value in DynamoDB, than to find the column still exists when the user expects the column
+to be deleted.
+
+If the user sets or deletes a column on a local object at least once, it **will be** included in the UpdateItem during
+a save.  This is true even if the column is set, and then deleted.  This tracks the user intent "I want this attribute
+to be deleted when I save it" and not the delta between creation and save (none in this example).
+
+If a remote object is loaded at least once through ``engine.load`` then all of its columns will be marked.  It's
+again safer to expect that when a user saves an object back without changing a column, they intend for its state
+in DynamoDB to reflect their local copy after a save.  Not pushing unchanged columns in the UpdateItem could result
+in a mismatch, since another caller modified them since the load.
+
+If a remote object comes from a query or scan, **only the projected attributes are marked**.  If an object is loaded
+from a GSI that only projects keys, a value won't be loaded for a column that's not part of the projection.  If the
+user were to immediately save the object back, it would be surprising if those columns were deleted, since there was
+no user intent (through ``__del__`` or setting to ``None``) to clear the column.
+
+Object Snapshots
+----------------
+
+Snapshots are atomic conditions on an object, and should be updated whenever an operation modifies the object in
+DynamoDB (save or delete), or updates are made to the local object with data from DynamoDB (query, scan, load).  This
+way, the atomic condition applied is against the last state that was loaded from DynamoDB (for new objects, this
+condition is computed to expect every column to be empty).
+
+.. code-block:: python
+
+    tracking.sync(obj, engine) -> None
+    tracking.clear(obj) -> None
+    tracking.get_snapshot(obj) -> bloop.Condition
+
+``tracking.sync`` works with ``tracking.mark`` so that the condition only builds the expectation on columns that have
+been marked.  This means that, for a query that doesn't load all columns, the atomic condition will only include
+conditions on the columns that should have been loaded by the query.
+
+Because sync builds the condition on marked columns, and every column is marked on ``Column.set``, if you call sync
+after the user modifies the object then those modifications will become part of the expected atomic condition.  For
+this reason, sync should **only** be called immediately after a dynamo operation, and should not be called on an object
+that may have been modified since the dynamo operation.
+
+In ``engine.load``, it's safe to call ``tracking.sync`` on the object right after it's loaded, because load will
+overwrite any user changes to columns with the last value in DynamoDB.  However, it would be incorrect to sync an
+object that **wasn't** loaded, since it will rebuild the snapshot, and expect any changes the user has made since
+the last call.
+
+In ``engine.save``, we can call ``tracking.sync`` right after the update call completes, because the last values stored
+are the atomic state the user will expect when making subsequent changes.  It would be incorrect to call sync just
+before the save; if the call was made with ``atomic=True``, we would end up telling DynamoDB to only change the state
+of the object if it currently matches the state that we want to save.
+
+In ``FilterIterator.__iter__``, each attribute blob is unpacked into an instance with ``Engine._update``, and then
+the entire object is synced.  This won't grab any columns not loaded, because the update call only marked columns that
+the query expected to find.
 
 Binding
 =======

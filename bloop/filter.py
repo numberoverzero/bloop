@@ -3,6 +3,7 @@ import bloop.condition
 import bloop.exceptions
 import bloop.index
 import bloop.tracking
+import collections
 import operator
 
 __all__ = ["Filter", "FilterIterator"]
@@ -266,22 +267,14 @@ class Filter:
         If there is not exactly one matching result, raises ConstraintViolation.
         """
         f = self.copy().prefetch(0).build()
-        iterator = iter(f)
-        constraint_not_met = bloop.exceptions.ConstraintViolation(f._mode + ".one", f._prepared_request)
-        try:
-            first = next(iterator)
-        except StopIteration:
-            raise constraint_not_met
+        it = iter(f)
+        first = next(it, None)
+        second = next(it, None)
 
-        # Try to load another item.  If there is only one result, this should
-        # raise StopIteration.  Finding another element means there wasn't a
-        # unique result for the query, and we should fail.
-        try:
-            next(iterator)
-        except StopIteration:
-            return first
-        else:
-            raise constraint_not_met
+        # No results, or too many results
+        if (first is None) or (second is not None):
+            raise bloop.exceptions.ConstraintViolation(f._mode + ".one", f._prepared_request)
+        return first
 
     def first(self):
         """Returns the first item that matches the scan/query.
@@ -289,11 +282,12 @@ class Filter:
         If there is not at least one matching result, raises ConstraintViolation.
         """
         f = self.copy().prefetch(0).build()
-        iterator = iter(f)
-        try:
-            return next(iterator)
-        except StopIteration:
+        it = iter(f)
+        value = next(it, None)
+        # No results
+        if value is None:
             raise bloop.exceptions.ConstraintViolation(f._mode + ".first", f._prepared_request)
+        return value
 
     def build(self):
         """Return a FilterIterator which can be iterated (and reset) to execute the query/scan.
@@ -374,7 +368,11 @@ class FilterIterator:
         self._prepared_request = prepared_request
         self._expected_columns = expected_columns
         self._mode = mode
-        self._prefetch = prefetch
+        self._prefetch = max(prefetch, 1)
+        self._buffer = collections.deque()
+
+        # Cache boto3 client call for performance
+        self._call = getattr(engine.client, mode)
 
         self._state = {"count": 0, "scanned": 0, "exhausted": False}
 
@@ -395,12 +393,9 @@ class FilterIterator:
         self._prepared_request.pop("ExclusiveStartKey", None)
 
     def __iter__(self):
-        call = getattr(self._engine.client, self._mode)
-        buffer = []
         # PERF: Without this, we'll walk into the `for obj in buffer` on empty pages when prefetch is 0
-        max_buffer = max(self._prefetch, 1)
         while not self.exhausted:
-            response = call(self._prepared_request)
+            response = self._call(self._prepared_request)
 
             continuation_token = response.get("LastEvaluatedKey", None)
             self._prepared_request["ExclusiveStartKey"] = continuation_token
@@ -416,18 +411,16 @@ class FilterIterator:
                 # Apply updates from attrs, only inserting expected columns, and sync the new object's tracking
                 self._engine._update(obj, attrs, self._expected_columns)
                 bloop.tracking.sync(obj, self._engine)
-                buffer.append(obj)
+                self._buffer.append(obj)
 
             # If we've buffered at least prefetch items, start yielding.  Otherwise, keep loading.
-            if len(buffer) >= max_buffer:
-                for obj in buffer:
-                    yield obj
-                buffer.clear()
+            if len(self._buffer) >= self._prefetch:
+                while self._buffer:
+                    yield self._buffer.popleft()
 
         # Even though there are no more continuation tokens to follow, we may have buffered some objects
         # without hitting the prefetch limit to clear the buffer.  Flush any stragglers.
-        if buffer:
-            for obj in buffer:
-                yield obj
-
+        if self._buffer:
+            while self._buffer:
+                yield self._buffer.popleft()
         raise StopIteration

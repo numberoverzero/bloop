@@ -266,14 +266,13 @@ class Filter:
 
         If there is not exactly one matching result, raises ConstraintViolation.
         """
-        f = self.copy().prefetch(0).build()
-        it = iter(f)
-        first = next(it, None)
-        second = next(it, None)
+        filter = self.copy().prefetch(0).build()
+        first = next(filter, None)
+        second = next(filter, None)
 
         # No results, or too many results
         if (first is None) or (second is not None):
-            raise bloop.exceptions.ConstraintViolation(f._mode + ".one", f._prepared_request)
+            raise bloop.exceptions.ConstraintViolation(filter._mode + ".one", filter._prepared_request)
         return first
 
     def first(self):
@@ -281,12 +280,11 @@ class Filter:
 
         If there is not at least one matching result, raises ConstraintViolation.
         """
-        f = self.copy().prefetch(0).build()
-        it = iter(f)
-        value = next(it, None)
+        filter = self.copy().prefetch(0).build()
+        value = next(filter, None)
         # No results
         if value is None:
-            raise bloop.exceptions.ConstraintViolation(f._mode + ".first", f._prepared_request)
+            raise bloop.exceptions.ConstraintViolation(filter._mode + ".first", filter._prepared_request)
         return value
 
     def build(self):
@@ -393,10 +391,16 @@ class FilterIterator:
         self._prepared_request.pop("ExclusiveStartKey", None)
 
     def __iter__(self):
-        # PERF: Without this, we'll walk into the `for obj in buffer` on empty pages when prefetch is 0
-        while not self.exhausted:
-            response = self._call(self._prepared_request)
+        return self
 
+    def __next__(self):
+        # Still have buffered elements available
+        if len(self._buffer) > 0:
+            return self._buffer.popleft()
+
+        # Refill the buffer until we hit the limit, or Dynamo stops giving us continue tokens.
+        while (not self.exhausted) and (len(self._buffer) < self._prefetch):
+            response = self._call(self._prepared_request)
             continuation_token = response.get("LastEvaluatedKey", None)
             self._prepared_request["ExclusiveStartKey"] = continuation_token
 
@@ -413,14 +417,10 @@ class FilterIterator:
                 bloop.tracking.sync(obj, self._engine)
                 self._buffer.append(obj)
 
-            # If we've buffered at least prefetch items, start yielding.  Otherwise, keep loading.
-            if len(self._buffer) >= self._prefetch:
-                while self._buffer:
-                    yield self._buffer.popleft()
-
-        # Even though there are no more continuation tokens to follow, we may have buffered some objects
-        # without hitting the prefetch limit to clear the buffer.  Flush any stragglers.
+        # Clear the first element of a full buffer, or a remaining element after exhaustion
         if self._buffer:
-            while self._buffer:
-                yield self._buffer.popleft()
+            return self._buffer.popleft()
+
+        # The filter must be exhausted, otherwise the while would have continued.
+        # The buffer must be empty, otherwise we would have popped above.
         raise StopIteration

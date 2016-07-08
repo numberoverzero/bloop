@@ -1,7 +1,8 @@
 Bloop: DynamoDB Modeling
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-DynamoDB's concurrency model is great, but using it correctly is tedious and unforgiving.  Bloop manages that complexity for you.
+DynamoDB's concurrency model is great, but using it correctly is tedious and unforgiving.
+Bloop manages that complexity for you.
 
 Features
 ========
@@ -85,7 +86,6 @@ Kick it up a notch with conditional operations:
     # Delete the account, as long as none of the fields have
     # changed since we last loaded the account
     engine.delete(account, atomic=True)
-
 
 .. toctree::
     :hidden:

@@ -111,10 +111,6 @@ Boto Client
 Backoffs
 --------
 
-Batch Size
-----------
-
-
 Type Engine
 ===========
 

@@ -11,7 +11,7 @@ __all__ = ["Client"]
 
 DEFAULT_BACKOFF_COEFF = 50.0
 DEFAULT_MAX_ATTEMPTS = 4
-MAX_BATCH_SIZE = 25
+DYNAMO_BATCH_SIZE = 25
 RETRYABLE_ERRORS = [
     "InternalServerError",
     "ProvisionedThroughputExceededException"
@@ -29,7 +29,7 @@ def default_backoff_func(attempts):
     return (DEFAULT_BACKOFF_COEFF * (2 ** attempts)) / 1000.0
 
 
-def partition_batch_get_input(batch_size, items):
+def partition_batch_get_input(items):
     """ Takes a batch_get input and partitions into 25 object chunks """
     chunk = {}
     count = 0
@@ -43,7 +43,7 @@ def partition_batch_get_input(batch_size, items):
                 table = chunk[table_name] = {"ConsistentRead": consistent_read, "Keys": []}
             table["Keys"].append(key)
             count += 1
-            if count >= batch_size:
+            if count >= DYNAMO_BATCH_SIZE:
                 yield chunk
                 count = 0
                 chunk = {}
@@ -71,16 +71,13 @@ class Client(object):
             with DynamoDB
         backoff_func (func<int>): Calculates the duration to wait between
             retries.  By default, an exponential backoff function is used.
-        batch_size (int): The maximum number of items to include in a batch
-            request to DynamoDB.  Default value is 25, a lower limit may be
-            useful to constrain per-request sizes.
 
     .. _boto3 DynamoDB Client:
         http://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#client
     .. _DynamoDB API Reference:
         http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Operations.html
     """
-    def __init__(self, boto_client=None, backoff_func=None, batch_size=MAX_BATCH_SIZE):
+    def __init__(self, boto_client=None, backoff_func=None):
         """
         backoff_func is an optional function that takes an int
             (attempts so far) that should either:
@@ -90,7 +87,6 @@ class Client(object):
         # Fall back to the global session
         self.boto_client = boto_client or boto3.client("dynamodb")
         self.backoff_func = backoff_func or default_backoff_func
-        self.batch_size = batch_size
 
     def _call_with_retries(self, func, *args, **kwargs):
         attempts = 1
@@ -171,7 +167,7 @@ class Client(object):
         """
         response = {}
         get_batch = functools.partial(self._call_with_retries, self.boto_client.batch_get_item)
-        request_batches = partition_batch_get_input(self.batch_size, items)
+        request_batches = partition_batch_get_input(items)
 
         for request_batch in request_batches:
             # After the first call, request_batch is the UnprocessedKeys from the first call

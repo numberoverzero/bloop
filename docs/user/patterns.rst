@@ -1,6 +1,8 @@
 Common Patterns
 ^^^^^^^^^^^^^^^
 
+.. _patterns-local:
+
 DynamoDB Local
 ==============
 

@@ -18,15 +18,15 @@ RETRYABLE_ERRORS = [
 ]
 
 
-def default_backoff_func(attempts):
+def default_backoff_func(failed_attempts):
     """
     Exponential backoff helper.
 
     attempts is the number of calls so far that have failed
     """
-    if attempts == DEFAULT_MAX_ATTEMPTS:
-        raise RuntimeError("Failed after {} attempts".format(attempts))
-    return (DEFAULT_BACKOFF_COEFF * (2 ** attempts)) / 1000.0
+    if failed_attempts == DEFAULT_MAX_ATTEMPTS:
+        raise RuntimeError("Failed after {} attempts".format(failed_attempts))
+    return (DEFAULT_BACKOFF_COEFF * (2 ** failed_attempts)) / 1000.0
 
 
 def partition_batch_get_input(items):
@@ -78,9 +78,13 @@ class Client(object):
         http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Operations.html
     """
     def __init__(self, boto_client=None, backoff_func=None):
-        """
+        """Create a new bloop Client that wraps the boto3 clients.
+
+        boto_client is an optional instance of a boto3 client, either
+            created with `boto3.client("dynamodb")` or through a
+            boto3.session.Session.
         backoff_func is an optional function that takes an int
-            (attempts so far) that should either:
+            (failed attempts so far) that should either:
             - return the number of seconds to sleep
             - raise to stop
         """

@@ -47,6 +47,8 @@ Condition to ensure an object's hash (or hash + range) key are not set (item doe
     tweet = Tweet(account=uuid.uuid4(), id="numberoverzero", ...)
     engine.save(tweet, condition=if_not_exist(tweet))
 
+.. _patterns-engine-config:
+
 Temporary Engine Config
 =======================
 

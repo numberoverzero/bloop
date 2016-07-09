@@ -4,7 +4,7 @@ Configuration
 Bloop tries to minimize the configuration required for the most common uses without restricting your ability to
 swap out large portions of the engine, type system, and low-level clients.
 
-Most of the knobs are tucked away so they won't bother you at first.  There are only three configuration
+Most of the knobs are neatly tucked away until you need them.  There are only three configuration
 options for the Engine, and the built-in Types cover common uses.  As your models and types grow more complex, these
 features will be easy to integrate with your existing code.
 
@@ -145,14 +145,39 @@ Here's a backoff function that waits 2 seconds between calls and allows 10 total
         # Wait 2 seconds before retrying
         return 2000
 
-Note that the ``failed_attempts`` parameter is the number of attempts so far: the first time it is called,
-``failed_attempts`` will be 1.
+Note that the ``failed_attempts`` parameter is the number of attempts so far; therefore ``failed_attempts`` will be 1
+the first time the backoff function is called.
 
 Type Engine
 ===========
 
+When you create a new Engine, bloop automatically creates a unique ``declare.TypeEngine`` unless you provide one.
+This type engine is responsible for keeping track of bound load/dump methods for the types bound to it.  Those
+types are registered and bound when you call ``Engine.bind(base=SomeBaseModel)``.
+
 Shared Type Engine
 ------------------
 
-Binding
--------
+``Engine.bind`` doesn't bind models to itself, but delegates the calls to its type engine.  This makes it easy to
+share those bindings with other bloop Engines by sharing its ``type_engine``.  This is exactly what the
+:ref:`patterns-engine-config` pattern does.
+
+In the following assume that ``MyModel`` is a model we've previously defined:
+
+.. code-block:: python
+
+    original_engine = bloop.Engine()
+    original_engine.bind(base=MyModel)
+
+    # Somewhere else we want to create
+    # our own engine so our config changes
+    # don't modify the original engine.
+    new_engine = bloop.Engine(
+        type_engine=original_engine.type_engine)
+
+    # When dump is called on the type of each column, the
+    # context will expose new_engine, not original_engine
+    new_engine.save(some_instance)
+
+Now, ``new_engine`` can use whatever models were bound to its type_engine.  When a value is loaded through this
+new engine, the loading context will have ``{"engine": new_engine}``.

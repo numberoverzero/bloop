@@ -16,16 +16,37 @@ def symmetric_test(typedef, *pairs):
         assert typedef.dynamo_dump(loaded, context={}) == dumped
 
 
-def test_load_dump_best_effort():
-    """python_type is an informational field, and doesn't check types on load/dump"""
+def test_missing_abstract_methods(engine):
+    """NotImplementedError when dynamo_load or dynamo_dump are missing"""
 
     class MyType(types.Type):
+        backing_type = "S"
+        python_type = str
+
+    typedef = MyType()
+    engine.type_engine.register(typedef)
+    engine.type_engine.bind()
+
+    with pytest.raises(NotImplementedError):
+        typedef._load({"S": "value"}, context={})
+
+    with pytest.raises(NotImplementedError):
+        typedef._dump("value", context={})
+
+
+def test_load_dump_best_effort(engine):
+    """python_type is an informational field, and doesn't check types on load/dump"""
+
+    class MyType(types.String):
         backing_type = "FOO"
         python_type = float
 
     typedef = MyType()
-    assert "not_a_float" == typedef._load({"NOT_FOO": "not_a_float"}, context={})
-    assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={})
+    engine.type_engine.register(typedef)
+    engine.type_engine.bind()
+
+    assert "not_a_float" == typedef._load({"NOT_FOO": "not_a_float"}, context={"engine": engine})
+    assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={"engine": engine})
 
 
 def test_string():
@@ -100,15 +121,22 @@ def test_binary():
 
 @pytest.mark.parametrize(
     "set_type, loaded, dumped", [
-        (types.String, set(["Hello", "World"]), set(["Hello", "World"])),
-        (types.Float, set([4.5, 3]), set(["4.5", "3"])),
-        (types.Integer, set([0, -1, 1]), set(["0", "-1", "1"])),
-        (types.Binary, set([b"123", b"456"]), set(["MTIz", "NDU2"]))], ids=str)
-def test_sets(set_type, loaded, dumped):
+        (types.String, {"Hello", "World"}, [{"S": "Hello"}, {"S": "World"}]),
+        (types.Float, {4.5, 3}, [{"N": "4.5"}, {"N": "3"}]),
+        (types.Integer, {0, -1, 1}, [{"N": "0"}, {"N": "-1"}, {"N": "1"}]),
+        (types.Binary, {b"123", b"456"}, [{"B": "MTIz"}, {"B": "NDU2"}])], ids=str)
+def test_sets(engine, set_type, loaded, dumped):
     typedef = types.Set(set_type)
-    assert typedef.dynamo_load(dumped, context={}) == loaded
-    # Unordered compare
-    assert set(typedef.dynamo_dump(loaded, context={})) == dumped
+    engine.type_engine.register(typedef)
+    engine.type_engine.bind()
+
+    assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
+
+    # Can't use a simple set because the values are unhashable dicts like {"S": "value"}
+    actual_dumped = typedef.dynamo_dump(loaded, context={"engine": engine})
+    assert len(actual_dumped) == len(dumped)
+    for item in actual_dumped:
+        assert item in dumped
 
 
 def test_set_type_instance():
@@ -152,14 +180,16 @@ def test_bool(value):
     assert typedef.dynamo_load(value, context={}) is bool(value)
 
 
-def test_list():
+def test_list(engine):
     typedef = types.List(types.UUID)
     loaded = [uuid.uuid4() for _ in range(5)]
     expected = [{"S": str(id)} for id in loaded]
 
-    dumped = typedef.dynamo_dump(loaded, context={})
+    engine.type_engine.register(typedef)
+    engine.type_engine.bind()
+    dumped = typedef.dynamo_dump(loaded, context={"engine": engine})
     assert dumped == expected
-    assert typedef.dynamo_load(dumped, context={}) == loaded
+    assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
 
 
 @pytest.mark.parametrize("typedef", [types.List, types.Set, types.TypedMap])
@@ -176,7 +206,7 @@ def test_load_dump_none():
     assert typedef._load({"S": None}, context={}) is None
 
 
-def test_map_dump():
+def test_map_dump(engine):
     """Map handles nested maps and custom types"""
     uid = uuid.uuid4()
     now = arrow.now().to('utc')
@@ -201,11 +231,13 @@ def test_map_dump():
         'Id': {'S': str(uid)},
         'Updated': {'S': now.isoformat()}
     }
-    dumped = DocumentType.dynamo_dump(loaded, context={})
+    engine.type_engine.register(DocumentType)
+    engine.type_engine.bind()
+    dumped = DocumentType.dynamo_dump(loaded, context={"engine": engine})
     assert dumped == expected
 
 
-def test_map_load():
+def test_map_load(engine):
     """Map handles nested maps and custom types"""
     uid = uuid.uuid4()
     dumped = {
@@ -228,13 +260,18 @@ def test_map_load():
         'Id': uid,
         'Updated': None
     }
-    loaded = DocumentType.dynamo_load(dumped, context={})
+    engine.type_engine.register(DocumentType)
+    engine.type_engine.bind()
+    loaded = DocumentType.dynamo_load(dumped, context={"engine": engine})
     assert loaded == expected
 
 
-def test_typedmap():
+def test_typedmap(engine):
     """TypedMap handles arbitrary keys and values"""
     typedef = types.TypedMap(types.DateTime)
+
+    engine.type_engine.register(typedef)
+    engine.type_engine.bind()
 
     now = arrow.now().to('utc')
     later = now.replace(seconds=30)
@@ -246,5 +283,5 @@ def test_typedmap():
         'now': {'S': now.isoformat()},
         'later': {'S': later.isoformat()}
     }
-    assert typedef.dynamo_dump(loaded, context={}) == dumped
-    assert typedef.dynamo_load(dumped, context={}) == loaded
+    assert typedef.dynamo_dump(loaded, context={"engine": engine}) == dumped
+    assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded

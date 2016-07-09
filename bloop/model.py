@@ -117,19 +117,19 @@ class BaseModel:
         for column in cls.Meta.columns:
             if column.dynamo_name in attrs:
                 expected.add(column)
-        context["engine"]._update(obj, attrs, expected)
+        context["engine"]._update(obj, attrs, expected, **kwargs)
         return obj
 
     @classmethod
     def _dump(cls, obj, *, context, **kwargs):
         """ obj -> dict """
         attrs = {}
-        engine = context["engine"].type_engine
+        type_engine = context["engine"].type_engine
         for column in cls.Meta.columns:
             value = getattr(obj, column.model_name, None)
             # Missing expected column - None is equivalent to empty
             if value is not None:
-                attrs[column.dynamo_name] = engine.dump(column.typedef, value, context=context)
+                attrs[column.dynamo_name] = type_engine.dump(column.typedef, value, context=context, **kwargs)
         return attrs
 
     def __str__(self):  # pragma: no cover

@@ -46,8 +46,7 @@ def extract_key(key_shape, item):
 
 
 def dump_key(engine, obj):
-    """
-    dump the hash (and range, if there is one) key(s) of an object into
+    """dump the hash (and range, if there is one) key(s) of an object into
     a dynamo-friendly format.
 
     returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
@@ -69,7 +68,8 @@ def dump_key(engine, obj):
 def config(engine, key, value):
     """Return a given config value unless it's None.
 
-    In that case, fall back to the engine's config value."""
+    In that case, fall back to the engine's config value.
+    """
     if value is None:
         return engine.config[key]
     return value
@@ -87,11 +87,11 @@ class Engine:
         self.config = dict(DEFAULT_CONFIG)
         self.config.update(config)
 
-    def _dump(self, model, obj, context=None):
-        """ Return a dict of the obj in DynamoDB format """
+    def _dump(self, model, obj, context=None, **kwargs):
+        """Return a dict of the obj in DynamoDB format"""
         try:
             context = context or {"engine": self}
-            return context["engine"].type_engine.dump(model, obj, context=context)
+            return context["engine"].type_engine.dump(model, obj, context=context, **kwargs)
         except declare.DeclareException:
             # Best-effort check for a more helpful message
             if isinstance(model, bloop.model.ModelMetaclass):
@@ -100,13 +100,13 @@ class Engine:
                 raise ValueError("Failed to dump unknown model {}".format(model))
 
     def _instance(self, model):
-        """ Return an instance of a given model """
+        """Return an instance of a given model"""
         return self._load(model, {})
 
-    def _load(self, model, value, context=None):
+    def _load(self, model, value, context=None, **kwargs):
         try:
             context = context or {"engine": self}
-            return context["engine"].type_engine.load(model, value, context=context)
+            return context["engine"].type_engine.load(model, value, context=context, **kwargs)
         except declare.DeclareException:
             # Best-effort check for a more helpful message
             if isinstance(model, bloop.model.ModelMetaclass):
@@ -114,13 +114,13 @@ class Engine:
             else:
                 raise ValueError("Failed to load unknown model {}".format(model))
 
-    def _update(self, obj, attrs, expected, context=None):
-        """ Push values by dynamo_name into an object """
+    def _update(self, obj, attrs, expected, context=None, **kwargs):
+        """Push values by dynamo_name into an object"""
         context = context or {"engine": self}
         for column in expected:
             value = attrs.get(column.dynamo_name, None)
             if value is not None:
-                value = context["engine"]._load(column.typedef, value, context=context)
+                value = context["engine"]._load(column.typedef, value, context=context, **kwargs)
             setattr(obj, column.model_name, value)
 
     def bind(self, *, base):
@@ -186,8 +186,7 @@ class Engine:
             bloop.tracking.clear(obj)
 
     def load(self, objs, consistent=None):
-        """
-        Populate objects from dynamodb, optionally using consistent reads.
+        """Populate objects from dynamodb, optionally using consistent reads.
 
         If any objects are not found, raises NotModified with the attribute
         `objects` containing a list of the objects that were not loaded.

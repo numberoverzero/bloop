@@ -3,15 +3,9 @@
 Custom Types
 ^^^^^^^^^^^^
 
-In most cases, you'll create a custom type by subclassing one of ``String``, ``Float``, or ``Binary`` and implementing
-two methods: ``dynamo_load`` and ``dynamo_dump``.  If you are subclassing the base ``Type``, or any built-in type,
-you do not need to do anything else.  See the quick example below to get going.
-
-If you are creating a type that will be backed by Dynamo's ``LIST``, ``MAP``, or one of ``SS/NS/BS`` you will probably
-need to implement ``_load``, ``_dump``, and ``_register``.
-
-In rare cases, you may want to implement ``bind`` to provide engine-specific pairs of ``_load``/``_dump`` functions.
-
+In most cases you'll create a custom type by subclassing one of ``String``, ``Float``, or ``Binary`` and implementing
+two methods: ``dynamo_load`` and ``dynamo_dump``.  Sometimes, you'll need to implement ``_register`` for nested or
+referenced types.  See the quick example below to get going.
 
 Quick Example
 =============
@@ -35,7 +29,7 @@ Here's a trivial type that prepends a string with its length.  So ``"hello world
             return super().dynamo_dump(
                 prefix + value, context=context, **kwargs)
 
-We can now use our custom type anywhere a String would be allowed:
+We can now use this type anywhere a String would be allowed:
 
 .. code-block:: python
 
@@ -82,15 +76,31 @@ Bloop uses eight of the nine backing types that DynamoDB offers::
     "L"    List
     "BOOL" Boolean
 
-The ``NULL`` type is not used because it can have only one value (True) which, while useful when a column can have
-arbitrarily typed values, is useless for an Object Mapper which enforces types per-column.
+The ``NULL`` type is not used because it can have only one value (True).  This is useful when a column can have
+arbitrarily typed values, but is useless for an Object Mapper which enforces a type per column.
 
 .. _base-type:
 
 Base Type
 =========
 
-Before diving into the available types, here's the structure of the base ``Type``:
+Before diving into the available types, let's talk about the base ``bloop.Type``.  Most of your types will only need
+to implement the following:
+
+.. code-block:: python
+
+    class CustomType(bloop.Type):
+        backing_type = "S"  # Backed by DynamoDB string type
+
+        def dynamo_load(self, value, *, context, **kwargs):
+            value = do_some_processing(value)
+            return value
+
+        def dynamo_dump(self, value, *, context, **kwargs):
+            value = do_some_processing(value)
+            return value
+
+While the full ``bloop.Type`` class looks like this:
 
 .. code-block:: python
 
@@ -98,7 +108,7 @@ Before diving into the available types, here's the structure of the base ``Type`
         python_type = None
         backing_type = None
 
-        def bind(self, engine, **config):
+        def bind(self, type_engine, **config):
             return self._load, self._dump
 
         def _load(self, value, **kwargs):
@@ -112,60 +122,56 @@ Before diving into the available types, here's the structure of the base ``Type`
                 return {self.backing_type: None}
             return {self.backing_type: self.dynamo_dump(value, **kwargs)}
 
-        def _register(self, engine):
-            super()._register(engine)
-
         def dynamo_load(self, value, *, context, **kwargs):
-            return value
+            raise NotImplementedError()
 
         def dynamo_dump(self, value, *, context, **kwargs):
-            return value
+            raise NotImplementedError()
 
+        def _register(self, type_engine):
+            pass
 
-At some point your types **must** subclass ``declare.TypeDefinition``, which hooks into the underlying system that
-``bloop.Engine`` relies on for recursively loading/dumping modeled objects.
-
-If you aren't subclassing ``bloop.Type`` you only need to read the sections on ``_register``, ``_load`` and ``_dump``
-below.
-
-The definition for ``bind`` above is from ``declare.TypeDefinition`` and is not specific to ``bloop.Type``.  It is
-usually enough to implement ``_load`` and ``_dump`` in your type, and rely on ``declare.TypeDefinition`` to handle
-type binding.
+When subclassing ``bloop.Type`` you must not override ``bind``, ``_load``, or ``_dump``.  If you need to customize how
+your type binds to the type engine, or want to unpack DynamoDB's wire format manually, see :ref:`user-advanced-types`.
 
 ``python_type``
 ---------------
 
 This attribute is purely informational, and is only used in ``__str__`` and ``__repr__``.  This attribute isn't
-checked against an incoming or outgoing value, although your custom types could choose to enforce them.
+checked against an incoming or outgoing value, although your types could choose to enforce them.
 
 ``backing_type``
 ----------------
 
-Unlike ``python_type``, this field is **required** and must be one of the types defined in :ref:`base-type`.  This is
-used to dump a value eg. ``"some string"`` into the proper DynamoDB wire format ``{"S": "some string"}``.  Usually,
-you'll want to define this on your custom type.  In some cases, however, you won't know this value until the type is
-instantiated.  For example, the built-in :ref:`user-set-type` type constructs the backing type based on its inner
-type's backing type with roughly the following:
+Unlike ``python_type``, this field is **required** when subclassing ``bloop.Type`` and must be one of the types defined
+in :ref:`base-type`.  This is used to dump a value eg. ``"some string"`` into the proper DynamoDB wire format
+``{"S": "some string"}``.  Usually, you'll want to define this on your type.  In some cases, however, you won't know
+this value until the type is instantiated.  For example, the built-in :ref:`user-set-type` type constructs the backing
+type based on its inner type's backing type with roughly the following:
 
 .. code-block:: python
 
     def __init__(self, typedef=None):
         if typedef is None:
             raise TypeError(...)
-        if typedef.backing_type not in ["N", "S", "B"]:
+        if typedef.backing_type not in {"N", "S", "B"}:
             raise TypeError(...)
 
         # Good to go, backing type will be NS, SS, or BS
-        self.backing_type = "S" + typedef.backing_type
+        self.backing_type = typedef.backing_type + "S"
 
 ``dynamo_load``
 ---------------
 
-Because ``bloop.Type`` unpacks the wire format's single-key dict for you, this will always be the value as a string.
-If there was no value, or the value was ``None``, ``Type._load`` will not call ``dynamo_load`` and will instead return
-None.  If you want to handle ``None``, you will need to implement ``_load`` yourself.
+.. code-block:: python
 
-The bloop engine that is loading the value can always be accessed through ``context["engine"]``; this is useful to
+    def dynamo_load(self, value, *, context, **kwargs):
+        ...
+
+Because ``bloop.Type`` unpacks the wire format's single-key dict for you, this will always be the value as a string.
+If there was no value, or the value was ``None``, ``dynamo_load`` won't be called, and will instead return None.
+
+The bloop engine that is loading the value can always be accessed through ``context["engine"]``.  This is useful to
 return different values depending on how the engine is configured, or performing chained operations.  For example, you
 could implement a reference type that loads a value from a different model like so:
 
@@ -173,7 +179,6 @@ could implement a reference type that loads a value from a different model like 
 
     class ReferenceType(bloop.Type):
         def __init__(self, model=None, blob_name=None):
-            # TODO Guard against (model is None or blob_name is None)
             self.model = model
             self.blob_name = blob_name
             self.python_type = model
@@ -209,10 +214,15 @@ And its usage:
 ``dynamo_dump``
 ---------------
 
-The exact reverse of ``dynamo_load``, this method takes the modeled value and turns it a string that contains a
-DynamoDB-compatible format for the given backing value.  For binary objects, this means base64 encoding the value.
+.. code-block:: python
 
-For the ``ReferenceType`` defined above, here is the corresponding ``dynamo_dump``:
+    def dynamo_dump(self, value, *, context, **kwargs):
+        ...
+
+The exact reverse of ``dynamo_load``, this method takes the modeled value and turns it into a string that contains a
+DynamoDB-compatible format for the given backing value.  For binary objects this means base64 encoding the value.
+
+Here is the corresponding ``dynamo_dump`` for the ``ReferenceType`` defined above:
 
 .. code-block:: python
 
@@ -220,141 +230,11 @@ For the ``ReferenceType`` defined above, here is the corresponding ``dynamo_dump
         # value is an instance of the loaded object,
         # so its hash key is the value to return
         # from this object (after saving value to Dynamo)
-
-        # TODO try/catch NotModified
         context["engine"].save(value)
-
 
         # Get the model name of the hash key
         hash_key_name = self.model.Meta.hash_key.model_name
         return getattr(obj, hash_key_name)
-
-``_load``, ``_dump``
---------------------
-
-For most cases, subclassing ``bloop.Type`` should be sufficient.  If however you want to handle ``None`` yourself,
-or need to handle recursive load/dump calls (for nested types, like ``Map`` and ``List``) you will probably need to
-either implement these methods, or at some point call them.
-
-The signatures for ``dynamo_load`` and ``dynamo_dump`` are intentionally compatible with ``_load`` and ``_dump``; you
-should review the sections for those functions above for an example of using them.
-
-The base type short-circuits on ``None`` and does not invoke the corresponding ``dynamo_*`` functions, since Nones are
-treated as not present (during load) or not modified (during dump).  This is because Dynamo may elide any missing
-values, and will treat Nones as such on the wire.  To keep the logic simple in ``dynamo_*`` functions, which will
-almost never care about ``None``, the check is done before those functions.
-
-If you still want to handle None on your own, even with the disclaimer that None may not represent a sentinel for
-"not present" but instead be an omission for the sake of wire size, then you will need to implement ``_load`` and
-``_dump`` with the same intention as the ``dynamo_*`` equivalents above.
-
-``_register``
--------------
-
-The ``_register`` method is called on a your custom type when it is registered during ``bloop.Engine.bind``.  You will
-need to implement ``_register`` if your custom type has a reference to another type that you intend to load or dump.
-
-For example, the built-in :ref:`user-set-type` uses a type passed as an argument during ``__init__`` to load and dump
-values from a String Set, Number Set, or Binary Set.  To ensure the type engine can handle the nested load/dump calls
-for that type, it implements ``_register`` like so:
-
-.. code-block:: python
-
-    class Set(Type):
-        """Adapter for sets of objects"""
-        python_type = collections.abc.Set
-
-        def __init__(self, typedef=None):
-            ...
-            self.typedef = type_instance(typedef)
-            super().__init__()
-
-        def _register(self, engine):
-            engine.register(self.typedef)
-
-``bind``
---------
-
-To explain when you would implement ``bind`` we need to briefly review how ``bloop.Engine.bind`` leads to the type
-engine understanding your custom types.
-
-After validating your model, ``bloop.Engine.bind`` will call ``type_engine.register`` on the type of each column in
-the validated model.  The bloop Engine's type_engine is a ``declare.TypeEngine`` (sorry, not the best naming).  When
-register is called on a type, it gives the TypeEngine a chance to review the type and then adds it to a list of
-unbound types.  When all of the columns' types have been registered, bloop calls ``type_engine.bind()`` with some
-context.
-
-``declare.TypeEngine`` then calls ``TypeDefinition.bind(engine, **config)`` on each of the unbound types.  This
-function returns a tuple of ``(load_func, dump_func)`` that this engine can use to load and dump values for the type
-through.
-
-By default, and **for almost all cases** this will only need to return the ``_load`` and ``_dump`` functions
-on the class.  In some cases, however, you will want to return different functions depending on values in the context
-provided to the ``bind`` function.  For example, you may want to return a different load and dump for an engine that
-doesn't know about a particular type.  You may store a custom config value on your bloop Engine that you use to flag
-a full or partial load.  You may want to associate different engines with particular views of data (say, one for users
-and one for admins) and return appropriate functions for both.
-
-By implementing a custom ``bind`` you may remove the need to implement the ``_load`` and ``_dump`` functions:
-
-.. code-block:: python
-
-    import declare
-
-
-    class AdminType(declare.TypeDefinition):
-        def bind(self, engine, **config):
-            # Note the difference; the first arg is the
-            # underlying declare.TypeEngine, while the
-            # engine in config is the bloop.Engine
-            declare_engine = engine
-            bloop_engine = config["context"]["engine"]
-
-            # Check for an admin flag
-            if bloop_engine.config.get("is_admin", False):
-                return self.admin_load, self.admin_dump
-            else:
-                return self.user_load, self.user_dump
-
-        def admin_load(self, value, **kwargs):
-            return value
-        def admin_dump(self, value, **kwargs):
-            return value
-
-        def user_load(self, value, **kwargs):
-            return "REDACTED"
-        def user_dump(self, value, **kwargs):
-            # Users can modify this field but only admins can view it
-            return value
-
-Its usage is exactly the same as any other type:
-
-.. code-block:: python
-
-    class PlayerReport(bloop.new_base()):
-        id = Column(Integer, hash_key=True)
-        reported_by = Column(AdminType)
-        description = Column(AdminType)
-
-    admin_engine = bloop.Engine()
-    admin_engine.config["is_admin"] = True
-    user_engine = bloop.Engine()
-
-    admin_engine.bind(base=PlayerReport)
-    user_engine.bind(base=PlayerReport)
-
-    report = PlayerReport(
-        id=0, reported_by="victim",
-        description="someone is cheating!")
-    user_engine.save(report)
-
-    admin_report = PlayerReport(id=0)
-    admin_engine.load(admin_report)
-    assert admin_report.reported_by == "victim"
-
-    user_report = PlayerReport(id=0)
-    user_engine.load(user_report)
-    assert user_report.reported_by == "REDACTED"
 
 Enum Example
 ============
@@ -363,7 +243,7 @@ Here are two simple enum types that can be built off existing types with minimal
 the :ref:`user-integer-type` type and consumes little space, while the second is based on :ref:`user-string-type` and
 stores the Enum values.
 
-For both examples, let's say we have the following :py:class:`enum.Enum`:
+Consider the following :py:class:`enum.Enum`:
 
 .. code-block:: python
 
@@ -372,6 +252,9 @@ For both examples, let's say we have the following :py:class:`enum.Enum`:
         red = 1
         green = 2
         blue = 3
+
+We can store this in DynamoDB with two different types, without changing how we interact with the models that they
+represent.
 
 Integer Enum
 ------------
@@ -405,23 +288,21 @@ Usage:
         color = Column(EnumType(Color))
     engine.bind(base=Shirt)
 
-    tshirt = Shirt(id="tshirt", color=Color.red)
-    engine.save(tshirt)
+    shirt = Shirt(id="t-shirt", color=Color.red)
+    engine.save(shirt)
 
 Stored in DynamoDB as:
 
-+--------+-------+
-| id     | color |
-+--------+-------+
-| tshirt | 1     |
-+--------+-------+
-
++---------+-------+
+| id      | color |
++---------+-------+
+| t-shirt | 1     |
++---------+-------+
 
 String Enum
 -----------
 
-This will look remarkably similar, with the only difference that ``Enum.name`` gives us a string, and ``Enum[value]``
-gives us an enum value by string.
+The only difference is that ``Enum.name`` gives us a string and ``Enum[value]`` gives us an enum value by string.
 
 .. code-block:: python
 
@@ -433,14 +314,16 @@ gives us an enum value by string.
             super().__init__()
 
         def dynamo_dump(self, value, *, context, **kwargs):
+            # previously: value = value.value
             value = value.name
             return super().dynamo_dump(value, context=context, **kwargs)
 
         def dynamo_load(self, value, *, context, **kwargs):
             value = super().dynamo_load(value, context=context, **kwargs)
+            # previously: self.enum_cls(value)
             return self.enum_cls[value]
 
-And usage is exactly the same:
+Usage is exactly the same:
 
 .. code-block:: python
 
@@ -449,18 +332,16 @@ And usage is exactly the same:
         color = Column(EnumType(Color))
     engine.bind(base=Shirt)
 
-    tshirt = Shirt(id="tshirt", color=Color.red)
-    engine.save(tshirt)
+    shirt = Shirt(id="t-shirt", color=Color.red)
+    engine.save(shirt)
 
 This time stored in Dynamo as:
 
-Stored in DynamoDB as:
-
-+--------+-------+
-| id     | color |
-+--------+-------+
-| tshirt | red   |
-+--------+-------+
++---------+-------+
+| id      | color |
++---------+-------+
+| t-shirt | red   |
++---------+-------+
 
 RSA Example
 ===========
@@ -484,6 +365,8 @@ This is a quick type for storing a public RSA key in binary:
             value = value.exportKey(format="DER")
             return super().dynamo_dump(value, context=context, **kwargs)
 
+Note that the parent class handles base64-encoding the bytes during dump, and base64-decoding the bytes during load.
+
 Usage:
 
 .. code-block:: python
@@ -502,3 +385,174 @@ Usage:
     engine.load(same_key)
 
     assert same_key.public == rsa_pub
+
+.. _user-advanced-types:
+
+Advanced Custom Types
+=====================
+
+The type system does not require all types to subclass ``bloop.Type`` or its parent ``declare.TypeDefinition``.
+
+The only methods you must implement are ``bind`` and ``_register``.  The following shows off the required signature
+for the returned load, dump methods from ``bind``, but doesn't handle unpacking DynamoDB's wire format:
+
+.. code-block:: python
+
+    class MyType:
+
+        def _register(self, type_engine):
+            pass
+
+        def bind(self, type_engine, **config):
+            # Some load function
+            def load(self, value, **kwargs):
+                return value
+
+            # Some dump function
+            def dump(self, value, **kwargs):
+                return dump
+
+            # These could be different functions based
+            # on the available **config
+            return load, dump
+
+None vs Omitted
+---------------
+
+Although DynamoDB doesn't return values for missing columns, bloop may send ``None`` through the type to load, and may
+ask the type to dump ``None``.  The base ``bloop.Type`` takes care of this and the DynamoDB wire format in ``_load``
+and ``_dump`` above, so that the dynamo_* functions only handle non-null data.
+
+You SHOULD NOT map None to a value other than None and vice versa, as bloop leverages in multiple areas the convention
+that None represents omission; from the tracking system to the base model's load/dump methods.
+
+Recursive Load and Dump
+-----------------------
+
+Because ``bind`` can return any two functions, you MUST NOT rely on a type having ``_load``, ``_dump``,
+``dynamo_load``, or ``dynamo_dump`` methods.  If you need to load or dump a value through a different type, you MUST
+do so through the type engine that's accessible through the ``context`` kwarg:
+
+.. code-block:: python
+
+    class HasInnerType(bloop.Type):
+        def __init__(self, inner_type):
+            # This will be something like bloop.String()
+            self.inner_type = inner_type
+
+        def dynamo_load(self, value, *, context, **kwargs):
+            load = context["engine"].type_engine.load
+            return load(
+                self.inner_type, value,
+                context=context, **kwargs)
+
+        def dynamo_dump(self, value, *, context, **kwargs):
+            dump = context["engine"].type_engine.dump
+            return dump(
+                self.inner_type, value,
+                context=context, **kwargs)
+
+bloop will always pass the kwarg ``context`` with a dict containing at least ``{"engine": bloop_engine}`` where the
+value of ``bloop_engine`` is the engine currently serializing a value through this type.
+
+``_register``
+-------------
+
+.. code-block:: python
+
+    def _register(self, type_engine):
+        ...
+
+The ``_register`` method is called on a type when ``bloop.Engine.bind`` registers the type from each of a model's
+columns.  If your type depends on another type that may not have been bound to the type engine yet, ``_register`` is
+the place to do so.  Registering a type that is already bound is a noop, so it's safe to always register your
+referenced types.
+
+For example, the built-in :ref:`user-set-type` uses a type passed as an argument during ``__init__`` to load and dump
+values from a String Set, Number Set, or Binary Set.  To ensure the type engine can handle the nested load/dump calls
+for that type, it implements ``_register`` like so:
+
+.. code-block:: python
+
+    class Set(Type):
+        """Adapter for sets of objects"""
+        python_type = collections.abc.Set
+
+        def __init__(self, typedef=None):
+            ...
+            self.typedef = type_instance(typedef)
+            super().__init__()
+
+        def _register(self, engine):
+            # If the set's type is already registered,
+            # this is a noop.  Otherwise, this ensures
+            # that we can delegate dynamo_dump to
+            # the inner type.
+            engine.register(self.typedef)
+
+``bind``
+--------
+
+.. code-block:: python
+
+    def bind(self, type_engine, **config):
+        ...
+
+The ``bind`` function must return a pair of load and dump functions, which should match the signature:
+
+.. code-block:: python
+
+    def load(value: Any, **kwargs) -> Any
+        ...
+
+    def dump(value: Any, **kwargs) -> Any
+        ...
+
+In ``bloop.Type`` bind returns the ``_load, _dump`` methods on the class, which ensure the type's
+corresponding dynamo_* methods are never called with ``None``, and unpacks the nested dicts of DynamoDB's wire
+format.
+
+A common pattern to customize the tuple of serialization functions is to inspect the bloop Engine's config and switch
+based on whether a config option is present.  An extremely reduced example, which doesn't hook into
+bloop's base ``Type`` at all:
+
+.. code-block:: python
+
+    class AdminType:
+        def bind(self, type_engine, **config):
+            # bloop provides a dict "context" that encapsulates
+            # any data that bloop types may want to inspect
+            bloop_context = config["context"]
+            bloop_engine = bloop_context["engine"]
+            engine_config = bloop_engine.config
+
+            # Alternatively:
+            engine_config = config["context"]["engine"].config
+
+            if engine_config["is_admin_engine"] is True:
+                return self.admin_load, self.admin_dump)
+            else:
+                return self.user_load, self.user_dump
+
+        def _register(self, type_engine):
+            # No nested types to register when this one is
+            pass
+
+There's no difference in how bloop interacts with the type:
+
+.. code-block:: python
+
+    class PlayerReport(bloop.new_base()):
+        id = Column(Integer, hash_key=True)
+        reported_by = Column(AdminType)
+        description = Column(AdminType)
+
+    admin_engine = bloop.Engine()
+    admin_engine.config["is_admin_engine"] = True
+
+    user_engine = bloop.Engine()
+    user_engine.config["is_admin_engine"] = False
+
+    admin_engine.bind(base=PlayerReport)
+    user_engine.bind(base=PlayerReport)
+

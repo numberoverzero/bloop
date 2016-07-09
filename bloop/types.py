@@ -38,15 +38,11 @@ class Type(declare.TypeDefinition):
             return {self.backing_type: None}
         return {self.backing_type: self.dynamo_dump(value, **kwargs)}
 
-    def _register(self, engine):
-        """Called when the type is registered with an engine."""
-        super()._register(engine)
-
     def dynamo_load(self, value, *, context, **kwargs):
-        return value
+        raise NotImplementedError()
 
     def dynamo_dump(self, value, *, context, **kwargs):
-        return value
+        raise NotImplementedError()
 
     def __repr__(self, *a, **kw):  # pragma: no cover
         return "{}(python_type={}, backing_type={})".format(
@@ -58,19 +54,20 @@ class String(Type):
     python_type = str
     backing_type = STRING
 
-    # No need to override dynamo_load, since all values come in as strings
+    def dynamo_load(self, value, *, context, **kwargs):
+        return value
 
-    def dynamo_dump(self, value, *, context=None, **kwargs):
+    def dynamo_dump(self, value, *, context, **kwargs):
         return str(value)
 
 
 class UUID(String):
     python_type = uuid.UUID
 
-    def dynamo_load(self, value, *, context=None, **kwargs):
+    def dynamo_load(self, value, *, context, **kwargs):
         return uuid.UUID(value)
 
-    def dynamo_dump(self, value, *, context=None, **kwargs):
+    def dynamo_dump(self, value, *, context, **kwargs):
         return str(value)
 
 
@@ -181,7 +178,7 @@ class Set(Type):
         if typedef is None:
             raise TypeError("Sets requires a type")
         self.typedef = type_instance(typedef)
-        if typedef.backing_type not in ["N", "S", "B"]:
+        if typedef.backing_type not in {"N", "S", "B"}:
             raise TypeError("Set's typedef must be backed by one of N/S/B but was '{}'".format(typedef.backing_type))
         self.backing_type = typedef.backing_type + "S"
         super().__init__()
@@ -191,12 +188,16 @@ class Set(Type):
         engine.register(self.typedef)
 
     def dynamo_load(self, value, *, context, **kwargs):
-        load = self.typedef.dynamo_load
-        return set(load(v, context=context, **kwargs) for v in value)
+        # local lookup in a tight loop
+        load = context["engine"].type_engine.load
+        typedef = self.typedef
+        return set(load(typedef, v, context=context, **kwargs) for v in value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
-        dump = self.typedef.dynamo_dump
-        return [dump(v, context=context, **kwargs) for v in sorted(value)]
+        # local lookup in a tight loop
+        dump = context["engine"].type_engine.dump
+        typedef = self.typedef
+        return [dump(typedef, v, context=context, **kwargs) for v in sorted(value)]
 
 
 class Boolean(Type):
@@ -229,19 +230,21 @@ class Map(Type):
 
     def dynamo_load(self, values, *, context, **kwargs):
         obj = {}
+        load = context["engine"].type_engine.load
         for key, typedef in self.types.items():
             value = values.get(key, None)
             if value is not None:
-                value = typedef._load(value, context=context, **kwargs)
+                value = load(typedef, value, context=context, **kwargs)
             obj[key] = value
         return obj
 
     def dynamo_dump(self, values, *, context, **kwargs):
         obj = {}
+        dump = context["engine"].type_engine.dump
         for key, typedef in self.types.items():
             value = values.get(key, None)
             if value is not None:
-                value = typedef._dump(value, context=context, **kwargs)
+                value = dump(typedef, value, context=context, **kwargs)
             # Never push a literal `None` back to DynamoDB
             if value is not None:
                 obj[key] = value
@@ -269,12 +272,16 @@ class TypedMap(Type):
         engine.register(self.typedef)
 
     def dynamo_load(self, values, *, context, **kwargs):
-        load = self.typedef._load
-        return {k: load(v, context=context, **kwargs) for k, v in values.items()}
+        # local lookup in a tight loop
+        load = context["engine"].type_engine.load
+        typedef = self.typedef
+        return {k: load(typedef, v, context=context, **kwargs) for k, v in values.items()}
 
     def dynamo_dump(self, values, *, context, **kwargs):
-        dump = self.typedef._dump
-        return {k: dump(v, context=context, **kwargs) for k, v in values.items()}
+        # local lookup in a tight loop
+        dump = context["engine"].type_engine.dump
+        typedef = self.typedef
+        return {k: dump(typedef, v, context=context, **kwargs) for k, v in values.items()}
 
 
 class List(Type):
@@ -296,9 +303,13 @@ class List(Type):
         engine.register(self.typedef)
 
     def dynamo_load(self, value, *, context, **kwargs):
-        load = self.typedef._load
-        return [load(v, context=context, **kwargs) for v in value]
+        # local lookup in a tight loop
+        load = context["engine"].type_engine.load
+        typedef = self.typedef
+        return [load(typedef, v, context=context, **kwargs) for v in value]
 
     def dynamo_dump(self, value, *, context, **kwargs):
-        dump = self.typedef._dump
-        return [dump(v, context=context, **kwargs) for v in value]
+        # local lookup in a tight loop
+        dump = context["engine"].type_engine.dump
+        typedef = self.typedef
+        return [dump(typedef, v, context=context, **kwargs) for v in value]

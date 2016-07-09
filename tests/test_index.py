@@ -15,7 +15,7 @@ def test_dynamo_name():
 
 
 def test_projection_validation():
-    """ should be all, keys_only, or a list of column model names """
+    """ should be all, keys, or a list of column model names """
     Index = bloop.index._Index
 
     with pytest.raises(ValueError):
@@ -26,7 +26,8 @@ def test_projection_validation():
         Index(projection=["only strings", 1, None])
 
     assert Index(projection="all").projection == "ALL"
-    assert Index(projection="keys_only").projection == "KEYS_ONLY"
+    # This won't be changed to the DynamoDB value "KEYS_ONLY" until the index is bound to the model
+    assert Index(projection="keys").projection == "KEYS"
     assert Index(projection=["foo", "bar"]).projection == ["foo", "bar"]
 
 

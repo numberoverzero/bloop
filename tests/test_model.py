@@ -194,14 +194,14 @@ def test_index_projections():
         boolean = Column(Boolean)
 
         g_all = Global(hash_key="another", range_key="date", projection="all")
-        g_key = Global(hash_key="another", projection="keys_only")
+        g_key = Global(hash_key="another", projection="keys")
         g_inc = Global(hash_key="other", projection=["another", "date"])
 
         l_all = Local(range_key="another", projection="all")
-        l_key = Local(range_key="another", projection="keys_only")
+        l_key = Local(range_key="another", projection="keys")
         l_inc = Local(range_key="another", projection=["date"])
 
-    uuids = set([Model.id, Model.other, Model.another])
+    uuids = {Model.id, Model.other, Model.another}
     no_boolean = set(Model.Meta.columns)
     no_boolean.remove(Model.boolean)
 

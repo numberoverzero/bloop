@@ -46,7 +46,7 @@ Define some models:
         name = Column(String)
         email = Column(String)
         by_email = GlobalSecondaryIndex(
-            hash_key='email', projection='keys_only',
+            hash_key='email', projection='keys',
             write_units=1, read_units=5)
 
 
@@ -60,7 +60,7 @@ Define some models:
         favorites = Column(Integer)
 
         by_date = GlobalSecondaryIndex(
-            hash_key='date', projection='keys_only')
+            hash_key='date', projection='keys')
 
     engine.bind(base=Base)
 

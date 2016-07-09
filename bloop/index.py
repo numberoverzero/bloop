@@ -2,16 +2,16 @@ import collections.abc
 import declare
 
 __all__ = ["GlobalSecondaryIndex", "LocalSecondaryIndex"]
-DEFAULT_PROJECTION = "KEYS_ONLY"
+DEFAULT_PROJECTION = "keys"
 
 
 def validate_projection(projection):
-    invalid = ValueError("Index projections must be either 'keys_only', 'all',"
+    invalid = ValueError("Index projections must be either 'keys', 'all',"
                          " or an iterable of model attributes to include.")
     # String check first since it is also an Iterable
     if isinstance(projection, str):
         projection = projection.upper()
-        if projection not in ["KEYS_ONLY", "ALL"]:
+        if projection not in ["KEYS", "ALL"]:
             raise invalid
     elif isinstance(projection, collections.abc.Iterable):
         projection = list(projection)
@@ -64,9 +64,8 @@ class _Index(declare.Field):
 
         if self.projection == "ALL":
             projected.update(columns.values())
-        elif self.projection == "KEYS_ONLY":
-            # Intentionally blank - keys already added above
-            pass
+        elif self.projection == "KEYS":
+            self.projection = "KEYS_ONLY"
         else:
             # List of column model_names - convert to `bloop.Column`
             # objects and merge with keys in projection_attributes

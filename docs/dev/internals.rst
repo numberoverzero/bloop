@@ -630,7 +630,7 @@ searching by the ``model_name`` attribute.  This makes it possible to pass ``_In
 that will access the hash and range key attributes without special-casing the type it gets.
 
 Next the indexes ``projection_attributes`` are computed, based on the kwarg ``projection`` provided when the index was
-created.  For ``projection="all"`` this will simply be ``Meta.columns``.  For ``projection="keys_only"`` this will be
+created.  For ``projection="all"`` this will simply be ``Meta.columns``.  For ``projection="keys"`` this will be
 the table hash and range keys, and the indexes hash and range keys (filtering out empty keys).
 
 When a list of strings is provided, they indicate the columns (by model name) to include in ``projection_attributes``,

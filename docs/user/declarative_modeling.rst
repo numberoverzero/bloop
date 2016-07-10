@@ -81,5 +81,5 @@ Models as Views
 Table Validation
 ----------------
 
-Overlapping Attribute Types
----------------------------
+Overlapping Attributes
+----------------------

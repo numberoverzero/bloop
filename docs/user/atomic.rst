@@ -1,5 +1,5 @@
 Atomic Operations
-=================
+^^^^^^^^^^^^^^^^^
 
 TODO copied from another draft
 
@@ -34,3 +34,46 @@ Then the following two calls are equivalent:
 These are simple atomic conditions - the condition is built by iterating the set of columns that were loaded from
 DynamoDB through ``Engine.load``, ``Engine.query``, ``Engine.scan``, or saved to DynamoDB through ``Engine.save`` or
 ``Engine.delete``.
+
+Quick Example
+=============
+
+Network Failures
+================
+
+increment an integer and get a 500 - read again and it's incremented.  was that us, or someone else?
+
+Consistent vs Atomic
+====================
+
+'latest version at time of call' vs 'unchanged since last load'
+
+Usage
+=====
+
+atomic=True
+engine config
+
+Scenarios
+=========
+
+New Instance
+------------
+
+atomic save on an instance before it's been saved or loaded from dynamo
+
+Loaded
+------
+
+loaded from dynamo, not changed
+
+Scenario C: Loaded
+
+loaded from dynamo, modified by another writer
+
+Partial Query
+-------------
+
+query doesn't load all columns
+atomic condition only on loaded
+(other writer can modify not loaded column)

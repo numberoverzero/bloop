@@ -426,8 +426,8 @@ and ``_dump`` above, so that the dynamo_* functions only handle non-null data.
 You SHOULD NOT map None to a value other than None and vice versa, as bloop leverages in multiple areas the convention
 that None represents omission; from the tracking system to the base model's load/dump methods.
 
-Recursive Load and Dump
------------------------
+Recursive Load, Dump
+--------------------
 
 Because ``bind`` can return any two functions, you MUST NOT rely on a type having ``_load``, ``_dump``,
 ``dynamo_load``, or ``dynamo_dump`` methods.  If you need to load or dump a value through a different type, you MUST

@@ -98,7 +98,7 @@ This is because DynamoDB will `automatically fetch`_ those attributes with an ad
 It is **strongly encouraged** to keep strict enabled so that your consumed throughput is predictable, and won't change
 when a dynamic query adds a non-projected column.  It also makes the behavior consistent with queries against GSIs.
 
-For more information see the Indexes and Projections section.
+For more information see :ref:`Building Queries: Strict <user-building-query-strict>`.
 
 .. _`automatically fetch`: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Select
 

@@ -2,24 +2,23 @@ import collections.abc
 import declare
 
 __all__ = ["GlobalSecondaryIndex", "LocalSecondaryIndex"]
-DEFAULT_PROJECTION = "keys"
+INVALID_PROJECTION = ValueError(
+    "Index projections must be either 'keys', 'all', or an iterable of model attributes to include.")
 
 
 def validate_projection(projection):
-    invalid = ValueError("Index projections must be either 'keys', 'all',"
-                         " or an iterable of model attributes to include.")
     # String check first since it is also an Iterable
     if isinstance(projection, str):
         projection = projection.upper()
         if projection not in ["KEYS", "ALL"]:
-            raise invalid
+            raise INVALID_PROJECTION
     elif isinstance(projection, collections.abc.Iterable):
         projection = list(projection)
         for attribute in projection:
             if not isinstance(attribute, str):
-                raise invalid
+                raise INVALID_PROJECTION
     else:
-        raise invalid
+        raise INVALID_PROJECTION
     return projection
 
 
@@ -29,7 +28,7 @@ def update_non_empty(group, iterable):
 
 
 class _Index(declare.Field):
-    def __init__(self, *, hash_key=None, range_key=None, name=None, projection=DEFAULT_PROJECTION, **kwargs):
+    def __init__(self, *, projection, hash_key=None, range_key=None, name=None, **kwargs):
         self.model = None
         self.hash_key = hash_key
         self.range_key = range_key
@@ -78,10 +77,12 @@ class _Index(declare.Field):
 
 class GlobalSecondaryIndex(_Index):
     def __init__(self, *,
-                 hash_key=None, range_key=None, read_units=1, write_units=1, name=None, projection=DEFAULT_PROJECTION,
+                 hash_key=None, range_key=None, read_units=1, write_units=1, name=None, projection=None,
                  **kwargs):
         if hash_key is None:
             raise ValueError("Must specify a hash_key for a GlobalSecondaryIndex")
+        if projection is None:
+            raise INVALID_PROJECTION
         super().__init__(hash_key=hash_key, range_key=range_key, name=name, projection=projection, **kwargs)
         self.write_units = write_units
         self.read_units = read_units
@@ -89,12 +90,14 @@ class GlobalSecondaryIndex(_Index):
 
 class LocalSecondaryIndex(_Index):
     """ LSIs don't have individual read/write units """
-    def __init__(self, *, range_key=None, name=None, projection=DEFAULT_PROJECTION, **kwargs):
+    def __init__(self, *, range_key=None, name=None, projection=None, **kwargs):
         # Hash key MUST be the table hash, pop any other values
         if "hash_key" in kwargs:
             raise ValueError("Can't specify the hash_key of a LocalSecondaryIndex")
         if range_key is None:
             raise ValueError("Must specify a range_key for a LocalSecondaryIndex")
+        if projection is None:
+            raise INVALID_PROJECTION
         if ("write_units" in kwargs) or ("read_units" in kwargs):
             raise ValueError("A LocalSecondaryIndex does not have its own read/write units")
         super().__init__(range_key=range_key, name=name, projection=projection, **kwargs)

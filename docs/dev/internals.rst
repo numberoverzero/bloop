@@ -1,6 +1,9 @@
 Internals
 ^^^^^^^^^
 
+This section covers implementation details useful for developers working on bloop.  These are likely to change between
+versions, as they are not part of the public api.
+
 Loading
 =======
 
@@ -84,7 +87,7 @@ Next, there's a simple method to drop the dynamo_type from a dict and get the si
 
 
 Finally, this will create a tuple of the inner values of a key, so that we can use it as the key in our dicts.  We
-use ``sorted`` because ``dict.values()`` doesn't guarantee stability:
+use :py:func:`sorted` because :py:meth:`dict.values` doesn't guarantee stability:
 
 .. code-block:: python
 
@@ -127,7 +130,7 @@ The algorithm is pretty straightforward::
     TableIndex = {TableName: KeyShape}
     Request = {TableName: {"Keys": [Key]}}
 
-    NameFrom(Object => TableName
+    NameFrom(Object) => TableName
     DumpKey(Object) => Key
     ShapeOf(Key) => KeyShape
     IndexFrom(Key) => Index
@@ -259,7 +262,7 @@ If the ids are the same, we'll insert the same key into the request table twice!
 the built-in types this is fine, but any custom type may not expect ``Type.load`` to be idempotent.  We must put the
 append in the same check we use for new indexes within a table.
 
-We don't have to worry about the same object appearing in the source list, twice, because we converted the input to
+We don't have to worry about the same object appearing in the source list twice, because we converted the input to
 a set when it came in:
 
 .. code-block:: python
@@ -431,9 +434,9 @@ Tracking
 ========
 
 The tracking system is used for any metadata on models and their instances that shouldn't be exposed to users, and
-so can't be stored on the instance/class/class.Meta.  It uses :py:class:`weakref.WeakKeyDictionary`\s so
-that any tracking is cleaned up when the objects are.  A normal dict would hold a reference to the object forever,
-leaking memory for every instance of a model.
+so can't be stored on the instance/class/class.Meta.  The tracking metadata is stored in a
+:py:class:`weakref.WeakKeyDictionary` so that any tracking is cleaned up when the objects are.  A normal dict would
+hold a reference to the object forever, leaking memory for every instance of a model.
 
 Models
 ------
@@ -448,7 +451,7 @@ Right now, the only tracking on models is whether the class has been verified ag
 Usage is as you'd expect.  You should only call ``verify_model`` on a model that has been verified.  Currently, there
 is no way to mark a model as unverified.
 
-Here's a sample that shortcuts the create/describe if the model's verified, and verifies the model on success:
+Here's a sample that shortcuts the create/describe if the model's verified, and marks the model as verified on success:
 
 .. code-block:: python
 

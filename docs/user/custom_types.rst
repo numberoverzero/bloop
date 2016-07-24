@@ -530,13 +530,31 @@ bloop's base ``Type`` at all:
             engine_config = config["context"]["engine"].config
 
             if engine_config["is_admin_engine"] is True:
-                return self.admin_load, self.admin_dump)
+                return self.admin_load, self.admin_dump
             else:
                 return self.user_load, self.user_dump
 
         def _register(self, type_engine):
             # No nested types to register when this one is
             pass
+
+This is a great opportunity to take advantage of :py:func:`functools.partial`:
+
+.. code-block:: python
+
+    import functools
+
+    class AdminType:
+        def load(self, is_admin, value, *, context, **kwargs):
+            ...
+        def dump(self, is_admin, value, *, context, **kwargs):
+            ...
+
+        def bind(self, *, context, **config):
+            is_admin = context["engine"].config["is_admin"]
+            return (
+                functools.partial(self.load, is_admin),
+                functools.partial(self.dump, is_admin))
 
 There's no difference in how bloop interacts with the type:
 

@@ -9,10 +9,11 @@ _MISSING = object()
 
 
 def new_base():
-    """Return an unbound base model"""
-    model = ModelMetaclass("Model", (BaseModel,), {})
-    model.Meta.abstract = True
-    return model
+    """Return an unbound, abstract base model"""
+    class Model(BaseModel, metaclass=ModelMetaclass):
+        class Meta:
+            abstract = True
+    return Model
 
 
 class ModelMetaclass(declare.ModelMetaclass):
@@ -80,13 +81,8 @@ def setup_indexes(meta):
         meta.fields))
     meta.indexes = set.union(meta.gsis, meta.lsis)
 
-    # Look up the current hash key -- which is specified by
-    # model_name, not dynamo_name -- in indexed columns and relate
-    # the proper `bloop.Column` object
-    columns = declare.index(meta.columns, "model_name")
     for index in meta.indexes:
-        index.model = meta.model
-        index._bind(columns, meta.hash_key, meta.range_key)
+        index._bind(meta.model)
 
 
 class BaseModel:
@@ -121,20 +117,19 @@ class BaseModel:
         for column in cls.Meta.columns:
             if column.dynamo_name in attrs:
                 expected.add(column)
-        context["engine"]._update(obj, attrs, expected)
+        context["engine"]._update(obj, attrs, expected, **kwargs)
         return obj
 
     @classmethod
     def _dump(cls, obj, *, context, **kwargs):
         """ obj -> dict """
         attrs = {}
-        engine = context["engine"].type_engine
+        type_engine = context["engine"].type_engine
         for column in cls.Meta.columns:
             value = getattr(obj, column.model_name, None)
             # Missing expected column - None is equivalent to empty
             if value is not None:
-                attrs[column.dynamo_name] = engine.dump(
-                    column.typedef, value, context=context)
+                attrs[column.dynamo_name] = type_engine.dump(column.typedef, value, context=context, **kwargs)
         return attrs
 
     def __str__(self):  # pragma: no cover

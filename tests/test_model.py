@@ -152,7 +152,7 @@ def test_invalid_local_index():
     with pytest.raises(ValueError):
         class InvalidIndex(new_base()):
             id = Column(UUID, hash_key=True)
-            index = LocalSecondaryIndex(range_key="id")
+            index = LocalSecondaryIndex(range_key="id", projection="keys")
 
 
 def test_index_keys():
@@ -163,8 +163,8 @@ def test_index_keys():
         another = Column(UUID)
         last = Column(String)
 
-        by_last = GlobalSecondaryIndex(hash_key="another", range_key="last")
-        by_another = LocalSecondaryIndex(range_key="last")
+        by_last = GlobalSecondaryIndex(hash_key="another", range_key="last", projection="keys")
+        by_another = LocalSecondaryIndex(range_key="last", projection="keys")
 
     assert Model.by_last.hash_key is Model.another
     assert Model.by_last.range_key is Model.last
@@ -179,7 +179,7 @@ def test_local_index_no_range_key():
         class Model(new_base()):
             id = Column(UUID, hash_key=True)
             another = Column(UUID)
-            by_another = LocalSecondaryIndex(range_key="another")
+            by_another = LocalSecondaryIndex(range_key="another", projection="keys")
 
 
 def test_index_projections():
@@ -194,14 +194,14 @@ def test_index_projections():
         boolean = Column(Boolean)
 
         g_all = Global(hash_key="another", range_key="date", projection="all")
-        g_key = Global(hash_key="another", projection="keys_only")
+        g_key = Global(hash_key="another", projection="keys")
         g_inc = Global(hash_key="other", projection=["another", "date"])
 
         l_all = Local(range_key="another", projection="all")
-        l_key = Local(range_key="another", projection="keys_only")
+        l_key = Local(range_key="another", projection="keys")
         l_inc = Local(range_key="another", projection=["date"])
 
-    uuids = set([Model.id, Model.other, Model.another])
+    uuids = {Model.id, Model.other, Model.another}
     no_boolean = set(Model.Meta.columns)
     no_boolean.remove(Model.boolean)
 

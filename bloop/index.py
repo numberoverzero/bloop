@@ -2,23 +2,23 @@ import collections.abc
 import declare
 
 __all__ = ["GlobalSecondaryIndex", "LocalSecondaryIndex"]
+INVALID_PROJECTION = ValueError(
+    "Index projections must be either 'keys', 'all', or an iterable of model attributes to include.")
 
 
 def validate_projection(projection):
-    invalid = ValueError("Index projections must be either 'keys_only', 'all',"
-                         " or an iterable of model attributes to include.")
     # String check first since it is also an Iterable
     if isinstance(projection, str):
         projection = projection.upper()
-        if projection not in ["KEYS_ONLY", "ALL"]:
-            raise invalid
+        if projection not in ["KEYS", "ALL"]:
+            raise INVALID_PROJECTION
     elif isinstance(projection, collections.abc.Iterable):
         projection = list(projection)
         for attribute in projection:
             if not isinstance(attribute, str):
-                raise invalid
+                raise INVALID_PROJECTION
     else:
-        raise invalid
+        raise INVALID_PROJECTION
     return projection
 
 
@@ -28,8 +28,8 @@ def update_non_empty(group, iterable):
 
 
 class _Index(declare.Field):
-    def __init__(self, hash_key=None, range_key=None,
-                 name=None, projection="KEYS_ONLY", **kwargs):
+    def __init__(self, *, projection, hash_key=None, range_key=None, name=None, **kwargs):
+        self.model = None
         self.hash_key = hash_key
         self.range_key = range_key
         self._dynamo_name = name
@@ -44,9 +44,13 @@ class _Index(declare.Field):
             return self.model_name
         return self._dynamo_name
 
-    def _bind(self, columns, model_hash, model_range):
+    def _bind(self, model):
         """Set up hash, range keys and compute projection"""
-        # Load the column object by model name
+        self.model = model
+
+        # Index by model_name so we can replace hash_key, range_key with the proper `bloop.Column` object
+        columns = declare.index(model.Meta.columns, "model_name")
+        self.hash_key = columns[self.hash_key]
         if self.range_key:
             self.range_key = columns[self.range_key]
 
@@ -54,14 +58,13 @@ class _Index(declare.Field):
         projected = self.projection_attributes = set()
 
         # All projections include keys
-        keys = (model_hash, model_range, self.hash_key, self.range_key)
+        keys = (model.Meta.hash_key, model.Meta.range_key, self.hash_key, self.range_key)
         update_non_empty(projected, keys)
 
         if self.projection == "ALL":
             projected.update(columns.values())
-        elif self.projection == "KEYS_ONLY":
-            # Intentionally blank - keys already added above
-            pass
+        elif self.projection == "KEYS":
+            self.projection = "KEYS_ONLY"
         else:
             # List of column model_names - convert to `bloop.Column`
             # objects and merge with keys in projection_attributes
@@ -73,40 +76,52 @@ class _Index(declare.Field):
 
 
 class GlobalSecondaryIndex(_Index):
-    def __init__(self, write_units=1, read_units=1, **kwargs):
-        if "hash_key" not in kwargs:
-            raise ValueError(
-                "Must specify a hash_key for a GlobalSecondaryIndex")
-        super().__init__(**kwargs)
+    def __init__(self, *,
+                 hash_key=None, range_key=None, read_units=1, write_units=1, name=None, projection=None,
+                 **kwargs):
+        if hash_key is None:
+            raise ValueError("Must specify a hash_key for a GlobalSecondaryIndex")
+        if projection is None:
+            raise INVALID_PROJECTION
+        super().__init__(hash_key=hash_key, range_key=range_key, name=name, projection=projection, **kwargs)
         self.write_units = write_units
         self.read_units = read_units
-
-    def _bind(self, columns, model_hash, model_range):
-        """Load the hash column object by model name"""
-        self.hash_key = columns[self.hash_key]
-        super()._bind(columns, model_hash, model_range)
 
 
 class LocalSecondaryIndex(_Index):
     """ LSIs don't have individual read/write units """
-    def __init__(self, **kwargs):
+    def __init__(self, *, range_key=None, name=None, projection=None, **kwargs):
         # Hash key MUST be the table hash, pop any other values
         if "hash_key" in kwargs:
-            raise ValueError(
-                "Can't specify the hash_key of a LocalSecondaryIndex")
-        if "range_key" not in kwargs:
-            raise ValueError(
-                "Must specify a range_key for a LocalSecondaryIndex")
+            raise ValueError("Can't specify the hash_key of a LocalSecondaryIndex")
+        if range_key is None:
+            raise ValueError("Must specify a range_key for a LocalSecondaryIndex")
+        if projection is None:
+            raise INVALID_PROJECTION
         if ("write_units" in kwargs) or ("read_units" in kwargs):
-            raise ValueError(
-                "A LocalSecondaryIndex does not have its own read/write units")
-        super().__init__(**kwargs)
+            raise ValueError("A LocalSecondaryIndex does not have its own read/write units")
+        super().__init__(range_key=range_key, name=name, projection=projection, **kwargs)
 
-    def _bind(self, columns, model_hash, model_range):
+    def _bind(self, model):
         """Raise if the model doesn't have a range key"""
-        if not model_range:
-            raise ValueError(
-                "Cannot specify a LocalSecondaryIndex "
-                "without a table range key")
-        self.hash_key = model_hash
-        super()._bind(columns, model_hash, model_range)
+        if not model.Meta.range_key:
+            raise ValueError("Can't specify a LocalSecondaryIndex on a table without a range key")
+        # this is model_name (string) because super()._bind will do the string -> Column lookup
+        self.hash_key = model.Meta.hash_key.model_name
+        super()._bind(model)
+
+    @property
+    def read_units(self):
+        return self.model.Meta.read_units
+
+    @read_units.setter
+    def read_units(self, value):
+        self.model.Meta.read_units = value
+
+    @property
+    def write_units(self):
+        return self.model.Meta.write_units
+
+    @write_units.setter
+    def write_units(self, value):
+        self.model.Meta.write_units = value

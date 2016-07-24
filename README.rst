@@ -25,12 +25,14 @@ Installation
 Usage
 -----
 
-Define some models::
+Define some models:
 
-    import arrow
-    import uuid
-    from bloop import (Engine, Column, Integer, DateTime, UUID,
-                       GlobalSecondaryIndex, String, new_base)
+.. code-block:: python
+
+    from bloop import (
+        Column, DateTime, Engine, GlobalSecondaryIndex,
+        Integer, String, UUID, new_base)
+
     Base = new_base()
     engine = Engine()
 
@@ -44,7 +46,7 @@ Define some models::
         name = Column(String)
         email = Column(String)
         by_email = GlobalSecondaryIndex(
-            hash_key='email', projection='keys_only',
+            hash_key='email', projection='keys',
             write_units=1, read_units=5)
 
 
@@ -58,12 +60,17 @@ Define some models::
         favorites = Column(Integer)
 
         by_date = GlobalSecondaryIndex(
-            hash_key='date', projection='keys_only')
+            hash_key='date', projection='keys')
 
     engine.bind(base=Base)
 
 
-Create an instance::
+Create an instance:
+
+.. code-block:: python
+
+    import arrow
+    import uuid
 
     account = Account(id=uuid.uuid4(), name='@garybernhardt',
                       email='foo@bar.com')
@@ -76,7 +83,9 @@ Create an instance::
 
     engine.save([account, tweet])
 
-Query or scan by column values::
+Query or scan by column values:
+
+.. code-block:: python
 
     email = 'foo@bar.com'
     yesterday = arrow.now().replace(days=-1)

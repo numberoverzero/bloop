@@ -28,7 +28,7 @@ def client_error(code):
 
 
 def test_batch_get_one_item(client):
-    """ A single call for a single item """
+    """A single call for a single item"""
     user1 = User(id=uuid.uuid4())
 
     request = {"User": {"Keys": [{"id": {"S": str(user1.id)}}],
@@ -49,86 +49,89 @@ def test_batch_get_one_item(client):
 
     response = client.batch_get_items(request)
     assert response == expected_response
-    client.boto_client.batch_get_item.assert_called_once_with(
-        RequestItems=expected_request)
+    client.boto_client.batch_get_item.assert_called_once_with(RequestItems=expected_request)
 
 
 def test_batch_get_one_batch(client):
-    """ A single call when the number of requested items is <= batch size """
-    # Simulate a full batch
-    client.batch_size = 2
+    """A single call when the number of requested items is <= batch size"""
+    users = [User(id=uuid.uuid4()) for _ in range(25)]
 
-    user1 = User(id=uuid.uuid4())
-    user2 = User(id=uuid.uuid4())
+    # Request to the bloop client
+    client_request = {
+        "User": {
+            "Keys": [
+                {"id": {"S": str(user.id)}}
+                for user in users
+            ],
+            "ConsistentRead": False
+        }
+    }
 
-    request = {"User": {"Keys": [{"id": {"S": str(user1.id)}},
-                                 {"id": {"S": str(user2.id)}}],
-                        "ConsistentRead": False}}
-    # When batching input with less keys than the batch size, the request
-    # will look identical
-    expected_request = request
-    response = {"Responses": {"User": [{"id": {"S": str(user1.id)},
-                                        "age": {"N": "4"}},
-                                       {"id": {"S": str(user2.id)},
-                                        "age": {"N": "5"}}]}}
-    # Expected response is a single list of users
-    expected_response = {"User": [{"id": {"S": str(user1.id)},
-                                   "age": {"N": "4"}},
-                                  {"id": {"S": str(user2.id)},
-                                   "age": {"N": "5"}}]}
+    boto3_client_response = {
+            "Responses": {
+                "User": [
+                    {"id": {"S": str(user.id)}, "age": {"N": "4"}}
+                    for user in users
+                ]
+            }
+        }
 
-    def handle(RequestItems):
-        assert RequestItems == expected_request
-        return response
-    client.boto_client.batch_get_item = handle
+    # The response that the bloop client should return
+    expected_client_response = boto3_client_response["Responses"]
 
-    response = client.batch_get_items(request)
-    assert response == expected_response
+    client.boto_client.batch_get_item.return_value = boto3_client_response
+    response = client.batch_get_items(client_request)
+
+    client.boto_client.batch_get_item.assert_called_once_with(RequestItems=client_request)
+    assert response == expected_client_response
 
 
 def test_batch_get_paginated(client):
-    """ Paginate requests to fit within the max batch size """
-    # Minimum batch size so we can force pagination with 2 users
-    client.batch_size = 1
-
-    user1 = User(id=uuid.uuid4())
-    user2 = User(id=uuid.uuid4())
-
-    request = {"User": {"Keys": [{"id": {"S": str(user1.id)}},
-                                 {"id": {"S": str(user2.id)}}],
-                        "ConsistentRead": False}}
-
-    expected_requests = [
-        {"User": {"Keys": [{"id": {"S": str(user1.id)}}],
-                  "ConsistentRead": False}},
-        {"User": {"Keys": [{"id": {"S": str(user2.id)}}],
-                  "ConsistentRead": False}}
+    """Paginate requests to fit within the max batch size"""
+    users = [User(id=uuid.uuid4()) for _ in range(26)]
+    keys = [
+        {"id": {"S": str(user.id)}}
+        for user in users
     ]
-    responses = [
-        {"Responses": {"User": [{"id": {"S": str(user1.id)},
-                                 "age": {"N": "4"}}]}},
-        {"Responses": {"User": [{"id": {"S": str(user2.id)},
-                                 "age": {"N": "5"}}]}}
+
+    # Request with 26 items sent to the bloop client
+    client_request = {"User": {"Keys": keys, "ConsistentRead": False}}
+
+    # The two responses that boto3 would return to the bloop client
+    batched_responses = [
+        # First 25 items
+        {
+            "Responses": {
+                "User": [
+                    {"id": {"S": str(user.id)}, "age": {"N": "4"}}
+                    for user in users[:25]
+                ]
+            }
+        },
+        # 26+ items
+        {
+            "Responses": {
+                "User": [
+                    {"id": {"S": str(user.id)}, "age": {"N": "4"}}
+                    for user in users[25:]
+                ]
+            }
+        }
     ]
-    expected_response = {"User": [{"id": {"S": str(user1.id)},
-                                   "age": {"N": "4"}},
-                                  {"id": {"S": str(user2.id)},
-                                   "age": {"N": "5"}}]}
-    calls = 0
 
-    def handle(RequestItems):
-        nonlocal calls
-        expected = expected_requests[calls]
-        response = responses[calls]
-        calls += 1
-        assert RequestItems == expected
-        return response
-    client.boto_client.batch_get_item = handle
+    # The response that the bloop client should return (all 26 items)
+    expected_client_response = {
+            "User": [
+                {"id": {"S": str(user.id)}, "age": {"N": "4"}}
+                for user in users
+            ]
+        }
 
-    response = client.batch_get_items(request)
+    client.boto_client.batch_get_item.side_effect = batched_responses
+    response = client.batch_get_items(client_request)
 
-    assert calls == 2
-    assert response == expected_response
+    assert client.boto_client.batch_get_item.call_count == 2
+    assert response == expected_client_response
 
 
 def test_batch_get_unprocessed(client):

@@ -5,6 +5,7 @@ import pkg_resources
 extensions = [
     'alabaster',
     'sphinx.ext.autodoc',
+    'sphinx.ext.intersphinx',
     'sphinx.ext.viewcode',
     'sphinx.ext.napoleon'
 ]
@@ -15,7 +16,7 @@ source_suffix = '.rst'
 master_doc = 'index'
 
 project = 'bloop'
-copyright = '2015, Joe Cross'
+copyright = '2016, Joe Cross'
 author = 'Joe Cross'
 
 
@@ -47,7 +48,7 @@ html_theme_options = {
     'analytics_id': 'UA-65843067-1'
 }
 html_theme_path = [alabaster.get_path()]
-html_static_path = []
+html_static_path = ['_static']
 html_sidebars = {
     '**': [
         'about.html',
@@ -55,4 +56,9 @@ html_sidebars = {
         'relations.html',
         'searchbox.html'
     ]
+}
+
+intersphinx_mapping = {
+    'python': ('https://docs.python.org/3.6', None),
+    'arrow': ('https://arrow.readthedocs.io/en/latest/', None)
 }

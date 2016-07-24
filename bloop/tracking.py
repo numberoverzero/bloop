@@ -5,14 +5,11 @@ import collections
 # Tracks the state of instances of models:
 # 1) Are any columns marked for including in an update?
 # 2) Latest snapshot for atomic operations
-# 3) Has this instance ever been synchronized with Dynamo?
-_obj_tracking = bloop.util.WeakDefaultDictionary(
-    lambda: {"marked": set(), "snapshot": None, "synced": False})
+_obj_tracking = bloop.util.WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None})
 
 # Tracks the state of models (tables):
 # 1) Has the table been created/verified to match the given Meta attributes?
-_model_tracking = bloop.util.WeakDefaultDictionary(
-    lambda: {"verified": False})
+_model_tracking = bloop.util.WeakDefaultDictionary(lambda: {"verified": False})
 
 
 def clear(obj):
@@ -20,7 +17,6 @@ def clear(obj):
 
     Usually called after deleting an object.
     """
-    _obj_tracking[obj]["synced"] = True
     snapshot = bloop.condition.Condition()
     for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
         snapshot &= column.is_(None)
@@ -40,12 +36,9 @@ def sync(obj, engine):
     """Mark the object as having been persisted at least once.
 
     Store the latest snapshot of all marked values."""
-    _obj_tracking[obj]["synced"] = True
     snapshot = bloop.condition.Condition()
-    # Only expect values (or lack of a value) for colummns that have
-    # been explicitly set
-    for column in sorted(_obj_tracking[obj]["marked"],
-                         key=lambda col: col.dynamo_name):
+    # Only expect values (or lack of a value) for columns that have been explicitly set
+    for column in sorted(_obj_tracking[obj]["marked"], key=lambda col: col.dynamo_name):
         value = getattr(obj, column.model_name, None)
         # Don't try to dump Nones through the typedef
         if value is not None:
@@ -86,7 +79,7 @@ def get_update(obj):
 
     """
     diff = collections.defaultdict(list)
-    key = set((obj.Meta.hash_key, obj.Meta.range_key))
+    key = {obj.Meta.hash_key, obj.Meta.range_key}
     for column in _obj_tracking[obj]["marked"]:
         if column in key:
             continue
@@ -100,7 +93,7 @@ def get_update(obj):
     return diff
 
 
-def is_model_validated(model):
+def is_model_verified(model):
     return _model_tracking[model]["verified"]
 
 

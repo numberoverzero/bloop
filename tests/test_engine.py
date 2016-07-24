@@ -1,8 +1,11 @@
+import arrow
+
 import bloop
 import bloop.engine
 import bloop.exceptions
 import bloop.tracking
 import bloop.util
+import declare
 import pytest
 import uuid
 from unittest.mock import Mock
@@ -10,11 +13,17 @@ from unittest.mock import Mock
 from test_models import ComplexModel, User
 
 
+def test_shared_type_engine():
+    """Engine can use a specific type_engine to share bound instances"""
+    type_engine = declare.TypeEngine.unique()
+    first = bloop.Engine(type_engine=type_engine)
+    second = bloop.Engine(type_engine=type_engine)
+
+    assert first.type_engine is second.type_engine
+
+
 def test_missing_objects(engine):
-    """
-    When objects aren't loaded, ObjectsNotFound is raised with a list of
-    missing objects
-    """
+    """When objects aren't loaded, ObjectsNotFound is raised with a list of missing objects"""
     # Patch batch_get_items to return no results
     engine.client.batch_get_items = lambda *a, **kw: {}
 
@@ -88,8 +97,8 @@ def test_load_objects(engine):
     assert user2.name == "bar"
 
 
-def test_load_duplicate_objects(engine):
-    """Duplicate objects are handled correctly when loading"""
+def test_load_repeated_objects(engine):
+    """The same object is only loaded once"""
     user = User(id=uuid.uuid4())
     expected = {"User": {"Keys": [{"id": {"S": str(user.id)}}],
                          "ConsistentRead": False}}
@@ -106,6 +115,82 @@ def test_load_duplicate_objects(engine):
 
     assert user.age == 5
     assert user.name == "foo"
+
+
+def test_load_equivalent_objects(engine):
+    """Two objects with the same key are both loaded"""
+    user = User(id=uuid.uuid4())
+    same_user = User(id=user.id)
+
+    expected = {"User": {"Keys": [{"id": {"S": str(user.id)}}],
+                         "ConsistentRead": False}}
+    response = {"User": [{"age": {"N": 5},
+                          "name": {"S": "foo"},
+                          "id": {"S": str(user.id)}}]}
+
+    def respond(input):
+        assert bloop.util.ordered(input) == bloop.util.ordered(expected)
+        return response
+    engine.client.batch_get_items = respond
+
+    engine.load((user, same_user))
+
+    assert user.age == 5
+    assert user.name == "foo"
+    assert same_user.age == 5
+    assert same_user.name == "foo"
+
+
+def test_load_shared_table(engine):
+    """
+    Two different models backed by the same table try to load the same hash key.
+    They share the column "shared" but load the content differently
+    """
+    base = bloop.new_base()
+
+    class FirstModel(base):
+        class Meta:
+            table_name = "SharedTable"
+        id = bloop.Column(bloop.String, hash_key=True)
+        range = bloop.Column(bloop.String, range_key=True)
+        first = bloop.Column(bloop.String)
+        as_date = bloop.Column(bloop.DateTime, name="shared")
+
+    class SecondModel(base):
+        class Meta:
+            table_name = "SharedTable"
+
+        id = bloop.Column(bloop.String, hash_key=True)
+        range = bloop.Column(bloop.String, range_key=True)
+        second = bloop.Column(bloop.String)
+        as_string = bloop.Column(bloop.String, name="shared")
+    engine.bind(base=base)
+
+    id = "foo"
+    range = "bar"
+    now = arrow.now()
+    now_str = now.to("utc").isoformat()
+    engine.client.batch_get_items.return_value = {
+        "SharedTable": [{
+            "id": {"S": id},
+            "range": {"S": range},
+            "first": {"S": "first"},
+            "second": {"S": "second"},
+            "shared": {"S": now_str}
+        }]}
+
+    first = FirstModel(id=id, range=range)
+    second = SecondModel(id=id, range=range)
+
+    engine.load([first, second])
+
+    expected_first = FirstModel(id=id, range=range, first="first", as_date=now)
+    expected_second = SecondModel(id=id, range=range, second="second", as_string=now_str)
+
+    assert first == expected_first
+    assert second == expected_second
+    assert not hasattr(first, "second")
+    assert not hasattr(second, "first")
 
 
 def test_load_missing_attrs(engine):
@@ -457,39 +542,6 @@ def test_scan(engine):
     model_scan = engine.scan(User)
     assert model_scan.model is User
     assert model_scan.index is None
-
-
-def test_context(engine):
-    engine.config["atomic"] = True
-    user_id = uuid.uuid4()
-    user = User(id=user_id, name="foo")
-
-    expected = {
-        "TableName": "User",
-        "UpdateExpression": "SET #n0=:v1",
-        "ExpressionAttributeValues": {":v1": {"S": "foo"}},
-        "ExpressionAttributeNames": {"#n0": "name"},
-        "Key": {"id": {"S": str(user_id)}}}
-
-    with engine.context(atomic=False) as eng:
-        eng.save(user)
-    engine.client.update_item.assert_called_once_with(expected)
-
-    # EngineViews can't bind
-    with pytest.raises(RuntimeError):
-        with engine.context() as eng:
-            eng.bind(base=bloop.new_base())
-
-
-def test_unbound_engine_view():
-    """Trying to mutate an unbound model through an EngineView fails"""
-    class UnboundModel(bloop.new_base()):
-        id = bloop.Column(bloop.String, hash_key=True)
-    instance = UnboundModel(id="foo")
-
-    with pytest.raises(bloop.exceptions.UnboundModel):
-        with bloop.Engine().context() as view:
-            view._dump(UnboundModel, instance)
 
 
 def test_bind_non_model():

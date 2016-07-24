@@ -18,5 +18,4 @@ def engine():
 
 @pytest.fixture
 def atomic(engine):
-    with engine.context(atomic=True) as atomic:
-        return atomic
+    return bloop.Engine(client=engine.client, type_engine=engine.type_engine, atomic=True)

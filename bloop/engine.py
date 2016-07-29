@@ -278,8 +278,7 @@ class Engine:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
             renderer = bloop.condition.ConditionRenderer(self)
 
-            diff = bloop.tracking.get_update(obj)
-            renderer.update(diff)
+            renderer.update_for(obj)
 
             item_condition = bloop.condition.Condition()
             if config(self, "atomic", atomic):

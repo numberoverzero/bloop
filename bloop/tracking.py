@@ -1,6 +1,5 @@
 import bloop.condition
 import bloop.util
-import collections
 
 # Tracks the state of instances of models:
 # 1) Are any columns marked for including in an update?
@@ -64,33 +63,9 @@ def get_snapshot(obj):
     return _obj_tracking[obj]["snapshot"]
 
 
-def get_update(obj):
-    """Creates a dict of changes to make for a given object.
-
-    Returns:
-        dict: A dict with two keys "SET" and "REMOVE".
-
-        The dict has the following format::
-
-            {
-                "SET": [(Column<Foo>, obj.Foo), (Column<Bar>, obj.Bar), ...],
-                "REMOVE": [Column<Baz>, ...]
-            }
-
-    """
-    diff = collections.defaultdict(list)
-    key = {obj.Meta.hash_key, obj.Meta.range_key}
-    for column in _obj_tracking[obj]["marked"]:
-        if column in key:
-            continue
-        value = getattr(obj, column.model_name, None)
-        if value is not None:
-            diff["SET"].append((column, value))
-        # None (or missing, an implicit None) expects the
-        # value to be empty (missing) in Dynamo.
-        else:
-            diff["REMOVE"].append(column)
-    return diff
+def get_marked(obj):
+    """Returns the set of marked columns for an object"""
+    return set(_obj_tracking[obj]["marked"])
 
 
 def is_model_verified(model):

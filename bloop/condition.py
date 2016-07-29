@@ -1,7 +1,7 @@
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import operator
-
+import bloop.tracking
 
 __all__ = [
     "And", "AttributeExists", "BeginsWith", "Between", "Comparison",
@@ -100,23 +100,28 @@ class ConditionRenderer:
         names = map(self.name_ref, columns)
         self.expressions["ProjectionExpression"] = ", ".join(names)
 
-    def update(self, attrs):
-        if not attrs:
-            return
-        set_fmt = "{}={}"
+    def update_for(self, obj):
+        marked = bloop.tracking.get_marked(obj)
+        key = {obj.Meta.hash_key, obj.Meta.range_key}
+        non_key_columns = filter(lambda c: c not in key, marked)
+        to_set = []
+        to_remove = []
+        for column in non_key_columns:
+            value = getattr(obj, column.model_name, None)
+            if value is None:
+                to_remove.append(column)
+            else:
+                to_set.append((column, value))
+        to_set = ["{}={}".format(*self.refs(pair)) for pair in to_set]
+        to_remove = [self.name_ref(column) for column in to_remove]
         expression = ""
-        if attrs.get("SET", None):
-            expression += "SET "
-            pairs = map(self.refs, attrs["SET"])
-            pairs = (set_fmt.format(*pair) for pair in pairs)
-            pairs = ", ".join(pairs)
-            expression += pairs
-        if attrs.get("REMOVE", None):
-            expression += " REMOVE "
-            names = map(self.name_ref, attrs["REMOVE"])
-            names = ", ".join(names)
-            expression += names
-        self.expressions["UpdateExpression"] = expression.strip()
+        if to_set:
+            expression += "SET " + ", ".join(to_set)
+        if to_remove:
+            expression += " REMOVE " + ", ".join(to_remove)
+        expression = expression.strip()
+        if expression:
+            self.expressions["UpdateExpression"] = expression.strip()
 
     @property
     def rendered(self):

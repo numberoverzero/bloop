@@ -88,7 +88,7 @@ def setup_indexes(meta):
 
 class BaseModel:
     """
-    Do not subclass directly, use new_base.
+    Do not subclass directly; use new_base.
 
     Example:
 

@@ -27,6 +27,6 @@ __all__ = [
     "AbstractModelException", "Boolean", "Binary", "BloopException", "Client", "Column", "Condition",
     "ConstraintViolation", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer", "List",
     "LocalSecondaryIndex", "Map", "NotModified", "Set", "String", "TableMismatch", "TypedMap",
-    "UnboundModel", "UUID", "new_base", "engine_for_profile"
+    "UnboundModel", "UUID", "new_base"
 ]
 __version__ = "0.9.12"

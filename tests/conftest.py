@@ -1,12 +1,9 @@
+from unittest.mock import Mock
+
+import pytest
 from bloop import Client, Engine
 
-import os
-import pytest
-import sys
-
-from unittest.mock import Mock
-sys.path.append(os.path.join(os.path.dirname(__file__), 'helpers'))
-from test_models import BaseModel  # noqa
+from .helpers.models import BaseModel
 
 
 @pytest.fixture

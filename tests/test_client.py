@@ -15,7 +15,8 @@ from bloop.model import new_base
 from bloop.tables import expected_table_description
 from bloop.types import String
 from bloop.util import ordered
-from test_models import ComplexModel, SimpleModel, User
+
+from .helpers.models import ComplexModel, SimpleModel, User
 
 
 @pytest.fixture

@@ -6,7 +6,8 @@ from bloop.filter import Filter
 from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.model import new_base
 from bloop.types import Integer, String
-from test_models import ComplexModel, SimpleModel, User
+
+from .helpers.models import ComplexModel, SimpleModel, User
 
 
 valid_hash_conditions = [

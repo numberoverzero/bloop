@@ -12,7 +12,8 @@ from bloop.model import new_base
 from bloop.tracking import get_snapshot, sync
 from bloop.types import UUID, DateTime, Integer, String
 from bloop.util import ordered
-from test_models import ComplexModel, User
+
+from .helpers.models import ComplexModel, User
 
 
 def test_shared_type_engine():

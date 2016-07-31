@@ -4,7 +4,8 @@ from bloop.tables import (create_table_request,
                           sanitized_table_description,
                           simple_table_status)
 from bloop.util import ordered
-from test_models import ComplexModel, SimpleModel, User
+
+from .helpers.models import ComplexModel, SimpleModel, User
 
 
 statuses = [

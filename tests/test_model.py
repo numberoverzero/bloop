@@ -7,7 +7,8 @@ from bloop.column import Column
 from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.model import new_base
 from bloop.types import UUID, Boolean, DateTime, String
-from test_models import User
+
+from .helpers.models import User
 
 
 def test_default_model_init():

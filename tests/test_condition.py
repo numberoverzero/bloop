@@ -6,7 +6,8 @@ from bloop.condition import And, Comparison, Condition, Not, Or
 from bloop.expressions import ConditionRenderer
 from bloop.model import new_base
 from bloop.types import UUID, Integer, TypedMap
-from test_models import Document, DocumentType, User, conditions
+
+from .helpers.models import Document, DocumentType, User, conditions
 
 
 @pytest.fixture

@@ -15,7 +15,8 @@ from bloop.types import (UUID,
                          String,
                          Type,
                          TypedMap)
-from test_models import DocumentType
+
+from .helpers.models import DocumentType
 
 
 def symmetric_test(typedef, *pairs):

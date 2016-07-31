@@ -2,7 +2,7 @@ from .condition import Condition
 from .tracking import get_marked, get_snapshot
 
 
-__all__ = ["ConditionRenderer", "render"]
+__all__ = ["render"]
 
 EXPRESSION_KEYS = {
     "condition": "ConditionExpression",
@@ -11,14 +11,14 @@ EXPRESSION_KEYS = {
 }
 
 
-def render(engine, key=None, filter=None, select=None, atomic=None, condition=None, update=None):
+def render(engine, filter=None, select=None, key=None, atomic=None, condition=None, update=None):
     renderer = ConditionRenderer(engine)
-    if key is not None:
-        renderer.render(key, "key")
     if filter is not None:
         renderer.render(filter, "filter")
     if select is not None:
         renderer.projection(select)
+    if key is not None:
+        renderer.render(key, "key")
     if (atomic is not None) or (condition is not None):
         if condition is None:
             condition = Condition()

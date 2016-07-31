@@ -3,31 +3,26 @@ import uuid
 import pytest
 from bloop.column import Column
 from bloop.condition import And, Comparison, Condition, Not, Or
-from bloop.expressions import ConditionRenderer
+from bloop.expressions import ConditionRenderer, render
 from bloop.model import new_base
 from bloop.types import UUID, Integer, TypedMap
 
 from .helpers.models import Document, DocumentType, User, conditions
 
 
-@pytest.fixture
-def renderer(engine):
-    return ConditionRenderer(engine)
-
-
-def test_duplicate_name_refs(renderer):
+def test_duplicate_name_refs(engine):
     """ name refs are re-used for the same name """
+    renderer = ConditionRenderer(engine)
     assert renderer.name_ref(User.age) == renderer.name_ref(User.age) == "#n0"
 
 
-def test_no_refs(renderer):
+def test_no_refs(engine):
     """
     when name/value refs are missing, ExpressionAttributeNames/Values
     aren't populated """
     condition = And()
     expected = {"ConditionExpression": "()"}
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+    assert render(engine, condition=condition) == expected
 
 
 def test_condition_ops():
@@ -76,14 +71,14 @@ def test_multi_chains_flatten():
     assert or_condition == Or(age, name, email)
 
 
-def test_not(renderer):
+def test_not(engine):
     age = ~(User.age >= 3)
     condition = And(age)
-    expected = {"ConditionExpression": "(NOT (#n0 >= :v1))",
-                "ExpressionAttributeNames": {"#n0": "age"},
-                "ExpressionAttributeValues": {":v1": {"N": "3"}}}
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+    expected = {
+        "ConditionExpression": "(NOT (#n0 >= :v1))",
+        "ExpressionAttributeNames": {"#n0": "age"},
+        "ExpressionAttributeValues": {":v1": {"N": "3"}}}
+    assert render(engine, condition=condition) == expected
 
 
 def test_invalid_comparator():
@@ -91,64 +86,59 @@ def test_invalid_comparator():
         Comparison(User.age, "not-a-comparator", 5)
 
 
-def test_attribute_exists(renderer):
-    exists = User.age.is_not(None)
-    expected_exists = {"ConditionExpression": "(attribute_exists(#n0))",
-                       "ExpressionAttributeNames": {"#n0": "age"}}
+def test_attribute_exists(engine):
+    condition = User.age.is_not(None)
+    expected = {
+        "ConditionExpression": "(attribute_exists(#n0))",
+        "ExpressionAttributeNames": {"#n0": "age"}}
+    assert render(engine, condition=condition) == expected
 
-    renderer.render(exists, "condition")
-    assert renderer.rendered == expected_exists
 
-
-def test_attribute_not_exists(renderer):
-    not_exists = User.age.is_(None)
-    expected_not_exists = {
+def test_attribute_not_exists(engine):
+    condition = User.age.is_(None)
+    expected = {
         "ConditionExpression": "(attribute_not_exists(#n0))",
         "ExpressionAttributeNames": {"#n0": "age"}}
-
-    renderer.render(not_exists, "condition")
-    assert renderer.rendered == expected_not_exists
+    assert render(engine, condition=condition) == expected
 
 
-def test_begins_with(renderer):
+def test_begins_with(engine):
     condition = User.name.begins_with("foo")
-    expected = {"ConditionExpression": "(begins_with(#n0, :v1))",
-                "ExpressionAttributeNames": {"#n0": "name"},
-                "ExpressionAttributeValues": {":v1": {"S": "foo"}}}
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+    expected = {
+        "ConditionExpression": "(begins_with(#n0, :v1))",
+        "ExpressionAttributeNames": {"#n0": "name"},
+        "ExpressionAttributeValues": {":v1": {"S": "foo"}}}
+    assert render(engine, condition=condition) == expected
 
 
-def test_contains(renderer):
+def test_contains(engine):
     condition = User.name.contains("foo")
-    expected = {"ConditionExpression": "(contains(#n0, :v1))",
-                "ExpressionAttributeNames": {"#n0": "name"},
-                "ExpressionAttributeValues": {":v1": {"S": "foo"}}}
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+    expected = {
+        "ConditionExpression": "(contains(#n0, :v1))",
+        "ExpressionAttributeNames": {"#n0": "name"},
+        "ExpressionAttributeValues": {":v1": {"S": "foo"}}}
+    assert render(engine, condition=condition) == expected
 
 
-def test_between(renderer):
+def test_between(engine):
     condition = User.name.between("bar", "foo")
-    expected = {"ConditionExpression": "(#n0 BETWEEN :v1 AND :v2)",
-                "ExpressionAttributeNames": {"#n0": "name"},
-                "ExpressionAttributeValues": {":v1": {"S": "bar"},
-                                              ":v2": {"S": "foo"}}}
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+    expected = {
+        "ConditionExpression": "(#n0 BETWEEN :v1 AND :v2)",
+        "ExpressionAttributeNames": {"#n0": "name"},
+        "ExpressionAttributeValues": {":v1": {"S": "bar"}, ":v2": {"S": "foo"}}}
+    assert render(engine, condition=condition) == expected
 
 
-def test_in(renderer):
+def test_in(engine):
     condition = User.name.in_(["bar", "foo"])
-    expected = {"ConditionExpression": "(#n0 IN (:v1, :v2))",
-                "ExpressionAttributeNames": {"#n0": "name"},
-                "ExpressionAttributeValues": {":v1": {"S": "bar"},
-                                              ":v2": {"S": "foo"}}}
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+    expected = {
+        "ConditionExpression": "(#n0 IN (:v1, :v2))",
+        "ExpressionAttributeNames": {"#n0": "name"},
+        "ExpressionAttributeValues": {":v1": {"S": "bar"}, ":v2": {"S": "foo"}}}
+    assert render(engine, condition=condition) == expected
 
 
-def test_base_condition(renderer):
+def test_base_condition(engine):
     """ (Condition() OP condition) is condition """
     base = Condition()
     other = User.email == "foo"
@@ -158,24 +148,22 @@ def test_base_condition(renderer):
     assert (~base) is base
     assert len(base) == 0
 
-    assert base.render(None) is None
+    assert base.render(object()) is None
 
-    renderer.render(base, "condition")
-    assert not renderer.rendered
+    assert not render(engine, condition=base)
 
 
-def test_render_path(renderer):
+def test_render_path(engine):
     """ A path should be rendered as #column.#field.#field """
+    renderer = ConditionRenderer(engine)
     path = "foo bar baz".split()
     renderer.name_ref(User.email, path=path)
-    expected = {'ExpressionAttributeNames':
-                {'#n0': 'email', '#n3': 'baz', '#n2': 'bar', '#n1': 'foo'}}
+    expected = {'ExpressionAttributeNames': {'#n0': 'email', '#n3': 'baz', '#n2': 'bar', '#n1': 'foo'}}
     assert renderer.rendered == expected
 
 
-def test_path_comparator(renderer):
+def test_path_comparator(engine):
     """ Render paths for operations, comparisons, and multi-conditions """
-
     rating = Document.data["Rating"] > 0.5
     no_body = Document.data["Description"]["Body"].is_(None)
     stock = Document.data["Stock"].in_([1, 2, 3])
@@ -183,20 +171,15 @@ def test_path_comparator(renderer):
 
     expected = {
         'ConditionExpression': (
-            '(((#n0.#n1 > :v2) AND (attribute_not_exists(#n0.#n3.#n4))) '
-            'OR (#n0.#n5 IN (:v6, :v7, :v8)))'),
+            '(((#n0.#n1 > :v2) AND (attribute_not_exists(#n0.#n3.#n4))) OR (#n0.#n5 IN (:v6, :v7, :v8)))'),
         'ExpressionAttributeValues': {
-            ':v8': {'N': '3'}, ':v7': {'N': '2'},
-            ':v6': {'N': '1'}, ':v2': {'N': '0.5'}},
+            ':v2': {'N': '0.5'}, ':v6': {'N': '1'}, ':v7': {'N': '2'}, ':v8': {'N': '3'}},
         'ExpressionAttributeNames': {
-            '#n0': 'data', '#n3': 'Description',
-            '#n5': 'Stock', '#n1': 'Rating', '#n4': 'Body'}}
-
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+            '#n0': 'data', '#n1': 'Rating', '#n3': 'Description', '#n4': 'Body', '#n5': 'Stock'}}
+    assert render(engine, condition=condition) == expected
 
 
-def test_typedmap_path_comparator(renderer, engine):
+def test_typedmap_path_comparator(engine):
     """ TypedMap should defer to the value typedef for conditions """
     class Model(new_base()):
         id = Column(Integer, hash_key=True)
@@ -208,15 +191,12 @@ def test_typedmap_path_comparator(renderer, engine):
 
     expected = {
         'ConditionExpression': '(#n0.#n1 = :v2)',
-        'ExpressionAttributeValues': {':v2': {'S': str(uid)}},
-        'ExpressionAttributeNames': {'#n0': 'data', '#n1': 'foo'}
-    }
-
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+        'ExpressionAttributeNames': {'#n0': 'data', '#n1': 'foo'},
+        'ExpressionAttributeValues': {':v2': {'S': str(uid)}}}
+    assert render(engine, condition=condition) == expected
 
 
-def test_name_ref_with_path(renderer, engine):
+def test_name_ref_with_path(engine):
     """ Columns with custom names with literal periods render correctly """
     class Model(new_base()):
         id = Column(Integer, hash_key=True, name='this.is.id')
@@ -228,24 +208,20 @@ def test_name_ref_with_path(renderer, engine):
     condition = no_id & path_condition
 
     expected = {
-        'ExpressionAttributeNames': {
-            '#n0': 'this.is.id', '#n2': 'Rating', '#n1': 'data'},
-        'ExpressionAttributeValues': {':v3': {'N': '2'}},
-        'ConditionExpression':
-            '((attribute_not_exists(#n0)) AND (#n1.#n2 >= :v3))'}
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+        'ConditionExpression': '((attribute_not_exists(#n0)) AND (#n1.#n2 >= :v3))',
+        'ExpressionAttributeNames': {'#n0': 'this.is.id', '#n1': 'data', '#n2': 'Rating'},
+        'ExpressionAttributeValues': {':v3': {'N': '2'}}}
+    assert render(engine, condition=condition) == expected
 
 
-def test_list_path(renderer):
+def test_list_path(engine):
     """ render list indexes correctly """
     condition = Document.numbers[1] >= 3
     expected = {
-        'ExpressionAttributeValues': {':v1': {'N': '3'}},
         'ConditionExpression': '(#n0[1] >= :v1)',
-        'ExpressionAttributeNames': {'#n0': 'numbers'}}
-    renderer.render(condition, "condition")
-    assert renderer.rendered == expected
+        'ExpressionAttributeNames': {'#n0': 'numbers'},
+        'ExpressionAttributeValues': {':v1': {'N': '3'}}}
+    assert render(engine, condition=condition) == expected
 
 
 # If we parametrize conditions x conditions, the test count explode into a

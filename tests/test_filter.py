@@ -2,7 +2,7 @@ import pytest
 from bloop.column import Column
 from bloop.condition import And, Condition
 from bloop.exceptions import ConstraintViolation
-from bloop.filter import Filter
+from bloop.filter import Filter, expected_columns_for
 from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.model import new_base
 from bloop.types import Integer, String
@@ -71,8 +71,8 @@ class ProjectedIndexes(new_base()):
 def query(engine):
     return Filter(
         engine=engine, mode="query", model=ComplexModel, index=ComplexModel.by_email, strict=False,
-        select={ComplexModel.date}, prefetch=3, consistent=True, forward=False, limit=4,
-        key=(ComplexModel.name == "foo"), filter=(ComplexModel.email.contains("@")))
+        select="specific", select_attributes={ComplexModel.date}, prefetch=3, consistent=True, forward=False,
+        limit=4, key=(ComplexModel.name == "foo"), filter=(ComplexModel.email.contains("@")))
 
 
 @pytest.fixture
@@ -179,6 +179,14 @@ def test_key_valid_hash(query, condition, index):
     assert query._key == condition
 
 
+def test_expected_columns_unknown(query):
+    """Directly setting select values to an unexpected key raises"""
+    query._select = "foobar"
+    with pytest.raises(ValueError) as excinfo:
+        expected_columns_for(query.model, query.index, query._select, query._select_attributes)
+    assert str(excinfo.value) == "unknown mode foobar"
+
+
 def test_select_count(query):
     query.select("count")
     assert query._select == "count"
@@ -283,14 +291,14 @@ def test_select_wrong_model(query):
     """All columns must be part of the model being queried"""
     with pytest.raises(ValueError) as excinfo:
         query.select([User.email])
-    assert str(excinfo.value) == "Select must be all, projected, count, or an iterable of columns on the model"
+    assert str(excinfo.value) == "Select must be 'all', 'count', 'projected', or a list of column objects to select"
 
 
 def test_select_non_column(query):
     """All selections must be columns"""
     with pytest.raises(ValueError) as excinfo:
         query.select([ComplexModel.email, ComplexModel.date, object()])
-    assert str(excinfo.value) == "Select must be all, projected, count, or an iterable of columns on the model"
+    assert str(excinfo.value) == "Select must be 'all', 'count', 'projected', or a list of column objects to select"
 
 
 def test_select_specific_table(query):
@@ -299,7 +307,8 @@ def test_select_specific_table(query):
         ComplexModel.name, ComplexModel.date, ComplexModel.email,
         ComplexModel.joined, ComplexModel.not_projected]
     query.select(selected)
-    assert query._select == set(selected)
+    assert query._select == "specific"
+    assert query._select_attributes == set(selected)
 
 
 def test_select_gsi_subset(projection_query):
@@ -308,7 +317,8 @@ def test_select_gsi_subset(projection_query):
     # ProjectedIndexes.h is available since it's part of the hash/range key of the index
     selected = [ProjectedIndexes.gsi_only, ProjectedIndexes.both, ProjectedIndexes.h]
     projection_query.select(selected)
-    assert projection_query._select == set(selected)
+    assert projection_query._select == "specific"
+    assert projection_query._select_attributes == set(selected)
 
 
 def test_select_gsi_superset(projection_query):
@@ -328,7 +338,8 @@ def test_select_strict_lsi_subset(projection_query):
     # ProjectedIndexes.h is available since it's part of the hash/range key of the index
     selected = [ProjectedIndexes.lsi_only, ProjectedIndexes.both, ProjectedIndexes.h]
     projection_query.select(selected)
-    assert projection_query._select == set(selected)
+    assert projection_query._select == "specific"
+    assert projection_query._select_attributes == set(selected)
 
 
 def test_select_strict_lsi_superset(projection_query):
@@ -348,7 +359,8 @@ def test_select_non_strict_lsi_superset(projection_query):
     projection_query.strict = False
     selected = [ProjectedIndexes.lsi_only, ProjectedIndexes.neither]
     projection_query.select(selected)
-    assert projection_query._select == set(selected)
+    assert projection_query._select == "specific"
+    assert projection_query._select_attributes == set(selected)
 
 
 def test_filter_not_condition(query):

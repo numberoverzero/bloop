@@ -3,7 +3,7 @@ import operator
 
 from .condition import And, BeginsWith, Between, Comparison, _BaseCondition
 from .exceptions import ConstraintViolation
-from .expressions import ConditionRenderer
+from .expressions import render
 from .index import GlobalSecondaryIndex, LocalSecondaryIndex
 from .tracking import sync
 
@@ -12,11 +12,12 @@ __all__ = ["Filter", "FilterIterator"]
 
 SELECT_MODES = {
     "all": "ALL_ATTRIBUTES",
+    "count": "COUNT",
     "projected": "ALL_PROJECTED_ATTRIBUTES",
-    "count": "COUNT"
+    "specific": "SPECIFIC_ATTRIBUTES"
 }
 
-INVALID_SELECT = ValueError("Select must be 'all', 'projected', 'count', or a list of column objects to select")
+INVALID_SELECT = ValueError("Select must be 'all', 'count', 'projected', or a list of column objects to select")
 INVALID_FILTER = ValueError("Filter must be a condition or None")
 INVALID_CONSISTENT = ValueError("Can't use ConsistentRead with a GlobalSecondaryIndex")
 INVALID_FORWARD = ValueError("Can't set ScanIndexForward for scan operations, only queries")
@@ -24,64 +25,66 @@ INVALID_LIMIT = ValueError("Limit must be a non-negative int")
 INVALID_PREFETCH = ValueError("Prefetch must be a non-negative int")
 
 
-def expected_columns_for(model, index, select):
-    if isinstance(select, str):
-        if select == "all":
-            return model.Meta.columns
-        elif select == "projected":
-            return index.projection_attributes
-        # "count"
-        else:
-            return set()
-    # Otherwise this is a list of specific attributes.
-    # It's not a problem if the query returns more attributes than we select, since
-    # engine._update will only load the expected columns from the result.
+def expected_columns_for(model, index, select, select_attributes):
+    if select == "all":
+        return model.Meta.columns
+    elif select == "projected":
+        return index.projection_attributes
+    elif select == "count":
+        return set()
+    elif select == "specific":
+        return select_attributes
     else:
-        return select
+        raise ValueError("unknown mode {}".format(select))
 
 
 def validate_select_for(model, index, strict, select):
     if isinstance(select, str):
-        if select == "count":
-            return select
-        elif select == "all":
+        if select == "all":
             # Table query, all is fine
             if index is None:
-                return select
+                return select, None
             # LSIs are allowed when queries aren't strict
             if isinstance(index, LocalSecondaryIndex) and not strict:
-                return select
+                return select, None
             # GSIs and strict LSIs can load all attributes if they project all
             elif index.projection == "ALL":
-                return select
+                return select, None
             # Out of luck
             else:
                 raise ValueError("Can't select 'all' on a GSI or strict LSI")
+        elif select == "count":
+            return select, None
         elif select == "projected":
             # Table queries don't have projected attributes
             if index is None:
                 raise ValueError("Can't query projected attributes without an index")
             # projected is valid for any index
-            return select
+            return select, None
         # Unknown select mode
         else:
             raise ValueError("Unknown select mode '{}'".format(select))
+
     # Since it's not a string, we're in specific column territory.
     select = set(select)
+
     # Can't specify no columns
     if not select:
         raise ValueError("Must specify at least one column to load")
+
     # Make sure the iterable is only of columns on this model
     if not all((s in model.Meta.columns) for s in select):
-        raise ValueError("Select must be all, projected, count, or an iterable of columns on the model")
+        raise INVALID_SELECT
+
     # Table query, any subset of 'all' is valid
     if index is None:
-        return select
+        return "specific", select
     elif isinstance(index, GlobalSecondaryIndex):
         # Selected columns must be a subset of projection_attributes
         if select <= index.projection_attributes:
-            return select
+            return "specific", select
         raise ValueError("Tried to select a superset of the GSI's projected columns")
+
     # LSI
     else:
         # Unlike a GSI, the LSI can load a superset of the projection, and DynamoDB will happily do this.
@@ -90,10 +93,10 @@ def validate_select_for(model, index, strict, select):
 
         # When strict mode is disabled, however, any selection is valid (just like a table query)
         if not strict:
-            return select
+            return "specific", select
         # Strict mode - selected columns must be a subset of projection_attributes
         if select <= index.projection_attributes:
-            return select
+            return "specific", select
         raise ValueError("Tried to select a superset of the LSI's projected columns in strict mode")
 
 
@@ -142,7 +145,7 @@ def validate_key_for(model, index, key):
 
 class Filter:
     def __init__(
-            self, *, engine, mode, model, index, strict, select, prefetch=0,
+            self, *, engine, mode, model, index, strict, select, select_attributes=None, prefetch=0,
             consistent=False, forward=True, limit=0, key=None, filter=None):
         self.engine = engine
         self.mode = mode
@@ -151,6 +154,7 @@ class Filter:
         self.strict = strict
 
         self._select = select
+        self._select_attributes = select_attributes
         self._prefetch = prefetch
         self._consistent = consistent
         self._forward = forward
@@ -163,7 +167,8 @@ class Filter:
         """Convenience method for building specific queries off of a shared base query."""
         return Filter(
             engine=self.engine, mode=self.mode, model=self.model, index=self.index, strict=self.strict,
-            select=self._select, prefetch=self._prefetch, consistent=self._consistent, forward=self._forward,
+            select=self._select, select_attributes=self._select_attributes, prefetch=self._prefetch,
+            consistent=self._consistent, forward=self._forward,
             limit=self._limit, key=self._key, filter=self._filter)
 
     def key(self, value):
@@ -190,7 +195,7 @@ class Filter:
         Note that against an LSI, "all" or a superset of the projected columns of the LSI will incur an additional
         read against the table to fetch the non-indexed columns.
         """
-        self._select = validate_select_for(self.model, self.index, self.strict, value)
+        self._select, self._select_attributes = validate_select_for(self.model, self.index, self.strict, value)
         return self
 
     def filter(self, value):
@@ -309,7 +314,6 @@ class Filter:
             iterator.reset()
             iterator.scanned_count  # 0
         """
-        renderer = ConditionRenderer(self.engine)
         prepared_request = {
             "ConsistentRead": self._consistent,
             "Limit": self._limit,
@@ -331,31 +335,21 @@ class Filter:
         if self.mode == "scan":
             del prepared_request["ScanIndexForward"]
 
-        # FilterExpression
-        if self._filter:
-            renderer.render(self._filter, mode="filter")
+        prepared_request["Select"] = SELECT_MODES[self._select]
 
-        # Select, ProjectionExpression
-        if self._select not in {"all", "projected", "count"}:
-            renderer.projection(self._select)
-            prepared_request["Select"] = "SPECIFIC_ATTRIBUTES"
-        else:
-            prepared_request["Select"] = SELECT_MODES[self._select]
-
-        # KeyExpression
-        if self.mode == "query":
-            # Query MUST have a key condition
-            if self._key is None:
+        # Query MUST have a key condition
+        if self.mode == "query" and self._key is None:
                 raise ValueError("Query must specify at least a hash key condition")
-            renderer.render(self._key, mode="key")
         # Scan MUST NOT have a key condition
-        elif self._key is not None:
+        elif self.mode == "scan" and self._key is not None:
             raise ValueError("Scan cannot have a key condition")
 
-        # Apply rendered expressions: KeyExpression, FilterExpression, ProjectionExpression
-        prepared_request.update(renderer.rendered)
+        # Render filter, select, key
+        rendered = render(self.engine, filter=self._filter, select=self._select_attributes, key=self._key)
+        prepared_request.update(rendered)
+
         # Compute the expected columns for this filter
-        expected_columns = expected_columns_for(self.model, self.index, self._select)
+        expected_columns = expected_columns_for(self.model, self.index, self._select, self._select_attributes)
         return FilterIterator(
             engine=self.engine, model=self.model, prepared_request=prepared_request,
             expected_columns=expected_columns, mode=self.mode, prefetch=self._prefetch)

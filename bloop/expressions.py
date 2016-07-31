@@ -1,13 +1,33 @@
-from .tracking import get_marked
+from .condition import Condition
+from .tracking import get_marked, get_snapshot
 
 
-__all__ = ["ConditionRenderer"]
+__all__ = ["ConditionRenderer", "render"]
 
 EXPRESSION_KEYS = {
     "condition": "ConditionExpression",
     "filter": "FilterExpression",
     "key": "KeyConditionExpression"
 }
+
+
+def render(engine, key=None, filter=None, select=None, atomic=None, condition=None, update=None):
+    renderer = ConditionRenderer(engine)
+    if key is not None:
+        renderer.render(key, "key")
+    if filter is not None:
+        renderer.render(filter, "filter")
+    if select is not None:
+        renderer.projection(select)
+    if (atomic is not None) or (condition is not None):
+        if condition is None:
+            condition = Condition()
+        if atomic is not None:
+            condition &= get_snapshot(atomic)
+        renderer.render(condition, "condition")
+    if update is not None:
+        renderer.update_for(update)
+    return renderer.rendered
 
 
 class ConditionRenderer:

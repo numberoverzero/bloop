@@ -105,15 +105,14 @@ class Column(declare.Field, _ComparisonMixin):
         return self._dynamo_name
 
     def set(self, obj, value):
-        try:
-            super().set(obj, value)
-        finally:
-            # Notify the tracking engine that this value was intentionally mutated
-            mark(obj, self)
+        super().set(obj, value)
+        # Notify the tracking engine that this value was intentionally mutated
+        mark(obj, self)
 
     def delete(self, obj):
         try:
             super().delete(obj)
         finally:
-            # Notify the tracking engine that this value was intentionally mutated
+            # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
+            # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
             mark(obj, self)

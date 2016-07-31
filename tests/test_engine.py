@@ -380,15 +380,16 @@ def test_save_atomic_condition(atomic):
     condition = User.name == "expect_foo"
 
     expected = {
-        "ExpressionAttributeNames": {"#n2": "id", "#n0": "name"},
-        "TableName": "User",
+        "ConditionExpression": "((#n0 = :v1) AND (#n2 = :v3))",
+        "ExpressionAttributeNames": {"#n0": "name", "#n2": "id"},
         "ExpressionAttributeValues": {
-            ":v4": {"S": "expect_foo"},
-            ":v1": {"S": "new_foo"},
-            ":v3": {"S": str(user.id)}},
-        'ConditionExpression': "((#n2 = :v3) AND (#n0 = :v4))",
-        "UpdateExpression": "SET #n0=:v1",
-        "Key": {"id": {"S": str(user.id)}}}
+            ":v1": {"S": "expect_foo"},
+            ":v3": {"S": str(user.id)},
+            ":v4": {"S": "new_foo"}},
+        "Key": {"id": {"S": str(user.id)}},
+        "TableName": "User",
+        "UpdateExpression": "SET #n0=:v4"
+    }
     atomic.save(user, condition=condition)
     atomic.client.update_item.assert_called_once_with(expected)
 
@@ -512,15 +513,15 @@ def test_delete_atomic_condition(atomic):
     sync(user, atomic)
 
     expected = {
-        'ExpressionAttributeNames': {
-            '#n2': 'id', '#n4': 'name', '#n0': 'email'},
-        'ConditionExpression':
-            '((#n0 = :v1) AND (#n2 = :v3) AND (#n4 = :v5))',
-        'TableName': 'User',
-        'ExpressionAttributeValues': {
-            ':v5': {'S': 'foo'}, ':v1': {'S': 'foo@bar.com'},
-            ':v3': {'S': str(user_id)}},
-        'Key': {'id': {'S': str(user_id)}}}
+        "ConditionExpression": "((#n0 = :v1) AND ((#n2 = :v3) AND (#n4 = :v5)))",
+        "ExpressionAttributeValues": {
+            ":v1": {"S": "foo"},
+            ":v3": {"S": "foo@bar.com"},
+            ":v5": {"S": str(user_id)}},
+        "ExpressionAttributeNames": {"#n0": "name", "#n2": "email", "#n4": "id"},
+        "Key": {"id": {"S": str(user_id)}},
+        "TableName": "User"
+    }
     atomic.delete(user, condition=User.name.is_("foo"))
     atomic.client.delete_item.assert_called_once_with(expected)
 

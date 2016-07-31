@@ -2,15 +2,14 @@ import collections
 import collections.abc
 
 import declare
-from bloop.expressions import ConditionRenderer
 
 from .client import Client
-from .condition import Condition
 from .exceptions import AbstractModelException, NotModified, UnboundModel
+from .expressions import render
 from .filter import Filter
 from .index import Index
 from .model import ModelMetaclass
-from .tracking import clear, get_snapshot, is_model_verified, sync, verify_model
+from .tracking import clear, is_model_verified, sync, verify_model
 from .util import walk_subclasses
 
 
@@ -176,15 +175,11 @@ class Engine:
                 raise AbstractModelException(obj)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
-            renderer = ConditionRenderer(self)
-
-            item_condition = Condition()
             if config(self, "atomic", atomic):
-                item_condition &= get_snapshot(obj)
-            if condition:
-                item_condition &= condition
-            renderer.render(item_condition, "condition")
-            item.update(renderer.rendered)
+                rendered = render(self, atomic=obj, condition=condition)
+            else:
+                rendered = render(self, condition=condition)
+            item.update(rendered)
 
             self.client.delete_item(item)
             clear(obj)
@@ -280,17 +275,12 @@ class Engine:
                 raise AbstractModelException(obj)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
-            renderer = ConditionRenderer(self)
 
-            renderer.update_for(obj)
-
-            item_condition = Condition()
             if config(self, "atomic", atomic):
-                item_condition &= get_snapshot(obj)
-            if condition:
-                item_condition &= condition
-            renderer.render(item_condition, "condition")
-            item.update(renderer.rendered)
+                rendered = render(self, atomic=obj, condition=condition, update=obj)
+            else:
+                rendered = render(self, condition=condition, update=obj)
+            item.update(rendered)
 
             self.client.update_item(item)
             sync(obj, self)

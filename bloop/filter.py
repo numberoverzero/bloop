@@ -1,10 +1,9 @@
 import collections
 import operator
 
-from bloop.expressions import ConditionRenderer
-
 from .condition import And, BeginsWith, Between, Comparison, _BaseCondition
 from .exceptions import ConstraintViolation
+from .expressions import ConditionRenderer
 from .index import GlobalSecondaryIndex, LocalSecondaryIndex
 from .tracking import sync
 

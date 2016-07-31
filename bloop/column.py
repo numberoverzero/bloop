@@ -1,7 +1,15 @@
-from .condition import AttributeExists, Comparison, Between, In, BeginsWith, Contains
-from .tracking import mark
-import declare
 import operator
+
+import declare
+
+from .condition import (AttributeExists,
+                        BeginsWith,
+                        Between,
+                        Comparison,
+                        Contains,
+                        In)
+from .tracking import mark
+
 
 __all__ = ["Column"]
 

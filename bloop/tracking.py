@@ -1,6 +1,7 @@
 from .condition import Condition
 from .util import WeakDefaultDictionary
 
+
 # Tracks the state of instances of models:
 # 1) Are any columns marked for including in an update?
 # 2) Latest snapshot for atomic operations

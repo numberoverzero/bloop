@@ -1,6 +1,6 @@
-from bloop.util import WeakDefaultDictionary, walk_subclasses
-
 import gc
+
+from bloop.util import WeakDefaultDictionary, walk_subclasses
 
 
 def test_weakref_default_dict():

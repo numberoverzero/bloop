@@ -1,10 +1,12 @@
-import arrow
 import base64
 import collections.abc
 import decimal
-import declare
 import numbers
 import uuid
+
+import arrow
+import declare
+
 
 ENCODING = "utf-8"
 STRING = "S"

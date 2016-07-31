@@ -1,14 +1,13 @@
+import pytest
 from bloop.column import Column
 from bloop.condition import And, Condition
 from bloop.exceptions import ConstraintViolation
+from bloop.filter import Filter
 from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.model import new_base
 from bloop.types import Integer, String
-from bloop.filter import Filter
+from test_models import ComplexModel, SimpleModel, User
 
-import pytest
-
-from test_models import SimpleModel, ComplexModel, User
 
 valid_hash_conditions = [
     # condition, index

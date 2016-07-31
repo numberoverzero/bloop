@@ -1,9 +1,8 @@
+import pytest
 from bloop.column import Column
 from bloop.index import GlobalSecondaryIndex, Index, LocalSecondaryIndex
 from bloop.model import new_base
 from bloop.types import String
-
-import pytest
 
 
 def test_dynamo_name():

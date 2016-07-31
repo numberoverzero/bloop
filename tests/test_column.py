@@ -1,9 +1,9 @@
+import operator as op
+import pytest
 from bloop.column import Column
 from bloop.condition import AttributeExists, BeginsWith, Between, Contains, In
 from bloop.types import Integer
 
-import operator as op
-import pytest
 
 operations = [op.ne, op.eq, op.lt, op.le, op.gt, op.ge]
 operation_ids = ["!=", "==", "<", "<=", ">", ">="]

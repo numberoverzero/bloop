@@ -1,19 +1,17 @@
-import arrow
+import uuid
+from unittest.mock import Mock
 
+import arrow
+import declare
+import pytest
 from bloop.client import Client
 from bloop.column import Column
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import AbstractModelException, NotModified, UnboundModel
 from bloop.model import new_base
 from bloop.tracking import get_snapshot, sync
-from bloop.types import DateTime, Integer, String, UUID
+from bloop.types import UUID, DateTime, Integer, String
 from bloop.util import ordered
-
-import declare
-import pytest
-import uuid
-from unittest.mock import Mock
-
 from test_models import ComplexModel, User
 
 

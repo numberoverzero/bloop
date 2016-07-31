@@ -1,10 +1,18 @@
-from .exceptions import AbstractModelException, ConstraintViolation, TableMismatch
-from .tables import create_table_request, expected_table_description, sanitized_table_description, simple_table_status
-from .util import ordered
-import boto3
-import botocore
 import functools
 import time
+
+import boto3
+import botocore
+
+from .exceptions import (AbstractModelException,
+                         ConstraintViolation,
+                         TableMismatch)
+from .tables import (create_table_request,
+                     expected_table_description,
+                     sanitized_table_description,
+                     simple_table_status)
+from .util import ordered
+
 
 __all__ = ["Client"]
 

@@ -1,13 +1,12 @@
-from bloop.column import Column
-from bloop.condition import And, Condition, Or, Not, Comparison
-from bloop.expressions import ConditionRenderer
-from bloop.model import new_base
-from bloop.types import Integer, TypedMap, UUID
-
-import pytest
 import uuid
 
-from test_models import User, Document, DocumentType, conditions
+import pytest
+from bloop.column import Column
+from bloop.condition import And, Comparison, Condition, Not, Or
+from bloop.expressions import ConditionRenderer
+from bloop.model import new_base
+from bloop.types import UUID, Integer, TypedMap
+from test_models import Document, DocumentType, User, conditions
 
 
 @pytest.fixture

@@ -1,16 +1,18 @@
+import collections
+import collections.abc
+
+import declare
+from bloop.expressions import ConditionRenderer
+
 from .client import Client
 from .condition import Condition
-from bloop.expressions import ConditionRenderer
 from .exceptions import AbstractModelException, NotModified, UnboundModel
 from .filter import Filter
 from .index import Index
 from .model import ModelMetaclass
-from .tracking import get_snapshot, is_model_verified, verify_model, clear, sync
+from .tracking import clear, get_snapshot, is_model_verified, sync, verify_model
 from .util import walk_subclasses
 
-import collections
-import collections.abc
-import declare
 
 __all__ = ["Engine"]
 

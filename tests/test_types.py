@@ -1,11 +1,20 @@
-import arrow
 import decimal
-import declare
-import pytest
 import uuid
 
-from bloop.types import Binary, Boolean, DateTime, Float, Integer, List, Type, Set, String, TypedMap, UUID
-
+import arrow
+import declare
+import pytest
+from bloop.types import (UUID,
+                         Binary,
+                         Boolean,
+                         DateTime,
+                         Float,
+                         Integer,
+                         List,
+                         Set,
+                         String,
+                         Type,
+                         TypedMap)
 from test_models import DocumentType
 
 

@@ -1,6 +1,16 @@
-from bloop import (
-    new_base, Column, Condition, DateTime, Float, GlobalSecondaryIndex,
-    Integer, List, LocalSecondaryIndex, Map, String, UUID)
+from bloop import (UUID,
+                   Column,
+                   Condition,
+                   DateTime,
+                   Float,
+                   GlobalSecondaryIndex,
+                   Integer,
+                   List,
+                   LocalSecondaryIndex,
+                   Map,
+                   String,
+                   new_base)
+
 
 DocumentType = Map(**{
     'Rating': Float(),

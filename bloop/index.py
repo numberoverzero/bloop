@@ -1,5 +1,7 @@
 import collections.abc
+
 import declare
+
 
 __all__ = ["GlobalSecondaryIndex", "Index", "LocalSecondaryIndex"]
 INVALID_PROJECTION = ValueError(

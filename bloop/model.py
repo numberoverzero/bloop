@@ -1,7 +1,8 @@
+import declare
+
 from .column import Column
 from .index import GlobalSecondaryIndex, LocalSecondaryIndex
 
-import declare
 
 __all__ = ["new_base", "BaseModel"]
 

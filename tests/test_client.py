@@ -1,18 +1,21 @@
-from bloop.client import Client, default_backoff_func, DEFAULT_MAX_ATTEMPTS, RETRYABLE_ERRORS
+import uuid
+from unittest.mock import Mock
+
+import botocore.exceptions
+import pytest
+from bloop.client import (DEFAULT_MAX_ATTEMPTS,
+                          RETRYABLE_ERRORS,
+                          Client,
+                          default_backoff_func)
 from bloop.column import Column
-from bloop.exceptions import AbstractModelException, ConstraintViolation, TableMismatch
+from bloop.exceptions import (AbstractModelException,
+                              ConstraintViolation,
+                              TableMismatch)
 from bloop.model import new_base
 from bloop.tables import expected_table_description
 from bloop.types import String
 from bloop.util import ordered
-
-import botocore.exceptions
-import pytest
-import uuid
-
-from unittest.mock import Mock
-
-from test_models import SimpleModel, ComplexModel, User
+from test_models import ComplexModel, SimpleModel, User
 
 
 @pytest.fixture

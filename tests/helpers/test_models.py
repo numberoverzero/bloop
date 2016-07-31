@@ -1,6 +1,5 @@
-import bloop.condition
 from bloop import (
-    new_base, Column, DateTime, Float, GlobalSecondaryIndex,
+    new_base, Column, Condition, DateTime, Float, GlobalSecondaryIndex,
     Integer, List, LocalSecondaryIndex, Map, String, UUID)
 
 DocumentType = Map(**{
@@ -35,7 +34,7 @@ class User(BaseModel):
 class SimpleModel(BaseModel):
     class Meta:
         table_name = "Simple"
-    id = bloop.Column(bloop.String, hash_key=True)
+    id = Column(String, hash_key=True)
 
 
 class ComplexModel(BaseModel):
@@ -62,7 +61,7 @@ def _build_conditions():
     simplifies building compound conditions;
     eases extension for new test cases
     """
-    empty = bloop.condition.Condition()
+    empty = Condition()
     lt = Document.id < 10
     gt = Document.id > 12
 
@@ -94,7 +93,7 @@ def _build_conditions():
 
     between_small = Document.id.between(5, 6)
     between_big = Document.id.between(100, 200)
-    between_numbers = Document.numbers.between(set([8080]), set([8088]))
+    between_numbers = Document.numbers.between({8080}, {8088})
 
     in_small = Document.id.in_([3, 7, 11])
     in_big = Document.id.in_([123, 456])

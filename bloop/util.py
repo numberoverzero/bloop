@@ -1,5 +1,7 @@
 import weakref
 
+__all__ = ["ordered", "walk_subclasses", "WeakDefaultDictionary"]
+
 
 def ordered(obj):
     """

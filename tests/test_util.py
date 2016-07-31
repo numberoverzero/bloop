@@ -1,4 +1,5 @@
-import bloop.util
+from bloop.util import WeakDefaultDictionary, walk_subclasses
+
 import gc
 
 
@@ -13,7 +14,7 @@ def test_weakref_default_dict():
             yield current
             current += 1
 
-    weak_dict = bloop.util.WeakDefaultDictionary(counter().__next__)
+    weak_dict = WeakDefaultDictionary(counter().__next__)
     objs = [Object() for _ in range(3)]
 
     for i, obj in enumerate(objs):
@@ -43,4 +44,4 @@ def test_walk_subclasses():
     class D(B, C, A):
         pass
 
-    assert set(bloop.util.walk_subclasses(A)) == set([A, C, D])
+    assert set(walk_subclasses(A)) == {A, C, D}

@@ -1,5 +1,11 @@
-import bloop
-import bloop.filter
+from bloop.column import Column
+from bloop.condition import And, Condition
+from bloop.exceptions import ConstraintViolation
+from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
+from bloop.model import new_base
+from bloop.types import Integer, String
+from bloop.filter import Filter
+
 import pytest
 
 from test_models import SimpleModel, ComplexModel, User
@@ -49,21 +55,21 @@ invalid_range_conditions = [
 
 
 # Provides a gsi and lsi with constrained projections for testing Filter.select validation
-class ProjectedIndexes(bloop.new_base()):
-    h = bloop.Column(bloop.Integer, hash_key=True)
-    r = bloop.Column(bloop.Integer, range_key=True)
-    both = bloop.Column(bloop.String)
-    neither = bloop.Column(bloop.String)
-    gsi_only = bloop.Column(bloop.String)
-    lsi_only = bloop.Column(bloop.String)
+class ProjectedIndexes(new_base()):
+    h = Column(Integer, hash_key=True)
+    r = Column(Integer, range_key=True)
+    both = Column(String)
+    neither = Column(String)
+    gsi_only = Column(String)
+    lsi_only = Column(String)
 
-    by_gsi = bloop.GlobalSecondaryIndex(hash_key="h", projection=["both", "gsi_only"])
-    by_lsi = bloop.LocalSecondaryIndex(range_key="r", projection=["both", "lsi_only"])
+    by_gsi = GlobalSecondaryIndex(hash_key="h", projection=["both", "gsi_only"])
+    by_lsi = LocalSecondaryIndex(range_key="r", projection=["both", "lsi_only"])
 
 
 @pytest.fixture
 def query(engine):
-    return bloop.filter.Filter(
+    return Filter(
         engine=engine, mode="query", model=ComplexModel, index=ComplexModel.by_email, strict=False,
         select={ComplexModel.date}, prefetch=3, consistent=True, forward=False, limit=4,
         key=(ComplexModel.name == "foo"), filter=(ComplexModel.email.contains("@")))
@@ -71,14 +77,14 @@ def query(engine):
 
 @pytest.fixture
 def simple_query(engine):
-    return bloop.filter.Filter(
+    return Filter(
         engine=engine, mode="query", model=SimpleModel, index=None,
         strict=False, select="all", key=(SimpleModel.id == "foo"))
 
 
 @pytest.fixture
 def projection_query(engine):
-    return bloop.filter.Filter(
+    return Filter(
         engine=engine, mode="query", model=ProjectedIndexes, index=None, strict=False,
         select="all", prefetch=3, consistent=True, forward=False, limit=4, key=None, filter=None)
 
@@ -100,7 +106,7 @@ def test_key_none(query):
     assert query._key is None
 
 
-@pytest.mark.parametrize("condition", [False, 0, bloop.Condition()], ids=repr)
+@pytest.mark.parametrize("condition", [False, 0, Condition()], ids=repr)
 def test_key_falsey(query, condition):
     """Can't use any falsey value to clear conditions, must be exactly None"""
     with pytest.raises(ValueError) as excinfo:
@@ -120,7 +126,7 @@ def test_key_wrong_hash(query):
 def test_key_and_one_value(query):
     """If the key condition is an AND, it must have exactly 2 values; even if its sole value is valid on its own"""
     query.index = None
-    condition = bloop.condition.And(ComplexModel.name == "foo")
+    condition = And(ComplexModel.name == "foo")
     with pytest.raises(ValueError) as excinfo:
         query.key(condition)
     assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
@@ -212,11 +218,11 @@ def test_select_all_strict_lsi(query):
 
 def test_select_all_strict_lsi_projection(query):
     """No problem selecting all on this strict LSI because its projection is all"""
-    class Model(bloop.new_base()):
-        id = bloop.Column(bloop.Integer, hash_key=True)
-        foo = bloop.Column(bloop.Integer, range_key=True)
-        bar = bloop.Column(bloop.Integer)
-        by_lsi = bloop.LocalSecondaryIndex(range_key="bar", projection="all")
+    class Model(new_base()):
+        id = Column(Integer, hash_key=True)
+        foo = Column(Integer, range_key=True)
+        bar = Column(Integer)
+        by_lsi = LocalSecondaryIndex(range_key="bar", projection="all")
 
     query.model = Model
     query.index = Model.by_lsi
@@ -432,7 +438,7 @@ def test_one_no_results(simple_query, engine):
     """one raises when there are no results"""
     engine.client.query.return_value = {"Count": 0, "ScannedCount": 6, "Items": []}
 
-    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
+    with pytest.raises(ConstraintViolation) as excinfo:
         simple_query.one()
     same_prepared_request = simple_query.build()._prepared_request
     same_prepared_request["ExclusiveStartKey"] = None
@@ -447,7 +453,7 @@ def test_one_extra_results(simple_query, engine):
         "Count": 2, "ScannedCount": 6,
         "Items": [{"id": {"S": "first"}}, {"id": {"S": "second"}}]}
 
-    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
+    with pytest.raises(ConstraintViolation) as excinfo:
         simple_query.one()
     same_prepared_request = simple_query.build()._prepared_request
     same_prepared_request["ExclusiveStartKey"] = None
@@ -470,7 +476,7 @@ def test_first_no_results(simple_query, engine):
     """first raises when there are no results"""
     engine.client.query.return_value = {"Count": 0, "ScannedCount": 6, "Items": []}
 
-    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
+    with pytest.raises(ConstraintViolation) as excinfo:
         simple_query.first()
     same_prepared_request = simple_query.build()._prepared_request
     same_prepared_request["ExclusiveStartKey"] = None

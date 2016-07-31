@@ -1,7 +1,7 @@
 import collections.abc
 import declare
 
-__all__ = ["GlobalSecondaryIndex", "LocalSecondaryIndex"]
+__all__ = ["GlobalSecondaryIndex", "Index", "LocalSecondaryIndex"]
 INVALID_PROJECTION = ValueError(
     "Index projections must be either 'keys', 'all', or an iterable of model attributes to include.")
 
@@ -27,7 +27,7 @@ def update_non_empty(group, iterable):
     group.update(obj for obj in iterable if obj)
 
 
-class _Index(declare.Field):
+class Index(declare.Field):
     def __init__(self, *, projection, hash_key=None, range_key=None, name=None, **kwargs):
         self.model = None
         self.hash_key = hash_key
@@ -75,7 +75,7 @@ class _Index(declare.Field):
     # TODO: disallow set/get/del for an index.  Raise RuntimeError.
 
 
-class GlobalSecondaryIndex(_Index):
+class GlobalSecondaryIndex(Index):
     def __init__(self, *,
                  hash_key=None, range_key=None, read_units=1, write_units=1, name=None, projection=None,
                  **kwargs):
@@ -88,7 +88,7 @@ class GlobalSecondaryIndex(_Index):
         self.read_units = read_units
 
 
-class LocalSecondaryIndex(_Index):
+class LocalSecondaryIndex(Index):
     """ LSIs don't have individual read/write units """
     def __init__(self, *, range_key=None, name=None, projection=None, **kwargs):
         # Hash key MUST be the table hash, pop any other values

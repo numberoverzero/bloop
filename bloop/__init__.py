@@ -1,15 +1,15 @@
-from bloop.client import Client
-from bloop.column import Column
-from bloop.condition import Condition
-from bloop.engine import Engine
-from bloop.exceptions import (
+from .client import Client
+from .column import Column
+from .condition import Condition
+from .engine import Engine
+from .exceptions import (
     AbstractModelException, BloopException, ConstraintViolation,
     NotModified, TableMismatch, UnboundModel)
-from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
-from bloop.types import (
+from .index import GlobalSecondaryIndex, LocalSecondaryIndex
+from .types import (
     Boolean, Binary, DateTime, Float, Integer,
     List, Map, Set, String, TypedMap, UUID)
-from bloop.model import new_base
+from .model import new_base
 
 __all__ = [
     "AbstractModelException", "Boolean", "Binary", "BloopException", "Client", "Column", "Condition",

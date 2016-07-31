@@ -1,16 +1,18 @@
-import bloop
-import bloop.condition
+from bloop.column import Column
+from bloop.condition import And, Condition, Or, Not, Comparison
+from bloop.expressions import ConditionRenderer
+from bloop.model import new_base
+from bloop.types import Integer, TypedMap, UUID
+
 import pytest
 import uuid
-
-from bloop.condition import And, Or, Not
 
 from test_models import User, Document, DocumentType, conditions
 
 
 @pytest.fixture
 def renderer(engine):
-    return bloop.condition.ConditionRenderer(engine)
+    return ConditionRenderer(engine)
 
 
 def test_duplicate_name_refs(renderer):
@@ -39,7 +41,7 @@ def test_condition_ops():
 def test_condition_len():
     age, name = (User.age >= 3), (User.name == "foo")
     and_condition = age & name
-    or_condition = bloop.condition.And(age, name, age)
+    or_condition = And(age, name, age)
     not_condition = ~age
 
     assert len(or_condition) == 3
@@ -50,10 +52,10 @@ def test_condition_len():
 def test_multi_shortcut():
     """ And or Or with single conditions render as their sole condition """
     age = User.age >= 3
-    condition = bloop.condition.And(age)
+    condition = And(age)
     assert condition.conditions == [age]
 
-    condition = bloop.condition.Or(age)
+    condition = Or(age)
     assert condition.conditions == [age]
 
 
@@ -65,18 +67,18 @@ def test_multi_chains_flatten():
     name = User.name == "foo"
     email = User.email != "bar"
 
-    and_condition = bloop.condition.Condition()
-    or_condition = bloop.condition.Condition()
+    and_condition = Condition()
+    or_condition = Condition()
     for c in [age, name, email]:
         and_condition &= c
         or_condition |= c
-    assert and_condition == bloop.condition.And(age, name, email)
-    assert or_condition == bloop.condition.Or(age, name, email)
+    assert and_condition == And(age, name, email)
+    assert or_condition == Or(age, name, email)
 
 
 def test_not(renderer):
     age = ~(User.age >= 3)
-    condition = bloop.condition.And(age)
+    condition = And(age)
     expected = {"ConditionExpression": "(NOT (#n0 >= :v1))",
                 "ExpressionAttributeNames": {"#n0": "age"},
                 "ExpressionAttributeValues": {":v1": {"N": "3"}}}
@@ -86,7 +88,7 @@ def test_not(renderer):
 
 def test_invalid_comparator():
     with pytest.raises(ValueError):
-        bloop.condition.Comparison(User.age, "not-a-comparator", 5)
+        Comparison(User.age, "not-a-comparator", 5)
 
 
 def test_attribute_exists(renderer):
@@ -148,7 +150,7 @@ def test_in(renderer):
 
 def test_base_condition(renderer):
     """ (Condition() OP condition) is condition """
-    base = bloop.condition.Condition()
+    base = Condition()
     other = User.email == "foo"
 
     assert (base & other) is other
@@ -196,9 +198,9 @@ def test_path_comparator(renderer):
 
 def test_typedmap_path_comparator(renderer, engine):
     """ TypedMap should defer to the value typedef for conditions """
-    class Model(bloop.new_base()):
-        id = bloop.Column(bloop.Integer, hash_key=True)
-        data = bloop.Column(bloop.TypedMap(bloop.UUID))
+    class Model(new_base()):
+        id = Column(Integer, hash_key=True)
+        data = Column(TypedMap(UUID))
     engine.bind(base=Model)
 
     uid = uuid.uuid4()
@@ -216,9 +218,9 @@ def test_typedmap_path_comparator(renderer, engine):
 
 def test_name_ref_with_path(renderer, engine):
     """ Columns with custom names with literal periods render correctly """
-    class Model(bloop.new_base()):
-        id = bloop.Column(bloop.Integer, hash_key=True, name='this.is.id')
-        data = bloop.Column(DocumentType)
+    class Model(new_base()):
+        id = Column(Integer, hash_key=True, name='this.is.id')
+        data = Column(DocumentType)
     engine.bind(base=Model)
 
     no_id = Model.id.is_(None)
@@ -246,7 +248,7 @@ def test_list_path(renderer):
     assert renderer.rendered == expected
 
 
-# parametrizing conditions x conditions makes the test count explode into a
+# If we parametrize conditions x conditions, the test count explode into a
 # useless number, so we only parametrize one. This should still make isolating
 # failures easier, from O(len(conditions*conditions)) when neither
 # is parametrized to O(len(conditions))

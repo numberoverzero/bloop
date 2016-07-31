@@ -624,12 +624,12 @@ column with ``range_key=True``.  Next, any indexes are associated with the model
 
 .. code-block:: python
 
-    _Index._bind(self, model) -> None
+    Index._bind(self, model) -> None
 
 Until now, the index's ``hash_key`` and ``range_key`` attributes have been strings (or ``None``, depending on type).
 
 The ``_bind`` call will replace these with the appropriate Column instances from the model's ``Meta.columns``,
-searching by the ``model_name`` attribute.  This makes it possible to pass ``_Index`` or ``model.Meta`` to a method
+searching by the ``model_name`` attribute.  This makes it possible to pass ``Index`` or ``model.Meta`` to a method
 that will access the hash and range key attributes without special-casing the type it gets.
 
 Next the indexes ``projection_attributes`` are computed, based on the kwarg ``projection`` provided when the index was

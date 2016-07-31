@@ -1,8 +1,10 @@
-import bloop.column
-import bloop.condition
-import bloop.exceptions
-import bloop.index
-import bloop.tracking
+from .condition import _BaseCondition, And, BeginsWith, Between, Comparison
+from bloop.expressions import ConditionRenderer
+from .exceptions import ConstraintViolation
+from .index import GlobalSecondaryIndex, LocalSecondaryIndex
+from .tracking import sync
+
+
 import collections
 import operator
 
@@ -47,7 +49,7 @@ def validate_select_for(model, index, strict, select):
             if index is None:
                 return select
             # LSIs are allowed when queries aren't strict
-            if isinstance(index, bloop.index.LocalSecondaryIndex) and not strict:
+            if isinstance(index, LocalSecondaryIndex) and not strict:
                 return select
             # GSIs and strict LSIs can load all attributes if they project all
             elif index.projection == "ALL":
@@ -75,7 +77,7 @@ def validate_select_for(model, index, strict, select):
     # Table query, any subset of 'all' is valid
     if index is None:
         return select
-    elif isinstance(index, bloop.index.GlobalSecondaryIndex):
+    elif isinstance(index, GlobalSecondaryIndex):
         # Selected columns must be a subset of projection_attributes
         if select <= index.projection_attributes:
             return select
@@ -98,7 +100,7 @@ def validate_select_for(model, index, strict, select):
 def validate_hash_key_condition(condition, hash_column):
     return (
         # 1) Comparison
-        isinstance(condition, bloop.condition.Comparison) and
+        isinstance(condition, Comparison) and
         # 2) ==
         condition.comparator is operator.eq and
         # 3) hash_column
@@ -107,9 +109,9 @@ def validate_hash_key_condition(condition, hash_column):
 
 def validate_range_key_condition(condition, range_column):
     # Valid comparators are EQ | LE | LT | GE | GT -- not NE
-    is_comparison = isinstance(condition, bloop.condition.Comparison) and (condition.comparator is not operator.ne)
+    is_comparison = isinstance(condition, Comparison) and (condition.comparator is not operator.ne)
     # ... or begins_with, or between
-    is_special_condition = isinstance(condition, (bloop.condition.BeginsWith, bloop.condition.Between))
+    is_special_condition = isinstance(condition, (BeginsWith, Between))
     return (is_comparison or is_special_condition) and condition.column is range_column
 
 
@@ -119,7 +121,7 @@ def validate_key_for(model, index, key):
     # Allow None so that Filter.key(None) clears the condition (intermediate queries, base queries...)
     if key is None:
         return key
-    if isinstance(key, bloop.condition.And) and len(key) == 2:
+    if isinstance(key, And) and len(key) == 2:
         # Instead of some cleverness, brute force validate the two allowed permutations.
 
         # 1) AND(hash_condition, range_condition)
@@ -199,14 +201,14 @@ class Filter:
             the scan will return no results.
         """
         # None is allowed for clearing a FilterExpression
-        if not isinstance(value, (type(None), bloop.condition._BaseCondition)):
+        if not isinstance(value, (type(None), _BaseCondition)):
             raise INVALID_FILTER
         self._filter = value
         return self
 
     def consistent(self, value):
         """Whether ConsistentReads should be used.  Note that ConsistentReads cannot be used against a GSI"""
-        if isinstance(self.index, bloop.index.GlobalSecondaryIndex):
+        if isinstance(self.index, GlobalSecondaryIndex):
             raise INVALID_CONSISTENT
         self._consistent = bool(value)
         return self
@@ -272,7 +274,7 @@ class Filter:
 
         # No results, or too many results
         if (first is None) or (second is not None):
-            raise bloop.exceptions.ConstraintViolation(filter._mode + ".one", filter._prepared_request)
+            raise ConstraintViolation(filter._mode + ".one", filter._prepared_request)
         return first
 
     def first(self):
@@ -284,7 +286,7 @@ class Filter:
         value = next(filter, None)
         # No results
         if value is None:
-            raise bloop.exceptions.ConstraintViolation(filter._mode + ".first", filter._prepared_request)
+            raise ConstraintViolation(filter._mode + ".first", filter._prepared_request)
         return value
 
     def build(self):
@@ -307,7 +309,7 @@ class Filter:
             iterator.reset()
             iterator.scanned_count  # 0
         """
-        renderer = bloop.condition.ConditionRenderer(self.engine)
+        renderer = ConditionRenderer(self.engine)
         prepared_request = {
             "ConsistentRead": self._consistent,
             "Limit": self._limit,
@@ -318,7 +320,7 @@ class Filter:
         if self.index:
             prepared_request["IndexName"] = self.index.dynamo_name
             # Can't perform consistent reads on a GSI
-            if isinstance(self.index, bloop.index.GlobalSecondaryIndex):
+            if isinstance(self.index, GlobalSecondaryIndex):
                 del prepared_request["ConsistentRead"]
 
         # Only send useful limits (omit 0 for no limit)
@@ -414,7 +416,7 @@ class FilterIterator:
                 obj = self._engine._instance(self._model)
                 # Apply updates from attrs, only inserting expected columns, and sync the new object's tracking
                 self._engine._update(obj, attrs, self._expected_columns)
-                bloop.tracking.sync(obj, self._engine)
+                sync(obj, self._engine)
                 self._buffer.append(obj)
 
         # Clear the first element of a full buffer, or a remaining element after exhaustion

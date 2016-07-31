@@ -1,6 +1,6 @@
-import bloop.column
-import bloop.index
-import bloop.util
+from .column import Column
+from .index import GlobalSecondaryIndex, LocalSecondaryIndex
+
 import declare
 
 __all__ = ["new_base", "BaseModel"]
@@ -52,7 +52,7 @@ def setup_columns(meta):
     # while some list operations uses __eq__ which will break
     # with the ComparisonMixin
     meta.columns = set(filter(
-        lambda field: isinstance(field, bloop.column.Column), meta.fields))
+        lambda field: isinstance(field, Column), meta.fields))
 
     meta.hash_key = None
     meta.range_key = None
@@ -74,10 +74,10 @@ def setup_indexes(meta):
     # while some list operations use __eq__ which will break
     # with the ComparisonMixin
     meta.gsis = set(filter(
-        lambda field: isinstance(field, bloop.index.GlobalSecondaryIndex),
+        lambda field: isinstance(field, GlobalSecondaryIndex),
         meta.fields))
     meta.lsis = set(filter(
-        lambda field: isinstance(field, bloop.index.LocalSecondaryIndex),
+        lambda field: isinstance(field, LocalSecondaryIndex),
         meta.fields))
     meta.indexes = set.union(meta.gsis, meta.lsis)
 

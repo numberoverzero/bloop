@@ -1,7 +1,12 @@
-import pytest
+from bloop.util import ordered
+from bloop.tables import (
+    create_table_request,
+    expected_table_description,
+    sanitized_table_description,
+    simple_table_status
+)
 
-import bloop.tables
-import bloop.util
+import pytest
 
 from test_models import SimpleModel, ComplexModel, User
 
@@ -16,7 +21,7 @@ statuses = [
 
 
 def assert_unordered(obj, other):
-    assert bloop.util.ordered(obj) == bloop.util.ordered(other)
+    assert ordered(obj) == ordered(other)
 
 
 def test_create_simple():
@@ -28,7 +33,7 @@ def test_create_simple():
             'ReadCapacityUnits': 1,
             'WriteCapacityUnits': 1},
         'TableName': 'Simple'}
-    assert_unordered(bloop.tables.create_request(SimpleModel), expected)
+    assert_unordered(create_table_request(SimpleModel), expected)
 
 
 def test_create_complex():
@@ -57,38 +62,38 @@ def test_create_complex():
         'ProvisionedThroughput': {
             'ReadCapacityUnits': 3, 'WriteCapacityUnits': 2},
         'TableName': 'CustomTableName'}
-    assert_unordered(bloop.tables.create_request(ComplexModel), expected)
+    assert_unordered(create_table_request(ComplexModel), expected)
 
 
 def test_expected_description():
-    # Eventually expected_description will probably diverge from create_table
+    # Eventually expected_table_description will probably diverge from create_table
     # This will guard against (or coverage should show) if there's drift
-    create = bloop.tables.create_request(ComplexModel)
-    expected = bloop.tables.expected_description(ComplexModel)
+    create = create_table_request(ComplexModel)
+    expected = expected_table_description(ComplexModel)
     assert_unordered(create, expected)
 
 
 def test_sanitize_drop_empty_lists():
-    expected = bloop.tables.expected_description(ComplexModel)
+    expected = expected_table_description(ComplexModel)
     # Start from the same base, but inject an unnecessary NonKeyAttributes
-    description = bloop.tables.expected_description(ComplexModel)
+    description = expected_table_description(ComplexModel)
     index = description["GlobalSecondaryIndexes"][0]
     index["Projection"]["NonKeyAttributes"] = []
 
-    assert_unordered(expected, bloop.tables.sanitized_description(description))
+    assert_unordered(expected, sanitized_table_description(description))
 
 
 def test_sanitize_drop_empty_indexes():
-    expected = bloop.tables.expected_description(SimpleModel)
+    expected = expected_table_description(SimpleModel)
     # Start from the same base, but inject an unnecessary NonKeyAttributes
-    description = bloop.tables.expected_description(SimpleModel)
+    description = expected_table_description(SimpleModel)
     description["GlobalSecondaryIndexes"] = []
 
-    assert_unordered(expected, bloop.tables.sanitized_description(description))
+    assert_unordered(expected, sanitized_table_description(description))
 
 
 def test_sanitize_expected():
-    expected = bloop.tables.expected_description(User)
+    expected = expected_table_description(User)
     # Add some extra fields
     description = {
         'AttributeDefinitions': [
@@ -118,7 +123,7 @@ def test_sanitize_expected():
         'TableName': 'User',
         'TableSizeBytes': 'EXTRA_FIELD',
         'TableStatus': 'EXTRA_FIELD'}
-    sanitized = bloop.tables.sanitized_description(description)
+    sanitized = sanitized_table_description(description)
     assert_unordered(expected, sanitized)
 
 
@@ -128,4 +133,4 @@ def test_simple_status(table_status, gsi_status, expected_status):
     description = {"TableStatus": table_status}
     if gsi_status is not None:
         description["GlobalSecondaryIndexes"] = [{"IndexStatus": gsi_status}]
-    assert bloop.tables.simple_status(description) == expected_status
+    assert simple_table_status(description) == expected_status

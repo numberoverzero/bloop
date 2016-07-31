@@ -1,10 +1,14 @@
 import arrow
 
-import bloop
-import bloop.engine
-import bloop.exceptions
-import bloop.tracking
-import bloop.util
+from bloop.client import Client
+from bloop.column import Column
+from bloop.engine import Engine, dump_key
+from bloop.exceptions import AbstractModelException, NotModified, UnboundModel
+from bloop.model import new_base
+from bloop.tracking import get_snapshot, sync
+from bloop.types import DateTime, Integer, String, UUID
+from bloop.util import ordered
+
 import declare
 import pytest
 import uuid
@@ -16,8 +20,8 @@ from test_models import ComplexModel, User
 def test_shared_type_engine():
     """Engine can use a specific type_engine to share bound instances"""
     type_engine = declare.TypeEngine.unique()
-    first = bloop.Engine(type_engine=type_engine)
-    second = bloop.Engine(type_engine=type_engine)
+    first = Engine(type_engine=type_engine)
+    second = Engine(type_engine=type_engine)
 
     assert first.type_engine is second.type_engine
 
@@ -29,25 +33,25 @@ def test_missing_objects(engine):
 
     users = [User(id=uuid.uuid4()) for _ in range(3)]
 
-    with pytest.raises(bloop.exceptions.NotModified) as excinfo:
+    with pytest.raises(NotModified) as excinfo:
         engine.load(users)
 
     assert set(excinfo.value.objects) == set(users)
 
 
 def test_dump_key(engine):
-    class HashAndRange(bloop.new_base()):
-        foo = bloop.Column(bloop.Integer, hash_key=True)
-        bar = bloop.Column(bloop.Integer, range_key=True)
+    class HashAndRange(new_base()):
+        foo = Column(Integer, hash_key=True)
+        bar = Column(Integer, range_key=True)
     engine.bind(base=HashAndRange)
 
     user = User(id=uuid.uuid4())
     user_key = {"id": {"S": str(user.id)}}
-    assert bloop.engine.dump_key(engine, user) == user_key
+    assert dump_key(engine, user) == user_key
 
     obj = HashAndRange(foo=4, bar=5)
     obj_key = {"bar": {"N": "5"}, "foo": {"N": "4"}}
-    assert bloop.engine.dump_key(engine, obj) == obj_key
+    assert dump_key(engine, obj) == obj_key
 
 
 def test_load_object(engine):
@@ -85,7 +89,7 @@ def test_load_objects(engine):
                           "id": {"S": str(user2.id)}}]}
 
     def respond(input):
-        assert bloop.util.ordered(input) == bloop.util.ordered(expected)
+        assert ordered(input) == ordered(expected)
         return response
     engine.client.batch_get_items = respond
 
@@ -107,7 +111,7 @@ def test_load_repeated_objects(engine):
                           "id": {"S": str(user.id)}}]}
 
     def respond(input):
-        assert bloop.util.ordered(input) == bloop.util.ordered(expected)
+        assert ordered(input) == ordered(expected)
         return response
     engine.client.batch_get_items = respond
 
@@ -129,7 +133,7 @@ def test_load_equivalent_objects(engine):
                           "id": {"S": str(user.id)}}]}
 
     def respond(input):
-        assert bloop.util.ordered(input) == bloop.util.ordered(expected)
+        assert ordered(input) == ordered(expected)
         return response
     engine.client.batch_get_items = respond
 
@@ -146,24 +150,24 @@ def test_load_shared_table(engine):
     Two different models backed by the same table try to load the same hash key.
     They share the column "shared" but load the content differently
     """
-    base = bloop.new_base()
+    base = new_base()
 
     class FirstModel(base):
         class Meta:
             table_name = "SharedTable"
-        id = bloop.Column(bloop.String, hash_key=True)
-        range = bloop.Column(bloop.String, range_key=True)
-        first = bloop.Column(bloop.String)
-        as_date = bloop.Column(bloop.DateTime, name="shared")
+        id = Column(String, hash_key=True)
+        range = Column(String, range_key=True)
+        first = Column(String)
+        as_date = Column(DateTime, name="shared")
 
     class SecondModel(base):
         class Meta:
             table_name = "SharedTable"
 
-        id = bloop.Column(bloop.String, hash_key=True)
-        range = bloop.Column(bloop.String, range_key=True)
-        second = bloop.Column(bloop.String)
-        as_string = bloop.Column(bloop.String, name="shared")
+        id = Column(String, hash_key=True)
+        range = Column(String, range_key=True)
+        second = Column(String)
+        as_string = Column(String, name="shared")
     engine.bind(base=base)
 
     id = "foo"
@@ -210,18 +214,18 @@ def test_load_missing_attrs(engine):
 
 
 def test_load_dump_unbound(engine):
-    class Model(bloop.new_base()):
-        id = bloop.Column(bloop.UUID, hash_key=True)
-        counter = bloop.Column(bloop.Integer)
+    class Model(new_base()):
+        id = Column(UUID, hash_key=True)
+        counter = Column(Integer)
     obj = Model(id=uuid.uuid4(), counter=5)
     value = {"User": [{"counter": {"N": 5}, "id": {"S": str(obj.id)}}]}
 
-    with pytest.raises(bloop.exceptions.UnboundModel) as excinfo:
+    with pytest.raises(UnboundModel) as excinfo:
         engine._load(Model, value)
     assert excinfo.value.model is Model
     assert excinfo.value.obj is None
 
-    with pytest.raises(bloop.exceptions.UnboundModel) as excinfo:
+    with pytest.raises(UnboundModel) as excinfo:
         engine._dump(Model, obj)
     assert excinfo.value.model is Model
     assert excinfo.value.obj is obj
@@ -231,8 +235,8 @@ def test_load_dump_subclass(engine):
     """Only the immediate Columns of a model should be dumped"""
 
     class Admin(User):
-        admin_id = bloop.Column(bloop.Integer, hash_key=True)
-        other = bloop.Column(bloop.Integer)
+        admin_id = Column(Integer, hash_key=True)
+        other = Column(Integer)
     engine.bind(base=User)
 
     admin = Admin(admin_id=3)
@@ -304,7 +308,7 @@ def test_load_snapshots(engine, atomic_mode):
         (User.joined.is_(None)) &
         (User.name.is_(None))
     )
-    actual_condition = bloop.tracking.get_snapshot(user)
+    actual_condition = get_snapshot(user)
     assert actual_condition == expected_condition
 
 
@@ -370,7 +374,7 @@ def test_save_atomic_new(engine):
 def test_save_atomic_condition(atomic):
     user = User(id=uuid.uuid4())
     # Pretend the id was already persisted in dynamo
-    bloop.tracking.sync(user, atomic)
+    sync(user, atomic)
     # Mutate a field; part of the update but not an expected condition
     user.name = "new_foo"
     # Condition on the mutated field with a different value
@@ -457,7 +461,7 @@ def test_delete_atomic(atomic):
     user = User(id=uuid.uuid4())
 
     # Manually snapshot so we think age is persisted
-    bloop.tracking.sync(user, atomic)
+    sync(user, atomic)
 
     expected = {
         'ConditionExpression': '(#n0 = :v1)',
@@ -506,7 +510,7 @@ def test_delete_atomic_condition(atomic):
     user = User(id=user_id, email='foo@bar.com')
 
     # Manually snapshot so we think age is persisted
-    bloop.tracking.sync(user, atomic)
+    sync(user, atomic)
 
     expected = {
         'ExpressionAttributeNames': {
@@ -546,14 +550,14 @@ def test_scan(engine):
 
 def test_bind_non_model():
     """Can't bind things that don't subclass new_base()"""
-    engine = bloop.Engine()
-    engine.client = Mock(spec=bloop.client.Client)
+    engine = Engine()
+    engine.client = Mock(spec=Client)
     with pytest.raises(ValueError):
         engine.bind(base=object())
 
 
 def test_bind_skip_abstract_models():
-    class Abstract(bloop.new_base()):
+    class Abstract(new_base()):
         class Meta:
             abstract = True
 
@@ -567,8 +571,8 @@ def test_bind_skip_abstract_models():
     class AlsoConcrete(AlsoAbstract):
         pass
 
-    engine = bloop.Engine()
-    engine.client = Mock(spec=bloop.client.Client)
+    engine = Engine()
+    engine.client = Mock(spec=Client)
 
     engine.bind(base=Abstract)
     engine.client.create_table.assert_any_call(Concrete)
@@ -578,10 +582,10 @@ def test_bind_skip_abstract_models():
 
 
 def test_bind_concrete_base():
-    engine = bloop.Engine()
-    engine.client = Mock(spec=bloop.client.Client)
+    engine = Engine()
+    engine.client = Mock(spec=Client)
 
-    class Concrete(bloop.new_base()):
+    class Concrete(new_base()):
         pass
     engine.bind(base=Concrete)
     engine.client.create_table.assert_called_once_with(Concrete)
@@ -589,12 +593,12 @@ def test_bind_concrete_base():
 
 
 def test_bind_different_engines():
-    first_engine = bloop.Engine()
-    first_engine.client = Mock(spec=bloop.client.Client)
-    second_engine = bloop.Engine()
-    second_engine.client = Mock(spec=bloop.client.Client)
+    first_engine = Engine()
+    first_engine.client = Mock(spec=Client)
+    second_engine = Engine()
+    second_engine.client = Mock(spec=Client)
 
-    class Concrete(bloop.new_base()):
+    class Concrete(new_base()):
         pass
     first_engine.bind(base=Concrete)
     second_engine.bind(base=Concrete)
@@ -616,22 +620,22 @@ def test_bind_different_engines():
         ("save", True), ("load", True), ("delete", True),
         ("scan", False), ("query", False)], ids=str)
 def test_unbound_operations_raise(engine, op, plural):
-    class Abstract(bloop.new_base()):
+    class Abstract(new_base()):
         class Meta:
             abstract = True
-        id = bloop.Column(bloop.Integer, hash_key=True)
+        id = Column(Integer, hash_key=True)
     engine.bind(base=Abstract)
     engine.bind(base=User)
 
     abstract = Abstract(id=5)
     concrete = User(age=5)
 
-    with pytest.raises(bloop.exceptions.AbstractModelException) as excinfo:
+    with pytest.raises(AbstractModelException) as excinfo:
         operation = getattr(engine, op)
         operation(abstract)
     assert excinfo.value.model is abstract
     if plural:
-        with pytest.raises(bloop.exceptions.AbstractModelException) as excinfo:
+        with pytest.raises(AbstractModelException) as excinfo:
             operation = getattr(engine, op)
             operation([abstract, concrete])
         assert excinfo.value.model is abstract

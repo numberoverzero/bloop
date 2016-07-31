@@ -1,10 +1,13 @@
+from bloop.column import Column
+from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
+from bloop.model import new_base
+from bloop.types import Boolean, DateTime, String, UUID
+
 import arrow
 import uuid
 import pytest
-from unittest.mock import Mock
 
-from bloop import (Column, UUID, Boolean, DateTime, String,
-                   LocalSecondaryIndex, GlobalSecondaryIndex, new_base)
+from unittest.mock import Mock
 
 from test_models import User
 

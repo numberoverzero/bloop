@@ -1,14 +1,14 @@
-import bloop.condition
-import bloop.util
+from .condition import Condition
+from .util import WeakDefaultDictionary
 
 # Tracks the state of instances of models:
 # 1) Are any columns marked for including in an update?
 # 2) Latest snapshot for atomic operations
-_obj_tracking = bloop.util.WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None})
+_obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None})
 
 # Tracks the state of models (tables):
 # 1) Has the table been created/verified to match the given Meta attributes?
-_model_tracking = bloop.util.WeakDefaultDictionary(lambda: {"verified": False})
+_model_tracking = WeakDefaultDictionary(lambda: {"verified": False})
 
 
 def clear(obj):
@@ -16,7 +16,7 @@ def clear(obj):
 
     Usually called after deleting an object.
     """
-    snapshot = bloop.condition.Condition()
+    snapshot = Condition()
     for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
         snapshot &= column.is_(None)
     _obj_tracking[obj]["snapshot"] = snapshot
@@ -35,7 +35,7 @@ def sync(obj, engine):
     """Mark the object as having been persisted at least once.
 
     Store the latest snapshot of all marked values."""
-    snapshot = bloop.condition.Condition()
+    snapshot = Condition()
     # Only expect values (or lack of a value) for columns that have been explicitly set
     for column in sorted(_obj_tracking[obj]["marked"], key=lambda col: col.dynamo_name):
         value = getattr(obj, column.model_name, None)

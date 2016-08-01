@@ -231,11 +231,20 @@ class Set(Type):
         typedef = self.typedef
         return set(load(typedef, value, context=context, **kwargs) for value in values)
 
-    def dynamo_dump(self, value, *, context, **kwargs):
+    def dynamo_dump(self, values, *, context, **kwargs):
         # local lookup in a tight loop
         dump = context["engine"]._dump
         typedef = self.typedef
-        return [dump(typedef, v, context=context, **kwargs) for v in sorted(value)]
+
+        # TODO replace when Type._dump returns None instead of {str: None}
+        def not_none(value):
+            return (value is not None) and next(iter(value.values())) is not None
+        filtered = filter(
+            not_none,
+            (
+                dump(typedef, value, context=context, **kwargs)
+                for value in values))
+        return list(filtered) or None
 
 
 class Map(Type):
@@ -339,8 +348,18 @@ class List(Type):
         typedef = self.typedef
         return [load(typedef, value, context=context, **kwargs) for value in values]
 
-    def dynamo_dump(self, value, *, context, **kwargs):
+    def dynamo_dump(self, values, *, context, **kwargs):
         # local lookup in a tight loop
         dump = context["engine"]._dump
         typedef = self.typedef
-        return [dump(typedef, v, context=context, **kwargs) for v in value]
+
+        # TODO replace when Type._dump returns None instead of {str: None}
+        def not_none(value):
+            return (value is not None) and next(iter(value.values())) is not None
+
+        filtered = filter(
+            not_none,
+            (
+                dump(typedef, value, context=context, **kwargs)
+                for value in values))
+        return list(filtered) or None

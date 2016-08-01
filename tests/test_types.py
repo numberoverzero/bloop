@@ -60,7 +60,7 @@ def test_load_dump_best_effort(engine):
 
 
 @pytest.mark.parametrize("typedef", [String, UUID, DateTime, Float, Integer, Binary, Boolean])
-def test_none_scalar_type(typedef):
+def test_none_scalar_types(typedef):
     """single-value types without an explicit 'lack of value' sentinel should return None when given None"""
     assert typedef()._load(None, context={}) is None
     assert typedef().dynamo_load(None, context={}) is None
@@ -82,7 +82,7 @@ def test_none_scalar_type(typedef):
         "Updated": None}),
     (TypedMap(UUID), dict())
 ])
-def test_none_vector_type(engine, typedef, default):
+def test_load_none_vector_types(engine, typedef, default):
     """multi-value types return empty containers when given None"""
     engine.type_engine.register(DocumentType)
     engine.type_engine.bind()
@@ -90,6 +90,20 @@ def test_none_vector_type(engine, typedef, default):
 
     assert typedef._load(None, context=context) == default
     assert typedef.dynamo_load(None, context=context) == default
+
+
+@pytest.mark.parametrize("typedef, values", [
+    (Set(String), [None]),
+    (List(String), {None}),
+    # (TypedMap(String), {"k": None})
+])
+def test_dump_none_vector_types(engine, typedef, values):
+    engine.type_engine.register(typedef)
+    engine.type_engine.bind()
+
+    # TODO: change when Type._dump returns None instead of {str: None}
+    assert typedef.dynamo_dump(values, context={"engine": engine}) is None
+    # assert typedef._dump(values, context={"engine: engine}) is None
 
 
 def test_string():

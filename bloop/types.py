@@ -341,7 +341,6 @@ class TypedMap(Type):
                 for key, value in values.items()
             ))
         return dict(filtered) or None
-        # return {k: dump(typedef, v, context=context, **kwargs) for k, v in values.items()}
 
 
 class Map(Type):
@@ -372,13 +371,21 @@ class Map(Type):
         }
 
     def dynamo_dump(self, values, *, context, **kwargs):
-        obj = {}
+        if values is None:
+            return None
         dump = context["engine"]._dump
-        for key, typedef in self.types.items():
-            value = values.get(key, None)
-            if value is not None:
-                value = dump(typedef, value, context=context, **kwargs)
-            # Never push a literal `None` back to DynamoDB
-            if value is not None:
-                obj[key] = value
-        return obj
+        get = values.get
+
+        # TODO replace when Type._dump returns None instead of {str: None}
+        def not_none(item):
+            key, value = item
+            if (value is not None) and next(iter(value.values())) is not None:
+                return key, value
+
+        filtered = filter(
+            not_none,
+            (
+                (key, dump(typedef, get(key, None), context=context, **kwargs))
+                for key, typedef in self.types.items()
+            ))
+        return dict(filtered) or None

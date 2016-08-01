@@ -94,8 +94,13 @@ def test_load_none_vector_types(engine, typedef, default):
 
 @pytest.mark.parametrize("typedef, values", [
     (Set(String), [None]),
-    (List(String), {None}),
-    (TypedMap(String), {"k": None})
+    (Set(String), []),
+    (List(String), [None]),
+    (List(String), []),
+    (TypedMap(String), {"k": None}),
+    (TypedMap(String), {}),
+    (DocumentType, {"Rating": None}),
+    (DocumentType, {})
 ])
 def test_dump_none_vector_types(engine, typedef, values):
     engine.type_engine.register(typedef)
@@ -110,7 +115,8 @@ def test_dump_none_vector_types(engine, typedef, values):
 @pytest.mark.parametrize("typedef, values, expected", [
     (Set(String), [None, "hello"], [{"S": "hello"}]),
     (List(String), ["foo", None], [{"S": "foo"}]),
-    (TypedMap(String), {"omit": None, "include": "v"}, {"include": {"S": "v"}})
+    (TypedMap(String), {"omit": None, "include": "v"}, {"include": {"S": "v"}}),
+    (DocumentType, {"Rating": 3.0, "Stock": None}, {"Rating": {"N": "3"}})
 ])
 def test_dump_partial_none(engine, typedef, values, expected):
     engine.type_engine.register(typedef)
@@ -277,7 +283,6 @@ def test_load_dump_none():
 
 def test_map_dump(engine):
     """Map handles nested maps and custom types"""
-    uid = uuid.uuid4()
     now = arrow.now().to('utc')
     loaded = {
         'Rating': 0.5,
@@ -285,9 +290,10 @@ def test_map_dump(engine):
         'Description': {
             'Heading': "Head text",
             'Body': "Body text",
+            # Explicit None
             'Specifications': None
         },
-        'Id': uid,
+        # Id missing entirely
         'Updated': now
     }
     expected = {
@@ -297,7 +303,6 @@ def test_map_dump(engine):
             'M': {
                 'Heading': {'S': 'Head text'},
                 'Body': {'S': 'Body text'}}},
-        'Id': {'S': str(uid)},
         'Updated': {'S': now.isoformat()}
     }
     engine.type_engine.register(DocumentType)

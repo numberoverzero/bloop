@@ -65,6 +65,9 @@ def test_none_scalar_type(typedef):
     assert typedef()._load(None, context={}) is None
     assert typedef().dynamo_load(None, context={}) is None
 
+    # assert typedef()._dump(None, context={}) is None
+    assert typedef().dynamo_dump(None, context={}) is None
+
 
 @pytest.mark.parametrize("typedef, default", [
     (Set(String), set()),

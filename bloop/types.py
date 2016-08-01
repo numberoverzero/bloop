@@ -59,6 +59,8 @@ class String(Type):
         return value
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return str(value)
 
 
@@ -71,6 +73,8 @@ class UUID(String):
         return uuid.UUID(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return str(value)
 
 
@@ -114,6 +118,8 @@ class DateTime(String):
         return arrow.get(value).to(self.timezone)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         # ALWAYS store in UTC - we can manipulate the timezone on load
         return value.to("utc").isoformat()
 
@@ -128,6 +134,8 @@ class Float(Type):
         return DYNAMODB_CONTEXT.create_decimal(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         n = str(DYNAMODB_CONTEXT.create_decimal(value))
         if any(filter(lambda x: x in n, ("Infinity", "NaN"))):
             raise TypeError("Infinity and NaN not supported")
@@ -144,6 +152,8 @@ class Integer(Float):
         return int(number)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         value = int(value)
         return super().dynamo_dump(value, context=context, **kwargs)
 
@@ -158,6 +168,8 @@ class Binary(Type):
         return base64.b64decode(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return base64.b64encode(value).decode("utf-8")
 
 
@@ -221,6 +233,8 @@ class Boolean(Type):
         return bool(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return bool(value)
 
 

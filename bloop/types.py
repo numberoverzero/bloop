@@ -173,6 +173,21 @@ class Binary(Type):
         return base64.b64encode(value).decode("utf-8")
 
 
+class Boolean(Type):
+    python_type = bool
+    backing_type = BOOLEAN
+
+    def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
+        return bool(value)
+
+    def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
+        return bool(value)
+
+
 def subclassof(C, B):
     """Wrap issubclass to return True/False without throwing TypeError"""
     try:
@@ -221,21 +236,6 @@ class Set(Type):
         dump = context["engine"]._dump
         typedef = self.typedef
         return [dump(typedef, v, context=context, **kwargs) for v in sorted(value)]
-
-
-class Boolean(Type):
-    python_type = bool
-    backing_type = BOOLEAN
-
-    def dynamo_load(self, value, *, context, **kwargs):
-        if value is None:
-            return None
-        return bool(value)
-
-    def dynamo_dump(self, value, *, context, **kwargs):
-        if value is None:
-            return None
-        return bool(value)
 
 
 class Map(Type):

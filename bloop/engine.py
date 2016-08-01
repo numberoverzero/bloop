@@ -120,10 +120,10 @@ class Engine:
     def _update(self, obj, attrs, expected, context=None, **kwargs):
         """Push values by dynamo_name into an object"""
         context = context or {"engine": self}
+        load = context["engine"]._load
         for column in expected:
             value = attrs.get(column.dynamo_name, None)
-            if value is not None:
-                value = context["engine"]._load(column.typedef, value, context=context, **kwargs)
+            value = load(column.typedef, value, context=context, **kwargs)
             setattr(obj, column.model_name, value)
 
     def bind(self, *, base):

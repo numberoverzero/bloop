@@ -103,6 +103,7 @@ def test_dump_none_vector_types(engine, typedef, values):
 
     # TODO: change when Type._dump returns None instead of {str: None}
     assert typedef.dynamo_dump(values, context={"engine": engine}) is None
+    assert typedef.dynamo_dump(None, context={"engine": engine}) is None
     # assert typedef._dump(values, context={"engine: engine}) is None
 
 

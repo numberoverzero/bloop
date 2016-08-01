@@ -232,6 +232,8 @@ class Set(Type):
         return set(load(typedef, value, context=context, **kwargs) for value in values)
 
     def dynamo_dump(self, values, *, context, **kwargs):
+        if values is None:
+            return None
         # local lookup in a tight loop
         dump = context["engine"]._dump
         typedef = self.typedef
@@ -274,6 +276,8 @@ class List(Type):
         return [load(typedef, value, context=context, **kwargs) for value in values]
 
     def dynamo_dump(self, values, *, context, **kwargs):
+        if values is None:
+            return None
         # local lookup in a tight loop
         dump = context["engine"]._dump
         typedef = self.typedef
@@ -319,6 +323,8 @@ class TypedMap(Type):
         return {k: load(typedef, v, context=context, **kwargs) for k, v in values.items()}
 
     def dynamo_dump(self, values, *, context, **kwargs):
+        if values is None:
+            return None
         # local lookup in a tight loop
         dump = context["engine"]._dump
         typedef = self.typedef

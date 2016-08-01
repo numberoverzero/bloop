@@ -35,8 +35,6 @@ class Type(declare.TypeDefinition):
 
     def _dump(self, value, **kwargs):
         """dump a python value to a {type: value} dictionary for dynamo storage"""
-        if value is None:
-            return {self.backing_type: None}
         return {self.backing_type: self.dynamo_dump(value, **kwargs)}
 
     def dynamo_load(self, value, *, context, **kwargs):

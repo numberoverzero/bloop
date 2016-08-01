@@ -28,10 +28,9 @@ DYNAMODB_CONTEXT = decimal.Context(
 
 class Type(declare.TypeDefinition):
     def _load(self, value, **kwargs):
-        """take a {type: value} dictionary from dynamo and return a python value"""
-        value = next(iter(value.values()))
-        if value is None:
-            return None
+        """take a {type: value} dictionary (or None) from dynamo and return a python value"""
+        if value is not None:
+            value = next(iter(value.values()))
         return self.dynamo_load(value, **kwargs)
 
     def _dump(self, value, **kwargs):

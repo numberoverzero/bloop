@@ -62,6 +62,7 @@ def test_load_dump_best_effort(engine):
 @pytest.mark.parametrize("typedef", [String, UUID, DateTime, Float, Integer, Binary, Boolean])
 def test_none_scalar_type(typedef):
     """single-value types without an explicit 'lack of value' sentinel should return None when given None"""
+    assert typedef()._load(None, context={}) is None
     assert typedef().dynamo_load(None, context={}) is None
 
 
@@ -75,6 +76,7 @@ def test_none_scalar_type(typedef):
 ])
 def test_none_vector_type(typedef, default):
     """multi-value types return empty containers when given None"""
+    assert typedef._load(None, context={}) == default
     assert typedef.dynamo_load(None, context={}) == default
 
 

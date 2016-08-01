@@ -59,6 +59,25 @@ def test_load_dump_best_effort(engine):
     assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={"engine": engine})
 
 
+@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Float, Integer, Binary, Boolean])
+def test_none_scalar_type(typedef):
+    """single-value types without an explicit 'lack of value' sentinel should return None when given None"""
+    assert typedef().dynamo_load(None, context={}) is None
+
+
+@pytest.mark.parametrize("typedef, default", [
+    (Set(String), set()),
+    (Set(Integer), set()),
+    (Set(Binary), set()),
+    (List(DateTime), list()),
+    (DocumentType, dict()),
+    (TypedMap(UUID), dict())
+])
+def test_none_vector_type(typedef, default):
+    """multi-value types return empty containers when given None"""
+    assert typedef.dynamo_load(None, context={}) == default
+
+
 def test_string():
     typedef = String()
     symmetric_test(typedef, ("foo", "foo"))
@@ -182,9 +201,9 @@ def test_set_registered():
     assert string_type in type_engine.bound_types
 
 
-@pytest.mark.parametrize("value", [1, True, object(), bool, "str", False, None, 0, set(), ""], ids=repr)
+@pytest.mark.parametrize("value", [1, True, object(), bool, "str", False, 0, set(), ""], ids=repr)
 def test_bool(value):
-    """Boolean will never store/load as empty - bool(None) is False"""
+    """Boolean handles all values except None with bool(value)"""
     typedef = Boolean()
     assert typedef.dynamo_dump(value, context={}) is bool(value)
     assert typedef.dynamo_load(value, context={}) is bool(value)

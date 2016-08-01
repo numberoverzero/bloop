@@ -57,6 +57,8 @@ class String(Type):
     backing_type = STRING
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return value
 
     def dynamo_dump(self, value, *, context, **kwargs):
@@ -67,6 +69,8 @@ class UUID(String):
     python_type = uuid.UUID
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return uuid.UUID(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
@@ -108,6 +112,8 @@ class DateTime(String):
         super().__init__()
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         iso8601_string = super().dynamo_load(value, context=context, **kwargs)
         return arrow.get(iso8601_string).to(self.timezone)
 
@@ -122,6 +128,8 @@ class Float(Type):
     backing_type = NUMBER
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return DYNAMODB_CONTEXT.create_decimal(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
@@ -135,6 +143,8 @@ class Integer(Float):
     python_type = int
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         number = super().dynamo_load(value, context=context, **kwargs)
         return int(number)
 
@@ -148,6 +158,8 @@ class Binary(Type):
     backing_type = BINARY
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return base64.b64decode(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
@@ -189,11 +201,13 @@ class Set(Type):
         """Register the set's type"""
         engine.register(self.typedef)
 
-    def dynamo_load(self, value, *, context, **kwargs):
+    def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            return set()
         # local lookup in a tight loop
         load = context["engine"]._load
         typedef = self.typedef
-        return set(load(typedef, v, context=context, **kwargs) for v in value)
+        return set(load(typedef, value, context=context, **kwargs) for value in values)
 
     def dynamo_dump(self, value, *, context, **kwargs):
         # local lookup in a tight loop
@@ -207,6 +221,8 @@ class Boolean(Type):
     backing_type = BOOLEAN
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return bool(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
@@ -231,6 +247,8 @@ class Map(Type):
             engine.register(typedef)
 
     def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            return dict()
         obj = {}
         load = context["engine"]._load
         for key, typedef in self.types.items():
@@ -274,6 +292,8 @@ class TypedMap(Type):
         engine.register(self.typedef)
 
     def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            return dict()
         # local lookup in a tight loop
         load = context["engine"]._load
         typedef = self.typedef
@@ -304,11 +324,13 @@ class List(Type):
     def _register(self, engine):
         engine.register(self.typedef)
 
-    def dynamo_load(self, value, *, context, **kwargs):
+    def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            return list()
         # local lookup in a tight loop
         load = context["engine"]._load
         typedef = self.typedef
-        return [load(typedef, v, context=context, **kwargs) for v in value]
+        return [load(typedef, value, context=context, **kwargs) for value in values]
 
     def dynamo_dump(self, value, *, context, **kwargs):
         # local lookup in a tight loop

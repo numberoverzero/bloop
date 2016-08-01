@@ -328,7 +328,20 @@ class TypedMap(Type):
         # local lookup in a tight loop
         dump = context["engine"]._dump
         typedef = self.typedef
-        return {k: dump(typedef, v, context=context, **kwargs) for k, v in values.items()}
+
+        # TODO replace when Type._dump returns None instead of {str: None}
+        def not_none(item):
+            key, value = item
+            if (value is not None) and next(iter(value.values())) is not None:
+                return key, value
+        filtered = filter(
+            not_none,
+            (
+                (key, dump(typedef, value, context=context, **kwargs))
+                for key, value in values.items()
+            ))
+        return dict(filtered) or None
+        # return {k: dump(typedef, v, context=context, **kwargs) for k, v in values.items()}
 
 
 class Map(Type):

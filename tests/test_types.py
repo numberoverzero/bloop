@@ -95,7 +95,7 @@ def test_load_none_vector_types(engine, typedef, default):
 @pytest.mark.parametrize("typedef, values", [
     (Set(String), [None]),
     (List(String), {None}),
-    # (TypedMap(String), {"k": None})
+    (TypedMap(String), {"k": None})
 ])
 def test_dump_none_vector_types(engine, typedef, values):
     engine.type_engine.register(typedef)
@@ -105,6 +105,17 @@ def test_dump_none_vector_types(engine, typedef, values):
     assert typedef.dynamo_dump(values, context={"engine": engine}) is None
     assert typedef.dynamo_dump(None, context={"engine": engine}) is None
     # assert typedef._dump(values, context={"engine: engine}) is None
+
+
+@pytest.mark.parametrize("typedef, values, expected", [
+    (Set(String), [None, "hello"], [{"S": "hello"}]),
+    (List(String), ["foo", None], [{"S": "foo"}]),
+    (TypedMap(String), {"omit": None, "include": "v"}, {"include": {"S": "v"}})
+])
+def test_dump_partial_none(engine, typedef, values, expected):
+    engine.type_engine.register(typedef)
+    engine.type_engine.bind()
+    assert typedef.dynamo_dump(values, context={"engine": engine}) == expected
 
 
 def test_string():

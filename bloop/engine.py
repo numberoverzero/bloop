@@ -104,7 +104,7 @@ class Engine:
 
     def _instance(self, model):
         """Return an instance of a given model"""
-        return self._load(model, {})
+        return self._load(model, None)
 
     def _load(self, model, value, context=None, **kwargs):
         try:

@@ -56,8 +56,6 @@ class String(Type):
     backing_type = STRING
 
     def dynamo_load(self, value, *, context, **kwargs):
-        if value is None:
-            return None
         return value
 
     def dynamo_dump(self, value, *, context, **kwargs):
@@ -113,13 +111,11 @@ class DateTime(String):
     def dynamo_load(self, value, *, context, **kwargs):
         if value is None:
             return None
-        iso8601_string = super().dynamo_load(value, context=context, **kwargs)
-        return arrow.get(iso8601_string).to(self.timezone)
+        return arrow.get(value).to(self.timezone)
 
     def dynamo_dump(self, value, *, context, **kwargs):
         # ALWAYS store in UTC - we can manipulate the timezone on load
-        iso8601_string = value.to("utc").isoformat()
-        return super().dynamo_dump(iso8601_string, context=context, **kwargs)
+        return value.to("utc").isoformat()
 
 
 class Float(Type):

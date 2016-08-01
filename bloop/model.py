@@ -111,6 +111,8 @@ class BaseModel:
     @classmethod
     def _load(cls, attrs, *, context, **kwargs):
         """ dict (dynamo name) -> obj """
+        if attrs is None:
+            attrs = {}
         obj = cls.Meta.init()
         # We want to expect the exact attributes that are passed,
         # since any superset will mark missing fields as expected.
@@ -131,13 +133,10 @@ class BaseModel:
         return attrs
 
     def __str__(self):  # pragma: no cover
-        attrs = []
-        for column in self.Meta.columns:
-            name = column.model_name
-            value = getattr(self, name, None)
-            if value is not None:
-                attrs.append("{}={}".format(name, value))
-        attrs = ", ".join(attrs)
+        attrs = ", ".join((
+            "{}={}".format(column.model_name, getattr(self, column.model_name, None))
+            for column in self.Meta.columns
+        ))
         return "{}({})".format(self.__class__.__name__, attrs)
     __repr__ = __str__
 

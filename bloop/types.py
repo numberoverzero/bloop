@@ -247,15 +247,13 @@ class Map(Type):
 
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
-            return dict()
-        obj = {}
+            values = dict()
         load = context["engine"]._load
-        for key, typedef in self.types.items():
-            value = values.get(key, None)
-            if value is not None:
-                value = load(typedef, value, context=context, **kwargs)
-            obj[key] = value
-        return obj
+        get = values.get
+        return {
+            key: load(typedef, get(key, None), context=context, **kwargs)
+            for key, typedef in self.types.items()
+        }
 
     def dynamo_dump(self, values, *, context, **kwargs):
         obj = {}

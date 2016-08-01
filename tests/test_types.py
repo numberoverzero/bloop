@@ -71,13 +71,22 @@ def test_none_scalar_type(typedef):
     (Set(Integer), set()),
     (Set(Binary), set()),
     (List(DateTime), list()),
-    (DocumentType, dict()),
+    (DocumentType, {
+        "Rating": None,
+        "Stock": None,
+        "Description": {"Heading": None, "Body": None, "Specifications": None},
+        "Id": None,
+        "Updated": None}),
     (TypedMap(UUID), dict())
 ])
-def test_none_vector_type(typedef, default):
+def test_none_vector_type(engine, typedef, default):
     """multi-value types return empty containers when given None"""
-    assert typedef._load(None, context={}) == default
-    assert typedef.dynamo_load(None, context={}) == default
+    engine.type_engine.register(DocumentType)
+    engine.type_engine.bind()
+    context = {"engine": engine}
+
+    assert typedef._load(None, context=context) == default
+    assert typedef.dynamo_load(None, context=context) == default
 
 
 def test_string():

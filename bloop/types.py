@@ -247,81 +247,6 @@ class Set(Type):
         return list(filtered) or None
 
 
-class Map(Type):
-    python_type = collections.abc.Mapping
-    backing_type = MAP
-
-    def __init__(self, **types):
-        self.types = {k: type_instance(t) for k, t in types.items()}
-        super().__init__()
-
-    def __getitem__(self, key):
-        """Overload allows easy nested access to types"""
-        return self.types[key]
-
-    def _register(self, engine):
-        """Register all types for the map"""
-        for typedef in self.types.values():
-            engine.register(typedef)
-
-    def dynamo_load(self, values, *, context, **kwargs):
-        if values is None:
-            values = dict()
-        load = context["engine"]._load
-        get = values.get
-        return {
-            key: load(typedef, get(key, None), context=context, **kwargs)
-            for key, typedef in self.types.items()
-        }
-
-    def dynamo_dump(self, values, *, context, **kwargs):
-        obj = {}
-        dump = context["engine"]._dump
-        for key, typedef in self.types.items():
-            value = values.get(key, None)
-            if value is not None:
-                value = dump(typedef, value, context=context, **kwargs)
-            # Never push a literal `None` back to DynamoDB
-            if value is not None:
-                obj[key] = value
-        return obj
-
-
-class TypedMap(Type):
-    python_type = collections.abc.Mapping
-    backing_type = MAP
-
-    def __init__(self, typedef=None):
-        # Default None allows the TypeEngine to call without args,
-        # and still provide a helpful error message for a required param
-        if typedef is None:
-            raise TypeError("TypedMap requires a type")
-        self.typedef = type_instance(typedef)
-        super().__init__()
-
-    def __getitem__(self, key):
-        """Overload allows easy nested access to types"""
-        return self.typedef
-
-    def _register(self, engine):
-        """Register all types for the map"""
-        engine.register(self.typedef)
-
-    def dynamo_load(self, values, *, context, **kwargs):
-        if values is None:
-            return dict()
-        # local lookup in a tight loop
-        load = context["engine"]._load
-        typedef = self.typedef
-        return {k: load(typedef, v, context=context, **kwargs) for k, v in values.items()}
-
-    def dynamo_dump(self, values, *, context, **kwargs):
-        # local lookup in a tight loop
-        dump = context["engine"]._dump
-        typedef = self.typedef
-        return {k: dump(typedef, v, context=context, **kwargs) for k, v in values.items()}
-
-
 class List(Type):
     python_type = collections.abc.Iterable
     backing_type = LIST
@@ -363,3 +288,78 @@ class List(Type):
                 dump(typedef, value, context=context, **kwargs)
                 for value in values))
         return list(filtered) or None
+
+
+class TypedMap(Type):
+    python_type = collections.abc.Mapping
+    backing_type = MAP
+
+    def __init__(self, typedef=None):
+        # Default None allows the TypeEngine to call without args,
+        # and still provide a helpful error message for a required param
+        if typedef is None:
+            raise TypeError("TypedMap requires a type")
+        self.typedef = type_instance(typedef)
+        super().__init__()
+
+    def __getitem__(self, key):
+        """Overload allows easy nested access to types"""
+        return self.typedef
+
+    def _register(self, engine):
+        """Register all types for the map"""
+        engine.register(self.typedef)
+
+    def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            return dict()
+        # local lookup in a tight loop
+        load = context["engine"]._load
+        typedef = self.typedef
+        return {k: load(typedef, v, context=context, **kwargs) for k, v in values.items()}
+
+    def dynamo_dump(self, values, *, context, **kwargs):
+        # local lookup in a tight loop
+        dump = context["engine"]._dump
+        typedef = self.typedef
+        return {k: dump(typedef, v, context=context, **kwargs) for k, v in values.items()}
+
+
+class Map(Type):
+    python_type = collections.abc.Mapping
+    backing_type = MAP
+
+    def __init__(self, **types):
+        self.types = {k: type_instance(t) for k, t in types.items()}
+        super().__init__()
+
+    def __getitem__(self, key):
+        """Overload allows easy nested access to types"""
+        return self.types[key]
+
+    def _register(self, engine):
+        """Register all types for the map"""
+        for typedef in self.types.values():
+            engine.register(typedef)
+
+    def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            values = dict()
+        load = context["engine"]._load
+        get = values.get
+        return {
+            key: load(typedef, get(key, None), context=context, **kwargs)
+            for key, typedef in self.types.items()
+        }
+
+    def dynamo_dump(self, values, *, context, **kwargs):
+        obj = {}
+        dump = context["engine"]._dump
+        for key, typedef in self.types.items():
+            value = values.get(key, None)
+            if value is not None:
+                value = dump(typedef, value, context=context, **kwargs)
+            # Never push a literal `None` back to DynamoDB
+            if value is not None:
+                obj[key] = value
+        return obj

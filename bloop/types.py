@@ -191,13 +191,13 @@ class Set(Type):
 
     def dynamo_load(self, value, *, context, **kwargs):
         # local lookup in a tight loop
-        load = context["engine"].type_engine.load
+        load = context["engine"]._load
         typedef = self.typedef
         return set(load(typedef, v, context=context, **kwargs) for v in value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
         # local lookup in a tight loop
-        dump = context["engine"].type_engine.dump
+        dump = context["engine"]._dump
         typedef = self.typedef
         return [dump(typedef, v, context=context, **kwargs) for v in sorted(value)]
 
@@ -232,7 +232,7 @@ class Map(Type):
 
     def dynamo_load(self, values, *, context, **kwargs):
         obj = {}
-        load = context["engine"].type_engine.load
+        load = context["engine"]._load
         for key, typedef in self.types.items():
             value = values.get(key, None)
             if value is not None:
@@ -242,7 +242,7 @@ class Map(Type):
 
     def dynamo_dump(self, values, *, context, **kwargs):
         obj = {}
-        dump = context["engine"].type_engine.dump
+        dump = context["engine"]._dump
         for key, typedef in self.types.items():
             value = values.get(key, None)
             if value is not None:
@@ -275,13 +275,13 @@ class TypedMap(Type):
 
     def dynamo_load(self, values, *, context, **kwargs):
         # local lookup in a tight loop
-        load = context["engine"].type_engine.load
+        load = context["engine"]._load
         typedef = self.typedef
         return {k: load(typedef, v, context=context, **kwargs) for k, v in values.items()}
 
     def dynamo_dump(self, values, *, context, **kwargs):
         # local lookup in a tight loop
-        dump = context["engine"].type_engine.dump
+        dump = context["engine"]._dump
         typedef = self.typedef
         return {k: dump(typedef, v, context=context, **kwargs) for k, v in values.items()}
 
@@ -306,12 +306,12 @@ class List(Type):
 
     def dynamo_load(self, value, *, context, **kwargs):
         # local lookup in a tight loop
-        load = context["engine"].type_engine.load
+        load = context["engine"]._load
         typedef = self.typedef
         return [load(typedef, v, context=context, **kwargs) for v in value]
 
     def dynamo_dump(self, value, *, context, **kwargs):
         # local lookup in a tight loop
-        dump = context["engine"].type_engine.dump
+        dump = context["engine"]._dump
         typedef = self.typedef
         return [dump(typedef, v, context=context, **kwargs) for v in value]

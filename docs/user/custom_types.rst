@@ -441,13 +441,13 @@ do so through the type engine that's accessible through the ``context`` kwarg:
             self.inner_type = inner_type
 
         def dynamo_load(self, value, *, context, **kwargs):
-            load = context["engine"].type_engine.load
+            load = context["engine"]._load
             return load(
                 self.inner_type, value,
                 context=context, **kwargs)
 
         def dynamo_dump(self, value, *, context, **kwargs):
-            dump = context["engine"].type_engine.dump
+            dump = context["engine"]._dump
             return dump(
                 self.inner_type, value,
                 context=context, **kwargs)

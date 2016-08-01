@@ -113,11 +113,8 @@ class BaseModel:
         """ dict (dynamo name) -> obj """
         obj = cls.Meta.init()
         # We want to expect the exact attributes that are passed,
-        # since any superset will mark missing fields as expected and None
-        expected = set()
-        for column in cls.Meta.columns:
-            if column.dynamo_name in attrs:
-                expected.add(column)
+        # since any superset will mark missing fields as expected.
+        expected = filter(lambda col: col.dynamo_name in attrs, cls.Meta.columns)
         context["engine"]._update(obj, attrs, expected, **kwargs)
         return obj
 
@@ -125,12 +122,12 @@ class BaseModel:
     def _dump(cls, obj, *, context, **kwargs):
         """ obj -> dict """
         attrs = {}
-        type_engine = context["engine"].type_engine
+        engine = context["engine"]
         for column in cls.Meta.columns:
             value = getattr(obj, column.model_name, None)
             # Missing expected column - None is equivalent to empty
             if value is not None:
-                attrs[column.dynamo_name] = type_engine.dump(column.typedef, value, context=context, **kwargs)
+                attrs[column.dynamo_name] = engine._dump(column.typedef, value, context=context, **kwargs)
         return attrs
 
     def __str__(self):  # pragma: no cover

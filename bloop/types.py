@@ -35,7 +35,10 @@ class Type(declare.TypeDefinition):
 
     def _dump(self, value, **kwargs):
         """dump a python value to a {type: value} dictionary for dynamo storage"""
-        return {self.backing_type: self.dynamo_dump(value, **kwargs)}
+        value = self.dynamo_dump(value, **kwargs)
+        if value is None:
+            return value
+        return {self.backing_type: value}
 
     def dynamo_load(self, value, *, context, **kwargs):
         raise NotImplementedError()
@@ -236,11 +239,8 @@ class Set(Type):
         dump = context["engine"]._dump
         typedef = self.typedef
 
-        # TODO replace when Type._dump returns None instead of {str: None}
-        def not_none(value):
-            return (value is not None) and next(iter(value.values())) is not None
         filtered = filter(
-            not_none,
+            lambda x: x is not None,
             (
                 dump(typedef, value, context=context, **kwargs)
                 for value in values))
@@ -280,12 +280,8 @@ class List(Type):
         dump = context["engine"]._dump
         typedef = self.typedef
 
-        # TODO replace when Type._dump returns None instead of {str: None}
-        def not_none(value):
-            return (value is not None) and next(iter(value.values())) is not None
-
         filtered = filter(
-            not_none,
+            lambda x: x is not None,
             (
                 dump(typedef, value, context=context, **kwargs)
                 for value in values))
@@ -327,17 +323,11 @@ class TypedMap(Type):
         dump = context["engine"]._dump
         typedef = self.typedef
 
-        # TODO replace when Type._dump returns None instead of {str: None}
-        def not_none(item):
-            key, value = item
-            if (value is not None) and next(iter(value.values())) is not None:
-                return key, value
         filtered = filter(
-            not_none,
-            (
-                (key, dump(typedef, value, context=context, **kwargs))
-                for key, value in values.items()
-            ))
+            lambda item: item[1] is not None,
+            ((
+                 key, dump(typedef, value, context=context, **kwargs)
+             ) for key, value in values.items()))
         return dict(filtered) or None
 
 
@@ -374,16 +364,9 @@ class Map(Type):
         dump = context["engine"]._dump
         get = values.get
 
-        # TODO replace when Type._dump returns None instead of {str: None}
-        def not_none(item):
-            key, value = item
-            if (value is not None) and next(iter(value.values())) is not None:
-                return key, value
-
         filtered = filter(
-            not_none,
-            (
-                (key, dump(typedef, get(key, None), context=context, **kwargs))
-                for key, typedef in self.types.items()
-            ))
+            lambda item: item[1] is not None,
+            ((
+                 key, dump(typedef, get(key, None), context=context, **kwargs)
+             ) for key, typedef in self.types.items()))
         return dict(filtered) or None

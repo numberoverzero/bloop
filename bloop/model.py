@@ -123,19 +123,15 @@ class BaseModel:
     @classmethod
     def _dump(cls, obj, *, context, **kwargs):
         """ obj -> dict """
+        if obj is None:
+            return None
         dump = context["engine"]._dump
-
-        # TODO replace when Type._dump returns None instead of {str: None}
-        def not_none(item):
-            key, value = item
-            if (value is not None) and next(iter(value.values())) is not None:
-                return key, value
-
-        filtered = filter(not_none, ((
-            column.dynamo_name,
-            dump(column.typedef, getattr(obj, column.model_name, None), context=context, **kwargs)
-        ) for column in cls.Meta.columns))
-
+        filtered = filter(
+            lambda item: item[1] is not None,
+            ((
+                column.dynamo_name,
+                dump(column.typedef, getattr(obj, column.model_name, None), context=context, **kwargs)
+            ) for column in cls.Meta.columns))
         return dict(filtered) or None
 
     def __str__(self):  # pragma: no cover

@@ -62,11 +62,15 @@ def test_load_dump_best_effort(engine):
 @pytest.mark.parametrize("typedef", [String, UUID, DateTime, Float, Integer, Binary, Boolean])
 def test_none_scalar_types(typedef):
     """single-value types without an explicit 'lack of value' sentinel should return None when given None"""
-    assert typedef()._load(None, context={}) is None
-    assert typedef().dynamo_load(None, context={}) is None
+    type = typedef()
+    context = {}
 
-    # assert typedef()._dump(None, context={}) is None
-    assert typedef().dynamo_dump(None, context={}) is None
+    assert type._load(None, context=context) is None
+    assert type._load({typedef.backing_type: None}, context=context) is None
+    assert type.dynamo_load(None, context=context) is None
+
+    assert type._dump(None, context=context) is None
+    assert type.dynamo_dump(None, context=context) is None
 
 
 @pytest.mark.parametrize("typedef, default", [
@@ -92,24 +96,21 @@ def test_load_none_vector_types(engine, typedef, default):
     assert typedef.dynamo_load(None, context=context) == default
 
 
-@pytest.mark.parametrize("typedef, values", [
-    (Set(String), [None]),
-    (Set(String), []),
-    (List(String), [None]),
-    (List(String), []),
-    (TypedMap(String), {"k": None}),
-    (TypedMap(String), {}),
-    (DocumentType, {"Rating": None}),
-    (DocumentType, {})
+@pytest.mark.parametrize("typedef, nones", [
+    (Set(String), ([None], [], None)),
+    (List(String), ([None], [], None)),
+    (TypedMap(String), ({"k": None}, {}, None)),
+    (DocumentType, ({"Rating": None}, {}, None))
 ])
-def test_dump_none_vector_types(engine, typedef, values):
+def test_dump_none_vector_types(engine, typedef, nones):
     engine.type_engine.register(typedef)
     engine.type_engine.bind()
+    context = {"engine": engine}
 
-    # TODO: change when Type._dump returns None instead of {str: None}
-    assert typedef.dynamo_dump(values, context={"engine": engine}) is None
-    assert typedef.dynamo_dump(None, context={"engine": engine}) is None
-    # assert typedef._dump(values, context={"engine: engine}) is None
+    for values in nones:
+        assert typedef._dump(values, context=context) is None
+        assert typedef.dynamo_dump(values, context=context) is None
+        assert typedef.dynamo_dump(None, context=context) is None
 
 
 @pytest.mark.parametrize("typedef, values, expected", [
@@ -119,6 +120,7 @@ def test_dump_none_vector_types(engine, typedef, values):
     (DocumentType, {"Rating": 3.0, "Stock": None}, {"Rating": {"N": "3"}})
 ])
 def test_dump_partial_none(engine, typedef, values, expected):
+    """vector types filter out inner Nones"""
     engine.type_engine.register(typedef)
     engine.type_engine.bind()
     assert typedef.dynamo_dump(values, context={"engine": engine}) == expected
@@ -272,13 +274,6 @@ def test_required_subtypes(typedef):
     """Typed containers require an inner type"""
     with pytest.raises(TypeError):
         typedef()
-
-
-def test_load_dump_none():
-    """Loading or dumping None returns None"""
-    typedef = String()
-    assert typedef._dump(None, context={}) == {"S": None}
-    assert typedef._load({"S": None}, context={}) is None
 
 
 def test_map_dump(engine):

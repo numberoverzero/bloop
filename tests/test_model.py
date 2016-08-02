@@ -30,6 +30,8 @@ def test_load_default_init(engine):
         data = Column(String)
     engine.bind(base=Blob)
 
+    assert Blob.Meta.init is Blob
+
     blob = {
         "id": {"S": "foo"},
         "data": {"S": "data"},
@@ -63,7 +65,10 @@ def test_load_dump(engine):
 def test_dump_empty(engine):
     user = User()
     assert engine._dump(User, user) is None
+    assert engine._dump(User, None) is None
+
     assert engine._load(User, None) == user
+    assert engine._load(User, {}) == user
 
 
 def test_equality():

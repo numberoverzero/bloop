@@ -8,7 +8,9 @@ from bloop import (UUID,
                    List,
                    LocalSecondaryIndex,
                    Map,
+                   Set,
                    String,
+                   TypedMap,
                    new_base)
 
 
@@ -60,6 +62,14 @@ class ComplexModel(BaseModel):
     not_projected = Column(Integer)
     by_email = GlobalSecondaryIndex(hash_key="email", read_units=4, projection="all", write_units=5)
     by_joined = LocalSecondaryIndex(range_key="joined", projection=["email"])
+
+
+class VectorModel(BaseModel):
+    name = Column(String, hash_key=True)
+    list_str = Column(List(String))
+    set_str = Column(Set(String))
+    typed_map_str = Column(TypedMap(String))
+
 
 conditions = set()
 

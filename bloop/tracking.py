@@ -40,9 +40,7 @@ def sync(obj, engine):
     # Only expect values (or lack of a value) for columns that have been explicitly set
     for column in sorted(_obj_tracking[obj]["marked"], key=lambda col: col.dynamo_name):
         value = getattr(obj, column.model_name, None)
-        # Don't try to dump Nones through the typedef
-        if value is not None:
-            value = engine._dump(column.typedef, value)
+        value = engine._dump(column.typedef, value)
         condition = column == value
         # The renderer shouldn't try to dump the value again.
         # We're dumping immediately in case the value is mutable,

@@ -4,29 +4,23 @@ from .tracking import get_marked, get_snapshot
 
 __all__ = ["render"]
 
-EXPRESSION_KEYS = {
-    "condition": "ConditionExpression",
-    "filter": "FilterExpression",
-    "key": "KeyConditionExpression"
-}
-
 
 def render(engine, filter=None, select=None, key=None, atomic=None, condition=None, update=None):
     renderer = ConditionRenderer(engine)
     if filter is not None:
-        renderer.render(filter, "filter")
+        renderer.filter_expression(filter)
     if select is not None:
-        renderer.projection(select)
+        renderer.projection_expression(select)
     if key is not None:
-        renderer.render(key, "key")
+        renderer.key_expression(key)
     if (atomic is not None) or (condition is not None):
         if condition is None:
             condition = Condition()
         if atomic is not None:
             condition &= get_snapshot(atomic)
-        renderer.render(condition, "condition")
+        renderer.condition_expression(condition)
     if update is not None:
-        renderer.update_for(update)
+        renderer.update_expression(update)
     return renderer.rendered
 
 
@@ -42,23 +36,6 @@ class ConditionRenderer:
         # as keys, as well as less frequently being re-used than names.
         self.name_attr_index = {}
         self.__ref_index = 0
-
-    def value_ref(self, column, value, *, dumped=False, path=None):
-        """
-        Dumped controls whether the value is already in a dynamo format (True),
-        or needs to be dumped through the engine (False).
-        """
-        ref = ":v{}".format(self.__ref_index)
-        self.__ref_index += 1
-
-        if not dumped:
-            typedef = column.typedef
-            for segment in (path or []):
-                typedef = typedef[segment]
-            value = self.engine._dump(typedef, value)
-
-        self.attr_values[ref] = value
-        return ref
 
     def _name_ref(self, name):
         # Small optimization to request size for duplicate name refs
@@ -85,17 +62,36 @@ class ConditionRenderer:
                 str_pieces.append(self._name_ref(piece))
         return ".".join(str_pieces)
 
-    def render(self, condition, mode):
-        key = EXPRESSION_KEYS[mode]
-        rendered_expression = condition.render(self)
-        if rendered_expression:
-            self.expressions[key] = rendered_expression
+    def value_ref(self, column, value, *, dumped=False, path=None):
+        """
+        Dumped controls whether the value is already in a dynamo format (True),
+        or needs to be dumped through the engine (False).
+        """
+        ref = ":v{}".format(self.__ref_index)
+        self.__ref_index += 1
 
-    def projection(self, columns):
-        names = map(self.name_ref, columns)
-        self.expressions["ProjectionExpression"] = ", ".join(names)
+        if not dumped:
+            typedef = column.typedef
+            for segment in (path or []):
+                typedef = typedef[segment]
+            value = self.engine._dump(typedef, value)
 
-    def update_for(self, obj):
+        self.attr_values[ref] = value
+        return ref
+
+    def condition_expression(self, condition):
+        self.expressions["ConditionExpression"] = condition.render(self)
+
+    def filter_expression(self, condition):
+        self.expressions["FilterExpression"] = condition.render(self)
+
+    def key_expression(self, condition):
+        self.expressions["KeyConditionExpression"] = condition.render(self)
+
+    def projection_expression(self, columns):
+        self.expressions["ProjectionExpression"] = ", ".join(map(self.name_ref, columns))
+
+    def update_expression(self, obj):
         updates = {
             "set": [],
             "remove": []}
@@ -122,7 +118,7 @@ class ConditionRenderer:
 
     @property
     def rendered(self):
-        expressions = dict(self.expressions)
+        expressions = {k: v for (k, v) in self.expressions.items() if v is not None}
         if self.attr_names:
             expressions["ExpressionAttributeNames"] = self.attr_names
         if self.attr_values:

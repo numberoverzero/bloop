@@ -85,11 +85,6 @@ class ConditionRenderer:
                 str_pieces.append(self._name_ref(piece))
         return ".".join(str_pieces)
 
-    def refs(self, pair):
-        """ Return (#n0, #v1) tuple for a given (column, value) pair """
-        column, value = pair
-        return self.name_ref(column), self.value_ref(column, value)
-
     def render(self, condition, mode):
         key = EXPRESSION_KEYS[mode]
         rendered_expression = condition.render(self)
@@ -101,24 +96,27 @@ class ConditionRenderer:
         self.expressions["ProjectionExpression"] = ", ".join(names)
 
     def update_for(self, obj):
+        updates = {
+            "set": [],
+            "remove": []}
+        # Don't include key columns in an UpdateExpression
         key = {obj.Meta.hash_key, obj.Meta.range_key}
-        non_key_columns = filter(lambda c: c not in key, get_marked(obj))
-        to_set = []
-        to_remove = []
-        for column in non_key_columns:
+        for column in filter(lambda c: c not in key, get_marked(obj)):
+            nref = self.name_ref(column)
             value = getattr(obj, column.model_name, None)
-            if value is None:
-                to_remove.append(column)
+            value = self.engine._dump(column.typedef, value)
+
+            if value is not None:
+                vref = self.value_ref(column, value, dumped=True)
+                updates["set"].append("{}={}".format(nref, vref))
             else:
-                to_set.append((column, value))
-        to_set = ["{}={}".format(*self.refs(pair)) for pair in to_set]
-        to_remove = [self.name_ref(column) for column in to_remove]
+                updates["remove"].append(nref)
+
         expression = ""
-        if to_set:
-            expression += "SET " + ", ".join(to_set)
-        if to_remove:
-            expression += " REMOVE " + ", ".join(to_remove)
-        expression = expression.strip()
+        if updates["set"]:
+            expression += "SET " + ", ".join(updates["set"])
+        if updates["remove"]:
+            expression += " REMOVE " + ", ".join(updates["remove"])
         if expression:
             self.expressions["UpdateExpression"] = expression.strip()
 

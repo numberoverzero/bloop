@@ -640,7 +640,7 @@ def test_unbound_operations_raise(engine, op, plural):
         assert excinfo.value.model is abstract
 
 
-def test_atomic_load_missing_vector_types(engine):
+def test_load_missing_vector_types(engine):
     """None (or missing) for Set/List etc become actual objects on load"""
 
     # Only the hash key was persisted
@@ -663,3 +663,21 @@ def test_atomic_load_missing_vector_types(engine):
             "int": None
         }
     }
+
+
+def test_update_missing_vector_types(engine):
+    """Empty Set/List are deleted, not-set values aren't specified during update"""
+    obj = VectorModel(name="foo", list_str=list(), map_nested={"str": "bar"})
+
+    expected = {
+        "ExpressionAttributeNames": {"#n1": "map_nested", "#n0": "list_str"},
+        "ExpressionAttributeValues": {":v2": {"M": {"str": {"S": "bar"}}}},
+        "Key": {"name": {"S": "foo"}},
+        "TableName": "VectorModel",
+        # Map is set, but only with the key that has a value.
+        # list is deleted, since it has no values.
+        "UpdateExpression": "SET #n1=:v2 REMOVE #n0",
+    }
+
+    engine.save(obj)
+    engine.client.update_item.assert_called_once_with(expected)

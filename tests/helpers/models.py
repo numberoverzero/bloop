@@ -69,6 +69,13 @@ class VectorModel(BaseModel):
     list_str = Column(List(String))
     set_str = Column(Set(String))
     typed_map_str = Column(TypedMap(String))
+    map_nested = Column(Map(**{
+        "str": String,
+        "map": Map(**{
+            "int": Integer,
+            "str": String
+        })
+    }))
 
 
 conditions = set()

@@ -13,7 +13,7 @@ from bloop.tracking import get_snapshot, sync
 from bloop.types import UUID, DateTime, Integer, String
 from bloop.util import ordered
 
-from .helpers.models import ComplexModel, User
+from .helpers.models import ComplexModel, User, VectorModel
 
 
 def test_shared_type_engine():
@@ -625,7 +625,6 @@ def test_unbound_operations_raise(engine, op, plural):
             abstract = True
         id = Column(Integer, hash_key=True)
     engine.bind(base=Abstract)
-    engine.bind(base=User)
 
     abstract = Abstract(id=5)
     concrete = User(age=5)
@@ -639,3 +638,28 @@ def test_unbound_operations_raise(engine, op, plural):
             operation = getattr(engine, op)
             operation([abstract, concrete])
         assert excinfo.value.model is abstract
+
+
+def test_atomic_load_missing_vector_types(engine):
+    """None (or missing) for Set/List etc become actual objects on load"""
+
+    # Only the hash key was persisted
+    from_dynamo = {"VectorModel": [{"name": {"S": "foo"}}]}
+    engine.client.batch_get_items.return_value = from_dynamo
+
+    # Note that this goes through engine.load; engine._load would go through Model._load,
+    # which can't set every column.  If it did, there would be no way to partially load objects
+    # through
+    obj = VectorModel(name="foo")
+    engine.load(obj)
+
+    assert obj.list_str == list()
+    assert obj.set_str == set()
+    assert obj.typed_map_str == dict()
+    assert obj.map_nested == {
+        "str": None,
+        "map": {
+            "str": None,
+            "int": None
+        }
+    }

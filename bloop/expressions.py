@@ -97,7 +97,9 @@ class ConditionRenderer:
             "remove": []}
         # Don't include key columns in an UpdateExpression
         key = {obj.Meta.hash_key, obj.Meta.range_key}
-        for column in filter(lambda c: c not in key, get_marked(obj)):
+        for column in sorted(
+                filter(lambda c: c not in key, get_marked(obj)),
+                key=lambda c: c.dynamo_name):
             nref = self.name_ref(column)
             value = getattr(obj, column.model_name, None)
             value = self.engine._dump(column.typedef, value)

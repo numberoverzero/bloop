@@ -57,15 +57,18 @@ def setup_columns(meta):
 
     meta.hash_key = None
     meta.range_key = None
+    meta.keys = set()
     for column in meta.columns:
         if column.hash_key:
             if meta.hash_key:
                 raise ValueError("Model hash_key over-specified")
             meta.hash_key = column
+            meta.keys.add(column)
         elif column.range_key:
             if meta.range_key:
                 raise ValueError("Model range_key over-specified")
             meta.range_key = column
+            meta.keys.add(column)
         column.model = meta.model
 
 

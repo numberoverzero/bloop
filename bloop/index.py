@@ -24,11 +24,6 @@ def validate_projection(projection):
     return projection
 
 
-def update_non_empty(group, iterable):
-    """Cull falsey (None) objects from an iterable before adding to a set"""
-    group.update(obj for obj in iterable if obj)
-
-
 class Index(declare.Field):
     def __init__(self, *, projection, hash_key=None, range_key=None, name=None, **kwargs):
         self.model = None
@@ -56,12 +51,16 @@ class Index(declare.Field):
         if self.range_key:
             self.range_key = columns[self.range_key]
 
+        self.keys = {self.hash_key}
+        if self.range_key:
+            self.keys.add(self.range_key)
+
         # Compute and cache the projected columns
         projected = self.projection_attributes = set()
 
-        # All projections include keys
-        keys = (model.Meta.hash_key, model.Meta.range_key, self.hash_key, self.range_key)
-        update_non_empty(projected, keys)
+        # All projections include model + index keys
+        projected.update(model.Meta.keys)
+        projected.update(self.keys)
 
         if self.projection == "ALL":
             projected.update(columns.values())

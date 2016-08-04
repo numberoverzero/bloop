@@ -71,8 +71,8 @@ class ProjectedIndexes(new_base()):
 def query(engine):
     return Filter(
         engine=engine, mode="query", model=ComplexModel, index=ComplexModel.by_email, strict=False,
-        select="specific", select_attributes={ComplexModel.date}, prefetch=3, consistent=True, forward=False,
-        limit=4, key=(ComplexModel.name == "foo"), filter=(ComplexModel.email.contains("@")))
+        select="specific", select_attributes={ComplexModel.joined}, prefetch=3, consistent=True, forward=False,
+        limit=4, key=(ComplexModel.email == "foo"), filter=(ComplexModel.not_projected > 3))
 
 
 @pytest.fixture

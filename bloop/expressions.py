@@ -95,10 +95,9 @@ class ConditionRenderer:
         updates = {
             "set": [],
             "remove": []}
-        # Don't include key columns in an UpdateExpression
-        key = {obj.Meta.hash_key, obj.Meta.range_key}
         for column in sorted(
-                filter(lambda c: c not in key, get_marked(obj)),
+                # Don't include key columns in an UpdateExpression
+                filter(lambda c: c not in obj.Meta.keys, get_marked(obj)),
                 key=lambda c: c.dynamo_name):
             nref = self.name_ref(column)
             value = getattr(obj, column.model_name, None)

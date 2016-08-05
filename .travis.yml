@@ -1,18 +1,14 @@
 language: python
 python: 3.5
-
 env:
-  - TOXENV=unit
-  - TOXENV=integ
-  - TOXENV=docs
-
+- TOXENV=unit
+- TOXENV=integ
+- TOXENV=docs
 install: pip install tox coveralls
 script: tox -e $TOXENV
 after_success:
-  - test $TOXENV = "unit" && coveralls
-  - test $TOXENV = "integ" && coveralls
-
+- test $TOXENV = "unit" && coveralls
+- test $TOXENV = "integ" && coveralls
 notifications:
   slack:
-    secure: XZ9C7sBBWsCBKWZY2nDBkaCaePqbb3ham+FLtXTiaRCq+rfl5Q3Effm91YvKmT2i/7rqXjgDb8moVA9NEBF1SLsZlMMVdvY7BIDwf21m26Nm/a3Z0VdTxexAUp4N6O6SqRVua+XcDuYvEWBpDAksiLlbHlI+Z1aQiEHvQx0UqW0=
-
+    secure: cXjzhmFI0oAWifBilGvTApiL8VSyM7/4v3Ve4TZeU+15EoYf05AhNoHs0FKVcj+ockYPqlj3p+SIUXnGfcI41QFlO09gGvFVB/FA/PHH2n4hb20+zxSx5Ic9ac3B2Nb5u2lWGsSsRTvCHtC0Wcxx878ML5UFrP5yu4vKIgj8AyE=

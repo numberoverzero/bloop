@@ -60,7 +60,7 @@ This is a simple function to create a copy of an engine, but with slightly diffe
         return bloop.Engine(
             type_engine=engine.type_engine,
             client=engine.client,
-            config=dict(engine.config, **config))
+            config={**engine.config, **config})
 
 For example, let's say you use strict queries to control your consumed throughput, but some legacy code still
 needs to load everything from an LSI:

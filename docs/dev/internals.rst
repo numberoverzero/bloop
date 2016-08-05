@@ -25,7 +25,7 @@ Objects are sent in a dict that looks like:
 .. code-block:: python
 
     {
-        "<T>": {
+        "TableName": {
             "Keys": [
                 {
                     "hash": {"type": "value"},
@@ -44,7 +44,7 @@ And returned in a similar dict:
 .. code-block:: python
 
     {
-        "table_name": {
+        "TableName": {
             "Items": [
                 {
                     "attr": {"type": "value"},

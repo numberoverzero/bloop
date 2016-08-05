@@ -171,8 +171,8 @@ def test_load_shared_table(engine):
 
     id = "foo"
     range = "bar"
-    now = arrow.now()
-    now_str = now.to("utc").isoformat()
+    now = arrow.now().to("utc")
+    now_str = now.isoformat()
     engine.client.batch_get_items.return_value = {
         "SharedTable": [{
             "id": {"S": id},
@@ -190,8 +190,11 @@ def test_load_shared_table(engine):
     expected_first = FirstModel(id=id, range=range, first="first", as_date=now)
     expected_second = SecondModel(id=id, range=range, second="second", as_string=now_str)
 
-    assert first == expected_first
-    assert second == expected_second
+    missing = object()
+    for attr in (c.model_name for c in FirstModel.Meta.columns):
+        assert getattr(first, attr, missing) == getattr(expected_first, attr, missing)
+    for attr in (c.model_name for c in SecondModel.Meta.columns):
+        assert getattr(second, attr, missing) == getattr(expected_second, attr, missing)
     assert not hasattr(first, "second")
     assert not hasattr(second, "first")
 

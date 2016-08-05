@@ -38,7 +38,7 @@ def test_load_default_init(engine):
         "extra_field": {"N": "0.125"}
     }
 
-    loaded_blob = Blob._load(blob, context={"engine": engine})
+    loaded_blob = engine._load(Blob, blob)
     assert loaded_blob.id == "foo"
     assert loaded_blob.data == "data"
     assert not hasattr(loaded_blob, "extra_field")
@@ -58,39 +58,31 @@ def test_load_dump(engine):
         "j": {"S": user.joined.to("utc").isoformat()}
     }
 
-    assert engine._load(User, serialized) == user
+    loaded_user = engine._load(User, serialized)
+
+    missing = object()
+    for attr in (c.model_name for c in User.Meta.columns):
+        assert getattr(loaded_user, attr, missing) == getattr(user, attr, missing)
+
     assert engine._dump(User, user) == serialized
+    assert engine._dump(User, loaded_user) == serialized
 
 
-def test_dump_empty(engine):
+def test_load_dump_none(engine):
     user = User()
     assert engine._dump(User, user) is None
     assert engine._dump(User, None) is None
 
-    assert engine._load(User, None) == user
-    assert engine._load(User, {}) == user
+    # Loaded instances have None attributes, unlike newly created instances
+    # which don't have those attributes.  That is, `not hasattr(user, "id")`
+    # whereas `getattr(loaded_user, "id") is None`
+    loaded_user = engine._load(User, None)
+    for attr in (c.model_name for c in User.Meta.columns):
+        assert getattr(loaded_user, attr) is None
 
-
-def test_equality():
-    user_id = uuid.uuid4()
-    user = User(id=user_id, name="name", email="user@domain.com", age=25)
-    same = User(id=user_id, name="name", email="user@domain.com", age=25)
-    other = User(id=user_id, name="wrong", email="user@domain.com", age=25)
-    another = User(id=user_id, email="user@domain.com", age=25)
-
-    # Wrong type
-    assert not(user == "foo")
-    assert user != "foo"
-
-    # Attr with different value
-    assert not(user == other)
-    assert user != other
-
-    # Missing an attr
-    assert not(user == another)
-    assert user != another
-
-    assert user == same
+    loaded_user = engine._load(User, {})
+    for attr in (c.model_name for c in User.Meta.columns):
+        assert getattr(loaded_user, attr) is None
 
 
 def test_meta_read_write_units():
@@ -257,3 +249,14 @@ def test_abstract_not_inherited():
 
     assert base.Meta.abstract
     assert not Concrete.Meta.abstract
+
+
+def test_str(engine):
+    """Different strings for None and missing"""
+    new_user = User()
+    loaded_empty_user = engine._load(User, None)
+
+    # No values to show
+    assert str(new_user) == "User()"
+    # Values set to None
+    assert str(loaded_empty_user) == "User(age=None, email=None, id=None, joined=None, name=None)"

@@ -17,6 +17,14 @@ def new_base():
     return Model
 
 
+def loaded_columns(obj):
+    """Yields each (model_name, value) tuple for all columns in an object that aren't missing"""
+    for column in sorted(obj.Meta.columns, key=lambda c: c.model_name):
+        value = getattr(obj, column.model_name, _MISSING)
+        if value is not _MISSING:
+            yield (column.model_name, value)
+
+
 class ModelMetaclass(declare.ModelMetaclass):
     def __new__(mcs, name, bases, attrs):
         model = super().__new__(mcs, name, bases, attrs)
@@ -114,13 +122,16 @@ class BaseModel:
     @classmethod
     def _load(cls, attrs, *, context, **kwargs):
         """ dict (dynamo name) -> obj """
+        obj = cls.Meta.init()
         if attrs is None:
             attrs = {}
-        obj = cls.Meta.init()
-        # We want to expect the exact attributes that are passed,
-        # since any superset will mark missing fields as expected.
-        expected = filter(lambda col: col.dynamo_name in attrs, cls.Meta.columns)
-        context["engine"]._update(obj, attrs, expected, **kwargs)
+        # Like any other Type, Model._load gives every inner type (in this case,
+        # the type in each column) the chance to load None (for missing attr keys)
+        # into another values (such as an empty set or dict).
+        # For tracking purposes, this means that the method will always mark EVERY column.
+        # If you're considering using this method, you may want to look at engine._update,
+        # Which allows you to specify the columns to extract.
+        context["engine"]._update(obj, attrs, obj.Meta.columns, **kwargs)
         return obj
 
     @classmethod
@@ -137,29 +148,7 @@ class BaseModel:
             ) for column in cls.Meta.columns))
         return dict(filtered) or None
 
-    def __str__(self):  # pragma: no cover
-        attrs = ", ".join((
-            "{}={}".format(column.model_name, getattr(self, column.model_name, None))
-            for column in self.Meta.columns
-        ))
+    def __str__(self):
+        attrs = ", ".join("{}={}".format(*item) for item in loaded_columns(self))
         return "{}({})".format(self.__class__.__name__, attrs)
     __repr__ = __str__
-
-    __hash__ = object.__hash__
-
-    def __eq__(self, other):
-        """ Only checks defined columns. """
-        if self is other:
-            return True
-        cls = self.__class__
-        if not isinstance(other, cls):
-            return False
-        for column in cls.Meta.columns:
-            value = getattr(self, column.model_name, None)
-            other_value = getattr(other, column.model_name, None)
-            if value != other_value:
-                return False
-        return True
-
-    def __ne__(self, other):
-        return not self.__eq__(other)

@@ -3,9 +3,8 @@
 Custom Types
 ^^^^^^^^^^^^
 
-In most cases you'll create a custom type by subclassing one of ``String``, ``Float``, or ``Binary`` and implementing
-two methods: ``dynamo_load`` and ``dynamo_dump``.  Sometimes, you'll need to implement ``_register`` for nested or
-referenced types.  See the quick example below to get going.
+You'll typically create a custom type by subclassing one of ``String``, ``Float``, or ``Binary`` and implementing two
+methods: ``dynamo_load`` and ``dynamo_dump``.  For nested or reference types, you may need to implement ``_register``.
 
 Quick Example
 =============
@@ -19,15 +18,16 @@ Here's a trivial type that prepends a string with its length.  So ``"hello world
             self.sep = sep
 
         def dynamo_load(self, value, *, context, **kwargs):
-            value = super().dynamo_load(
-                value, context=context, **kwargs)
+            if value is None:
+                return None
             start_at = value.index(self.sep) + 1
             return value[start_at:]
 
         def dynamo_dump(self, value, *, context, **kwargs):
+            if value is None:
+                return None
             prefix = str(len(value)) + self.sep
-            return super().dynamo_dump(
-                prefix + value, context=context, **kwargs)
+            return prefix + value
 
 We can now use this type anywhere a String would be allowed:
 
@@ -108,19 +108,19 @@ While the full ``bloop.Type`` class looks like this:
         python_type = None
         backing_type = None
 
-        def bind(self, type_engine, **config):
-            return self._load, self._dump
-
         def _load(self, value, **kwargs):
-            value = next(iter(value.values()))
-            if value is None:
-                return None
+            if value is not None:
+                value = next(iter(value.values()))
             return self.dynamo_load(value, **kwargs)
 
         def _dump(self, value, **kwargs):
+            value = self.dynamo_dump(value, **kwargs)
             if value is None:
-                return {self.backing_type: None}
-            return {self.backing_type: self.dynamo_dump(value, **kwargs)}
+                return value
+            return {self.backing_type: value}
+
+        def _register(self, type_engine):
+            pass
 
         def dynamo_load(self, value, *, context, **kwargs):
             raise NotImplementedError()
@@ -128,14 +128,10 @@ While the full ``bloop.Type`` class looks like this:
         def dynamo_dump(self, value, *, context, **kwargs):
             raise NotImplementedError()
 
-        def _register(self, type_engine):
-            pass
-
-When subclassing ``bloop.Type`` you must not override ``bind``, ``_load``, or ``_dump``.  If you need to customize how
-your type binds to the type engine, or want to unpack DynamoDB's wire format manually, see :ref:`user-advanced-types`.
-
 ``python_type``
 ---------------
+
+*(defaults to None)*
 
 This attribute is purely informational, and is only used in ``__str__`` and ``__repr__``.  This attribute isn't
 checked against an incoming or outgoing value, although your types could choose to enforce them.
@@ -143,11 +139,12 @@ checked against an incoming or outgoing value, although your types could choose 
 ``backing_type``
 ----------------
 
-Unlike ``python_type``, this field is **required** when subclassing ``bloop.Type`` and must be one of the types defined
-in :ref:`base-type`.  This is used to dump a value eg. ``"some string"`` into the proper DynamoDB wire format
-``{"S": "some string"}``.  Usually, you'll want to define this on your type.  In some cases, however, you won't know
-this value until the type is instantiated.  For example, the built-in :ref:`user-set-type` type constructs the backing
-type based on its inner type's backing type with roughly the following:
+*(required)*
+
+This must be one of the types defined in :ref:`base-type`.  ``backing_type`` is used to dump a value eg.
+``"some string"`` into the DynamoDB wire format ``{"S": "some string"}``.  Usually, you'll define this on your type.
+In some cases, you won't know this value until the type is instantiated.  For example, the built-in
+:ref:`user-set-type` type constructs the backing type based on its inner type's backing type:
 
 .. code-block:: python
 
@@ -168,8 +165,17 @@ type based on its inner type's backing type with roughly the following:
     def dynamo_load(self, value, *, context, **kwargs):
         ...
 
-Because ``bloop.Type`` unpacks the wire format's single-key dict for you, this will always be the value as a string.
-If there was no value, or the value was ``None``, ``dynamo_load`` won't be called, and will instead return None.
+The ``value`` passed to ``dynamo_load`` will either be a ``str`` or ``None``.  When the value is a str, it is the inner
+value from the DynamoDB wire format.  For example, ``{"N": "300"}`` will pass ``"300"`` to ``dynamo_load``.
+
+You should interpret ``None`` to mean "missing". For most scalar types (String, Integer, Bool) there's no value that
+indicates "missing", so these types return None.  Other types can return empty structures, so that you don't litter
+your code with None checks whenever you access a column.
+
+For example, ``Set`` returns an empty ``set()`` instead of None.  The same holds for ``List``, ``TypedMap``, and
+``Map``.  All of these return empty (partially empty, in Map's case) objects.
+
+For more information, see :ref:`none-vs-missing` below.
 
 The bloop engine that is loading the value can always be accessed through ``context["engine"]``.  This is useful to
 return different values depending on how the engine is configured, or performing chained operations.  For example, you
@@ -184,11 +190,11 @@ could implement a reference type that loads a value from a different model like 
             self.python_type = model
 
         def dynamo_load(self, value, *, context, **kwargs):
-            # Load through super first
-            value = super().dynamo_load(value, context=context, **kwargs)
+            if value is None:
+                return None
 
             # For simplicity, value is the referenced model's hash_key
-            obj = self.model()
+            obj = self.model.Meta.init()
             hash_key_name = self.model.Meta.hash_key.model_name
             setattr(obj, hash_key_name, value)
 
@@ -202,7 +208,7 @@ And its usage:
 
     class Data(bloop.new_base()):
         id = Column(String, hash_key=True)
-        blob = Column(Binary)
+        data_blob = Column(Binary)
 
 
     class IndirectData(Base):
@@ -210,6 +216,30 @@ And its usage:
         blob = Column(ReferenceType(Data))
 
     engine.bind(base=Data)
+    engine.bind(base=IndirectData)
+
+
+    data = Data(id="inner", data_blob=b"some data")
+    engine.save(data)
+
+    # TODO: dynamo_dump below to save this correctly
+    indirect = IndirectData(id="outer", blob=data)
+    engine.save(indirect)
+
+
+    outer = IndirectData(id="outer")
+
+    # 1. First outer.data is loaded; see dynamo_dump
+    #    below, this will be the id of the Data obj
+    # 2. When ReferenceType.dynamo_load is called,
+    #    it takes that id (value), and creates an instance
+    #    of Data.
+    # 3. It uses the engine in context to load that object.
+    # 4. Finally, it returns the loaded object, which becomes
+    #    the new value for outer.data
+    engine.load(outer)
+
+    assert outer.blob.id == "inner"
 
 ``dynamo_dump``
 ---------------
@@ -222,11 +252,22 @@ And its usage:
 The exact reverse of ``dynamo_load``, this method takes the modeled value and turns it into a string that contains a
 DynamoDB-compatible format for the given backing value.  For binary objects this means base64 encoding the value.
 
+You will need to handle ``None`` here as well; if an object is missing a column after an ``engine.load`` then that
+column will be ``None``.  Immediately saving it back to DynamoDB will push that ``None`` through ``dynamo_dump``.
+
+Additionally, ``dynamo_dump`` can signal that a value is missing (or should be considered non-existent) by returning
+``None``.  This is useful to dump an empty set into None to indicate that the value shouldn't be included in an
+UpdateItem call.
+
+Again, you should see :ref:`none-vs-missing` below for more details.
+
 Here is the corresponding ``dynamo_dump`` for the ``ReferenceType`` defined above:
 
 .. code-block:: python
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         # value is an instance of the loaded object,
         # so its hash key is the value to return
         # from this object (after saving value to Dynamo)
@@ -235,6 +276,168 @@ Here is the corresponding ``dynamo_dump`` for the ``ReferenceType`` defined abov
         # Get the model name of the hash key
         hash_key_name = self.model.Meta.hash_key.model_name
         return getattr(obj, hash_key_name)
+
+For the example above, here's what happens when we save the Indirect object:
+
+.. code-block:: python
+
+    class Data(bloop.new_base()):
+        id = Column(String, hash_key=True)
+        data_blob = Column(Binary)
+
+
+    class IndirectData(Base):
+        id = Column(String, hash_key=True)
+        blob = Column(ReferenceType(Data))
+
+    engine.bind(base=Data)
+    engine.bind(base=IndirectData)
+
+
+    # Nothing different so far, just a regular save
+    data = Data(id="inner", data_blob=b"some data")
+    engine.save(data)
+
+    # This is also fine, we're setting attributes locally
+    indirect = IndirectData(id="outer", blob=data)
+
+    # 1. When dumping indirect.blob, `value` is the
+    #    data object.
+    # 2. ReferenceType.dynamo_dump uses the engine from
+    #    the context to save the value (data object).
+    # 3. The hash key (id) of the value is returned, to
+    #    be dumped for the "blob" key in indirect.
+    engine.save(indirect)
+
+.. _none-vs-missing:
+
+``None`` as ``missing``
+-----------------------
+
+None is effectively the same as "missing" throughout bloop.  When loading, it means "this value was expected but
+was not".  If your dump function returns a None, it means "this value should be missing".  When saving, it translates
+to a ``DELETE``.  For atomic conditions, it translates to ``attribute_not_exists``.
+
+Note that "missing" does not mean "missing from the wire response" since some calls (queries, scans) may not return
+those values.  If a query only loads columns ``{a, b, c}`` on a model with columns ``{a, b, c, d}`` it is incorrect
+to say that d is missing, since it shouldn't be loaded.  In this case ``d`` would not be loaded through a Type; it's
+not known whether this instance of the model has a value for the ``d`` column.
+
+================
+Loading ``None``
+================
+
+When loading an object from DynamoDB, it won't return any key for a column that's missing.  If it did, it would likely
+be unpacked to ``None`` by ``boto3``.  This means the value that ``Type._load`` sees can be either ``{str: str}`` or
+``None``.
+
+While Type._load could short-circuit on ``None`` and return ``None``, that's not the best behavior for all types (and
+certainly not for all custom types).  For instance, it's much easier to use the ``List`` type where a missing value
+becomes ``[]`` instead of ``None`` - the former lets you use the value as a ``list`` without checking for None
+throughout your code.
+
+First, without a default object provided by the type:
+
+.. code-block:: python
+
+    def add_claim(user, claim):
+        engine.load(user)
+        if user.claims is None:
+            user.claims = [claim]
+        else:
+            user.claims.append(claim)
+        engine.save(user)
+
+And the same method, where the ``List`` type returns ``list()`` instead of ``None``:
+
+.. code-block:: python
+
+    def add_claim(user, claim):
+        engine.load(user)
+        user.claims.append(claim)
+        engine.save(user)
+
+By returning a value that isn't ``None``, you simplify every interaction with your type throughout the code.  Any type
+that can return None will have to check for it before performing an operation.  This actually makes the falsey
+nature of None a problem when dealing with a ``Boolean``, since you can no longer use ``if obj.some_bool:`` which would
+conflate False and None.
+
+================
+Dumping ``None``
+================
+
+You should handle ``None`` when dumping values as well.  If your type loads missing values as None (like Integer)
+then a column with that type that doesn't have a value may be None when saving back to DynamoDB.
+
+Boto3 will throw if you try to pass most of the container types (set, list, dict) when they are empty.  Instead, you
+should check for empty containers and return ``None`` instead.  All of the built-in types do this; ``Map`` is the most
+complex, as it checks for ``None`` values for each key and removes them.
+
+Here's the pair of functions for String:
+
+.. code-block:: python
+
+    def dynamo_load(self, value, *, context, **kwargs):
+    return value
+
+    def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
+        return str(value)
+
+Note that ``dynamo_load`` doesn't check for None, since it will be passed directly back.
+
+Here's the dynamo_dump function for ``List``, which filters out ``None`` from any inner values:
+
+.. code-block:: python
+
+    def dynamo_dump(self, values, *, context, **kwargs):
+        if values is None:
+            return None
+        # local lookup in a tight loop
+        dump = context["engine"]._dump
+        typedef = self.typedef
+
+        filtered = filter(
+            lambda x: x is not None,
+            (
+                dump(typedef, value, context=context, **kwargs)
+                for value in values))
+        return list(filtered) or None
+
+The return takes advantage of the fact that an empty list is falsey, and so None is returned.  Here's what this means
+for a String Set:
+
+.. code-block:: python
+
+    class Data(new_base()):
+        id = Column(String, hash_key=True)
+        keys = Column(Set(String))
+    engine = bloop.Engine()
+    engine.bind(base=Data)
+
+    obj = Data(id="id", keys={"foo", None, "baz"})
+    print(engine._dump(Data, obj))
+
+When we print this out, we'll get:
+
+.. code-block:: python
+
+    {
+        "id": {"S": "id"},
+        "keys": {"SS": ["foo", "baz"]}
+    }
+
+Alternatively, here's what we get if we dump a fresh ``Data`` instance without any keys:
+
+.. code-block:: python
+
+    obj = Data(id="id")
+    print(engine._dump(Data, obj))
+
+    {
+        "id": {"S": "id"}
+    }
 
 Enum Example
 ============
@@ -272,10 +475,14 @@ load will transform ``int -> Color`` using ``Color(value)`` where value comes fr
             super().__init__()
 
         def dynamo_dump(self, value, *, context, **kwargs):
+            if value is None:
+                return value
             value = value.value
             return super().dynamo_dump(value, context=context, **kwargs)
 
         def dynamo_load(self, value, *, context, **kwargs):
+            if value is None:
+                return value
             value = super().dynamo_load(value, context=context, **kwargs)
             return self.enum_cls(value)
 
@@ -314,11 +521,15 @@ The only difference is that ``Enum.name`` gives us a string and ``Enum[value]`` 
             super().__init__()
 
         def dynamo_dump(self, value, *, context, **kwargs):
+            if value is None:
+                return value
             # previously: value = value.value
             value = value.name
             return super().dynamo_dump(value, context=context, **kwargs)
 
         def dynamo_load(self, value, *, context, **kwargs):
+            if value is None:
+                return value
             value = super().dynamo_load(value, context=context, **kwargs)
             # previously: self.enum_cls(value)
             return self.enum_cls[value]
@@ -358,10 +569,14 @@ This is a quick type for storing a public RSA key in binary:
         python_type = RSA._RSAobj
 
         def dynamo_load(self, value: str, *, context=None, **kwargs):
+            if value is None:
+                return value
             value = super().dynamo_load(value, context=context, **kwargs)
             return RSA.importKey(value)
 
         def dynamo_dump(self, value, *, context, **kwargs):
+            if value is None:
+                return value
             value = value.exportKey(format="DER")
             return super().dynamo_dump(value, context=context, **kwargs)
 
@@ -416,21 +631,11 @@ for the returned load, dump methods from ``bind``, but doesn't handle unpacking 
             # on the available **config
             return load, dump
 
-None vs Omitted
----------------
-
-Although DynamoDB doesn't return values for missing columns, bloop may send ``None`` through the type to load, and may
-ask the type to dump ``None``.  The base ``bloop.Type`` takes care of this and the DynamoDB wire format in ``_load``
-and ``_dump`` above, so that the dynamo_* functions only handle non-null data.
-
-You SHOULD NOT map None to a value other than None and vice versa, as bloop leverages in multiple areas the convention
-that None represents omission; from the tracking system to the base model's load/dump methods.
-
 Recursive Load, Dump
 --------------------
 
-Because ``bind`` can return any two functions, you MUST NOT rely on a type having ``_load``, ``_dump``,
-``dynamo_load``, or ``dynamo_dump`` methods.  If you need to load or dump a value through a different type, you MUST
+Not all types will define ``_load``, ``_dump``, or even ``dynamo_load``, or ``dynamo_dump`` methods.
+If you need to load or dump a value through a different type, you MUST
 do so through the type engine that's accessible through the ``context`` kwarg:
 
 .. code-block:: python
@@ -465,8 +670,8 @@ value of ``bloop_engine`` is the engine currently serializing a value through th
 
 The ``_register`` method is called on a type when ``bloop.Engine.bind`` registers the type from each of a model's
 columns.  If your type depends on another type that may not have been bound to the type engine yet, ``_register`` is
-the place to do so.  Registering a type that is already bound is a noop, so it's safe to always register your
-referenced types.
+the place to do so.  It is safe to register a type that is already bound; those types are simply skipped on the next
+bind call.
 
 For example, the built-in :ref:`user-set-type` uses a type passed as an argument during ``__init__`` to load and dump
 values from a String Set, Number Set, or Binary Set.  To ensure the type engine can handle the nested load/dump calls
@@ -489,88 +694,4 @@ for that type, it implements ``_register`` like so:
             # that we can delegate dynamo_dump to
             # the inner type.
             engine.register(self.typedef)
-
-``bind``
---------
-
-.. code-block:: python
-
-    def bind(self, type_engine, **config):
-        ...
-
-The ``bind`` function must return a pair of load and dump functions, which should match the signature:
-
-.. code-block:: python
-
-    def load(value: Any, **kwargs) -> Any
-        ...
-
-    def dump(value: Any, **kwargs) -> Any
-        ...
-
-In ``bloop.Type`` bind returns the ``_load, _dump`` methods on the class, which ensure the type's
-corresponding dynamo_* methods are never called with ``None``, and unpacks the nested dicts of DynamoDB's wire
-format.
-
-A common pattern to customize the tuple of serialization functions is to inspect the bloop Engine's config and switch
-based on whether a config option is present.  An extremely reduced example, which doesn't hook into
-bloop's base ``Type`` at all:
-
-.. code-block:: python
-
-    class AdminType:
-        def bind(self, type_engine, **config):
-            # bloop provides a dict "context" that encapsulates
-            # any data that bloop types may want to inspect
-            bloop_context = config["context"]
-            bloop_engine = bloop_context["engine"]
-            engine_config = bloop_engine.config
-
-            # Alternatively:
-            engine_config = config["context"]["engine"].config
-
-            if engine_config["is_admin_engine"] is True:
-                return self.admin_load, self.admin_dump
-            else:
-                return self.user_load, self.user_dump
-
-        def _register(self, type_engine):
-            # No nested types to register when this one is
-            pass
-
-This is a great opportunity to take advantage of :py:func:`functools.partial`:
-
-.. code-block:: python
-
-    import functools
-
-    class AdminType:
-        def load(self, is_admin, value, *, context, **kwargs):
-            ...
-        def dump(self, is_admin, value, *, context, **kwargs):
-            ...
-
-        def bind(self, *, context, **config):
-            is_admin = context["engine"].config["is_admin"]
-            return (
-                functools.partial(self.load, is_admin),
-                functools.partial(self.dump, is_admin))
-
-There's no difference in how bloop interacts with the type:
-
-.. code-block:: python
-
-    class PlayerReport(bloop.new_base()):
-        id = Column(Integer, hash_key=True)
-        reported_by = Column(AdminType)
-        description = Column(AdminType)
-
-    admin_engine = bloop.Engine()
-    admin_engine.config["is_admin_engine"] = True
-
-    user_engine = bloop.Engine()
-    user_engine.config["is_admin_engine"] = False
-
-    admin_engine.bind(base=PlayerReport)
-    user_engine.bind(base=PlayerReport)
 

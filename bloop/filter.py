@@ -407,7 +407,7 @@ class FilterIterator:
             # Each item is a dict of attributes
             for attrs in response.get("Items", []):
                 # Create an instance to load into
-                obj = self._engine._instance(self._model)
+                obj = self._model.Meta.init()
                 # Apply updates from attrs, only inserting expected columns, and sync the new object's tracking
                 self._engine._update(obj, attrs, self._expected_columns)
                 sync(obj, self._engine)

@@ -4,13 +4,17 @@ import time
 import boto3
 import botocore
 
-from .exceptions import (AbstractModelException,
-                         ConstraintViolation,
-                         TableMismatch)
-from .tables import (create_table_request,
-                     expected_table_description,
-                     sanitized_table_description,
-                     simple_table_status)
+from .exceptions import (
+    AbstractModelException,
+    ConstraintViolation,
+    TableMismatch,
+)
+from .tables import (
+    create_table_request,
+    expected_table_description,
+    sanitized_table_description,
+    simple_table_status,
+)
 from .util import ordered
 
 

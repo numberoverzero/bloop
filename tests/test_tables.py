@@ -1,8 +1,10 @@
 import pytest
-from bloop.tables import (create_table_request,
-                          expected_table_description,
-                          sanitized_table_description,
-                          simple_table_status)
+from bloop.tables import (
+    create_table_request,
+    expected_table_description,
+    sanitized_table_description,
+    simple_table_status,
+)
 from bloop.util import ordered
 
 from .helpers.models import ComplexModel, SimpleModel, User

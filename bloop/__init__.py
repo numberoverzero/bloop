@@ -2,25 +2,29 @@ from .client import Client
 from .column import Column
 from .condition import Condition
 from .engine import Engine
-from .exceptions import (AbstractModelException,
-                         BloopException,
-                         ConstraintViolation,
-                         NotModified,
-                         TableMismatch,
-                         UnboundModel)
+from .exceptions import (
+    AbstractModelException,
+    BloopException,
+    ConstraintViolation,
+    NotModified,
+    TableMismatch,
+    UnboundModel,
+)
 from .index import GlobalSecondaryIndex, LocalSecondaryIndex
 from .model import new_base
-from .types import (UUID,
-                    Binary,
-                    Boolean,
-                    DateTime,
-                    Float,
-                    Integer,
-                    List,
-                    Map,
-                    Set,
-                    String,
-                    TypedMap)
+from .types import (
+    UUID,
+    Binary,
+    Boolean,
+    DateTime,
+    Float,
+    Integer,
+    List,
+    Map,
+    Set,
+    String,
+    TypedMap,
+)
 
 
 __all__ = [

@@ -2,12 +2,14 @@ import operator
 
 import declare
 
-from .condition import (AttributeExists,
-                        BeginsWith,
-                        Between,
-                        Comparison,
-                        Contains,
-                        In)
+from .condition import (
+    AttributeExists,
+    BeginsWith,
+    Between,
+    Comparison,
+    Contains,
+    In,
+)
 from .tracking import mark
 
 

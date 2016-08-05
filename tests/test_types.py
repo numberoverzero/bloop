@@ -4,17 +4,19 @@ import uuid
 import arrow
 import declare
 import pytest
-from bloop.types import (UUID,
-                         Binary,
-                         Boolean,
-                         DateTime,
-                         Float,
-                         Integer,
-                         List,
-                         Set,
-                         String,
-                         Type,
-                         TypedMap)
+from bloop.types import (
+    UUID,
+    Binary,
+    Boolean,
+    DateTime,
+    Float,
+    Integer,
+    List,
+    Set,
+    String,
+    Type,
+    TypedMap,
+)
 
 from .helpers.models import DocumentType
 

@@ -1,17 +1,19 @@
-from bloop import (UUID,
-                   Column,
-                   Condition,
-                   DateTime,
-                   Float,
-                   GlobalSecondaryIndex,
-                   Integer,
-                   List,
-                   LocalSecondaryIndex,
-                   Map,
-                   Set,
-                   String,
-                   TypedMap,
-                   new_base)
+from bloop import (
+    UUID,
+    Column,
+    Condition,
+    DateTime,
+    Float,
+    GlobalSecondaryIndex,
+    Integer,
+    List,
+    LocalSecondaryIndex,
+    Map,
+    Set,
+    String,
+    TypedMap,
+    new_base,
+)
 
 
 DocumentType = Map(**{

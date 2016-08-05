@@ -1,6 +1,9 @@
 import weakref
 
 
+__all__ = ["ordered", "walk_subclasses", "WeakDefaultDictionary"]
+
+
 def ordered(obj):
     """
     Return sorted version of nested dicts/lists for comparing.

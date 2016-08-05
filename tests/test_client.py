@@ -1,14 +1,26 @@
-import bloop
-import bloop.client
-import bloop.exceptions
-import bloop.tables
-import bloop.util
-import botocore
-import pytest
 import uuid
 from unittest.mock import Mock
 
-from test_models import SimpleModel, ComplexModel, User
+import botocore.exceptions
+import pytest
+from bloop.client import (
+    DEFAULT_MAX_ATTEMPTS,
+    RETRYABLE_ERRORS,
+    Client,
+    default_backoff_func,
+)
+from bloop.column import Column
+from bloop.exceptions import (
+    AbstractModelException,
+    ConstraintViolation,
+    TableMismatch,
+)
+from bloop.model import new_base
+from bloop.tables import expected_table_description
+from bloop.types import String
+from bloop.util import ordered
+
+from .helpers.models import ComplexModel, SimpleModel, User
 
 
 @pytest.fixture
@@ -16,7 +28,7 @@ def client():
     # No spec since clients are generated dynamically.
     # We could use botocore.client.BaseClient but it's so generic
     # that we don't gain any useful inspections
-    return bloop.client.Client(boto_client=Mock())
+    return Client(boto_client=Mock())
 
 
 def client_error(code):
@@ -186,12 +198,12 @@ def test_call_with_retries(client):
 
     def always_raise_retryable(context):
         context["calls"] += 1
-        raise client_error(bloop.client.RETRYABLE_ERRORS[0])
+        raise client_error(RETRYABLE_ERRORS[0])
 
     def raise_twice_retryable(context):
         context["calls"] += 1
         if context["calls"] <= 2:
-            raise client_error(bloop.client.RETRYABLE_ERRORS[0])
+            raise client_error(RETRYABLE_ERRORS[0])
 
     def raise_unretryable(context):
         context["calls"] += 1
@@ -231,15 +243,15 @@ def test_call_with_retries(client):
 
 
 def test_default_backoff():
-    attempts = range(bloop.client.DEFAULT_MAX_ATTEMPTS)
+    attempts = range(DEFAULT_MAX_ATTEMPTS)
     durations = [(50.0 * (2 ** x)) / 1000.0 for x in attempts]
 
     for (attempts, expected) in zip(attempts, durations):
-        actual = bloop.client.default_backoff_func(attempts)
+        actual = default_backoff_func(attempts)
         assert actual == expected
 
     with pytest.raises(RuntimeError):
-        bloop.client.default_backoff_func(bloop.client.DEFAULT_MAX_ATTEMPTS)
+        default_backoff_func(DEFAULT_MAX_ATTEMPTS)
 
 
 def test_create_table(client):
@@ -271,7 +283,7 @@ def test_create_table(client):
             {"AttributeType": "S", "AttributeName": "email"}]}
 
     def create_table(**table):
-        assert bloop.util.ordered(table) == bloop.util.ordered(expected)
+        assert ordered(table) == ordered(expected)
     client.boto_client.create_table.side_effect = create_table
     client.create_table(ComplexModel)
     assert client.boto_client.create_table.call_count == 1
@@ -282,7 +294,7 @@ def test_create_subclass(client):
 
     # Shouldn't include base model's columns in create_table call
     class SubModel(base_model):
-        id = bloop.Column(bloop.String, hash_key=True)
+        id = Column(String, hash_key=True)
 
     expected = {
         'AttributeDefinitions': [
@@ -293,7 +305,7 @@ def test_create_subclass(client):
         'TableName': 'SubModel'}
 
     def create_table(**table):
-        assert bloop.util.ordered(table) == bloop.util.ordered(expected)
+        assert ordered(table) == ordered(expected)
 
     client.boto_client.create_table.side_effect = create_table
     client.create_table(SubModel)
@@ -310,8 +322,8 @@ def test_create_raises_unknown(client):
 
 
 def test_create_abstract_raises(client):
-    abstract_model = bloop.new_base()
-    with pytest.raises(bloop.exceptions.AbstractModelException) as excinfo:
+    abstract_model = new_base()
+    with pytest.raises(AbstractModelException) as excinfo:
         client.create_table(abstract_model)
     assert excinfo.value.model is abstract_model
 
@@ -345,7 +357,7 @@ def test_delete_item_condition_failed(client):
     client.boto_client.delete_item.side_effect = \
         client_error("ConditionalCheckFailedException")
 
-    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
+    with pytest.raises(ConstraintViolation) as excinfo:
         client.delete_item(request)
     assert excinfo.value.obj == request
     client.boto_client.delete_item.assert_called_once_with(**request)
@@ -372,7 +384,7 @@ def test_update_item_condition_failed(client):
     client.boto_client.update_item.side_effect = \
         client_error("ConditionalCheckFailedException")
 
-    with pytest.raises(bloop.exceptions.ConstraintViolation) as excinfo:
+    with pytest.raises(ConstraintViolation) as excinfo:
         client.update_item(request)
     assert excinfo.value.obj == request
     client.boto_client.update_item.assert_called_once_with(**request)
@@ -405,7 +417,7 @@ def test_query_scan(client, response, expected):
 
 def test_validate_compares_tables(client):
     # Hardcoded to protect against bugs in bloop.client._table_for_model
-    description = bloop.tables.expected_description(User)
+    description = expected_table_description(User)
     description["TableStatus"] = "ACTIVE"
     description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
 
@@ -417,7 +429,7 @@ def test_validate_compares_tables(client):
 def test_validate_checks_status(client):
     # Don't care about the value checking, just want to observe retries
     # based on busy tables or indexes
-    full = bloop.tables.expected_description(User)
+    full = expected_table_description(User)
     full["TableStatus"] = "ACTIVE"
     full["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
 
@@ -437,14 +449,13 @@ def test_validate_fails(client):
     """dynamo returns a json document that doesn't match the expected table"""
     client.boto_client.describe_table.return_value = \
         {"Table": {"TableStatus": "ACTIVE"}}
-    with pytest.raises(bloop.exceptions.TableMismatch) as excinfo:
+    with pytest.raises(TableMismatch) as excinfo:
         client.validate_table(SimpleModel)
 
     # Exception includes the model that failed
     assert excinfo.value.model is SimpleModel
     # Exception should include the full table description that was expected
-    ordered = bloop.util.ordered
-    expected = bloop.tables.expected_description(SimpleModel)
+    expected = expected_table_description(SimpleModel)
     assert ordered(excinfo.value.expected) == ordered(expected)
     # And the actual table that was returned - the unsanitized description,
     # since the parsing failed
@@ -468,20 +479,19 @@ def test_validate_simple_model(client):
 
 def test_validate_mismatch(client):
     """dynamo returns a valid document but it doesn't match"""
-    full = bloop.tables.expected_description(SimpleModel)
+    full = expected_table_description(SimpleModel)
     full["TableStatus"] = "ACTIVE"
 
     full["TableName"] = "wrong table name"
 
     client.boto_client.describe_table.return_value = {"Table": full}
-    with pytest.raises(bloop.exceptions.TableMismatch) as excinfo:
+    with pytest.raises(TableMismatch) as excinfo:
         client.validate_table(SimpleModel)
 
     # Exception includes the model that failed
     assert excinfo.value.model is SimpleModel
     # Exception should include the full table description that was expected
-    ordered = bloop.util.ordered
-    expected = bloop.tables.expected_description(SimpleModel)
+    expected = expected_table_description(SimpleModel)
     assert ordered(excinfo.value.expected) == ordered(expected)
     # And the actual table that was returned
     del full["TableStatus"]

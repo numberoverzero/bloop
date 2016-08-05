@@ -1,11 +1,22 @@
-import bloop.column
-import bloop.exceptions
-import bloop.tables
-import bloop.util
-import boto3
-import botocore
 import functools
 import time
+
+import boto3
+import botocore
+
+from .exceptions import (
+    AbstractModelException,
+    ConstraintViolation,
+    TableMismatch,
+)
+from .tables import (
+    create_table_request,
+    expected_table_description,
+    sanitized_table_description,
+    simple_table_status,
+)
+from .util import ordered
+
 
 __all__ = ["Client"]
 
@@ -128,7 +139,7 @@ class Client(object):
         except botocore.exceptions.ClientError as error:
             error_code = error.response["Error"]["Code"]
             if error_code == "ConditionalCheckFailedException":
-                raise bloop.exceptions.ConstraintViolation(name, item)
+                raise ConstraintViolation(name, item)
             else:
                 raise error
 
@@ -214,8 +225,8 @@ class Client(object):
             https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.create_table
         """
         if model.Meta.abstract:
-            raise bloop.exceptions.AbstractModelException(model)
-        table = bloop.tables.create_request(model)
+            raise AbstractModelException(model)
+        table = create_table_request(model)
         create = functools.partial(self._call_with_retries, self.boto_client.create_table)
         try:
             create(**table)
@@ -322,14 +333,14 @@ class Client(object):
             * :meth:`.create_table`
             * :meth:`.describe_table`
         """
-        expected = bloop.tables.expected_description(model)
+        expected = expected_table_description(model)
         status = "BLOOP_NOT_ACTIVE"
         while status == "BLOOP_NOT_ACTIVE":
             description = self.describe_table(model)
-            status = bloop.tables.simple_status(description)
+            status = simple_table_status(description)
         try:
-            actual = bloop.tables.sanitized_description(description)
+            actual = sanitized_table_description(description)
         except KeyError:
-            raise bloop.exceptions.TableMismatch(model, expected, description)
-        if bloop.util.ordered(actual) != bloop.util.ordered(expected):
-            raise bloop.exceptions.TableMismatch(model, expected, actual)
+            raise TableMismatch(model, expected, description)
+        if ordered(actual) != ordered(expected):
+            raise TableMismatch(model, expected, actual)

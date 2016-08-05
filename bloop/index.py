@@ -1,7 +1,9 @@
 import collections.abc
+
 import declare
 
-__all__ = ["GlobalSecondaryIndex", "LocalSecondaryIndex"]
+
+__all__ = ["GlobalSecondaryIndex", "Index", "LocalSecondaryIndex"]
 INVALID_PROJECTION = ValueError(
     "Index projections must be either 'keys', 'all', or an iterable of model attributes to include.")
 
@@ -22,12 +24,7 @@ def validate_projection(projection):
     return projection
 
 
-def update_non_empty(group, iterable):
-    """Cull falsey (None) objects from an iterable before adding to a set"""
-    group.update(obj for obj in iterable if obj)
-
-
-class _Index(declare.Field):
+class Index(declare.Field):
     def __init__(self, *, projection, hash_key=None, range_key=None, name=None, **kwargs):
         self.model = None
         self.hash_key = hash_key
@@ -54,12 +51,16 @@ class _Index(declare.Field):
         if self.range_key:
             self.range_key = columns[self.range_key]
 
+        self.keys = {self.hash_key}
+        if self.range_key:
+            self.keys.add(self.range_key)
+
         # Compute and cache the projected columns
         projected = self.projection_attributes = set()
 
-        # All projections include keys
-        keys = (model.Meta.hash_key, model.Meta.range_key, self.hash_key, self.range_key)
-        update_non_empty(projected, keys)
+        # All projections include model + index keys
+        projected.update(model.Meta.keys)
+        projected.update(self.keys)
 
         if self.projection == "ALL":
             projected.update(columns.values())
@@ -75,7 +76,7 @@ class _Index(declare.Field):
     # TODO: disallow set/get/del for an index.  Raise RuntimeError.
 
 
-class GlobalSecondaryIndex(_Index):
+class GlobalSecondaryIndex(Index):
     def __init__(self, *,
                  hash_key=None, range_key=None, read_units=1, write_units=1, name=None, projection=None,
                  **kwargs):
@@ -88,7 +89,7 @@ class GlobalSecondaryIndex(_Index):
         self.read_units = read_units
 
 
-class LocalSecondaryIndex(_Index):
+class LocalSecondaryIndex(Index):
     """ LSIs don't have individual read/write units """
     def __init__(self, *, range_key=None, name=None, projection=None, **kwargs):
         # Hash key MUST be the table hash, pop any other values

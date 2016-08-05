@@ -1,14 +1,17 @@
-import bloop.client
-import bloop.condition
-import bloop.exceptions
-import bloop.filter
-import bloop.index
-import bloop.model
-import bloop.tracking
-import bloop.util
 import collections
 import collections.abc
+
 import declare
+
+from .client import Client
+from .exceptions import AbstractModelException, NotModified, UnboundModel
+from .expressions import render
+from .filter import Filter
+from .index import Index
+from .model import ModelMetaclass
+from .tracking import clear, is_model_verified, sync, verify_model
+from .util import walk_subclasses
+
 
 __all__ = ["Engine"]
 
@@ -51,17 +54,13 @@ def dump_key(engine, obj):
 
     returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
     """
-    meta = obj.Meta
-    hash_key, range_key = meta.hash_key, meta.range_key
-    hash_value = getattr(obj, hash_key.model_name, MISSING)
-    if hash_value is MISSING:
-        raise ValueError("Must specify a value for the hash attribute '{}'".format(hash_key.model_name))
-    key = {hash_key.dynamo_name: engine._dump(hash_key.typedef, hash_value)}
-    if range_key:
-        range_value = getattr(obj, range_key.model_name, MISSING)
-        if range_value is MISSING:
-            raise ValueError("Must specify a value for the range attribute '{}'".format(range_key.model_name))
-        key[range_key.dynamo_name] = engine._dump(range_key.typedef, range_value)
+    key = {}
+    for key_column in obj.Meta.keys:
+        key_value = getattr(obj, key_column.model_name, MISSING)
+        if key_value is MISSING:
+            raise ValueError("Missing required hash/range key '{}'".format(key_column.model_name))
+        key_value = engine._dump(key_column.typedef, key_value)
+        key[key_column.dynamo_name] = key_value
     return key
 
 
@@ -94,14 +93,10 @@ class Engine:
             return context["engine"].type_engine.dump(model, obj, context=context, **kwargs)
         except declare.DeclareException:
             # Best-effort check for a more helpful message
-            if isinstance(model, bloop.model.ModelMetaclass):
-                raise bloop.exceptions.UnboundModel("load", model, obj)
+            if isinstance(model, ModelMetaclass):
+                raise UnboundModel("load", model, obj)
             else:
                 raise ValueError("Failed to dump unknown model {}".format(model))
-
-    def _instance(self, model):
-        """Return an instance of a given model"""
-        return self._load(model, {})
 
     def _load(self, model, value, context=None, **kwargs):
         try:
@@ -109,28 +104,28 @@ class Engine:
             return context["engine"].type_engine.load(model, value, context=context, **kwargs)
         except declare.DeclareException:
             # Best-effort check for a more helpful message
-            if isinstance(model, bloop.model.ModelMetaclass):
-                raise bloop.exceptions.UnboundModel("load", model, None)
+            if isinstance(model, ModelMetaclass):
+                raise UnboundModel("load", model, None)
             else:
                 raise ValueError("Failed to load unknown model {}".format(model))
 
     def _update(self, obj, attrs, expected, context=None, **kwargs):
         """Push values by dynamo_name into an object"""
         context = context or {"engine": self}
+        load = context["engine"]._load
         for column in expected:
             value = attrs.get(column.dynamo_name, None)
-            if value is not None:
-                value = context["engine"]._load(column.typedef, value, context=context, **kwargs)
+            value = load(column.typedef, value, context=context, **kwargs)
             setattr(obj, column.model_name, value)
 
     def bind(self, *, base):
         """Create tables for all models subclassing base"""
         # If not manually configured, use a default bloop.Client
         # with the default boto3.client("dynamodb")
-        self.client = self.client or bloop.client.Client()
+        self.client = self.client or Client()
 
         # Make sure we're looking at models
-        if not isinstance(base, bloop.model.ModelMetaclass):
+        if not isinstance(base, ModelMetaclass):
             raise ValueError("base must derive from bloop.new_base()")
 
         # whether the model's typedefs should be registered, and
@@ -143,8 +138,8 @@ class Engine:
         # whether the model needs to have create/validate calls made for its
         # backing table
         def is_verified(model):
-            return bloop.tracking.is_model_verified(model)
-        concrete = set(filter(is_concrete, bloop.util.walk_subclasses(base)))
+            return is_model_verified(model)
+        concrete = set(filter(is_concrete, walk_subclasses(base)))
         unverified = concrete - set(filter(is_verified, concrete))
 
         # create_table doesn't block until ACTIVE or validate.
@@ -158,7 +153,7 @@ class Engine:
                 self.client.validate_table(model)
             # Model won't need to be verified the
             # next time its BaseModel is bound to an engine
-            bloop.tracking.verify_model(model)
+            verify_model(model)
 
             self.type_engine.register(model)
             for column in model.Meta.columns:
@@ -169,21 +164,17 @@ class Engine:
         objs = set_of(objs)
         for obj in objs:
             if obj.Meta.abstract:
-                raise bloop.exceptions.AbstractModelException(obj)
+                raise AbstractModelException(obj)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
-            renderer = bloop.condition.ConditionRenderer(self)
-
-            item_condition = bloop.condition.Condition()
             if config(self, "atomic", atomic):
-                item_condition &= bloop.tracking.get_snapshot(obj)
-            if condition:
-                item_condition &= condition
-            renderer.render(item_condition, "condition")
-            item.update(renderer.rendered)
+                rendered = render(self, atomic=obj, condition=condition)
+            else:
+                rendered = render(self, condition=condition)
+            item.update(rendered)
 
             self.client.delete_item(item)
-            bloop.tracking.clear(obj)
+            clear(obj)
 
     def load(self, objs, consistent=None):
         """Populate objects from dynamodb, optionally using consistent reads.
@@ -215,7 +206,7 @@ class Engine:
         objs = set_of(objs)
         for obj in objs:
             if obj.Meta.abstract:
-                raise bloop.exceptions.AbstractModelException(obj)
+                raise AbstractModelException(obj)
 
         table_index, object_index, request = {}, {}, {}
 
@@ -244,7 +235,7 @@ class Engine:
 
                 for obj in object_index[table_name].pop(index):
                     self._update(obj, blob, obj.Meta.columns)
-                    bloop.tracking.sync(obj, self)
+                    sync(obj, self)
                 if not object_index[table_name]:
                     object_index.pop(table_name)
 
@@ -253,19 +244,19 @@ class Engine:
             for index in object_index.values():
                 for index_set in index.values():
                     not_loaded.update(index_set)
-            raise bloop.exceptions.NotModified("load", not_loaded)
+            raise NotModified("load", not_loaded)
 
     def query(self, obj, consistent=None):
-        if isinstance(obj, bloop.index._Index):
+        if isinstance(obj, Index):
             model, index = obj.model, obj
             select = "projected"
         else:
             model, index = obj, None
             select = "all"
         if model.Meta.abstract:
-            raise bloop.exceptions.AbstractModelException(model)
+            raise AbstractModelException(model)
 
-        return bloop.filter.Filter(
+        return Filter(
             engine=self, mode="query", model=model, index=index, strict=self.config["strict"], select=select,
             consistent=config(self, "consistent", consistent))
 
@@ -273,34 +264,28 @@ class Engine:
         objs = set_of(objs)
         for obj in objs:
             if obj.Meta.abstract:
-                raise bloop.exceptions.AbstractModelException(obj)
+                raise AbstractModelException(obj)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
-            renderer = bloop.condition.ConditionRenderer(self)
 
-            diff = bloop.tracking.get_update(obj)
-            renderer.update(diff)
-
-            item_condition = bloop.condition.Condition()
             if config(self, "atomic", atomic):
-                item_condition &= bloop.tracking.get_snapshot(obj)
-            if condition:
-                item_condition &= condition
-            renderer.render(item_condition, "condition")
-            item.update(renderer.rendered)
+                rendered = render(self, atomic=obj, condition=condition, update=obj)
+            else:
+                rendered = render(self, condition=condition, update=obj)
+            item.update(rendered)
 
             self.client.update_item(item)
-            bloop.tracking.sync(obj, self)
+            sync(obj, self)
 
     def scan(self, obj, consistent=None):
-        if isinstance(obj, bloop.index._Index):
+        if isinstance(obj, Index):
             model, index = obj.model, obj
             select = "projected"
         else:
             model, index = obj, None
             select = "all"
         if model.Meta.abstract:
-            raise bloop.exceptions.AbstractModelException(model)
-        return bloop.filter.Filter(
+            raise AbstractModelException(model)
+        return Filter(
             engine=self, mode="query", model=model, index=index, strict=self.config["strict"], select=select,
             consistent=config(self, "consistent", consistent))

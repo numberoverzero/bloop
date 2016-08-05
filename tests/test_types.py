@@ -1,12 +1,24 @@
-import arrow
 import decimal
-import declare
-import pytest
 import uuid
 
-from bloop import types
+import arrow
+import declare
+import pytest
+from bloop.types import (
+    UUID,
+    Binary,
+    Boolean,
+    DateTime,
+    Float,
+    Integer,
+    List,
+    Set,
+    String,
+    Type,
+    TypedMap,
+)
 
-from test_models import DocumentType
+from .helpers.models import DocumentType
 
 
 def symmetric_test(typedef, *pairs):
@@ -19,7 +31,7 @@ def symmetric_test(typedef, *pairs):
 def test_missing_abstract_methods(engine):
     """NotImplementedError when dynamo_load or dynamo_dump are missing"""
 
-    class MyType(types.Type):
+    class MyType(Type):
         backing_type = "S"
         python_type = str
 
@@ -37,7 +49,7 @@ def test_missing_abstract_methods(engine):
 def test_load_dump_best_effort(engine):
     """python_type is an informational field, and doesn't check types on load/dump"""
 
-    class MyType(types.String):
+    class MyType(String):
         backing_type = "FOO"
         python_type = float
 
@@ -49,20 +61,87 @@ def test_load_dump_best_effort(engine):
     assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={"engine": engine})
 
 
+@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Float, Integer, Binary, Boolean])
+def test_none_scalar_types(typedef):
+    """single-value types without an explicit 'lack of value' sentinel should return None when given None"""
+    type = typedef()
+    context = {}
+
+    assert type._load(None, context=context) is None
+    assert type._load({typedef.backing_type: None}, context=context) is None
+    assert type.dynamo_load(None, context=context) is None
+
+    assert type._dump(None, context=context) is None
+    assert type.dynamo_dump(None, context=context) is None
+
+
+@pytest.mark.parametrize("typedef, default", [
+    (Set(String), set()),
+    (Set(Integer), set()),
+    (Set(Binary), set()),
+    (List(DateTime), list()),
+    (DocumentType, {
+        "Rating": None,
+        "Stock": None,
+        "Description": {"Heading": None, "Body": None, "Specifications": None},
+        "Id": None,
+        "Updated": None}),
+    (TypedMap(UUID), dict())
+])
+def test_load_none_vector_types(engine, typedef, default):
+    """multi-value types return empty containers when given None"""
+    engine.type_engine.register(DocumentType)
+    engine.type_engine.bind()
+    context = {"engine": engine}
+
+    assert typedef._load(None, context=context) == default
+    assert typedef.dynamo_load(None, context=context) == default
+
+
+@pytest.mark.parametrize("typedef, nones", [
+    (Set(String), ([None], [], None)),
+    (List(String), ([None], [], None)),
+    (TypedMap(String), ({"k": None}, {}, None)),
+    (DocumentType, ({"Rating": None}, {}, None))
+])
+def test_dump_none_vector_types(engine, typedef, nones):
+    engine.type_engine.register(typedef)
+    engine.type_engine.bind()
+    context = {"engine": engine}
+
+    for values in nones:
+        assert typedef._dump(values, context=context) is None
+        assert typedef.dynamo_dump(values, context=context) is None
+        assert typedef.dynamo_dump(None, context=context) is None
+
+
+@pytest.mark.parametrize("typedef, values, expected", [
+    (Set(String), [None, "hello"], [{"S": "hello"}]),
+    (List(String), ["foo", None], [{"S": "foo"}]),
+    (TypedMap(String), {"omit": None, "include": "v"}, {"include": {"S": "v"}}),
+    (DocumentType, {"Rating": 3.0, "Stock": None}, {"Rating": {"N": "3"}})
+])
+def test_dump_partial_none(engine, typedef, values, expected):
+    """vector types filter out inner Nones"""
+    engine.type_engine.register(typedef)
+    engine.type_engine.bind()
+    assert typedef.dynamo_dump(values, context={"engine": engine}) == expected
+
+
 def test_string():
-    typedef = types.String()
+    typedef = String()
     symmetric_test(typedef, ("foo", "foo"))
 
 
 def test_uuid():
-    typedef = types.UUID()
+    typedef = UUID()
     uuid_obj = uuid.uuid4()
     uuid_str = str(uuid_obj)
     symmetric_test(typedef, (uuid_obj, uuid_str))
 
 
 def test_datetime():
-    typedef = types.DateTime()
+    typedef = DateTime()
 
     tz = "Europe/Paris"
     now = arrow.now()
@@ -77,14 +156,14 @@ def test_datetime():
     # Should load values in the given timezone.
     # Because arrow objects compare equal regardless of timezone, we
     # isoformat each to compare the rendered strings (which preserve tz).
-    local_typedef = types.DateTime(timezone=tz)
+    local_typedef = DateTime(timezone=tz)
     loaded_as_string = local_typedef.dynamo_load(now.isoformat(), context={}).isoformat()
     now_with_tz_as_string = now.to(tz).isoformat()
     assert loaded_as_string == now_with_tz_as_string
 
 
 def test_float():
-    typedef = types.Float()
+    typedef = Float()
     d = decimal.Decimal
     symmetric_test(typedef, (1.5, "1.5"), (d(4)/d(3), "1.333333333333333333333333333"))
 
@@ -99,12 +178,12 @@ def test_float():
         (decimal.Decimal("NaN"), TypeError)])
 def test_float_errors(value, raises):
     with pytest.raises(raises):
-        types.Float().dynamo_dump(value, context={})
+        Float().dynamo_dump(value, context={})
 
 
 def test_integer():
     """Integer is a thin wrapper over Float that exposes non-decimal objects"""
-    typedef = types.Integer()
+    typedef = Integer()
     symmetric_test(typedef, (4, "4"))
 
     assert typedef.dynamo_dump(4.5, context={}) == "4"
@@ -115,18 +194,18 @@ def test_integer():
 
 
 def test_binary():
-    typedef = types.Binary()
+    typedef = Binary()
     symmetric_test(typedef, (b"123", "MTIz"), (bytes(1), "AA=="))
 
 
 @pytest.mark.parametrize(
     "set_type, loaded, dumped", [
-        (types.String, {"Hello", "World"}, [{"S": "Hello"}, {"S": "World"}]),
-        (types.Float, {4.5, 3}, [{"N": "4.5"}, {"N": "3"}]),
-        (types.Integer, {0, -1, 1}, [{"N": "0"}, {"N": "-1"}, {"N": "1"}]),
-        (types.Binary, {b"123", b"456"}, [{"B": "MTIz"}, {"B": "NDU2"}])], ids=str)
+        (String, {"Hello", "World"}, [{"S": "Hello"}, {"S": "World"}]),
+        (Float, {4.5, 3}, [{"N": "4.5"}, {"N": "3"}]),
+        (Integer, {0, -1, 1}, [{"N": "0"}, {"N": "-1"}, {"N": "1"}]),
+        (Binary, {b"123", b"456"}, [{"B": "MTIz"}, {"B": "NDU2"}])], ids=str)
 def test_sets(engine, set_type, loaded, dumped):
-    typedef = types.Set(set_type)
+    typedef = Set(set_type)
     engine.type_engine.register(typedef)
     engine.type_engine.bind()
 
@@ -141,28 +220,28 @@ def test_sets(engine, set_type, loaded, dumped):
 
 def test_set_type_instance():
     """Set can take an instance of a Type as well as a Type subclass"""
-    type_instance = types.String()
-    instance_set = types.Set(type_instance)
+    type_instance = String()
+    instance_set = Set(type_instance)
     assert instance_set.typedef is type_instance
 
-    type_subclass = types.String
-    subclass_set = types.Set(type_subclass)
+    type_subclass = String
+    subclass_set = Set(type_subclass)
     assert isinstance(subclass_set.typedef, type_subclass)
 
 
 def test_set_illegal_backing_type():
     """The backing type for a set MUST be one of S/N/B, not BOOL"""
-    for typedef in [types.Boolean, types.Set(types.Integer)]:
+    for typedef in [Boolean, Set(Integer)]:
         with pytest.raises(TypeError) as excinfo:
-            types.Set(typedef)
+            Set(typedef)
         assert "Set's typedef must be backed by" in str(excinfo.value)
 
 
 def test_set_registered():
     """set registers its typedef so loading/dumping happens properly"""
     type_engine = declare.TypeEngine.unique()
-    string_type = types.String()
-    string_set_type = types.Set(string_type)
+    string_type = String()
+    string_set_type = Set(string_type)
 
     type_engine.bind()
     assert string_type not in type_engine.bound_types
@@ -172,16 +251,16 @@ def test_set_registered():
     assert string_type in type_engine.bound_types
 
 
-@pytest.mark.parametrize("value", [1, True, object(), bool, "str", False, None, 0, set(), ""], ids=repr)
+@pytest.mark.parametrize("value", [1, True, object(), bool, "str", False, 0, set(), ""], ids=repr)
 def test_bool(value):
-    """Boolean will never store/load as empty - bool(None) is False"""
-    typedef = types.Boolean()
+    """Boolean handles all values except None with bool(value)"""
+    typedef = Boolean()
     assert typedef.dynamo_dump(value, context={}) is bool(value)
     assert typedef.dynamo_load(value, context={}) is bool(value)
 
 
 def test_list(engine):
-    typedef = types.List(types.UUID)
+    typedef = List(UUID)
     loaded = [uuid.uuid4() for _ in range(5)]
     expected = [{"S": str(id)} for id in loaded]
 
@@ -192,23 +271,15 @@ def test_list(engine):
     assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
 
 
-@pytest.mark.parametrize("typedef", [types.List, types.Set, types.TypedMap])
+@pytest.mark.parametrize("typedef", [List, Set, TypedMap])
 def test_required_subtypes(typedef):
     """Typed containers require an inner type"""
     with pytest.raises(TypeError):
         typedef()
 
 
-def test_load_dump_none():
-    """Loading or dumping None returns None"""
-    typedef = types.String()
-    assert typedef._dump(None, context={}) == {"S": None}
-    assert typedef._load({"S": None}, context={}) is None
-
-
 def test_map_dump(engine):
     """Map handles nested maps and custom types"""
-    uid = uuid.uuid4()
     now = arrow.now().to('utc')
     loaded = {
         'Rating': 0.5,
@@ -216,9 +287,10 @@ def test_map_dump(engine):
         'Description': {
             'Heading': "Head text",
             'Body': "Body text",
+            # Explicit None
             'Specifications': None
         },
-        'Id': uid,
+        # Id missing entirely
         'Updated': now
     }
     expected = {
@@ -228,7 +300,6 @@ def test_map_dump(engine):
             'M': {
                 'Heading': {'S': 'Head text'},
                 'Body': {'S': 'Body text'}}},
-        'Id': {'S': str(uid)},
         'Updated': {'S': now.isoformat()}
     }
     engine.type_engine.register(DocumentType)
@@ -268,7 +339,7 @@ def test_map_load(engine):
 
 def test_typedmap(engine):
     """TypedMap handles arbitrary keys and values"""
-    typedef = types.TypedMap(types.DateTime)
+    typedef = TypedMap(DateTime)
 
     engine.type_engine.register(typedef)
     engine.type_engine.bind()

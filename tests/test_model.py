@@ -1,86 +1,92 @@
-import arrow
 import uuid
+
+import arrow
 import pytest
-from unittest.mock import Mock
+from bloop.column import Column
+from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
+from bloop.model import new_base
+from bloop.types import UUID, Boolean, DateTime, String
 
-from bloop import (Column, UUID, Boolean, DateTime, String,
-                   LocalSecondaryIndex, GlobalSecondaryIndex, new_base)
-
-from test_models import User
+from .helpers.models import User
 
 
 def test_default_model_init():
-    """ Missing attributes are set to `None` """
+    """Missing attributes are set to `None`"""
     user = User(id=uuid.uuid4(), email="user@domain.com")
     assert user.email == "user@domain.com"
     assert not hasattr(user, "name")
 
 
 def test_load_default_init(engine):
-    """ The default model loader uses the model's __init__ method """
-    User.Meta.init = Mock()
-    User.Meta.init.return_value = User()
+    """The default model loader uses the model's __init__ method"""
+    init_called = False
 
-    user_id = uuid.uuid4()
-    now = arrow.now()
+    class Blob(new_base()):
+        def __init__(self, **kwargs):
+            nonlocal init_called
+            init_called = True
+            super().__init__(**kwargs)
+        id = Column(String, hash_key=True)
+        data = Column(String)
+    engine.bind(base=Blob)
 
-    user = {
-        "id": {"S": str(user_id)},
-        "j": {"S": now.isoformat()},
+    assert Blob.Meta.init is Blob
+
+    blob = {
+        "id": {"S": "foo"},
+        "data": {"S": "data"},
         "extra_field": {"N": "0.125"}
     }
 
-    loaded_user = User._load(user, context={"engine": engine})
-    assert loaded_user.id == user_id
-    assert loaded_user.joined == now
-    assert not hasattr(loaded_user, "extra_field")
+    loaded_blob = engine._load(Blob, blob)
+    assert loaded_blob.id == "foo"
+    assert loaded_blob.data == "data"
+    assert not hasattr(loaded_blob, "extra_field")
     # No args, kwargs provided to custom init function
-    User.Meta.init.assert_called_once_with()
+    assert init_called
 
 
 def test_load_dump(engine):
-    """ _load and _dump should be symmetric """
-    user = User(id=uuid.uuid4(), name="name", email="user@domain.com", age=25,
+    """_load and _dump should be symmetric"""
+    user = User(id=uuid.uuid4(), name="test-name", email="email@domain.com", age=31,
                 joined=arrow.now())
     serialized = {
         "id": {"S": str(user.id)},
-        "age": {"N": "25"},
-        "name": {"S": "name"},
-        "email": {"S": "user@domain.com"},
+        "age": {"N": "31"},
+        "name": {"S": "test-name"},
+        "email": {"S": "email@domain.com"},
         "j": {"S": user.joined.to("utc").isoformat()}
     }
 
-    assert User._load(serialized, context={"engine": engine}) == user
-    assert User._dump(user, context={"engine": engine}) == serialized
+    loaded_user = engine._load(User, serialized)
+
+    missing = object()
+    for attr in (c.model_name for c in User.Meta.columns):
+        assert getattr(loaded_user, attr, missing) == getattr(user, attr, missing)
+
+    assert engine._dump(User, user) == serialized
+    assert engine._dump(User, loaded_user) == serialized
 
 
-def test_equality():
-    user_id = uuid.uuid4()
-    user = User(id=user_id, name="name", email="user@domain.com", age=25)
-    same = User(id=user_id, name="name", email="user@domain.com", age=25)
-    other = User(id=user_id, name="wrong", email="user@domain.com", age=25)
-    another = User(id=user_id, email="user@domain.com", age=25)
+def test_load_dump_none(engine):
+    user = User()
+    assert engine._dump(User, user) is None
+    assert engine._dump(User, None) is None
 
-    # Wrong type
-    assert not(user == "foo")
-    assert user != "foo"
+    # Loaded instances have None attributes, unlike newly created instances
+    # which don't have those attributes.  That is, `not hasattr(user, "id")`
+    # whereas `getattr(loaded_user, "id") is None`
+    loaded_user = engine._load(User, None)
+    for attr in (c.model_name for c in User.Meta.columns):
+        assert getattr(loaded_user, attr) is None
 
-    # Attr with different value
-    assert not(user == other)
-    assert user != other
-
-    # Missing an attr
-    assert not(user == another)
-    assert user != another
-
-    assert user == same
+    loaded_user = engine._load(User, {})
+    for attr in (c.model_name for c in User.Meta.columns):
+        assert getattr(loaded_user, attr) is None
 
 
 def test_meta_read_write_units():
-    """
-    If `read_units` or `write_units` is missing from a model's Meta,
-    it defaults to 1
-    """
+    """If `read_units` or `write_units` is missing from a model's Meta, it defaults to 1"""
     class Model(new_base()):
         id = Column(UUID, hash_key=True)
 
@@ -98,13 +104,13 @@ def test_meta_read_write_units():
 
 
 def test_meta_indexes_columns():
-    """ An index should not be considered a Column, even if it subclasses """
+    """An index should not be considered a Column, even if it subclasses"""
     assert User.by_email not in set(User.Meta.columns)
     assert User.by_email in set(User.Meta.indexes)
 
 
 def test_meta_keys():
-    """ Various combinations of hash and range keys (some impossible) """
+    """Various combinations of hash and range keys (some impossible)"""
     def hash_column():
         return Column(UUID, hash_key=True)
 
@@ -156,7 +162,7 @@ def test_invalid_local_index():
 
 
 def test_index_keys():
-    """ Make sure index hash and range keys are objects, not strings """
+    """Make sure index hash and range keys are objects, not strings"""
     class Model(new_base()):
         id = Column(UUID, hash_key=True)
         other = Column(DateTime, range_key=True)
@@ -174,7 +180,7 @@ def test_index_keys():
 
 
 def test_local_index_no_range_key():
-    """ A table range_key is required to specify a LocalSecondaryIndex """
+    """A table range_key is required to specify a LocalSecondaryIndex"""
     with pytest.raises(ValueError):
         class Model(new_base()):
             id = Column(UUID, hash_key=True)
@@ -183,8 +189,7 @@ def test_local_index_no_range_key():
 
 
 def test_index_projections():
-    """ Make sure index projections are calculated to include table keys """
-    Global, Local = GlobalSecondaryIndex, LocalSecondaryIndex
+    """Make sure index projections are calculated to include table keys"""
 
     class Model(new_base()):
         id = Column(UUID, hash_key=True)
@@ -193,13 +198,13 @@ def test_index_projections():
         date = Column(DateTime)
         boolean = Column(Boolean)
 
-        g_all = Global(hash_key="another", range_key="date", projection="all")
-        g_key = Global(hash_key="another", projection="keys")
-        g_inc = Global(hash_key="other", projection=["another", "date"])
+        g_all = GlobalSecondaryIndex(hash_key="another", range_key="date", projection="all")
+        g_key = GlobalSecondaryIndex(hash_key="another", projection="keys")
+        g_inc = GlobalSecondaryIndex(hash_key="other", projection=["another", "date"])
 
-        l_all = Local(range_key="another", projection="all")
-        l_key = Local(range_key="another", projection="keys")
-        l_inc = Local(range_key="another", projection=["date"])
+        l_all = LocalSecondaryIndex(range_key="another", projection="all")
+        l_key = LocalSecondaryIndex(range_key="another", projection="keys")
+        l_inc = LocalSecondaryIndex(range_key="another", projection=["date"])
 
     uuids = {Model.id, Model.other, Model.another}
     no_boolean = set(Model.Meta.columns)
@@ -221,9 +226,7 @@ def test_index_projections():
 
 
 def test_meta_table_name():
-    """
-    If table_name is missing from a model's Meta, use the model's __name__
-    """
+    """If table_name is missing from a model's Meta, use the model's __name__"""
     class Model(new_base()):
         id = Column(UUID, hash_key=True)
 
@@ -246,3 +249,14 @@ def test_abstract_not_inherited():
 
     assert base.Meta.abstract
     assert not Concrete.Meta.abstract
+
+
+def test_str(engine):
+    """Different strings for None and missing"""
+    new_user = User()
+    loaded_empty_user = engine._load(User, None)
+
+    # No values to show
+    assert str(new_user) == "User()"
+    # Values set to None
+    assert str(loaded_empty_user) == "User(age=None, email=None, id=None, joined=None, name=None)"

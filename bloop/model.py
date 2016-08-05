@@ -1,7 +1,8 @@
-import bloop.column
-import bloop.index
-import bloop.util
 import declare
+
+from .column import Column
+from .index import GlobalSecondaryIndex, LocalSecondaryIndex
+
 
 __all__ = ["new_base", "BaseModel"]
 
@@ -14,6 +15,14 @@ def new_base():
         class Meta:
             abstract = True
     return Model
+
+
+def loaded_columns(obj):
+    """Yields each (model_name, value) tuple for all columns in an object that aren't missing"""
+    for column in sorted(obj.Meta.columns, key=lambda c: c.model_name):
+        value = getattr(obj, column.model_name, _MISSING)
+        if value is not _MISSING:
+            yield (column.model_name, value)
 
 
 class ModelMetaclass(declare.ModelMetaclass):
@@ -52,19 +61,22 @@ def setup_columns(meta):
     # while some list operations uses __eq__ which will break
     # with the ComparisonMixin
     meta.columns = set(filter(
-        lambda field: isinstance(field, bloop.column.Column), meta.fields))
+        lambda field: isinstance(field, Column), meta.fields))
 
     meta.hash_key = None
     meta.range_key = None
+    meta.keys = set()
     for column in meta.columns:
         if column.hash_key:
             if meta.hash_key:
                 raise ValueError("Model hash_key over-specified")
             meta.hash_key = column
+            meta.keys.add(column)
         elif column.range_key:
             if meta.range_key:
                 raise ValueError("Model range_key over-specified")
             meta.range_key = column
+            meta.keys.add(column)
         column.model = meta.model
 
 
@@ -74,10 +86,10 @@ def setup_indexes(meta):
     # while some list operations use __eq__ which will break
     # with the ComparisonMixin
     meta.gsis = set(filter(
-        lambda field: isinstance(field, bloop.index.GlobalSecondaryIndex),
+        lambda field: isinstance(field, GlobalSecondaryIndex),
         meta.fields))
     meta.lsis = set(filter(
-        lambda field: isinstance(field, bloop.index.LocalSecondaryIndex),
+        lambda field: isinstance(field, LocalSecondaryIndex),
         meta.fields))
     meta.indexes = set.union(meta.gsis, meta.lsis)
 
@@ -87,7 +99,7 @@ def setup_indexes(meta):
 
 class BaseModel:
     """
-    Do not subclass directly, use new_base.
+    Do not subclass directly; use new_base.
 
     Example:
 
@@ -111,53 +123,32 @@ class BaseModel:
     def _load(cls, attrs, *, context, **kwargs):
         """ dict (dynamo name) -> obj """
         obj = cls.Meta.init()
-        # We want to expect the exact attributes that are passed,
-        # since any superset will mark missing fields as expected and None
-        expected = set()
-        for column in cls.Meta.columns:
-            if column.dynamo_name in attrs:
-                expected.add(column)
-        context["engine"]._update(obj, attrs, expected, **kwargs)
+        if attrs is None:
+            attrs = {}
+        # Like any other Type, Model._load gives every inner type (in this case,
+        # the type in each column) the chance to load None (for missing attr keys)
+        # into another values (such as an empty set or dict).
+        # For tracking purposes, this means that the method will always mark EVERY column.
+        # If you're considering using this method, you may want to look at engine._update,
+        # Which allows you to specify the columns to extract.
+        context["engine"]._update(obj, attrs, obj.Meta.columns, **kwargs)
         return obj
 
     @classmethod
     def _dump(cls, obj, *, context, **kwargs):
         """ obj -> dict """
-        attrs = {}
-        type_engine = context["engine"].type_engine
-        for column in cls.Meta.columns:
-            value = getattr(obj, column.model_name, None)
-            # Missing expected column - None is equivalent to empty
-            if value is not None:
-                attrs[column.dynamo_name] = type_engine.dump(column.typedef, value, context=context, **kwargs)
-        return attrs
+        if obj is None:
+            return None
+        dump = context["engine"]._dump
+        filtered = filter(
+            lambda item: item[1] is not None,
+            ((
+                column.dynamo_name,
+                dump(column.typedef, getattr(obj, column.model_name, None), context=context, **kwargs)
+            ) for column in cls.Meta.columns))
+        return dict(filtered) or None
 
-    def __str__(self):  # pragma: no cover
-        attrs = []
-        for column in self.Meta.columns:
-            name = column.model_name
-            value = getattr(self, name, None)
-            if value is not None:
-                attrs.append("{}={}".format(name, value))
-        attrs = ", ".join(attrs)
+    def __str__(self):
+        attrs = ", ".join("{}={}".format(*item) for item in loaded_columns(self))
         return "{}({})".format(self.__class__.__name__, attrs)
     __repr__ = __str__
-
-    __hash__ = object.__hash__
-
-    def __eq__(self, other):
-        """ Only checks defined columns. """
-        if self is other:
-            return True
-        cls = self.__class__
-        if not isinstance(other, cls):
-            return False
-        for column in cls.Meta.columns:
-            value = getattr(self, column.model_name, None)
-            other_value = getattr(other, column.model_name, None)
-            if value != other_value:
-                return False
-        return True
-
-    def __ne__(self, other):
-        return not self.__eq__(other)

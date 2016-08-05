@@ -1,6 +1,6 @@
 __all__ = [
-    "create_request", "expected_description",
-    "sanitized_description", "simple_status"]
+    "create_table_request", "expected_table_description",
+    "sanitized_table_description", "simple_table_status"]
 
 
 def attribute_definitions(model):
@@ -76,7 +76,7 @@ def local_secondary_index(index):
     }
 
 
-def create_request(model):
+def create_table_request(model):
     table = {
         "AttributeDefinitions": attribute_definitions(model),
         "KeySchema": key_schema(model=model),
@@ -95,15 +95,15 @@ def create_request(model):
     return table
 
 
-def expected_description(model):
-    # Right now, we expect the exact same thing as create_request
+def expected_table_description(model):
+    # Right now, we expect the exact same thing as create_table_request
     # This doesn't include statuses (table, indexes) since that's
     # pulled out by the polling mechanism
-    table = create_request(model)
+    table = create_table_request(model)
     return table
 
 
-def sanitized_description(description):
+def sanitized_table_description(description):
     # We don't need to match most of what comes back from describe_table
     # This monster structure carefully extracts the exact fields that bloop
     # will compare against, without picking up any new fields that
@@ -184,7 +184,7 @@ def sanitized_description(description):
     return table
 
 
-def simple_status(description):
+def simple_table_status(description):
     status = "ACTIVE"
     if description.get("TableStatus") != "ACTIVE":
         status = "BLOOP_NOT_ACTIVE"

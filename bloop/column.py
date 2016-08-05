@@ -1,7 +1,17 @@
-import bloop.condition
-import bloop.tracking
-import declare
 import operator
+
+import declare
+
+from .condition import (
+    AttributeExists,
+    BeginsWith,
+    Between,
+    Comparison,
+    Contains,
+    In,
+)
+from .tracking import mark
+
 
 __all__ = ["Column"]
 
@@ -29,62 +39,46 @@ class _ComparisonMixin:
     def __eq__(self, value):
         # Special case - None should use function attribute_not_exists
         if value is None:
-            return bloop.condition.AttributeExists(
-                self.__obj, negate=True, path=self.path)
-        comparator = operator.eq
-        return bloop.condition.Comparison(
-            self.__obj, comparator, value, path=self.path)
+            return AttributeExists(self.__obj, negate=True, path=self.path)
+        return Comparison(self.__obj, operator.eq, value, path=self.path)
     is_ = __eq__
 
     def __ne__(self, value):
         # Special case - None should use function attribute_exists
         if value is None:
-            return bloop.condition.AttributeExists(
-                self.__obj, negate=False, path=self.path)
-        comparator = operator.ne
-        return bloop.condition.Comparison(
-            self.__obj, comparator, value, path=self.path)
+            return AttributeExists(self.__obj, negate=False, path=self.path)
+        return Comparison(self.__obj, operator.ne, value, path=self.path)
     is_not = __ne__
 
     def __lt__(self, value):
-        comparator = operator.lt
-        return bloop.condition.Comparison(
-            self.__obj, comparator, value, path=self.path)
+        return Comparison(self.__obj, operator.lt, value, path=self.path)
 
     def __gt__(self, value):
-        comparator = operator.gt
-        return bloop.condition.Comparison(
-            self.__obj, comparator, value, path=self.path)
+        return Comparison(self.__obj, operator.gt, value, path=self.path)
 
     def __le__(self, value):
-        comparator = operator.le
-        return bloop.condition.Comparison(
-            self.__obj, comparator, value, path=self.path)
+        return Comparison(self.__obj, operator.le, value, path=self.path)
 
     def __ge__(self, value):
-        comparator = operator.ge
-        return bloop.condition.Comparison(
-            self.__obj, comparator, value, path=self.path)
+        return Comparison(self.__obj, operator.ge, value, path=self.path)
 
     def between(self, lower, upper):
         """ lower <= column.value <= upper """
-        return bloop.condition.Between(
-            self.__obj, lower, upper, path=self.path)
+        return Between(self.__obj, lower, upper, path=self.path)
 
     def in_(self, values):
         """ column.value in [3, 4, 5] """
-        return bloop.condition.In(self.__obj, values, path=self.path)
+        return In(self.__obj, values, path=self.path)
 
     def begins_with(self, value):
-        return bloop.condition.BeginsWith(self.__obj, value, path=self.path)
+        return BeginsWith(self.__obj, value, path=self.path)
 
     def contains(self, value):
-        return bloop.condition.Contains(self.__obj, value, path=self.path)
+        return Contains(self.__obj, value, path=self.path)
 
     def __getitem__(self, path):
         if not isinstance(path, (str, int)):
-            raise ValueError("Documents can only be indexed by"
-                             " strings or integers.")
+            raise ValueError("Documents can only be indexed by strings or integers.")
         return _ComparisonMixin(obj=self.__obj, path=self.path + [path])
 
 
@@ -100,9 +94,9 @@ class Column(declare.Field, _ComparisonMixin):
     def __repr__(self):  # pragma: no cover
         attrs = ["model_name", "dynamo_name", "hash_key", "range_key"]
 
-        def _attr(attr):
-            return "{}={}".format(attr, getattr(self, attr))
-        attrs = ", ".join(_attr(attr) for attr in attrs)
+        attrs = ", ".join(
+            "{}={}".format(attr, getattr(self, attr))
+            for attr in attrs)
         return "{}({})".format(self.__class__.__name__, attrs)
     __str__ = __repr__
 
@@ -114,14 +108,13 @@ class Column(declare.Field, _ComparisonMixin):
 
     def set(self, obj, value):
         super().set(obj, value)
-        # Notify the tracking engine that this value
-        # was intentionally mutated
-        bloop.tracking.mark(obj, self)
+        # Notify the tracking engine that this value was intentionally mutated
+        mark(obj, self)
 
     def delete(self, obj):
         try:
             super().delete(obj)
         finally:
-            # Notify the tracking engine that this value
-            # was intentionally mutated
-            bloop.tracking.mark(obj, self)
+            # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
+            # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
+            mark(obj, self)

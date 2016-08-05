@@ -1,15 +1,15 @@
-import bloop.condition
-import bloop.util
-import collections
+from .condition import Condition
+from .util import WeakDefaultDictionary
+
 
 # Tracks the state of instances of models:
 # 1) Are any columns marked for including in an update?
 # 2) Latest snapshot for atomic operations
-_obj_tracking = bloop.util.WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None})
+_obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None})
 
 # Tracks the state of models (tables):
 # 1) Has the table been created/verified to match the given Meta attributes?
-_model_tracking = bloop.util.WeakDefaultDictionary(lambda: {"verified": False})
+_model_tracking = WeakDefaultDictionary(lambda: {"verified": False})
 
 
 def clear(obj):
@@ -17,7 +17,7 @@ def clear(obj):
 
     Usually called after deleting an object.
     """
-    snapshot = bloop.condition.Condition()
+    snapshot = Condition()
     for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
         snapshot &= column.is_(None)
     _obj_tracking[obj]["snapshot"] = snapshot
@@ -36,13 +36,11 @@ def sync(obj, engine):
     """Mark the object as having been persisted at least once.
 
     Store the latest snapshot of all marked values."""
-    snapshot = bloop.condition.Condition()
+    snapshot = Condition()
     # Only expect values (or lack of a value) for columns that have been explicitly set
     for column in sorted(_obj_tracking[obj]["marked"], key=lambda col: col.dynamo_name):
         value = getattr(obj, column.model_name, None)
-        # Don't try to dump Nones through the typedef
-        if value is not None:
-            value = engine._dump(column.typedef, value)
+        value = engine._dump(column.typedef, value)
         condition = column == value
         # The renderer shouldn't try to dump the value again.
         # We're dumping immediately in case the value is mutable,
@@ -64,33 +62,9 @@ def get_snapshot(obj):
     return _obj_tracking[obj]["snapshot"]
 
 
-def get_update(obj):
-    """Creates a dict of changes to make for a given object.
-
-    Returns:
-        dict: A dict with two keys "SET" and "REMOVE".
-
-        The dict has the following format::
-
-            {
-                "SET": [(Column<Foo>, obj.Foo), (Column<Bar>, obj.Bar), ...],
-                "REMOVE": [Column<Baz>, ...]
-            }
-
-    """
-    diff = collections.defaultdict(list)
-    key = {obj.Meta.hash_key, obj.Meta.range_key}
-    for column in _obj_tracking[obj]["marked"]:
-        if column in key:
-            continue
-        value = getattr(obj, column.model_name, None)
-        if value is not None:
-            diff["SET"].append((column, value))
-        # None (or missing, an implicit None) expects the
-        # value to be empty (missing) in Dynamo.
-        else:
-            diff["REMOVE"].append(column)
-    return diff
+def get_marked(obj):
+    """Returns the set of marked columns for an object"""
+    return set(_obj_tracking[obj]["marked"])
 
 
 def is_model_verified(model):

@@ -1,10 +1,12 @@
-import arrow
 import base64
 import collections.abc
 import decimal
-import declare
 import numbers
 import uuid
+
+import arrow
+import declare
+
 
 ENCODING = "utf-8"
 STRING = "S"
@@ -26,17 +28,17 @@ DYNAMODB_CONTEXT = decimal.Context(
 
 class Type(declare.TypeDefinition):
     def _load(self, value, **kwargs):
-        """take a {type: value} dictionary from dynamo and return a python value"""
-        value = next(iter(value.values()))
-        if value is None:
-            return None
+        """take a {type: value} dictionary (or None) from dynamo and return a python value"""
+        if value is not None:
+            value = next(iter(value.values()))
         return self.dynamo_load(value, **kwargs)
 
     def _dump(self, value, **kwargs):
         """dump a python value to a {type: value} dictionary for dynamo storage"""
+        value = self.dynamo_dump(value, **kwargs)
         if value is None:
-            return {self.backing_type: None}
-        return {self.backing_type: self.dynamo_dump(value, **kwargs)}
+            return value
+        return {self.backing_type: value}
 
     def dynamo_load(self, value, *, context, **kwargs):
         raise NotImplementedError()
@@ -58,6 +60,8 @@ class String(Type):
         return value
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return str(value)
 
 
@@ -65,9 +69,13 @@ class UUID(String):
     python_type = uuid.UUID
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return uuid.UUID(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return str(value)
 
 
@@ -106,13 +114,15 @@ class DateTime(String):
         super().__init__()
 
     def dynamo_load(self, value, *, context, **kwargs):
-        iso8601_string = super().dynamo_load(value, context=context, **kwargs)
-        return arrow.get(iso8601_string).to(self.timezone)
+        if value is None:
+            return None
+        return arrow.get(value).to(self.timezone)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         # ALWAYS store in UTC - we can manipulate the timezone on load
-        iso8601_string = value.to("utc").isoformat()
-        return super().dynamo_dump(iso8601_string, context=context, **kwargs)
+        return value.to("utc").isoformat()
 
 
 class Float(Type):
@@ -120,9 +130,13 @@ class Float(Type):
     backing_type = NUMBER
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return DYNAMODB_CONTEXT.create_decimal(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         n = str(DYNAMODB_CONTEXT.create_decimal(value))
         if any(filter(lambda x: x in n, ("Infinity", "NaN"))):
             raise TypeError("Infinity and NaN not supported")
@@ -133,10 +147,14 @@ class Integer(Float):
     python_type = int
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         number = super().dynamo_load(value, context=context, **kwargs)
         return int(number)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         value = int(value)
         return super().dynamo_dump(value, context=context, **kwargs)
 
@@ -146,10 +164,29 @@ class Binary(Type):
     backing_type = BINARY
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return base64.b64decode(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         return base64.b64encode(value).decode("utf-8")
+
+
+class Boolean(Type):
+    python_type = bool
+    backing_type = BOOLEAN
+
+    def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
+        return bool(value)
+
+    def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
+        return bool(value)
 
 
 def subclassof(C, B):
@@ -187,68 +224,68 @@ class Set(Type):
         """Register the set's type"""
         engine.register(self.typedef)
 
-    def dynamo_load(self, value, *, context, **kwargs):
+    def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            return set()
         # local lookup in a tight loop
-        load = context["engine"].type_engine.load
+        load = context["engine"]._load
         typedef = self.typedef
-        return set(load(typedef, v, context=context, **kwargs) for v in value)
+        return set(load(typedef, value, context=context, **kwargs) for value in values)
 
-    def dynamo_dump(self, value, *, context, **kwargs):
+    def dynamo_dump(self, values, *, context, **kwargs):
+        if values is None:
+            return None
         # local lookup in a tight loop
-        dump = context["engine"].type_engine.dump
+        dump = context["engine"]._dump
         typedef = self.typedef
-        return [dump(typedef, v, context=context, **kwargs) for v in sorted(value)]
+
+        filtered = filter(
+            lambda x: x is not None,
+            (
+                dump(typedef, value, context=context, **kwargs)
+                for value in values))
+        return list(filtered) or None
 
 
-class Boolean(Type):
-    python_type = bool
-    backing_type = BOOLEAN
+class List(Type):
+    python_type = collections.abc.Iterable
+    backing_type = LIST
 
-    def dynamo_load(self, value, *, context, **kwargs):
-        return bool(value)
-
-    def dynamo_dump(self, value, *, context, **kwargs):
-        return bool(value)
-
-
-class Map(Type):
-    python_type = collections.abc.Mapping
-    backing_type = MAP
-
-    def __init__(self, **types):
-        self.types = {k: type_instance(t) for k, t in types.items()}
+    def __init__(self, typedef=None):
+        # Default None allows the TypeEngine to call without args,
+        # and still provide a helpful error message for a required param
+        if typedef is None:
+            raise TypeError("List requires a type")
+        self.typedef = type_instance(typedef)
         super().__init__()
 
     def __getitem__(self, key):
-        """Overload allows easy nested access to types"""
-        return self.types[key]
+        return self.typedef
 
     def _register(self, engine):
-        """Register all types for the map"""
-        for typedef in self.types.values():
-            engine.register(typedef)
+        engine.register(self.typedef)
 
     def dynamo_load(self, values, *, context, **kwargs):
-        obj = {}
-        load = context["engine"].type_engine.load
-        for key, typedef in self.types.items():
-            value = values.get(key, None)
-            if value is not None:
-                value = load(typedef, value, context=context, **kwargs)
-            obj[key] = value
-        return obj
+        if values is None:
+            return list()
+        # local lookup in a tight loop
+        load = context["engine"]._load
+        typedef = self.typedef
+        return [load(typedef, value, context=context, **kwargs) for value in values]
 
     def dynamo_dump(self, values, *, context, **kwargs):
-        obj = {}
-        dump = context["engine"].type_engine.dump
-        for key, typedef in self.types.items():
-            value = values.get(key, None)
-            if value is not None:
-                value = dump(typedef, value, context=context, **kwargs)
-            # Never push a literal `None` back to DynamoDB
-            if value is not None:
-                obj[key] = value
-        return obj
+        if values is None:
+            return None
+        # local lookup in a tight loop
+        dump = context["engine"]._dump
+        typedef = self.typedef
+
+        filtered = filter(
+            lambda x: x is not None,
+            (
+                dump(typedef, value, context=context, **kwargs)
+                for value in values))
+        return list(filtered) or None
 
 
 class TypedMap(Type):
@@ -272,44 +309,64 @@ class TypedMap(Type):
         engine.register(self.typedef)
 
     def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            return dict()
         # local lookup in a tight loop
-        load = context["engine"].type_engine.load
+        load = context["engine"]._load
         typedef = self.typedef
         return {k: load(typedef, v, context=context, **kwargs) for k, v in values.items()}
 
     def dynamo_dump(self, values, *, context, **kwargs):
+        if values is None:
+            return None
         # local lookup in a tight loop
-        dump = context["engine"].type_engine.dump
+        dump = context["engine"]._dump
         typedef = self.typedef
-        return {k: dump(typedef, v, context=context, **kwargs) for k, v in values.items()}
+
+        filtered = filter(
+            lambda item: item[1] is not None,
+            ((
+                 key, dump(typedef, value, context=context, **kwargs)
+             ) for key, value in values.items()))
+        return dict(filtered) or None
 
 
-class List(Type):
-    python_type = collections.abc.Iterable
-    backing_type = LIST
+class Map(Type):
+    python_type = collections.abc.Mapping
+    backing_type = MAP
 
-    def __init__(self, typedef=None):
-        # Default None allows the TypeEngine to call without args,
-        # and still provide a helpful error message for a required param
-        if typedef is None:
-            raise TypeError("List requires a type")
-        self.typedef = type_instance(typedef)
+    def __init__(self, **types):
+        self.types = {k: type_instance(t) for k, t in types.items()}
         super().__init__()
 
     def __getitem__(self, key):
-        return self.typedef
+        """Overload allows easy nested access to types"""
+        return self.types[key]
 
     def _register(self, engine):
-        engine.register(self.typedef)
+        """Register all types for the map"""
+        for typedef in self.types.values():
+            engine.register(typedef)
 
-    def dynamo_load(self, value, *, context, **kwargs):
-        # local lookup in a tight loop
-        load = context["engine"].type_engine.load
-        typedef = self.typedef
-        return [load(typedef, v, context=context, **kwargs) for v in value]
+    def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            values = dict()
+        load = context["engine"]._load
+        get = values.get
+        return {
+            key: load(typedef, get(key, None), context=context, **kwargs)
+            for key, typedef in self.types.items()
+        }
 
-    def dynamo_dump(self, value, *, context, **kwargs):
-        # local lookup in a tight loop
-        dump = context["engine"].type_engine.dump
-        typedef = self.typedef
-        return [dump(typedef, v, context=context, **kwargs) for v in value]
+    def dynamo_dump(self, values, *, context, **kwargs):
+        if values is None:
+            return None
+        dump = context["engine"]._dump
+        get = values.get
+
+        filtered = filter(
+            lambda item: item[1] is not None,
+            ((
+                 key, dump(typedef, get(key, None), context=context, **kwargs)
+             ) for key, typedef in self.types.items()))
+        return dict(filtered) or None

@@ -287,5 +287,5 @@ class Engine:
         if model.Meta.abstract:
             raise AbstractModelException(model)
         return Filter(
-            engine=self, mode="query", model=model, index=index, strict=self.config["strict"], select=select,
+            engine=self, mode="scan", model=model, index=index, strict=self.config["strict"], select=select,
             consistent=config(self, "consistent", consistent))

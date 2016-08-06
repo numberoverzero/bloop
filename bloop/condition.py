@@ -210,6 +210,7 @@ class Comparison(_BaseCondition):
         nref = renderer.name_ref(self.column, path=self.path)
         vref = renderer.value_ref(self.column, self.value,
                                   dumped=self.dumped, path=self.path)
+        # TODO special handling for == and != when value dumps to None
         comparator = self.comparator_strings[self.comparator]
         return "({} {} {})".format(nref, comparator, vref)
 

@@ -1,23 +1,160 @@
 Conditions
 ^^^^^^^^^^
 
+Conditions are pretty straightforward once you start using them.  At the minimum you will need to compose conditions
+to build a Query; most likely you will also want to filter a query or scan.
+
+Bloop is intentionally designed to make writing conditions easy.  For example, to ensure a public key hasn't expired:
+
+.. code-block:: python
+
+    PublicKey.expiry > arrow.now()
+
 Quick Examples
 ==============
+
+This section is meant to serve as a reference for common uses of optimistic concurrency.  If there's a scenario you'd
+like to see, please `open an issue`_!  Someone else is probably looking for the same example that you are.
+
+.. _open an issue: https://github.com/numberoverzero/bloop/issues/new
+
+.. _condition-ex-finalize:
 
 Save if not Finalized
 ---------------------
 
-model with a finalized field, save if finalized is False, catch and throw illegal state
+Imagine a resource that is editable until another process completes:
+
+.. code-block:: python
+
+    class Document(new_base()):
+        id = Column(UUID, hash_key=True)
+        file_type = Column(String)
+        data = Column(Binary)
+        created_on = Column(DateTime)
+        modified_on = Column(DateTime)
+        finalized = Column(Boolean)
+
+A condition guarantees that the document won't change once finalized:
+
+.. code-block:: python
+
+    engine = bloop.Engine()
+    engine.bind(base=Document)
+
+
+    def apply_user_updates(document, delta):
+        not_finalized = Document.finalized.is_(False)
+        document.apply(delta)
+        document.modified_on = arrow.now()
+
+        try:
+            engine.save(document, condition=not_finalized)
+        except bloop.ConstraintViolation:
+            raise falcon.HTTPBadRequest(
+                "Document is no longer editable")
+
+Without a condition, there is no way to guarantee that the edit was made while ``finalized`` was ``False``:
+
+.. code-block:: python
+
+    def apply_user_updates(document, delta):
+        # Document was loaded from bloop, already finalized
+        if document.finalized:
+            raise falcon.HTTPBadRequest(
+                "Document is no longer editable")
+
+        # ERROR: if the asynchronous processing sets
+        # finalized to True here, we won't know.
+
+        document.apply(delta)
+        document.modified_on = arrow.now()
+        # Unconditional save
+        engine.save(document)
+
 
 Filter by Time Range
 --------------------
 
-scan tweets created between two dates
+A website lets users see articles in the current category from a year ago.
+
+.. code-block:: python
+
+    class Article(new_base()):
+        id = Column(UUID, hash_key=True)
+        headline = Column(String)
+        # Bodies stored in S3
+        content_url = Column(String)
+        category = Column(String)
+        publish_date = Column(DateTime)
+
+        by_category = GlobalSecondaryIndex(
+            projection=["headline", "content_url"],
+            hash_key="category")
+
+A condition can filter items in the query against the ``by_category`` index:
+
+.. code-block:: python
+
+    def articles_from_year_ago(category):
+        one_year_ago = arrow.now().replace(years=-1)
+        start, end = one_year_ago.span("day")
+
+        return (
+            engine
+            .query(Article.by_category)
+            .key(Article.category == category)
+            .filter(Article.publish_date.between(start, end))
+        ).build()
+
+.. _condition-ex-atomic:
 
 Atomic Delete
 -------------
 
-atomic=True
+A celery task periodically cleans up accounts that haven't logged in recently.
+
+.. code-block:: python
+
+    class Account(new_base()):
+        id = Column(UUID, hash_key=True)
+        username = Column(String)
+        last_used = Column(DateTime)
+
+If the task didn't use a conditional delete, it's possible that the user logs in between the load and the delete.  Just
+as the user logs in again, their account is blown away!
+
+This can be solved two ways.  First, an explicit constraint on ``last_used``:
+
+.. code-block:: python
+
+    now = arrow.now()
+    is_stale = Account.last_used <= now.replace(years=-2)
+
+    engine.delete(account, condition=is_stale)
+
+However, we probably already know the account is expired.  Imagine that we are getting accounts from a table scan that
+filters on ``last_used``:
+
+.. code-block:: python
+
+    def get_stale_accounts():
+        now = arrow.now()
+        is_stale = Account.last_used <= now.replace(years=-2)
+        return engine.scan(Account).filter(is_stale).build()
+
+In this case, we only really care that ``last_used`` doesn't change before we delete it.  This is very easy:
+
+.. code-block:: python
+
+    for stale_account in get_stale_accounts():
+        engine.delete(stale_account, atomic=True)
+
+The ``atomic`` keyword is attached to an automatically generated condition that means "only perform this operation if
+the current state in DynamoDB matches the exact state that I last loaded" (for objects that haven't been loaded/saved,
+it requires that they not exist yet in DynamoDB).  You can use ``atomic=True`` alongside a custom condition and they
+will be ANDed together.  See :ref:`atomic-operations` for more details on how atomic conditions are computed for
+various states of synchronization with DynamoDB.
 
 Available Conditions
 ====================
@@ -68,18 +205,21 @@ then the rendered condition will be ``attribute_not_exists`` instead of the usua
 Similarly, if you use ``!=`` or ``is_not`` with None or a value that dumps to None,
 then the rendered condition will be ``attribute_exists``.
 
-Python's chaining is not supported for comparisons.  If you would normally use:
+.. note::
 
-.. code-block:: python
+    | Python's chaining is not supported for comparisons.
+    | If you would normally use:
 
-    3 <= User.invites_left <= 10
+    .. code-block:: python
 
-You should instead use one of:
+        3 <= User.invites_left <= 10
 
-.. code-block:: python
+    You should instead use one of:
 
-    (User.invites_left => 3) & (User.invites_left <= 10)
-    User.invites.between(3, 10)
+    .. code-block:: python
+
+        (User.invites_left => 3) & (User.invites_left <= 10)
+        User.invites.between(3, 10)
 
 .. _condition-begins:
 
@@ -90,7 +230,7 @@ You should instead use one of:
 
     Column.begins_with(value)
 
-You can use ``begins_with`` with Binary types:
+Besides Strings, you can also use ``begins_with`` with Binary types:
 
 .. code-block:: python
 
@@ -119,14 +259,15 @@ There are some limitations:
 
     Column.between(lower, upper)
 
-Besides Numeric and String types, you can use ``begins_with`` with Binary and DateTime:
+Primarily used with String and Numeric (Integer, Float) types.  You can also use ``between`` with Binary and DateTime:
 
 .. code-block:: python
 
-    one_year_ago = arrow.now().replace(years=-1)
-    User.joined.between(one_year_ago, arrow.now())
-
     User.description.between("Hello, my name", "Hi, I'm")
+
+    now = arrow.now()
+    one_year_ago = now.replace(years=-1)
+    User.joined.between(one_year_ago, now)
 
 ``contains``
 ------------
@@ -135,7 +276,7 @@ Besides Numeric and String types, you can use ``begins_with`` with Binary and Da
 
     Column.contains(value)
 
-You can use ``contains`` with Binary, but like :ref:`condition-begins` there are limitations.
+Like :ref:`condition-begins`, there are limitations when using Binary columns.
 
 ``in_``
 -------
@@ -151,9 +292,8 @@ strings are iterable.  For example, the following:
 
     User.email.in_("user@domain, u@domain, user@d")
 
-Is the equivalent of ``"foo" in list("foobar")`` or ``"foo" in ["f", "o", ...]``.
-
-Instead, you need to check the exact strings to match:
+Is the equivalent of ``"foo" in list("foobar")`` or ``"foo" in ["f", "o", ...]``.  To check that a string matches one
+of multiple options, you need to check the exact strings to match:
 
 .. code-block:: python
 
@@ -162,6 +302,9 @@ Instead, you need to check the exact strings to match:
         "u@domain",
         "user@d"
     ])
+
+The only is-substring-of condition available right now is ``begins_with``\, which is limited to the beginning of the
+string.
 
 ``is_``, ``is_not``
 -------------------
@@ -257,8 +400,35 @@ A condition that expects the first description's body to be blank:
 Conditional Save
 ================
 
+.. code-block:: python
+
+    condition = SomeModel.column.contains("@")
+
+    engine.save(some_object, condition=condition)
+
+As you saw in the :ref:`condition-ex-finalize` example above, saving an object with a condition guarantees that the
+save happens **only if** the condition is true when the update is performed.  This optimistic concurrency control is
+one of the most powerful features of DynamoDB.  We can compose conditions that embed business logic so that we don't
+have to read before writing, like "only save this if the object doesn't exist, or the current object has expired":
+
+.. code-block:: python
+
+    does_not_exist = Model.id.is_(None)
+    is_expired = Model.until < arrow.now()
+
+    engine.save(obj, condition=(does_not_exist | is_expired))
+
 Conditional Delete
 ==================
+
+.. code-block:: python
+
+    condition = SomeModel.column < arrow.now()
+
+    engine.delete(some_object, condition=condition)
+
+Conditional deletes are identical in meaning and shape to saves; the delete happens **only if** the condition is true
+when the delete is performed.
 
 Query, Scan
 ===========
@@ -280,8 +450,154 @@ Filter Condition
 Atomic Conditions
 =================
 
+.. code-block:: python
+
+    engine.save(..., atomic=True)
+    engine.delete(..., atomic=True)
+
+As you saw in the :ref:`Atomic Condition Example<condition-ex-atomic>` above, atomic conditions are a very easy way to
+perform an atomic save or delete in DynamoDB.  An atomic condition ensures that the object hasn't changed since it was
+last seen in DynamoDB.
+
+To ensure an object hasn't changed since it was loaded/queried/scanned:
+
+.. code-block:: python
+
+    def atomic_update(obj, updates):
+        obj.apply(updates)
+        try:
+            engine.save(obj, atomic=True)
+        except bloop.ConstraintViolation:
+            ...
+
+In contrast, many sdks require a ``revision`` column that uses either a GUID or incrementing int for atomic updates:
+
+.. code-block:: python
+
+    class Model(new_base()):
+        id = Column(Integer, hash_key=True)
+        # other fields here
+        ...
+
+        revision = Column(Integer)
+
+Then, an atomic save would look something like:
+
+.. code-block:: python
+
+    def atomic_update(obj, updates):
+        previous_revision = obj.revision
+        obj.revison += 1
+
+        obj.apply(updates)
+
+        model_rev = obj.__class__.revision
+        revision_unchanged = model_rev == previous_revision
+        try:
+            engine.save(obj, condition=revision_unchanged)
+        except bloop.ConstraintViolation:
+            ...
+
+Because bloop tracks the state of every column that was loaded, ``atomic=True`` can perform the same work as manually
+tracking a revision column.
+
+If you need to atomically update the entire object but only part of the object was loaded (say, against an index with
+a keys-only projection) then ``atomic`` will only guarantee atomicity against the columns that were loaded.  In that
+case, the best solution is in fact to use a ``revision`` column.  You must ensure that column is included in every
+index and returned by every query/scan, so that it can always be checked.
+
+Using an explicit revision column with bloop's atomic conditions is still straightforward, since the previous state is
+tracked for you:
+
+.. code-block:: python
+
+    obj.revision += 1
+    engine.save(obj, atomic=True)
+
+See :ref:`atomic-operations` for details on atomic condition creation.
+
 By Hand
 -------
 
-Save, Delete
-------------
+You can also construct an atomic condition by hand.  This is useful when you only care about atomicity over a subset
+of columns.  For example, updating a player's win-loss record doesn't need to ensure that the profile description is
+still the same.
+
+.. code-block:: python
+
+    class Player(new_base()):
+        id = Column(UUID, hash_key=True)
+        description = Column(String)
+        wins = Column(Integer)
+        losses = Column(Integer)
+
+Both an explicit ``revision`` column or an automatic ``atomic=True`` condition will fail if the description changes
+between read and write.  Here's the hand-rolled atomic condition:
+
+.. code-block:: python
+
+    def update_win_loss(player, won_game):
+        if won_game:
+            condition = Player.wins == player.wins
+            player.wins += 1
+        else:
+            condition = Player.losses == player.losses
+            player.losses += 1
+        try:
+            engine.save(player, condition=condition)
+        except bloop.ConstraintViolation:
+            ...
+
+There are a few patterns here which will allow us to construct a general atomic condition for any model and any column:
+
+1. The condition is constructed before the model changes
+2. The condition is always an equality check
+3. The attribute name is the same for the instance and the class
+4. The class is always the same as the instance's
+
+From these, we can generalize to the following:
+
+.. code-block:: python
+
+    def atomic_on(obj, column_name):
+        model = obj.__class__
+        column = getattr(model, column_name)
+        value = getattr(obj, column_name, None)
+        return column == value
+
+When getting the value from the object, we need to handle the case that the object doesn't have that attribute (not
+loaded from DynamoDB, or not set when creating a new instance).
+
+The ``update_win_loss`` function becomes:
+
+.. code-block:: python
+
+    def update_win_loss(player, won_game):
+        if won_game:
+            condition = atomic_on(player, "wins")
+            player.wins += 1
+        else:
+            condition = atomic_on(player, "losses")
+            player.losses += 1
+        ...
+
+Now, for any list of columns:
+
+.. code-block:: python
+
+    def atomic_for(obj, *columns):
+        # Empty base condition
+        condition = bloop.Condition()
+
+        for column_name in columns:
+            condition &= atomic_on(obj, column_name)
+
+        # empty condition is Falsey; fall back to None
+        # if there were no columns
+        return condition or None
+
+    atomic_for(player, ["wins", "losses"])
+
+    # An empty list of columns returns None, which is
+    # the default value for condition=
+    assert atomic_for(player) is None

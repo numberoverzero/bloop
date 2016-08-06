@@ -1,3 +1,5 @@
+.. _atomic-operations:
+
 Atomic Operations
 ^^^^^^^^^^^^^^^^^
 

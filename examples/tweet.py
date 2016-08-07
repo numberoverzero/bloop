@@ -1,13 +1,13 @@
 import arrow
 import uuid
-from bloop import (Column, Integer, DateTime, UUID, GlobalSecondaryIndex,
-                   String, new_base, engine_for_profile)
+from bloop import (
+    Column, DateTime, Engine, GlobalSecondaryIndex,
+    Integer, String, UUID, new_base)
 
 # ================================================
 # Model setup
 # ================================================
 
-engine = engine_for_profile("test-user-bloop")
 Base = new_base()
 
 
@@ -36,6 +36,7 @@ class Tweet(Base):
     by_date = GlobalSecondaryIndex(
         hash_key='date', projection='keys')
 
+engine = Engine()
 engine.bind(base=Base)
 
 
@@ -52,4 +53,4 @@ tweet = Tweet(
     favorites=9,
     date=arrow.now())
 
-engine.save([account, tweet])
+engine.save(account, tweet)

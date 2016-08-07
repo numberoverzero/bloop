@@ -2,18 +2,16 @@ import arrow
 import decimal
 import random
 import uuid
-from bloop import (Column, DateTime, Integer, UUID, String,
-                   Map, TypedMap, Float, new_base, engine_for_profile)
+from bloop import (
+    Column, DateTime, Engine, Float, Integer, Map,
+    String, TypedMap, UUID, new_base)
 
 
 # ================================================
 # Model setup
 # ================================================
 
-engine = engine_for_profile("test-user-bloop")
 Base = new_base()
-
-
 Product = Map(**{
     'Name': String,
     'Rating': Float,
@@ -29,6 +27,8 @@ Product = Map(**{
 class Item(Base):
     id = Column(UUID, hash_key=True)
     data = Column(Product)
+
+engine = Engine()
 engine.bind(base=Base)
 
 

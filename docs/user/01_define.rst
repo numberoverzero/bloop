@@ -9,26 +9,42 @@ To start, you'll need to create a base class that your models inherit from:
 
     BaseModel = new_base()
 
-Add some columns to your model.  You'll need at least a hash key:
+Add some Columns to your model.  You'll need at least a hash key:
 
 .. code-block:: python
 
-    from bloop import Column, DateTime, String, UUID
-
+    from bloop import Boolean, Column, DateTime, String, UUID
 
     class User(BaseModel):
         id = Column(UUID, hash_key=True)
         email = Column(String)
         created_on = Column(DateTime)
+        verified = Column(Boolean)
+        profile = Column(String)
 
-Finally, bind the model to an Engine to create the table:
+Add an Index:
+
+.. code-block:: python
+
+    from bloop import GlobalSecondaryIndex
+
+    class User(BaseModel):
+        ...
+
+        by_email = GlobalSecondaryIndex(
+            projection="keys", hash_key="email")
+
+Finally, create the table in DynamoDB:
 
 .. code-block:: python
 
     from bloop import Engine
 
     engine = Engine()
-    engine.bind(User)
+    engine.bind(BaseModel)
+
+The Engine will bind any subclasses (recursively) of the class passed in.  If your models share the same base
+model, you can create all the tables with one call.
 
 ========
 Metadata
@@ -58,6 +74,14 @@ Available properties:
 **write_units**
     | *(default is 1)*
     | The provisioned write units for the table.
+**abstract**
+    | *(default is False)*
+    | True if this model is not backed by a DynamoDB table.
+
+Instances of abstract models can't be used with an Engine since there is no table to modify or query.  Their
+columns and indexes are not inherited.
+
+In the future, abstract models may be usable as mixins; subclasses could inherit their columns and indexes.
 
 =======
 Columns
@@ -67,70 +91,88 @@ Columns
 
     Column(typedef, hash_key=False, range_key=False, name=None, **kwargs)
 
+**typedef**
+    | *(required)*
+    | A type or instance of a type to use when loading and saving this column.
 **hash_key**
+    | *(default is False)*
+    | True if this column is the model's hash key.
+**range_key**
+    | *(default is False)*
+    | True if this column is the model's range key.
+**name**
+    | *(defaults to the name of the column in the model)*
+    | The name this column is stored as in DynamoDB.
 
------
-Types
------
-
-Each ``Column`` must have a type.  The built-in types are::
-
-    String
-    UUID
-    DateTime
-    Float
-    Integer
-    Binary
-    Boolean
-    Set
-    List
-    TypedMap
-    Map
-
-Many types can be passed directly without instantiating.  These are equivalent:
+Each ``Column`` must have a type.  Many types can be passed directly without instantiating.  Sometimes, an
+instance of a type can provide customization.  These are equivalent:
 
 .. code-block:: python
-
-    Column(String)
-    Column(String())
 
     Column(DateTime)
     Column(DateTime(timezone="utc"))
 
-    Column(Float)
-    Column(Float())
-
-Set, List, and TypedMap require an inner type.  Bloop requires type information for List and Map because there isn't
-enough type information when loading values from DynamoDB to determine the type to use.
-
-.. code-block:: python
-
-    Column(Set(DateTime))
-    Column(Set(Integer))
-    Column(Set(Binary))
-
-    Column(List(Boolean))
-
-    Column(TypedMap(Integer))
-
------------------
-Hash & Range Keys
------------------
-
-Every model needs a hash key; you may optionally include a range key.  These are specified with the ``hash_key`` and
-``range_key`` kwargs:
-
-.. code-block:: python
-
-    id = Column(Integer, hash_key=True)
-
------
-Names
------
-
-DynamoDB includes column names when computing item sizes.  Instead of shortening ``created_on`` to ``c`` in the model,
-bloop exposes a ``name`` kwarg to map the model name to a different DynamoDB name:
+DynamoDB includes column names when computing item sizes.  To save space, you'd usually set your attribute
+name to ``c`` instead of ``created_on``.  The ``name`` kwarg allows you to map a readable model name to a
+compact DynamoDB name:
 
 .. code-block:: python
 
     created_on = Column(DateTime, name="c")
+
+.. seealso::
+    :ref:`types` for the available built-in types, and to create your own.
+
+    `Item Size`__ in the DynamoDB Developer Guide
+
+    __ docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-items-size
+
+=======
+Indexes
+=======
+
+.. code-block:: python
+
+    GlobalSecondaryIndex(projection, hash_key, range_key=None,
+                         name=None, read_units=1, write_units=1)
+
+    LocalSecondaryIndex(projection, range_key, name=None)
+
+**projection**
+    | *(required)*
+    | Which columns to project into the index.
+    | This can be "all", "keys", or a list of column names.
+**hash_key**
+    | *(required for GSI)*
+    | The model name of the column that will be this index's hash key.
+    | ``LocalSecondaryIndex`` always shares the model hash key.
+**range_key**
+    | *(required for LSI)*
+    | The model name of the column that will be this index's range key.
+    | ``GlobalSecondaryIndex`` does not require a range key.
+**name**
+    | *(defaults to the name of the index in the model)*
+    | The name this index is stored as in DynamoDB.
+**read_units**
+    | *(defaults to 1 for GSI)*
+    | The provisioned read capacity for reads against this index.
+    | ``LocalSecondaryIndex`` shares the model's read units.
+**write_units**
+    | *(defaults to 1 for GSI)*
+    | The provisioned write capacity for writes through this index.
+    | ``LocalSecondaryIndex`` shares the model's write units.
+
+When specifying a projection, you can pass a list of column names to include non-key columns in the projection:
+
+.. code-block:: python
+
+    by_email = GlobalSecondaryIndex(
+            projection=["verified", "profile"],
+            hash_key="email")
+
+.. seealso::
+
+    `Global Secondary Index`__ and `Local Secondary Index`__ in the DynamoDB Developer Guide
+
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html

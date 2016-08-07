@@ -131,7 +131,8 @@ Columns
     | *(default is False)*
     | True if this column is the model's range key.
 **name**
-    | *(defaults to the name of the column in the model)*
+    | *(default is None)*
+    |     If None, the column's model name is used.
     | The name this column is stored as in DynamoDB.
 
 Each ``Column`` must have a type.  Many types can be passed directly without instantiating.  Sometimes, an
@@ -187,14 +188,15 @@ Indexes
     | The model name of the column that will be this index's range key.
     | ``GlobalSecondaryIndex`` does not require a range key.
 **name**
-    | *(defaults to the name of the index in the model)*
+    | *(defaults is None)*
+    |     If None, the index's model name is used.
     | The name this index is stored as in DynamoDB.
 **read_units**
-    | *(defaults to 1 for GSI)*
+    | *(default is 1 for GSI)*
     | The provisioned read capacity for reads against this index.
     | ``LocalSecondaryIndex`` shares the model's read units.
 **write_units**
-    | *(defaults to 1 for GSI)*
+    | *(default is 1 for GSI)*
     | The provisioned write capacity for writes through this index.
     | ``LocalSecondaryIndex`` shares the model's write units.
 

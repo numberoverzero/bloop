@@ -86,3 +86,29 @@ Find exactly one file or raise, in the path "~/github/bloop/scripts":
     query.key = File.path == "~/github/bloop/scripts"
 
     print(query.one())
+
+
+=========
+Interface
+=========
+
+Scan and Query have the same interface:
+
+.. code-block:: python
+
+    Engine.query(
+        obj: Union[bloop.BaseModel, bloop.Index],
+        consistent: Optional[bool]=None) -> bloop.Filter
+
+    Engine.scan(
+        obj: Union[bloop.BaseModel, bloop.Index],
+        consistent: Optional[bool]=None) -> bloop.Filter
+
+**obj**
+    | *(required)*
+    | This is either an instance of a model, or an index on a model.
+**consistent**
+    | *(default is None)*
+    |     If None, ``engine.config["consistent"]`` is used.
+    |     The default engine config does not enable consistent operations.
+

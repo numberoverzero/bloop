@@ -60,23 +60,23 @@ Save and Delete share the same interface; they both conditionally modify the sta
 
     Engine.save(*objs,
                 condition: Optional[bloop.Condition]=None,
-                atomic: Optional[bool]=None)
+                atomic: Optional[bool]=None) -> None
 
     Engine.delete(*objs,
                   condition: Optional[bloop.Condition]=None,
-                  atomic: Optional[bool]=None)
+                  atomic: Optional[bool]=None) -> None
 
-**\*objs**
+**objs**
     | *(required)*
     | Any number of objects to save (may be from different models).
 **condition**
-    | *(defaults is None)*
+    | *(default is None)*
     | Each object will only be saved if the condition holds for that object
 **atomic**
-    | *(defaults is None)*
+    | *(default is None)*
+    |     If None, ``engine.config["atomic"]`` is used.
+    |     The default engine config does not enable atomic operations.
     | DynamoDB and the local state must match to perform the save.
-    | If ``atomic`` isn't specified, ``engine.config["atomic"]`` is used.
-    | The default engine config does not enable atomic operations.
 
 ==================
 Conditions, Atomic

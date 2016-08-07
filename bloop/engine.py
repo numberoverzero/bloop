@@ -1,6 +1,3 @@
-import collections
-import collections.abc
-
 import declare
 
 from .client import Client
@@ -21,16 +18,6 @@ DEFAULT_CONFIG = {
     "consistent": False,
     "strict": True
 }
-
-
-def set_of(objs):
-    """wrap single elements in a set"""
-    if isinstance(objs, str):  # pragma: no cover
-        return {objs}
-    elif isinstance(objs, collections.abc.Iterable):
-        return set(objs)
-    else:
-        return {objs}
 
 
 def value_of(column):
@@ -160,8 +147,8 @@ class Engine:
                 self.type_engine.register(column.typedef)
             self.type_engine.bind(context={"engine": self})
 
-    def delete(self, objs, *, condition=None, atomic=None):
-        objs = set_of(objs)
+    def delete(self, *objs, condition=None, atomic=None):
+        objs = set(objs)
         for obj in objs:
             if obj.Meta.abstract:
                 raise AbstractModelException(obj)
@@ -176,7 +163,7 @@ class Engine:
             self.client.delete_item(item)
             clear(obj)
 
-    def load(self, objs, consistent=None):
+    def load(self, *objs, consistent=None):
         """Populate objects from dynamodb, optionally using consistent reads.
 
         If any objects are not found, raises NotModified with the attribute
@@ -203,7 +190,7 @@ class Engine:
         # For an in-depth breakdown of the loading algorithm,
         # see docs/dev/internal.rst::Loading
         consistent = config(self, "consistent", consistent)
-        objs = set_of(objs)
+        objs = set(objs)
         for obj in objs:
             if obj.Meta.abstract:
                 raise AbstractModelException(obj)
@@ -260,8 +247,8 @@ class Engine:
             engine=self, mode="query", model=model, index=index, strict=self.config["strict"], select=select,
             consistent=config(self, "consistent", consistent))
 
-    def save(self, objs, *, condition=None, atomic=None):
-        objs = set_of(objs)
+    def save(self, *objs, condition=None, atomic=None):
+        objs = set(objs)
         for obj in objs:
             if obj.Meta.abstract:
                 raise AbstractModelException(obj)

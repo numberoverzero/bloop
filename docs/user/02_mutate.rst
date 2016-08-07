@@ -50,13 +50,21 @@ Deleting the user is also straightforward:
 
     engine.delete(user)
 
-====
-Save
-====
+=========
+Interface
+=========
+
+Save and Delete share the same interface; they both conditionally modify the state of an object in DynamoDB.
 
 .. code-block:: python
 
-    Engine.save(*objs, condition=None, atomic=None)
+    Engine.save(*objs,
+                condition: Optional[bloop.Condition]=None,
+                atomic: Optional[bool]=None)
+
+    Engine.delete(*objs,
+                  condition: Optional[bloop.Condition]=None,
+                  atomic: Optional[bool]=None)
 
 **\*objs**
     | *(required)*
@@ -65,5 +73,48 @@ Save
     | *(defaults is None)*
     | Each object will only be saved if the condition holds for that object
 **atomic**
-    | *(defaults is None, uses engine.config["atomic"])*
+    | *(defaults is None)*
     | DynamoDB and the local state must match to perform the save.
+    | If ``atomic`` isn't specified, ``engine.config["atomic"]`` is used.
+    | The default engine config does not enable atomic operations.
+
+==================
+Conditions, Atomic
+==================
+
+Conditions are expressed with the usual python comparisons (``<=``, ``>``, ``==``, ...) as well as a few
+methods such as ``begins_with``, ``between``, and ``is_``.
+
+For example, if the user needs to be verified before they can change their profile:
+
+.. code-block:: python
+
+    def update_profile(user_id, new_profile):
+        user = User(id=user_id)
+        engine.load(user)
+
+        user.profile = new_profile
+
+        # is_ aliases == for equality tests against singletons
+        # https://www.python.org/dev/peps/pep-0008/#id49
+        is_verified = User.verified.is_(True)
+
+        # Throws bloop.ConstraintViolation on failure
+        engine.save(user, condition=is_verified)
+
+This is much better than checking the ``verified`` property locally, since it could change between when the user
+is loaded and when the save is executed.
+
+When ``atomic`` is True, bloop inserts a condition (or ANDs with a provided condition) that requires the state in
+DynamoDB to match the last state that was loaded from DynamoDB.  For new objects, an atomic save requires that the
+object not exist in DynamoDB.
+
+There are caveats to consider when using automatic atomic conditions.  For example an object loaded a query
+against an index that doesn't project all columns will only build an atomic condition against those columns that were
+loaded.
+
+.. seealso::
+
+    | From :ref:`conditions`:
+    |     :ref:`available-conditions` -- the full list of built-in conditions
+    |     :ref:`atomic` -- examples and limitations of ``atomic=True``

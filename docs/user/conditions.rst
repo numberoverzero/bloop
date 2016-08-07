@@ -167,10 +167,7 @@ conditions, such as ``SomeColumn.between("potato", 3)`` without Bloop complainin
 the condition values will be dumped through the associated column's Type; at this point the type will probably throw
 some ValueError or break in some way.
 
-Demo Model
-----------
-
-We'll use the following model to demonstrate different conditions:
+For the following condition definitions, we'll use this model:
 
 .. code-block:: python
 
@@ -195,6 +192,14 @@ Comparisons
     Column >= value
     Column > value
     Column != value
+
+Comparisons can be used with Strings, Numbers, and Binary:
+
+.. code-block:: python
+
+    User.image == b"GIF123"
+    User.joined <= arrow.now().replace(years=-1)
+    User.invites_left != 0
 
 ``is_`` and ``is_not`` are aliases for ``==`` and ``!=`` which are useful when comparing to ``None``, ``True``, and
 ``False``.
@@ -337,7 +342,7 @@ Bitwise Operators
     # NOT
     ~condition1
 
-Keep python's `operator priority`_ in mind, especially when using comparisons.  Specifically:
+Keep python's `operator priority`_ in mind, especially when using comparisons:
 
     Unlike C, all comparison operations in Python have the same priority, which is lower than
     that of any arithmetic, shifting or bitwise operation.
@@ -346,11 +351,11 @@ To be safe, use parentheses:
 
 .. code-block:: python
 
-    # TypeError: unsupported operand type(s) for &: 'int' and 'Column'
-    User.invites_left > 0 & User.invites_left < 10
-
     # Correctly parsed
     (User.invites_left > 0) & (User.invites_left < 10)
+
+    # TypeError: unsupported operand type(s) for &: 'int' and 'Column'
+    User.invites_left > 0 & User.invites_left < 10
 
 .. _operator priority: https://docs.python.org/3.6/reference/expressions.html#comparisons
 
@@ -433,19 +438,82 @@ when the delete is performed.
 Query, Scan
 ===========
 
-Key Conditions
---------------
+A query must have a key condition, while a scan never has a key condition.
 
-========
+.. code-block:: python
+
+    q = engine.query(Album)
+
+    # Hash only
+    # Must provide exactly one equality condition
+    q.key(Album.id == "cat-pics")
+
+    # Hash and range
+    # At most one range key condition
+    # Must be joined with AND, not OR
+    q.key(
+        (Album.id == "cat-pics") &
+        Album.sequence.between(501, 1999)
+    )
+
+Both queries and scans can specify a filter condition which DynamoDB will apply server-side before returning results.
+
+.. code-block:: python
+
+    q = engine.query(Album)
+    q.filter(Album.uploader != "Morty")
+
+    s = engine.scan(Album)
+    s.filter(Album.name.begins_with("c"))
+
 Hash Key
-========
+--------
 
-=========
+.. code-block:: python
+
+    Album.id == "some value"
+
+A Query must provide an equality (``==``) condition against the hash key.  This is the only comparision that can be
+used; not ``<=`` or ``!=``, etc.
+
 Range Key
-=========
+---------
+
+.. code-block:: python
+
+    Album.sequence == 1000
+    Album.sequence < 2000
+    Album.sequence <= 1999
+    Album.sequence > 500
+    Album.sequence >= 501
+    Album.sequence.between(501, 1999)
+
+    # Different model since begins_with
+    # can't be used with a Number type.
+    DataFragment.segment_id.begins_with(b"\xc8")
+
+You may optionally specify a condition against the range key.  None of the following may be used
+when specifying a range key condition:
+
+.. code-block:: python
+
+    Album.sequence != 50
+    Album.sequence.in_([500, 501])
+
+    # Can't use attribute_not_exists or attribute_exists
+    Album.sequence.is_(None)
+    Album.sequence.is_not(None)
+
+    DataFragment.segment_id.contains(b"\x80")
 
 Filter Condition
 ----------------
+
+Unlike key conditions, there are no restrictions on what a filter condition may be.  Filters are applied server-side,
+and items that don't match the filter condition are still counted towards any result limit you may specify.
+
+If your filter condition isn't met by the first 50 rows loaded in a scan and your limit is 50, you will receive
+0 results.  For a more detailed explanation, see :ref:`Query Limits <retrieving-query-limit>`\.
 
 Atomic Conditions
 =================
@@ -455,7 +523,7 @@ Atomic Conditions
     engine.save(..., atomic=True)
     engine.delete(..., atomic=True)
 
-As you saw in the :ref:`Atomic Condition Example<condition-ex-atomic>` above, atomic conditions are a very easy way to
+As you saw in the :ref:`Atomic Condition Example<condition-ex-atomic>` above, atomic conditions provide an easy way to
 perform an atomic save or delete in DynamoDB.  An atomic condition ensures that the object hasn't changed since it was
 last seen in DynamoDB.
 
@@ -499,15 +567,11 @@ Then, an atomic save would look something like:
             ...
 
 Because bloop tracks the state of every column that was loaded, ``atomic=True`` can perform the same work as manually
-tracking a revision column.
+tracking a revision column.  There are cases where an explicit ``revision`` column can be useful; for instance, if your
+queries only load a few columns, but you want to ensure the entire row hasn't changed since you loaded it.
 
-If you need to atomically update the entire object but only part of the object was loaded (say, against an index with
-a keys-only projection) then ``atomic`` will only guarantee atomicity against the columns that were loaded.  In that
-case, the best solution is in fact to use a ``revision`` column.  You must ensure that column is included in every
-index and returned by every query/scan, so that it can always be checked.
-
-Using an explicit revision column with bloop's atomic conditions is still straightforward, since the previous state is
-tracked for you:
+In that case, make sure your ``revision`` column is included in all index projections.  Using an explicit revision
+column with bloop's atomic conditions is still straightforward, since the previous state is tracked for you:
 
 .. code-block:: python
 
@@ -581,7 +645,7 @@ The ``update_win_loss`` function becomes:
             player.losses += 1
         ...
 
-Now, for any list of columns:
+Now, for any list of columns [1]_:
 
 .. code-block:: python
 
@@ -596,8 +660,21 @@ Now, for any list of columns:
         # if there were no columns
         return condition or None
 
-    atomic_for(player, ["wins", "losses"])
+We can simplify ``update_win_loss`` to always construct the condition on both wins and losses (a slight change in
+behavior):
 
-    # An empty list of columns returns None, which is
-    # the default value for condition=
-    assert atomic_for(player) is None
+.. code-block:: python
+
+    def update_win_loss(player, won_game):
+        condition = atomic_for(player, ("wins", "losses"))
+        if won_game:
+            player.wins += 1
+        else:
+            player.losses += 1
+        ...
+
+.. [1] The generic ``atomic_for`` will return ``None``, which is safe to pass to save/delete.
+
+       .. code-block:: python
+
+           assert atomic_for(player) is None

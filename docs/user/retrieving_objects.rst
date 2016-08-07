@@ -33,6 +33,8 @@ Consistent
 Forward
 -------
 
+.. _retrieving-query-limit:
+
 Limit
 -----
 

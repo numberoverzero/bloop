@@ -89,3 +89,4 @@ Kick it up a notch with conditional operations:
     user/01_define
     user/02_mutate
     user/03_query_scan
+    user/04_types

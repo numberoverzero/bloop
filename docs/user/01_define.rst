@@ -1,3 +1,5 @@
+.. _define-models:
+
 Defining Models
 ^^^^^^^^^^^^^^^
 
@@ -43,8 +45,32 @@ Finally, create the table in DynamoDB:
     engine = Engine()
     engine.bind(BaseModel)
 
-The Engine will bind any subclasses (recursively) of the class passed in.  If your models share the same base
-model, you can create all the tables with one call.
+The Engine will bind any subclasses (recursively) of the class passed in.  If your models share the same
+base model, you can create all the tables with one call.
+
+Bind will create tables that don't exist; if a table already exists, bind diffs the actual schema against the
+one our model expects.  Any mismatch will  cause bind to fail.
+
+==================
+Creating Instances
+==================
+
+``BaseModel`` provides a kwarg-based ``__init__``, so we can create a new user with:
+
+.. code-block:: python
+
+    import arrow, uuid
+
+    user = User(id=uuid.uuid4(),
+                email="joe.mcross@gmail.com",
+                created_on=arrow.now())
+
+You need to specify a value for the hash and range -- if there is one -- keys before you can ``Load``, ``Save``, or
+``Delete`` the object, but locally it's not required.  This is also ok:
+
+.. code-block:: python
+
+    user = User()
 
 ========
 Metadata

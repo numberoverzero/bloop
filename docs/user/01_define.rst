@@ -1,7 +1,7 @@
 .. _define-models:
 
-Defining Models
-^^^^^^^^^^^^^^^
+Define Models
+^^^^^^^^^^^^^
 
 To start, you'll need to create a base class that your models inherit from:
 
@@ -151,9 +151,8 @@ compact DynamoDB name:
     created_on = Column(DateTime, name="c")
 
 .. seealso::
-    :ref:`types` for the available built-in types, and to create your own.
-
-    `Item Size`__ in the DynamoDB Developer Guide
+    | :ref:`types` -- the built-in types and how to extend them
+    | `Item Size`__ -- how item size is calculated
 
     __ docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-items-size
 
@@ -210,8 +209,9 @@ and index hash keys).
             hash_key="email")
 
 .. seealso::
-
-    `Global Secondary Index`__ and `Local Secondary Index`__ in the DynamoDB Developer Guide
+    | The DynamoDB Developer Guide:
+    |     `Global Secondary Indexes`__
+    |     `Local Secondary Indexes`__
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html

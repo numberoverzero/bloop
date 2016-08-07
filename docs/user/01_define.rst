@@ -115,7 +115,11 @@ Columns
 
 .. code-block:: python
 
-    Column(typedef, hash_key=False, range_key=False, name=None, **kwargs)
+    Column(typedef: [bloop.Type],
+           hash_key: bool=False,
+           range_key: bool=False,
+           name: Optional[str]=None,
+           **kwargs)
 
 **typedef**
     | *(required)*
@@ -159,15 +163,22 @@ Indexes
 
 .. code-block:: python
 
-    GlobalSecondaryIndex(projection, hash_key, range_key=None,
-                         name=None, read_units=1, write_units=1)
+    GlobalSecondaryIndex(
+        projection: Union[str, List[str]],
+        hash_key: str,
+        range_key: Optional[str]=None,
+        name: Optional[str]=None,
+        read_units: Optional[int]=1,
+        write_units: Optional[int]=1)
 
-    LocalSecondaryIndex(projection, range_key, name=None)
+    LocalSecondaryIndex(
+        projection: Union[str, List[str]],
+        range_key: str,
+        name: Optional[str]=None)
 
 **projection**
     | *(required)*
-    | Which columns to project into the index.
-    | This can be "all", "keys", or a list of column names.
+    | Columns in the index projection.  ``"all"``, ``"keys"``, or a list of column names.
 **hash_key**
     | *(required for GSI)*
     | The model name of the column that will be this index's hash key.
@@ -188,7 +199,9 @@ Indexes
     | The provisioned write capacity for writes through this index.
     | ``LocalSecondaryIndex`` shares the model's write units.
 
-When specifying a projection, you can pass a list of column names to include non-key columns in the projection:
+Specific column projections always include key columns.  A query against the following ``User`` index would
+return objects that include all columns except ``created_on`` (since ``id`` and ``email`` are the model
+and index hash keys).
 
 .. code-block:: python
 

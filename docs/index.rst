@@ -58,9 +58,10 @@ Save an instance, load by key, and get the first query result:
     engine.load(same_account)
 
 
-    q = engine.query(Account.by_email) \
-              .key(Account.email == "foo@bar.com")
-    also_same = q.first()
+    q = engine.query(Account.by_email)
+    q.key = Account.email == "foo@bar.com"
+
+    also_same_account = q.first()
 
 Kick it up a notch with conditional operations:
 

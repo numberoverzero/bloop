@@ -9,10 +9,10 @@ Features
 
 * Simple declarative modeling
 * Extensible type system, useful built-in types
-* Safe expression-based wire format
+* Secure expression-based wire format
 * Simple atomic operations
-* Diff-based saves
 * Expressive conditions
+* Diff-based saves
 
 Installation
 ============
@@ -29,24 +29,19 @@ First, define and bind our model:
 
     import uuid
 
-
     from bloop import (
-        Engine, Column, UUID, String,
-        GlobalSecondaryIndex, new_base)
-    Base = new_base()
+        Column, Engine, GlobalSecondaryIndex,
+        String, UUID, new_base)
 
 
-    class Account(Base):
-        class Meta:
-            read_units = 5
-            write_units = 2
+    class Account(new_base()):
         id = Column(UUID, hash_key=True)
         name = Column(String)
         email = Column(String)
         by_email = GlobalSecondaryIndex(hash_key='email')
 
     engine = Engine()
-    engine.bind(base=Base)
+    engine.bind(Account)
 
 Save an instance, load by key, and get the first query result:
 
@@ -91,21 +86,6 @@ Kick it up a notch with conditional operations:
     :hidden:
     :maxdepth: 3
 
-    user/declarative_modeling
-    user/modifying_objects
-    user/retrieving_objects
-    user/conditions
-    user/atomic
-    user/indexes
-    user/types
-    user/custom_types
-    user/configuration
-    user/debugging
-    user/patterns
-    dev/internals
-
-
-.. _tricky code: https://gist.github.com/numberoverzero/f0633e71a6b0f3f6132e
-.. _simpler code: https://gist.github.com/numberoverzero/94c939b4106e88b13e83
-.. _conditional saves: https://gist.github.com/numberoverzero/91f15c041a94b66e9365
-.. _atomic updates: https://gist.github.com/numberoverzero/cc004d93055cfa224569
+    user/01_define
+    user/02_mutate
+    user/03_query_scan

@@ -118,7 +118,7 @@ class Engine:
             value = load(column.typedef, value, context=context, **kwargs)
             setattr(obj, column.model_name, value)
 
-    def bind(self, *, base):
+    def bind(self, base):
         """Create tables for all models subclassing base"""
         # If not manually configured, use a default bloop.Client
         # with the default boto3.client("dynamodb")

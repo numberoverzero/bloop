@@ -153,6 +153,10 @@ def test_model_extra_keys():
             id = Column(UUID, range_key=True)
             other = Column(UUID, range_key=True)
 
+    with pytest.raises(ValueError):
+        class SharedHashRange(new_base()):
+            foo = Column(UUID, hash_key=True, range_key=True)
+
 
 def test_invalid_local_index():
     with pytest.raises(ValueError):

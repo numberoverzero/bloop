@@ -6,8 +6,8 @@ For the following, let's use the model from :ref:`define-models`:
 .. code-block:: python
 
     from bloop import (
-        new_base, GlobalSecondaryIndex,
-        Boolean, Column, DateTime, String, UUID)
+        Boolean, Column, DateTime, String, UUID,
+        GlobalSecondaryIndex, new_base)
     BaseModel = new_base()
 
     class User(BaseModel):
@@ -27,7 +27,7 @@ And create a new instance:
     import arrow, uuid
 
     user = User(id=uuid.uuid4(),
-                email="joe.mcross@gmail.com",
+                email="user@domain.com",
                 created_on=arrow.now())
 
 You need an engine to persist the user:

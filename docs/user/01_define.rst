@@ -62,7 +62,7 @@ Creating Instances
     import arrow, uuid
 
     user = User(id=uuid.uuid4(),
-                email="joe.mcross@gmail.com",
+                email="user@domain.com",
                 created_on=arrow.now())
 
 You need to specify a value for the hash and range -- if there is one -- keys before you can ``Load``, ``Save``, or

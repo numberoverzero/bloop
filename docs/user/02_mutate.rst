@@ -79,14 +79,14 @@ Save and Delete share the same interface; they both conditionally modify the sta
     Whether or not to use an atomic condition for this operation.  When True, DynamoDB and the local state must match
     to perform the operation (in addition to any other condition).  Defaults to ``engine.config["atomic"]``
 
-==================
-Conditions, Atomic
-==================
+=====================
+Conditions and Atomic
+=====================
 
-Conditions are expressed with the usual python comparisons (``<=``, ``>``, ``==``, ...) as well as a few
-methods such as ``begins_with``, ``between``, and ``is_``.
+:ref:`Conditions <conditions>` are expressed with the usual python comparisons (``<=``, ``>``, ``==``, ...)
+as well as a few methods such as ``begins_with``, ``between``, and ``is_``.
 
-For example, if the user needs to be verified before they can change their profile:
+For example, if the user must be verified in order to change their profile:
 
 .. code-block:: python
 
@@ -103,10 +103,10 @@ For example, if the user needs to be verified before they can change their profi
         # Throws bloop.ConstraintViolation on failure
         engine.save(user, condition=is_verified)
 
-This is much better than checking the ``verified`` property locally, since it could change between when the user
-is loaded and when the save is executed.
+This is much better than checking the ``verified`` property locally, since the property could change in DynamoDB
+between when the user is loaded and when the save is executed.
 
-When ``atomic`` is True, bloop inserts a condition (or ANDs with a provided condition) that requires the state in
+When ``atomic`` is True, bloop inserts a condition (or ANDs with a user-provided condition) that requires the state in
 DynamoDB to match the last state that was loaded from DynamoDB.  For new objects, an atomic save requires that the
 object not exist in DynamoDB.
 
@@ -116,6 +116,6 @@ loaded.
 
 .. seealso::
 
-    | From :ref:`conditions`:
+    | :ref:`conditions`:
     |     :ref:`available-conditions` -- the full list of built-in conditions
     |     :ref:`atomic` -- examples and limitations of ``atomic=True``

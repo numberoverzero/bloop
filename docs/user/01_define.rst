@@ -180,11 +180,11 @@ Indexes
     | *(required)*
     | Columns in the index projection.  ``"all"``, ``"keys"``, or a list of column names.
 **hash_key**
-    | *(required for GSI)*
+    | *(required for GSIs)*
     | The model name of the column that will be this index's hash key.
     | ``LocalSecondaryIndex`` always shares the model hash key.
 **range_key**
-    | *(required for LSI)*
+    | *(required for LSIs)*
     | The model name of the column that will be this index's range key.
     | ``GlobalSecondaryIndex`` does not require a range key.
 **name**
@@ -192,11 +192,11 @@ Indexes
     |     If None, the index's model name is used.
     | The name this index is stored as in DynamoDB.
 **read_units**
-    | *(default is 1 for GSI)*
+    | *(default is 1 for GSIs)*
     | The provisioned read capacity for reads against this index.
     | ``LocalSecondaryIndex`` shares the model's read units.
 **write_units**
-    | *(default is 1 for GSI)*
+    | *(default is 1 for GSIs)*
     | The provisioned write capacity for writes through this index.
     | ``LocalSecondaryIndex`` shares the model's write units.
 

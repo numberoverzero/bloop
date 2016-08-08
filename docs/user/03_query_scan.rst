@@ -36,7 +36,7 @@ We'll need a different model than the ``User`` from the previous sections:
     engine.bind(BaseModel)
 
 
-To get all the files named "setup.py" with a scan:
+Find all files named "setup.py" with a scan:
 
 .. code-block:: python
 
@@ -46,7 +46,7 @@ To get all the files named "setup.py" with a scan:
     for file in scan.build():
         print(file)
 
-To find all files owned by "root" with a query on a GSI:
+Find all files owned by "root" with a query on a GSI:
 
 .. code-block:: python
 
@@ -56,13 +56,13 @@ To find all files owned by "root" with a query on a GSI:
     for file in query.build():
         print(file)
 
-To find all files in "~/github/bloop/bloop" created more than one year ago, use the LSI:
+Find all files in "~/bloop" created over a year ago with a query on the LSI:
 
 .. code-block:: python
 
     query = engine.query(File.on_created)
 
-    in_bloop = File.path == "~/github/bloop/bloop"
+    in_bloop = File.path == "~/bloop"
     over_one_year_old = File.created < arrow.now().replace(years=-1)
     query.key = in_bloop & over_one_year_old
 
@@ -78,12 +78,12 @@ The first file with a size of 4096:
 
     print(query.first())
 
-Find exactly one file or raise, in the path "~/github/bloop/scripts":
+Find exactly one file in the path "~/bloop/scripts":
 
 .. code-block:: python
 
     query = engine.query(File)
-    query.key = File.path == "~/github/bloop/scripts"
+    query.key = File.path == "~/bloop/scripts"
 
     print(query.one())
 
@@ -111,4 +111,49 @@ Scan and Query have the same interface:
     | *(default is None)*
     |     If None, ``engine.config["consistent"]`` is used.
     |     The default engine config does not enable consistent operations.
+    | If True, `Strongly Consistent`_ Reads will be used.
 
+----------
+Properties
+----------
+
+Of the following, only ``key`` is required, and only for Queries.
+
+**key**
+    | *(required for Queries)*
+    | *(ignored by Scans)*
+**select**
+    |
+**filter**
+    |
+**consistent**
+    | *(not available for GSIs)*
+**forward**
+    | *(ignored by Queries)*
+**limit**
+    |
+**prefetch**
+    |
+
+After you have finished defining the Query or Scan, you can use ``first()``, ``one()``, or ``build()`` to
+retrieve results.
+
+If there are no matching results, ``first`` will raise a ``ConstraintViolation``.
+
+If there is not exactly one matching result, ``one`` will raise a ``ConstraintViolation``.
+
+Finally, ``build`` returns an iterable, fetching results within the constraints of ``prefetch`` and ``limit``.
+The object returned by ``build`` does not cache results.  You can start the iterable over by calling ``reset()``.
+The iterator has the following properties for inspecting the state of the scan or query:
+
+**count**
+    | Number of items loaded so far.
+    | Some items may still be in the iterable's buffer.
+**scanned**
+    | Number of items DynamoDB has seen so far.
+    | This number may be greater than ``count``.  See `Counting Items`_.
+**exhausted**
+    | True if there are no more results to fetch.
+
+.. _Strongly Consistent: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+.. _Counting Items: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#Count

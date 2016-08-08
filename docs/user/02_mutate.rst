@@ -76,7 +76,7 @@ Save and Delete share the same interface; they both conditionally modify the sta
     | *(default is None)*
     |     If None, ``engine.config["atomic"]`` is used.
     |     The default engine config does not enable atomic operations.
-    | DynamoDB and the local state must match to perform the save.
+    | If True, DynamoDB and the local state must match to perform the save.
 
 ==================
 Conditions, Atomic

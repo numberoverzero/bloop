@@ -66,17 +66,18 @@ Save and Delete share the same interface; they both conditionally modify the sta
                   condition: Optional[bloop.Condition]=None,
                   atomic: Optional[bool]=None) -> None
 
-**objs**
-    | *(required)*
-    | Any number of objects to save (may be from different models).
-**condition**
-    | *(default is None)*
-    | Each object will only be saved if the condition holds for that object
-**atomic**
-    | *(default is None)*
-    |     If None, ``engine.config["atomic"]`` is used.
-    |     The default engine config does not enable atomic operations.
-    | If True, DynamoDB and the local state must match to perform the save.
+.. attribute:: objs
+
+    Any number of objects to modify (may be from different models).
+
+.. attribute:: condition
+
+    Each object will only be modified if the condition holds for that object.  Defaults to None.
+
+.. attribute:: atomic
+
+    Whether or not to use an atomic condition for this operation.  When True, DynamoDB and the local state must match
+    to perform the operation (in addition to any other condition).  Defaults to ``engine.config["atomic"]``
 
 ==================
 Conditions, Atomic

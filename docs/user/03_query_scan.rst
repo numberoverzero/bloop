@@ -104,56 +104,109 @@ Scan and Query have the same interface:
         obj: Union[bloop.BaseModel, bloop.Index],
         consistent: Optional[bool]=None) -> bloop.Filter
 
-**obj**
-    | *(required)*
-    | This is either an instance of a model, or an index on a model.
-**consistent**
-    | *(default is None)*
-    |     If None, ``engine.config["consistent"]`` is used.
-    |     The default engine config does not enable consistent operations.
-    | If True, `Strongly Consistent`_ Reads will be used.
+.. attribute:: obj
+
+    This is either an instance of a model, or an index on a model.  From the example above, this can
+    be the ``File`` model, or any of its indexes ``Filter.on_created``, ``Filter.by_owner``, or ``Filter.by_size``.
+
+.. attribute:: consistent
+
+    See the :ref:`consistent property <property-consistent>` below.
 
 ----------
 Properties
 ----------
 
-Of the following, only ``key`` is required, and only for Queries.
+.. attribute:: key
 
-**key**
-    | *(required for Queries)*
-    | *(ignored by Scans)*
-**select**
-    |
-**filter**
-    |
-**consistent**
-    | *(not available for GSIs)*
-**forward**
-    | *(ignored by Queries)*
-**limit**
-    |
-**prefetch**
-    |
+    Queries require a key :ref:`condition <conditions>`.  Scans do not use key conditions.
+
+    A key condition must always include an equality condition (``==``) against the hash key of the object (Model
+    or Index) being queried.  You may optionally include one condition against the range key of the object.
+
+    The available conditions for a range key are[0]::
+
+        <, <=, ==, >=, >, begins_with, between
+
+    To use a hash key and range key condition together, join them with ``&``:
+
+    .. code-block:: python
+
+        in_home = File.path == "~"
+        start_with_a = File.name.begins_with("a")
+
+        query.key = in_home & starts_with_a
+
+.. attribute:: select
+
+    The columns to load.  One of ``"all"``, ``"projected"``, ``"count"``, or a list of columns.
+    When select is "count", no objects will be returned, but the ``count`` and ``scanned`` properties
+    will be set on the result iterator (see below).  If the Query or Scan is against a Model, you cannot
+    use "projected".  Defaults to "all" for Models and "projected" for Indexes.
+
+.. attribute:: filter
+
+    A server-side filter :ref:`condition <conditions>` that DynamoDB applies to objects before returning them.
+    Only objects that match the filter will be returned.  Defaults to None.
+
+.. _property-consistent:
+
+.. attribute:: consistent
+
+    Whether or not `strongly consistent reads`_ should be used.  Keep in mind that Strongly Consistent Reads
+    consume twice as many read units as Eventually Consistent Reads. This setting has no effect when used
+    with a GSI, since strongly consistent reads `can't be used with a Global Secondary Index`__.
+    Defaults to ``engine.config["consistent"]``
+
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-ConsistentRead
+
+.. attribute:: forward
+
+    Whether to scan in ascending order (see `ScanIndexForward`_).  When True, scans are ascending.
+    When False, scans are descending.  This setting is not used for Queries.  Defaults to True.
+
+.. attribute:: limit
+
+    The maximum number of objects that will be returned.  This is **NOT** the same as DynamoDB's `Limit`__, which
+    is the maximum number of objects evaluated per continuation token.  Once the iterator has returned ``limit``
+    object, it will not return any more (even if the internal buffer is not empty).  Defaults to None.
+
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
+
+.. attribute:: prefetch
+
+    The number of objects to buffer from DynamoDB before the iterator will yield objects.  Setting this to a high value
+    can be useful if you want to use your read capacity in bursts.  Otherwise, the iterator will only follow
+    continuation tokens when the buffer is empty and another object is requested.  Defaults to 0.
 
 After you have finished defining the Query or Scan, you can use ``first()``, ``one()``, or ``build()`` to
-retrieve results.
+retrieve results.  If there are no matching objects, ``first`` will raise a ``ConstraintViolation``.  If
+there is not exactly one matching object, ``one`` will raise a ``ConstraintViolation``.
 
-If there are no matching results, ``first`` will raise a ``ConstraintViolation``.
+You can use ``build`` to return an iterable, which fetches objects depending on ``prefetch`` and ``limit``.
+The object returned by ``build`` does not cache objects.  You can start the iterable over at any time by calling
+``reset()``.  The iterator has the following properties for inspecting the state of the scan or query:
 
-If there is not exactly one matching result, ``one`` will raise a ``ConstraintViolation``.
+.. attribute:: count
 
-Finally, ``build`` returns an iterable, fetching results within the constraints of ``prefetch`` and ``limit``.
-The object returned by ``build`` does not cache results.  You can start the iterable over by calling ``reset()``.
-The iterator has the following properties for inspecting the state of the scan or query:
+    The number of objects loaded from DynamoDB so far.  This includes objects still in the iterator's buffer, which
+    may not have been yielded yet.
 
-**count**
-    | Number of items loaded so far.
-    | Some items may still be in the iterable's buffer.
-**scanned**
-    | Number of items DynamoDB has seen so far.
-    | This number may be greater than ``count``.  See `Counting Items`_.
-**exhausted**
-    | True if there are no more results to fetch.
+.. attribute:: scanned
 
-.. _Strongly Consistent: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+    The number of objects that DynamoDB has scanned so far.  If you are not using a filter, this is equal
+    to ``count``.  Otherwise, the difference ``scanned - count`` is the number of objects that so far have
+    not met the filter condition.  See `Counting Items`_.
+
+.. attribute:: exhausted
+
+    If there is no limit, this will be True when the buffer is empty and DynamoDB stops returning ContinuationTokens
+    to follow.
+
+    If there is a limit, this will be True when the iterator has yielded ``limit`` objects, or the above;
+    whichever happens first.  With a limit, there may be objects in the internal buffer when the
+    iterator is exhausted.
+
+.. _strongly consistent reads: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+.. _ScanIndexForward: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-ScanIndexForward
 .. _Counting Items: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#Count

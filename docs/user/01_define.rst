@@ -91,18 +91,21 @@ You can customize how the table is created with an inner ``Meta`` class:
 
 Available properties:
 
-**table_name**
-    | *(default is class name)*
-    | The table name in DynamoDB.
-**read_units**
-    | *(default is 1)*
-    | The provisioned read units for the table.
-**write_units**
-    | *(default is 1)*
-    | The provisioned write units for the table.
-**abstract**
-    | *(default is False)*
-    | True if this model is not backed by a DynamoDB table.
+.. attribute:: table_name
+
+    The table name for this model in DynamoDB.  Defaults to the class name.
+
+.. attribute:: read_units
+
+    The provisioned read units for the table.  Defaults to 1.
+
+.. attribute:: write_units
+
+    The provisioned write units for the table.  Defaults to 1.
+
+.. attribute:: abstract
+
+    True if this model is not backed by a DynamoDB table.  Defaults to False.
 
 Instances of abstract models can't be used with an Engine since there is no table to modify or query.  Their
 columns and indexes are not inherited.
@@ -121,19 +124,21 @@ Columns
            name: Optional[str]=None,
            **kwargs)
 
-**typedef**
-    | *(required)*
-    | A type or instance of a type to use when loading and saving this column.
-**hash_key**
-    | *(default is False)*
-    | True if this column is the model's hash key.
-**range_key**
-    | *(default is False)*
-    | True if this column is the model's range key.
-**name**
-    | *(default is None)*
-    |     If None, the column's model name is used.
-    | The name this column is stored as in DynamoDB.
+.. attribute:: typedef
+
+    A type or instance of a type to use when loading and saving this column.
+
+.. attribute:: hash_key
+
+    True if this column is the model's hash key.  Defaults to False.
+
+.. attribute:: range_key
+
+    True if this column is the model's range key.  Defaults to False.
+
+.. attribute:: name
+
+    The name this column is stored as in DynamoDB.  Defaults to the column's name in the model.
 
 Each ``Column`` must have a type.  Many types can be passed directly without instantiating.  Sometimes, an
 instance of a type can provide customization.  These are equivalent:
@@ -176,29 +181,31 @@ Indexes
         range_key: str,
         name: Optional[str]=None)
 
-**projection**
-    | *(required)*
-    | Columns in the index projection.  ``"all"``, ``"keys"``, or a list of column names.
-**hash_key**
-    | *(required for GSIs)*
-    | The model name of the column that will be this index's hash key.
-    | ``LocalSecondaryIndex`` always shares the model hash key.
-**range_key**
-    | *(required for LSIs)*
-    | The model name of the column that will be this index's range key.
-    | ``GlobalSecondaryIndex`` does not require a range key.
-**name**
-    | *(defaults is None)*
-    |     If None, the index's model name is used.
-    | The name this index is stored as in DynamoDB.
-**read_units**
-    | *(default is 1 for GSIs)*
-    | The provisioned read capacity for reads against this index.
-    | ``LocalSecondaryIndex`` shares the model's read units.
-**write_units**
-    | *(default is 1 for GSIs)*
-    | The provisioned write capacity for writes through this index.
-    | ``LocalSecondaryIndex`` shares the model's write units.
+.. attribute:: projection
+
+    The columns to project into this Index.  Must be one of ``"all"``, ``"keys"``, or a list of column names.
+    The index and model hash and range keys are always included in the projection.
+
+.. attribute:: hash_key
+
+    Required for GSIs.  The model name of the column that will be this index's hash key.
+    You cannot specify the hash key for an LSI since it always shares the model's hash key.
+
+.. attribute:: range_key
+
+    Required for LSIs.  Optional for GSIs.  The model name of the column that will be this index's range key.
+
+.. attribute:: name
+
+    The name this index is stored as in DynamoDB.  Defaults to the index's name in the model.
+
+.. attribute:: read_units
+
+    The provisioned read units for the index.  LSIs share the model's read units.  Defaults to 1.
+
+.. attribute:: write_units
+
+    The provisioned write units for the index.  LSIs share the model's write units.  Defaults to 1.
 
 Specific column projections always include key columns.  A query against the following ``User`` index would
 return objects that include all columns except ``created_on`` (since ``id`` and ``email`` are the model

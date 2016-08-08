@@ -14,9 +14,9 @@ def get_version():
                 return eval(line.split("=")[-1])
 
 REQUIREMENTS = [
-    "arrow",
-    "boto3",
-    "declare"
+    "arrow==0.8.0",
+    "boto3==1.4.0",
+    "declare==0.9.11"
 ]
 
 TEST_REQUIREMENTS = [

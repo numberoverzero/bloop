@@ -1,0 +1,10 @@
+alabaster
+arrow
+boto3
+coverage
+declare
+flake8
+pip
+pytest
+sphinx
+tox

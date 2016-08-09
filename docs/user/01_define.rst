@@ -126,7 +126,15 @@ Columns
 
 .. attribute:: typedef
 
-    A type or instance of a type to use when loading and saving this column.
+    A type class or instance used to load and save this column.  If a class is provided, an instance will
+    be created by calling the constructor without any arguments.  These will have the same result:
+
+    .. code-block:: python
+
+        data = Column(Binary)
+        data = Column(Binary())
+
+    Some types like ``Set`` require arguments.  See :ref:`types` for details.
 
 .. attribute:: hash_key
 
@@ -136,31 +144,23 @@ Columns
 
     True if this column is the model's range key.  Defaults to False.
 
+.. _property-name:
+
 .. attribute:: name
 
     The name this column is stored as in DynamoDB.  Defaults to the column's name in the model.
 
-Each ``Column`` must have a type.  Many types can be passed directly without instantiating.  Sometimes, an
-instance of a type can provide customization.  These are equivalent:
+    DynamoDB includes column names when computing item sizes.  To save space, you'd usually set your attribute
+    name to ``c`` instead of ``created_on``.  The ``name`` kwarg allows you to map a readable model name to a
+    compact DynamoDB name:
 
-.. code-block:: python
+    .. code-block:: python
 
-    Column(DateTime)
-    Column(DateTime(timezone="utc"))
+        created_on = Column(DateTime, name="c")
 
-DynamoDB includes column names when computing item sizes.  To save space, you'd usually set your attribute
-name to ``c`` instead of ``created_on``.  The ``name`` kwarg allows you to map a readable model name to a
-compact DynamoDB name:
+    See `Item Size`__ for the exact calculation.
 
-.. code-block:: python
-
-    created_on = Column(DateTime, name="c")
-
-.. seealso::
-    | :ref:`types` -- the built-in types and how to extend them
-    | `Item Size`__ -- how item size is calculated
-
-    __ docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-items-size
+    __ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-items-size
 
 =======
 Indexes
@@ -198,6 +198,8 @@ Indexes
 .. attribute:: name
 
     The name this index is stored as in DynamoDB.  Defaults to the index's name in the model.
+
+    See the :ref:`name property <property-name>` above.
 
 .. attribute:: read_units
 

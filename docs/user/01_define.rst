@@ -1,3 +1,5 @@
+..
+
 .. _define-models:
 
 Define Models
@@ -124,7 +126,10 @@ Columns
            name: Optional[str]=None,
            **kwargs)
 
+.. _property-typedef:
+
 .. attribute:: typedef
+    :noindex:
 
     A type class or instance used to load and save this column.  If a class is provided, an instance will
     be created by calling the constructor without any arguments.  These will have the same result:

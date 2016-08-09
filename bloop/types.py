@@ -107,10 +107,9 @@ class DateTime(String):
 
     """
     python_type = arrow.Arrow
-    default_timezone = "UTC"
 
-    def __init__(self, timezone=None):
-        self.timezone = timezone or DateTime.default_timezone
+    def __init__(self, timezone="utc"):
+        self.timezone = timezone
         super().__init__()
 
     def dynamo_load(self, value, *, context, **kwargs):

@@ -191,6 +191,8 @@ As long as the backing type is valid, custom types are fine:
 ``List``
 --------
 
+Unlike Set, a List's inner type can be anything, including other Lists, Sets, and Maps.
+
 .. code-block:: python
 
     class List(bloop.Type):
@@ -204,8 +206,6 @@ As long as the backing type is valid, custom types are fine:
 
     The type for values in this List.
 
-Unlike Set, a List's inner type can be anything, including other Lists, Sets, and Maps.
-
 .. code-block:: python
 
     # Both valid
@@ -216,6 +216,8 @@ Unlike Set, a List's inner type can be anything, including other Lists, Sets, an
 ``TypedMap``
 ------------
 
+TypedMap is one of two built-in Map types.  This type allows any number of keys, but values must be the same type.
+
 .. code-block:: python
 
     class TypedMap(bloop.Type):
@@ -225,9 +227,27 @@ Unlike Set, a List's inner type can be anything, including other Lists, Sets, an
         def __init__(self, typedef):
             ...
 
+.. attribute:: typedef
+
+    The type for values in this dict.
+
+This is useful when all of your data is the same type, but you don't know what keys may be used.  The inner
+type can be anything, like ``TypedMap(Set(UUID))``.
+
+.. code-block:: python
+
+    Tags = TypedMap(String)
+    class User(...):
+        tags = Column(Tags)
+
+    user.tags["#wat"] = "destroyallsoftware/talks/wat"
+    user.tags["#bigdata"] = "twitter/garybernhardt/600783770925420546"
+
 -------
 ``Map``
 -------
+
+This type requires you to specify the modeled keys in the Map, but values don't have to have the same type.
 
 .. code-block:: python
 
@@ -237,6 +257,54 @@ Unlike Set, a List's inner type can be anything, including other Lists, Sets, an
 
         def __init__(self, **types):
             ...
+
+.. attribute:: types
+
+    The type for each key in the Map's structure.  Any keys that aren't included in ``types``
+    will be ignored.
+
+.. code-block:: python
+
+    # Using kwargs directly
+    Map(username=String, wins=Integer)
+
+    # Unpacking from a dict
+    Metadata = Map(**{
+        "created": DateTime,
+        "referrer": UUID,
+        "cache": String
+    })
+
+    class Pin(...):
+        metadata = Column(Metadata)
+
+    pin.metadata = {
+        "created": arrow.now(),
+        "referrer": referrer.id,
+        "cache": "https://img-cache.s3.amazonaws.com/" + img.filename
+    }
+
+.. warning::
+
+    Saving a DynamoDB Map ``"M"`` fully replaces the existing value.
+
+    Despite my desire to `support partial updates`__, DynamoDB does not expose a way to reliably
+    update a path within a Map.  `There is no way to upsert along a path`__:
+
+        I attempted a few other approaches, like having two update statements - first setting it to an
+        empty map with the if_not_exists function, and then adding the child element, but that doesn't work
+        because **paths cannot overlap between expressions**.
+
+        -- `DavidY@AWS`__ (emphasis added)
+
+    If DynamoDB ever allows overlapping paths in expressions, Bloop will be refactored to use
+    partial updates for arbitrary types.
+
+    Given the thread's history, it doesn't look promising.
+
+    __ https://github.com/numberoverzero/bloop/issues/28
+    __ https://forums.aws.amazon.com/thread.jspa?threadID=162907
+    __ https://forums.aws.amazon.com/message.jspa?messageID=576069#576069
 
 .. _custom-types:
 

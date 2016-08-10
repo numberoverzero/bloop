@@ -312,18 +312,67 @@ This type requires you to specify the modeled keys in the Map, but values don't 
 Custom Types
 ============
 
-Things to consider:
+Creating new types is straightforward.  Here's a type that stores an ``Image`` as bytes, and loads it back again:
 
-1. Must be able to load ``None``
-2. Must be able to dump ``None``
-3. Must return ``None`` from dump to signal no value.
-4. Call ``_register`` for any types you depend on.
+.. code-block:: python
+
+    import io
+    import Image
+
+    class GIF(bloop.Binary):
+        python_type = Image
+
+        def dynamo_dump(self, image, *, context, **kwargs):
+            if image is None:
+                return None
+            buffer = io.BytesIO()
+            image.save(buffer, format="GIF")
+            return super().dynamo_dump(
+                buffer.getvalue(), context=context, **kwargs)
+
+        def dynamo_load(self, value, *, context, **kwargs):
+            image_bytes = super().dynamo_load(
+                value, context=context, **kwargs)
+            if image_bytes is None:
+                return None
+            buffer = io.BytesIO(image_bytes)
+            image = Image.open(buffer)
+            return image
+
+Now it's all ``Image``, all the time:
+
+.. code-block:: python
+
+    class User(new_base()):
+        name = Column(String, hash_key=True)
+        profile_gif = Column(GIF)
+
+    user = User(name="numberoverzero")
+    engine.load(user)
+    user.profile_gif.rotate(90)
+    engine.save(user)
 
 ----------------
 Missing and None
 ----------------
 
-None is missing, etc etc.  Return None to omit.
+Well, almost all the time.  What about that ``return None`` up there?
+
+When there's no value for a Column that's being loaded, your type will need to handle None.  For many types,
+None is the best sentinel to return for "this has no value" -- Most of the built-in types use None.
+
+Set returns an empty ``set``, so that you'll never need to check for None before adding and removing elements.
+Map will load None for the type associated with each of its keys, and insert those in the dict.
+
+
+You will also need to handle ``None`` when dumping values to DynamoDB.  This can happen when a value is deleted
+from a Model instance, or it's explicitly set to None.  In almost all cases, your ``dynamo_dump`` function should
+simply return None to signal omission (or deletion, depending on the context).
+
+You should return ``None`` when dumping empty values like ``list()``, or DynamoDB will complain about setting
+something to an empty list or set.  By returning None, Bloop will know to put that column in
+the DELETE section of the UpdateItem.
+
 
 --------------
 ``bloop.Type``
@@ -334,17 +383,136 @@ None is missing, etc etc.  Return None to omit.
     class Type:
         backing_type = "S"
 
-        def dynamo_load(self, value, *, context, **kwargs):
+        def dynamo_load(self, value: Optional[str],
+                        *, context, **kwargs) -> Any:
             return value
 
-        def dynamo_dump(self, value, *, context, **kwargs):
+        def dynamo_dump(self, value: Any,
+                        *, context, **kwargs) -> Optional[str]:
             return value
 
         def _register(self, type_engine):
             pass
 
+.. attribute:: backing_type
+
+    This is the DynamoDB type that Bloop will store values under.  The available types are::
+
+        S -- string
+        N -- number
+        B -- binary
+        BOOL -- boolean
+        SS -- string set
+        NS -- number set
+        BS -- binary set
+        M -- map
+        L -- list
+
+.. function:: dynamo_load
+
+    Takes a ``str`` or ``None`` and returns a value to use locally.
+
+.. function:: dynamo_dump
+
+    Takes a local value or ``None`` and returns a string or ``None``.  This should return ``None`` to indicate a
+    missing or deleted value - DynamoDB will fail if you try to send an empty set or list.
+
+.. function:: _register
+
+    You only need to implement this if your type references another type.  This is called when your type is registered
+    with the type engine.  Bloop will fail to load or dump your type unless you register the inner type with this
+    method.
+
+    Here's the simplified implementation for ``Set``:
+
+    .. code-block:: python
+
+        class Set(bloop.Type):
+            def __init__(self, typedef):
+                self.typedef = typedef
+
+            def _register(self, type_engine):
+                type_engine.register(self.typedef)
+
+The ``context`` arg is a dict to hold extra information about the current call.  It will always contain
+at least ``{"engine": bloop.Engine}`` which is the Bloop engine that this call came from.  You must perform
+any recursive load/dump calls through the context engine, and must not call ``dynamo_dump`` on another type
+directly.  The engine exposes ``_load`` and ``_dump`` functions, with the following signatures:
+
+.. code-block:: python
+
+    Engine._load(self, typedef, value, *, context, **kwargs)
+    Engine._dump(self, typedef, value, *, context, **kwargs)
+
+This is nearly the same interface as the Type functions, but you must pass the ``bloop.Type`` that the value should
+go through.  For example, here's the simplified ``dynamo_load`` for Set:
+
+.. code-block:: python
+
+    class Set(bloop.Type):
+        def __init__(self, typedef):
+            self.typedef = typedef
+
+        def dynamo_load(self, values, *, context, **kwargs):
+            engine = context["engine"]
+            loaded_set = set()
+            for value in values:
+                value = engine._load(
+                    self.typedef, value, context=context, **kwargs)
+                loaded_set.add(value)
+            return loaded_set
+
 -------------
 Example: Enum
 -------------
 
-String-backed Enum
+This is a simple Type that stores an :py:class:`enum.Enum` by its string value.
+
+.. code-block:: python
+
+    class Enum(bloop.String):
+        def __init__(self, enum_cls=None):
+            if enum_cls is None:
+                raise TypeError("Must provide an enum class")
+            self.enum_cls = enum_cls
+            super().__init__()
+
+        def dynamo_dump(self, value, *, context, **kwargs):
+            if value is None:
+                return value
+            return value.name
+
+        def dynamo_load(self, value, *, context, **kwargs):
+            if value is None:
+                return value
+            return self.enum_cls[value]
+
+That's it!  To see it in action, here's an enum:
+
+.. code-block:: python
+
+    import enum
+    class Color(enum.Enum):
+        red = 1
+        green = 2
+        blue = 3
+
+And using that in a model:
+
+.. code-block:: python
+
+    class Shirt(new_base()):
+        id = Column(String, hash_key=True)
+        color = Column(Enum(Color))
+    engine.bind(base=Shirt)
+
+    shirt = Shirt(id="t-shirt", color=Color.red)
+    engine.save(shirt)
+
+This is stored in DynamoDB as:
+
++---------+-------+
+| id      | color |
++---------+-------+
+| t-shirt | red   |
++---------+-------+

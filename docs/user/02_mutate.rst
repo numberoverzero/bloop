@@ -106,7 +106,7 @@ For example, if the user must be verified in order to change their profile:
 This is much better than checking the ``verified`` property locally, since the property could change in DynamoDB
 between when the user is loaded and when the save is executed.
 
-When ``atomic`` is True, bloop inserts a condition (or ANDs with a user-provided condition) that requires the state in
+When ``atomic`` is True, Bloop inserts a condition (or ANDs with a user-provided condition) that requires the state in
 DynamoDB to match the last state that was loaded from DynamoDB.  For new objects, an atomic save requires that the
 object not exist in DynamoDB.
 

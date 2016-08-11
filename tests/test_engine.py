@@ -33,7 +33,7 @@ def test_missing_objects(engine):
     users = [User(id=uuid.uuid4()) for _ in range(3)]
 
     with pytest.raises(NotModified) as excinfo:
-        engine.load(users)
+        engine.load(*users)
 
     assert set(excinfo.value.objects) == set(users)
 
@@ -92,7 +92,7 @@ def test_load_objects(engine):
         return response
     engine.client.batch_get_items = respond
 
-    engine.load((user1, user2))
+    engine.load(user1, user2)
 
     assert user1.age == 5
     assert user1.name == "foo"
@@ -114,7 +114,7 @@ def test_load_repeated_objects(engine):
         return response
     engine.client.batch_get_items = respond
 
-    engine.load((user, user))
+    engine.load(user, user)
 
     assert user.age == 5
     assert user.name == "foo"
@@ -136,7 +136,7 @@ def test_load_equivalent_objects(engine):
         return response
     engine.client.batch_get_items = respond
 
-    engine.load((user, same_user))
+    engine.load(user, same_user)
 
     assert user.age == 5
     assert user.name == "foo"
@@ -185,7 +185,7 @@ def test_load_shared_table(engine):
     first = FirstModel(id=id, range=range)
     second = SecondModel(id=id, range=range)
 
-    engine.load([first, second])
+    engine.load(first, second)
 
     expected_first = FirstModel(id=id, range=range, first="first", as_date=now)
     expected_second = SecondModel(id=id, range=range, second="second", as_string=now_str)
@@ -338,7 +338,7 @@ def test_save_list_with_condition(engine):
          "Key": {"id": {"S": str(user.id)}},
          "TableName": "User"}
         for user in users]
-    engine.save(users, condition=condition)
+    engine.save(*users, condition=condition)
     for expected in expected_calls:
         engine.client.update_item.assert_any_call(expected)
     assert engine.client.update_item.call_count == 3
@@ -454,7 +454,7 @@ def test_delete_multiple_condition(engine):
          "ConditionExpression": "(#n0 = :v1)",
          "TableName": "User"}
         for user in users]
-    engine.delete(users, condition=condition)
+    engine.delete(*users, condition=condition)
     for expected in expected_calls:
         engine.client.delete_item.assert_any_call(expected)
     assert engine.client.delete_item.call_count == 3
@@ -639,7 +639,7 @@ def test_unbound_operations_raise(engine, op, plural):
     if plural:
         with pytest.raises(AbstractModelException) as excinfo:
             operation = getattr(engine, op)
-            operation([abstract, concrete])
+            operation(abstract, concrete)
         assert excinfo.value.model is abstract
 
 

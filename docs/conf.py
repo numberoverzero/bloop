@@ -40,10 +40,16 @@ pygments_style = 'sphinx'
 html_theme = 'alabaster'
 
 html_theme_options = {
+    'github_button': 'true',
     'github_user': 'numberoverzero',
     'github_repo': 'bloop',
     'github_banner': True,
-    'travis_button': True,
+
+    'github_type': 'star',
+    'github_count': 'true',
+
+    'fixed_sidebar': True,
+
     'show_powered_by': False,
     'analytics_id': 'UA-65843067-1'
 }

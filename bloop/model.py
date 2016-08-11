@@ -72,12 +72,16 @@ def setup_columns(meta):
                 raise ValueError("Model hash_key over-specified")
             meta.hash_key = column
             meta.keys.add(column)
-        elif column.range_key:
+        if column.range_key:
             if meta.range_key:
                 raise ValueError("Model range_key over-specified")
             meta.range_key = column
             meta.keys.add(column)
         column.model = meta.model
+    # Don't throw when they're both None (could be abstract)
+    # but absolutely throw when they're both the same Column instance.
+    if meta.hash_key and (meta.hash_key is meta.range_key):
+        raise ValueError("hash_key and range_key must be different columns")
 
 
 def setup_indexes(meta):

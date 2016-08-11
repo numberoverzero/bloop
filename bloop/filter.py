@@ -146,7 +146,7 @@ def validate_key_for(model, index, key):
 class Filter:
     def __init__(
             self, *, engine, mode, model, index, strict, select, select_attributes=None, prefetch=0,
-            consistent=False, forward=True, limit=0, key=None, filter=None):
+            consistent=False, forward=True, limit=None, key=None, filter=None):
         self.engine = engine
         self.mode = mode
         self.model = model
@@ -158,7 +158,7 @@ class Filter:
         self._prefetch = prefetch
         self._consistent = consistent
         self._forward = forward
-        self._limit = limit
+        self._limit = limit or 0
 
         self._key = key
         self._filter = filter
@@ -390,12 +390,12 @@ class FilterIterator:
         return self
 
     def __next__(self):
-        # Still have buffered elements available
+        # still have buffered elements available
         if len(self._buffer) > 0:
             return self._buffer.popleft()
 
         # Refill the buffer until we hit the limit, or Dynamo stops giving us continue tokens.
-        while (not self.exhausted) and (len(self._buffer) < self._prefetch):
+        while (not self.exhausted) and len(self._buffer) < self._prefetch:
             response = self._call(self._prepared_request)
             continuation_token = response.get("LastEvaluatedKey", None)
             self._prepared_request["ExclusiveStartKey"] = continuation_token

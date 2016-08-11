@@ -1,6 +1,6 @@
 import pytest
 from bloop.column import Column
-from bloop.index import GlobalSecondaryIndex, Index, LocalSecondaryIndex
+from bloop.index import Index, LocalSecondaryIndex
 from bloop.model import new_base
 from bloop.types import String
 
@@ -32,32 +32,9 @@ def test_projection_validation():
     assert Index(projection=["foo", "bar"]).projection == ["foo", "bar"]
 
 
-def test_missing_projection():
-    """LSI, GSI have projection=None in __init__ so a more helpful error message can be raised"""
-    with pytest.raises(ValueError) as excinfo:
-        LocalSecondaryIndex(range_key="foo")
-    assert "keys" in str(excinfo.value)
-    assert "all" in str(excinfo.value)
-
-    with pytest.raises(ValueError) as excinfo:
-        GlobalSecondaryIndex(hash_key="foo")
-    assert "keys" in str(excinfo.value)
-    assert "all" in str(excinfo.value)
-
-
-def test_gsi_missing_hash_key():
-    with pytest.raises(ValueError):
-        GlobalSecondaryIndex(range_key="blah")
-
-
 def test_lsi_specifies_hash_key():
     with pytest.raises(ValueError):
-        LocalSecondaryIndex(hash_key="blah")
-
-
-def test_lsi_missing_range_key():
-    with pytest.raises(ValueError):
-        LocalSecondaryIndex(projection="keys")
+        LocalSecondaryIndex(hash_key="blah", range_key="foo", projection="keys")
 
 
 def test_lsi_init_throughput():

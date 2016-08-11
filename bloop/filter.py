@@ -19,10 +19,6 @@ SELECT_MODES = {
 
 INVALID_SELECT = ValueError("Select must be 'all', 'count', 'projected', or a list of column objects to select")
 INVALID_FILTER = ValueError("Filter must be a condition or None")
-INVALID_CONSISTENT = ValueError("Can't use ConsistentRead with a GlobalSecondaryIndex")
-INVALID_FORWARD = ValueError("Can't set ScanIndexForward for scan operations, only queries")
-INVALID_LIMIT = ValueError("Limit must be a non-negative int")
-INVALID_PREFETCH = ValueError("Prefetch must be a non-negative int")
 
 
 def expected_columns_for(model, index, select, select_attributes):
@@ -121,9 +117,6 @@ def validate_range_key_condition(condition, range_column):
 def validate_key_for(model, index, key):
     hash_column = (index or model.Meta).hash_key
     range_column = (index or model.Meta).range_key
-    # Allow None so that Filter.key(None) clears the condition (intermediate queries, base queries...)
-    if key is None:
-        return key
     if isinstance(key, And) and len(key) == 2:
         # Instead of some cleverness, brute force validate the two allowed permutations.
 
@@ -153,133 +146,37 @@ class Filter:
         self.index = index
         self.strict = strict
 
-        self._select = select
-        self._select_attributes = select_attributes
-        self._prefetch = prefetch
-        self._consistent = consistent
-        self._forward = forward
-        self._limit = limit or 0
+        self.select = select
+        self.prefetch = prefetch
+        self.consistent = consistent
+        self.forward = forward
+        self.limit = limit or 0
 
-        self._key = key
-        self._filter = filter
+        self.key = key
+        self.filter = filter
 
     def copy(self):
         """Convenience method for building specific queries off of a shared base query."""
         return Filter(
             engine=self.engine, mode=self.mode, model=self.model, index=self.index, strict=self.strict,
-            select=self._select, select_attributes=self._select_attributes, prefetch=self._prefetch,
-            consistent=self._consistent, forward=self._forward,
-            limit=self._limit, key=self._key, filter=self._filter)
-
-    def key(self, value):
-        """Key conditions are only required for queries; there is no key condition for a scan.
-
-        A key condition must include at least an equality (==) condition on the hash key of the index or model.
-        A range condition on the index or model is allowed, and can be one of <,<=,>,>=,==, Between, BeginsWith
-        There can be at most 1 hash condition and 1 range condition.
-        They must be specified together.
-        """
-        self._key = validate_key_for(self.model, self.index, value)
-        return self
-
-    def select(self, value):
-        """Which columns to load in the query/scan.
-
-        When searching against a model, this can be "all" or a subset of the model's columns.
-        When searching against a GSI, this can be "projected" or a subset of the GSI's projected columns.
-        When searching against a LSI, this can be "all" (if not using strict queries), "projected", or:
-            1) a subset of the LSI's projected columns (if using strict queries)
-            2) a subset of the model's columns (if not using strict queries)
-        For any search, "count" is allowed.
-
-        Note that against an LSI, "all" or a superset of the projected columns of the LSI will incur an additional
-        read against the table to fetch the non-indexed columns.
-        """
-        self._select, self._select_attributes = validate_select_for(self.model, self.index, self.strict, value)
-        return self
-
-    def filter(self, value):
-        """Filtering is done server-side; as such, there may be empty pages to iterate before an instance is returned.
-
-        DynamoDB applies the Limit before the FilterExpression.
-            If a table with 10 rows only matches the filter on the 6th row, and a scan has a limit of 5,
-            the scan will return no results.
-        """
-        # None is allowed for clearing a FilterExpression
-        if not isinstance(value, (type(None), _BaseCondition)):
-            raise INVALID_FILTER
-        self._filter = value
-        return self
-
-    def consistent(self, value):
-        """Whether ConsistentReads should be used.  Note that ConsistentReads cannot be used against a GSI"""
-        if isinstance(self.index, GlobalSecondaryIndex):
-            raise INVALID_CONSISTENT
-        self._consistent = bool(value)
-        return self
-
-    def forward(self, value):
-        """Whether a query is performed forwards or backwards.  Note that scans cannot be performed in reverse"""
-        if self.mode == "scan":
-            raise INVALID_FORWARD
-        self._forward = bool(value)
-        return self
-
-    def limit(self, value):
-        """From DynamoDB: The maximum number of items to evaluate (not necessarily the number of matching items).
-
-        Limit should be used when you want to return NO MORE THAN a given value, with the intention that there may not
-        be any results at all.  To instead limit the number of items returned, stop iterating the results of .build()
-        after the desired number of results.
-
-        For example, to iterate over the rows that meet a given FilterExpression from the first 30 rows:
-            for result in engine.query(...).limit(30).filter(...).build():
-                # process item
-
-        However, to get the first 30 results that meet a given FilterExpression:
-            results = engine.query(...).filter(...).build()
-            for i, result in enumerate(results):
-                if i == 30:
-                    break
-                # process item
-
-        """
-        try:
-            if int(value) < 0:
-                raise INVALID_LIMIT
-        except (TypeError, ValueError):
-            raise INVALID_LIMIT
-        self._limit = int(value)
-        return self
-
-    def prefetch(self, value):
-        """Number of items (not pages) to preload.
-
-        Because a FilterExpression can cause the returned pages of a query to be empty, multiple calls may be made just
-        to return one item.  This value is how many items should be loaded each time the iterator advances
-        (with an unknown number of continue calls to yield the next item)
-        """
-
-        try:
-            if int(value) < 0:
-                raise INVALID_PREFETCH
-        except (TypeError, ValueError):
-            raise INVALID_PREFETCH
-        self._prefetch = int(value)
-        return self
+            select=self.select, prefetch=self.prefetch,
+            consistent=self.consistent, forward=self.forward,
+            limit=self.limit, key=self.key, filter=self.filter)
 
     def one(self):
         """Returns the single item that matches the scan/query.
 
         If there is not exactly one matching result, raises ConstraintViolation.
         """
-        filter = self.copy().prefetch(0).build()
-        first = next(filter, None)
-        second = next(filter, None)
+        f = self.copy()
+        f.prefetch = 0
+        it = f.build()
+        first = next(it, None)
+        second = next(it, None)
 
         # No results, or too many results
         if (first is None) or (second is not None):
-            raise ConstraintViolation(filter._mode + ".one", filter._prepared_request)
+            raise ConstraintViolation(it._mode + ".one", it._prepared_request)
         return first
 
     def first(self):
@@ -287,11 +184,13 @@ class Filter:
 
         If there is not at least one matching result, raises ConstraintViolation.
         """
-        filter = self.copy().prefetch(0).build()
-        value = next(filter, None)
+        f = self.copy()
+        f.prefetch = 0
+        it = f.build()
+        value = next(it, None)
         # No results
         if value is None:
-            raise ConstraintViolation(filter._mode + ".first", filter._prepared_request)
+            raise ConstraintViolation(it._mode + ".first", it._prepared_request)
         return value
 
     def build(self):
@@ -315,9 +214,9 @@ class Filter:
             iterator.scanned_count  # 0
         """
         prepared_request = {
-            "ConsistentRead": self._consistent,
-            "Limit": self._limit,
-            "ScanIndexForward": self._forward,
+            "ConsistentRead": bool(self.consistent),
+            "Limit": int(self.limit),
+            "ScanIndexForward": bool(self.forward),
             "TableName": self.model.Meta.table_name,
         }
         # Only set IndexName if this is a query on an index
@@ -328,31 +227,35 @@ class Filter:
                 del prepared_request["ConsistentRead"]
 
         # Only send useful limits (omit 0 for no limit)
-        if self._limit < 1:
+        if self.limit < 1:
             del prepared_request["Limit"]
 
         # Scans are always forward
         if self.mode == "scan":
             del prepared_request["ScanIndexForward"]
 
-        prepared_request["Select"] = SELECT_MODES[self._select]
+        select_mode, select_columns = validate_select_for(self.model, self.index, self.strict, self.select)
+        prepared_request["Select"] = SELECT_MODES[select_mode]
 
         # Query MUST have a key condition
-        if self.mode == "query" and self._key is None:
-                raise ValueError("Query must specify at least a hash key condition")
-        # Scan MUST NOT have a key condition
-        elif self.mode == "scan" and self._key is not None:
-            raise ValueError("Scan cannot have a key condition")
+        if self.mode == "query":
+            key = validate_key_for(self.model, self.index, self.key)
+        else:
+            key = None
+
+        # Filter can be a condition or None
+        if not isinstance(self.filter, (type(None), _BaseCondition)):
+            raise INVALID_FILTER
 
         # Render filter, select, key
-        rendered = render(self.engine, filter=self._filter, select=self._select_attributes, key=self._key)
+        rendered = render(self.engine, filter=self.filter, select=select_columns, key=key)
         prepared_request.update(rendered)
 
         # Compute the expected columns for this filter
-        expected_columns = expected_columns_for(self.model, self.index, self._select, self._select_attributes)
+        expected_columns = expected_columns_for(self.model, self.index, select_mode, select_columns)
         return FilterIterator(
             engine=self.engine, model=self.model, prepared_request=prepared_request,
-            expected_columns=expected_columns, mode=self.mode, prefetch=self._prefetch)
+            expected_columns=expected_columns, mode=self.mode, prefetch=int(self.prefetch))
 
 
 class FilterIterator:

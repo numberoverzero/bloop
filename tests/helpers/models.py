@@ -80,6 +80,18 @@ class VectorModel(BaseModel):
     }))
 
 
+# Provides a gsi and lsi with constrained projections for testing Filter.select validation
+class ProjectedIndexes(BaseModel):
+    h = Column(Integer, hash_key=True)
+    r = Column(Integer, range_key=True)
+    both = Column(String)
+    neither = Column(String)
+    gsi_only = Column(String)
+    lsi_only = Column(String)
+
+    by_gsi = GlobalSecondaryIndex(hash_key="h", projection=["both", "gsi_only"])
+    by_lsi = LocalSecondaryIndex(range_key="r", projection=["both", "lsi_only"])
+
 conditions = set()
 
 

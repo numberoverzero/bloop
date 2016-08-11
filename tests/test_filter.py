@@ -1,13 +1,14 @@
+import uuid
 import pytest
 from bloop.column import Column
 from bloop.condition import And, Condition
 from bloop.exceptions import ConstraintViolation
 from bloop.filter import Filter, expected_columns_for
-from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
+from bloop.index import LocalSecondaryIndex
 from bloop.model import new_base
-from bloop.types import Integer, String
+from bloop.types import Integer
 
-from .helpers.models import ComplexModel, SimpleModel, User
+from .helpers.models import ComplexModel, ProjectedIndexes, SimpleModel, User
 
 
 valid_hash_conditions = [
@@ -54,24 +55,11 @@ invalid_range_conditions = [
 ]
 
 
-# Provides a gsi and lsi with constrained projections for testing Filter.select validation
-class ProjectedIndexes(new_base()):
-    h = Column(Integer, hash_key=True)
-    r = Column(Integer, range_key=True)
-    both = Column(String)
-    neither = Column(String)
-    gsi_only = Column(String)
-    lsi_only = Column(String)
-
-    by_gsi = GlobalSecondaryIndex(hash_key="h", projection=["both", "gsi_only"])
-    by_lsi = LocalSecondaryIndex(range_key="r", projection=["both", "lsi_only"])
-
-
 @pytest.fixture
 def query(engine):
     return Filter(
         engine=engine, mode="query", model=ComplexModel, index=ComplexModel.by_email, strict=False,
-        select="specific", select_attributes={ComplexModel.joined}, prefetch=3, consistent=True, forward=False,
+        select={ComplexModel.joined}, prefetch=3, consistent=True, forward=False,
         limit=4, key=(ComplexModel.email == "foo"), filter=(ComplexModel.not_projected > 3))
 
 
@@ -94,50 +82,49 @@ def test_copy(query):
     same = query.copy()
     attrs = [
         "engine", "mode", "model", "index", "strict",
-        "_prefetch", "_consistent", "_forward", "_limit", "_key", "_filter", "_select"]
+        "prefetch", "consistent", "forward", "limit", "key", "filter", "select"]
     assert all(map(lambda a: (getattr(query, a) == getattr(same, a)), attrs))
 
 
-def test_key_none(query):
-    """None can be used to clear an existing key condition"""
-    old_condition = query._key
-    assert old_condition is not None  # guard false positives from query fixture changing
-    query.key(None)
-    assert query._key is None
-
-
-@pytest.mark.parametrize("condition", [False, 0, Condition()], ids=repr)
+@pytest.mark.parametrize("condition", [None, False, 0, Condition()], ids=repr)
 def test_key_falsey(query, condition):
-    """Can't use any falsey value to clear conditions, must be exactly None"""
+    query.key = condition
+
     with pytest.raises(ValueError) as excinfo:
-        query.key(condition)
+        query.build()
     assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
 
 
 def test_key_wrong_hash(query):
     """Condition is against a hash_key, but not for the index being queried"""
     query.index = ComplexModel.by_email
+    query.key = ComplexModel.name == "foo"  # table hash_key, not index hash_key
 
     with pytest.raises(ValueError) as excinfo:
-        query.key(ComplexModel.name == "foo")  # table hash_key, not index hash_key
+        query.build()
     assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
 
 
 def test_key_and_one_value(query):
     """If the key condition is an AND, it must have exactly 2 values; even if its sole value is valid on its own"""
     query.index = None
-    condition = And(ComplexModel.name == "foo")
+    query.key = And(ComplexModel.name == "foo")
+
     with pytest.raises(ValueError) as excinfo:
-        query.key(condition)
+        query.build()
     assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
 
 
 def test_key_and_three_values(query):
     """Redundant values aren't collapsed"""
     query.index = None
-    condition = (ComplexModel.name == "foo") & (ComplexModel.date == "now") & (ComplexModel.name == "foo")
+    query.condition = (
+        (ComplexModel.name == "foo") &
+        (ComplexModel.date == "now") &
+        (ComplexModel.name == "foo")
+    )
     with pytest.raises(ValueError) as excinfo:
-        query.key(condition)
+        query.build()
     assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
 
 
@@ -145,57 +132,62 @@ def test_key_and_three_values(query):
 def test_key_invalid_range_condition(query, condition):
     query.index = None
     # Attach a valid hash_key condition, so that we're only failing on the range_key condition
-    condition &= (ComplexModel.name == "foo")
+    query.key = condition & (ComplexModel.name == "foo")
+
     with pytest.raises(ValueError) as excinfo:
-        query.key(condition)
+        query.build()
     assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
 
 
 @pytest.mark.parametrize("condition", valid_range_conditions, ids=str)
 def test_key_and_valid_range(query, condition):
     query.index = None
-    condition &= (ComplexModel.name == "foo")
-    query.key(condition)
-    assert query._key == condition
+    query.key = condition & (ComplexModel.name == "foo")
+
+    query.build()
 
     # Test reversed order
-    condition.conditions = condition.conditions[::-1]
-    query.key(condition)
-    assert query._key == condition
+    query.key.conditions = query.key.conditions[::-1]
+
+    query.build()
 
 
 @pytest.mark.parametrize("condition", invalid_hash_conditions, ids=str)
 def test_key_invalid_hash(query, condition):
     query.index = None
+    query.key = condition
+
     with pytest.raises(ValueError) as excinfo:
-        query.key(condition)
+        query.build()
     assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
 
 
 @pytest.mark.parametrize("condition, index", valid_hash_conditions, ids=str)
 def test_key_valid_hash(query, condition, index):
     query.index = index
-    query.key(condition)
-    assert query._key == condition
+    query.key = condition
+
+    query.build()
 
 
 def test_expected_columns_unknown(query):
     """Directly setting select values to an unexpected key raises"""
-    query._select = "foobar"
+    query.select = "foobar"
     with pytest.raises(ValueError) as excinfo:
-        expected_columns_for(query.model, query.index, query._select, query._select_attributes)
+        expected_columns_for(query.model, query.index, query.select, [])
     assert str(excinfo.value) == "unknown mode foobar"
 
 
 def test_select_count(query):
-    query.select("count")
-    assert query._select == "count"
+    query.select = "count"
+    query.build()
 
 
 def test_select_all_table(query):
     query.index = None
-    query.select("all")
-    assert query._select == "all"
+    query.select = "all"
+    query.key = ComplexModel.name == "foo"
+    query.build()
 
 
 def test_select_all_gsi(query):
@@ -204,14 +196,16 @@ def test_select_all_gsi(query):
     Otherwise, it fails (even if the selected attribute are all of them)
     """
     query.index = ComplexModel.by_email
-    query.select("all")
-    assert query._select == "all"
+    query.select = "all"
+
+    query.build()
 
     # use a model with a GSI without "all" projection
     query.model = ProjectedIndexes
     query.index = ProjectedIndexes.by_gsi
+    query.select = "all"
     with pytest.raises(ValueError) as excinfo:
-        query.select("all")
+        query.build()
     assert str(excinfo.value) == "Can't select 'all' on a GSI or strict LSI"
 
 
@@ -219,38 +213,45 @@ def test_select_all_strict_lsi(query):
     """Can't select all on a strict LSI without "all" projection (would incur additional reads)"""
     query.index = ComplexModel.by_joined
     query.strict = True
+    query.select = "all"
     with pytest.raises(ValueError) as excinfo:
-        query.select("all")
+        query.build()
     assert str(excinfo.value) == "Can't select 'all' on a GSI or strict LSI"
 
 
-def test_select_all_strict_lsi_projection(query):
+def test_select_all_strict_lsi_projection(query, engine):
     """No problem selecting all on this strict LSI because its projection is all"""
     class Model(new_base()):
         id = Column(Integer, hash_key=True)
         foo = Column(Integer, range_key=True)
         bar = Column(Integer)
         by_lsi = LocalSecondaryIndex(range_key="bar", projection="all")
+    engine.bind(Model)
 
     query.model = Model
     query.index = Model.by_lsi
-    query.select("all")
-    assert query._select == "all"
+    query.select = "all"
+    query.key = Model.id == 3
+
+    query.build()
 
 
 def test_select_all_lsi(query):
     """Even though extra reads are incurred, a non-strict LSI can query all"""
     query.index = ComplexModel.by_joined
     query.strict = False
-    query.select("all")
-    assert query._select == "all"
+    query.select = "all"
+    query.key = ComplexModel.name == uuid.uuid4()
+
+    query.build()
 
 
 def test_select_projected_table(query):
     """Can't select projected on a non-index query"""
     query.index = None
+    query.select = "projected"
     with pytest.raises(ValueError) as excinfo:
-        query.select("projected")
+        query.build()
     assert str(excinfo.value) == "Can't query projected attributes without an index"
 
 
@@ -258,192 +259,184 @@ def test_select_projected_index(query):
     """Any index can select projected"""
     # GSI
     query.index = ComplexModel.by_email
-    query.select("projected")
-    assert query._select == "projected"
+    query.select = "projected"
+    query.build()
 
     # LSI
+    query.key = ComplexModel.name == "foo"
     query.index = ComplexModel.by_joined
     query.strict = False
-    query.select("projected")
-    assert query._select == "projected"
+    query.select = "projected"
+    query.build()
 
     # Strict LSI
     query.index = ComplexModel.by_joined
     query.strict = True
-    query.select("projected")
-    assert query._select == "projected"
+    query.select = "projected"
+    query.build()
 
 
 def test_select_unknown(query):
+    query.select = "foobar"
     with pytest.raises(ValueError) as excinfo:
-        query.select("foobar")
+        query.build()
     assert str(excinfo.value) == "Unknown select mode 'foobar'"
 
 
 def test_select_empty(query):
     """Can't specify an empty set of columns to load"""
+    query.select = []
     with pytest.raises(ValueError) as excinfo:
-        query.select([])
+        query.build()
     assert str(excinfo.value) == "Must specify at least one column to load"
 
 
 def test_select_wrong_model(query):
     """All columns must be part of the model being queried"""
+    query.select = [User.email]
     with pytest.raises(ValueError) as excinfo:
-        query.select([User.email])
+        query.build()
     assert str(excinfo.value) == "Select must be 'all', 'count', 'projected', or a list of column objects to select"
 
 
 def test_select_non_column(query):
     """All selections must be columns"""
+    query.select = [ComplexModel.email, ComplexModel.date, object()]
     with pytest.raises(ValueError) as excinfo:
-        query.select([ComplexModel.email, ComplexModel.date, object()])
+        query.build()
     assert str(excinfo.value) == "Select must be 'all', 'count', 'projected', or a list of column objects to select"
 
 
 def test_select_specific_table(query):
     """Any subset of a table query is valid"""
-    selected = [
+    query.select = [
         ComplexModel.name, ComplexModel.date, ComplexModel.email,
         ComplexModel.joined, ComplexModel.not_projected]
-    query.select(selected)
-    assert query._select == "specific"
-    assert query._select_attributes == set(selected)
+
+    query.build()
 
 
 def test_select_gsi_subset(projection_query):
     """Subset of GSI projection_attributes is valid"""
+    projection_query.key = ProjectedIndexes.h == 4
     projection_query.index = ProjectedIndexes.by_gsi
     # ProjectedIndexes.h is available since it's part of the hash/range key of the index
-    selected = [ProjectedIndexes.gsi_only, ProjectedIndexes.both, ProjectedIndexes.h]
-    projection_query.select(selected)
-    assert projection_query._select == "specific"
-    assert projection_query._select_attributes == set(selected)
+    projection_query.select = [ProjectedIndexes.gsi_only, ProjectedIndexes.both, ProjectedIndexes.h]
+
+    projection_query.build()
 
 
 def test_select_gsi_superset(projection_query):
     """Superset of GSI projection_attributes fails, can't outside projection"""
+    projection_query.key = ProjectedIndexes.h == 4
     projection_query.index = ProjectedIndexes.by_gsi
     # ProjectedIndexes.neither isn't projected into the GSI
-    selected = [ProjectedIndexes.gsi_only, ProjectedIndexes.neither]
+    projection_query.select = [ProjectedIndexes.gsi_only, ProjectedIndexes.neither]
     with pytest.raises(ValueError) as excinfo:
-        projection_query.select(selected)
+        projection_query.build()
     assert str(excinfo.value) == "Tried to select a superset of the GSI's projected columns"
 
 
 def test_select_strict_lsi_subset(projection_query):
     """Subset of strict LSI projection_attributes is valid"""
+    projection_query.key = ProjectedIndexes.h == 4
     projection_query.index = ProjectedIndexes.by_lsi
     projection_query.strict = True
     # ProjectedIndexes.h is available since it's part of the hash/range key of the index
-    selected = [ProjectedIndexes.lsi_only, ProjectedIndexes.both, ProjectedIndexes.h]
-    projection_query.select(selected)
-    assert projection_query._select == "specific"
-    assert projection_query._select_attributes == set(selected)
+    projection_query.select = [ProjectedIndexes.lsi_only, ProjectedIndexes.both, ProjectedIndexes.h]
+
+    projection_query.build()
 
 
 def test_select_strict_lsi_superset(projection_query):
     """Superset of strict LSI projection_attributes fails, can't outside projection"""
+    projection_query.key = ProjectedIndexes.h == 4
     projection_query.index = ProjectedIndexes.by_lsi
     projection_query.strict = True
     # ProjectedIndexes.neither isn't projected into the LSI
-    selected = [ProjectedIndexes.lsi_only, ProjectedIndexes.neither]
+    projection_query.select = [ProjectedIndexes.lsi_only, ProjectedIndexes.neither]
     with pytest.raises(ValueError) as excinfo:
-        projection_query.select(selected)
+        projection_query.build()
     assert str(excinfo.value) == "Tried to select a superset of the LSI's projected columns in strict mode"
 
 
 def test_select_non_strict_lsi_superset(projection_query):
     """Superset of non-strict LSI projection_attributes is valid, will incur additional reads"""
+    projection_query.key = ProjectedIndexes.h == 4
     projection_query.index = ProjectedIndexes.by_lsi
     projection_query.strict = False
-    selected = [ProjectedIndexes.lsi_only, ProjectedIndexes.neither]
-    projection_query.select(selected)
-    assert projection_query._select == "specific"
-    assert projection_query._select_attributes == set(selected)
+    projection_query.select = [ProjectedIndexes.lsi_only, ProjectedIndexes.neither]
+
+    projection_query.build()
 
 
 def test_filter_not_condition(query):
+    query.filter = "should be a condition"
     with pytest.raises(ValueError) as excinfo:
-        query.filter("should be a condition")
+        query.build()
     assert str(excinfo.value) == "Filter must be a condition or None"
 
 
 def test_filter_none(query):
-    """None is allowed, for clearing an existing filter"""
-    assert query._filter is not None
-    query.filter(None)
-    assert query._filter is None
+    """filter isn't required"""
+    query.filter = None
+    query.build()
 
 
 def test_filter_compound(query):
-    new_condition = (ComplexModel.not_projected == "foo") & (ComplexModel.name.is_not(None))
-    query.filter(new_condition)
-    assert query._filter is new_condition
+    query.filter = (ComplexModel.not_projected == 1) & (ComplexModel.name.is_not(None))
+    query.build()
 
 
 def test_consistent_gsi_raises(query):
-    """Can't use consistent queries on a GSI"""
+    """Setting consistent on a GSI query has no effect"""
     query.index = ComplexModel.by_email
+    query.consistent = True
 
-    with pytest.raises(ValueError) as excinfo:
-        query.consistent(True)
-    assert str(excinfo.value) == "Can't use ConsistentRead with a GlobalSecondaryIndex"
-
-    with pytest.raises(ValueError):
-        query.consistent(False)
+    assert "ConsistentRead" not in query.build()._prepared_request
 
 
 def test_consistent(query):
     query.index = None
-    new_value = not query._consistent
-    query.consistent(new_value)
-    assert query._consistent == new_value
+    query.key = ComplexModel.name == "foo"
+    query.consistent = True
+    assert query.build()._prepared_request["ConsistentRead"] is True
 
 
 def test_forward_scan(query):
     """Can't set forward on a scan"""
     query.mode = "scan"
+    query.forward = True
 
-    with pytest.raises(ValueError) as excinfo:
-        query.forward(True)
-    assert str(excinfo.value) == "Can't set ScanIndexForward for scan operations, only queries"
-
-    with pytest.raises(ValueError):
-        query.forward(False)
+    assert "ScanIndexForward" not in query.build()._prepared_request
 
 
 def test_forward(query):
     query.mode = "query"
-    new_value = not query._forward
-    query.forward(new_value)
-    assert query._forward == new_value
+    query.forward = True
+    assert query.build()._prepared_request["ScanIndexForward"] is True
 
 
-@pytest.mark.parametrize("limit", [-5, None, object()], ids=str)
-def test_illegal_limit(query, limit):
-    with pytest.raises(ValueError) as excinfo:
-        query.limit(limit)
-    assert str(excinfo.value) == "Limit must be a non-negative int"
+def test_negative_limit(query):
+    query.limit = -3
+    assert "Limit" not in query.build()._prepared_request
 
 
 @pytest.mark.parametrize("limit", [0, 3])
 def test_limit(query, limit):
-    query.limit(limit)
-    assert query._limit == limit
+    query.limit = limit
+    query.build()
 
 
-@pytest.mark.parametrize("prefetch", [-5, None, object()], ids=str)
-def test_illegal_prefetch(query, prefetch):
-    with pytest.raises(ValueError) as excinfo:
-        query.prefetch(prefetch)
-    assert str(excinfo.value) == "Prefetch must be a non-negative int"
+def test_negative_prefetch(query):
+    query.prefetch = -5
+    assert query.build()._prefetch == 1
 
 
 @pytest.mark.parametrize("prefetch", [0, 3])
 def test_prefetch(query, prefetch):
-    query.prefetch(prefetch)
-    assert query._prefetch == prefetch
+    query.prefetch = prefetch
+    query.build()
 
 
 def test_one_no_results(simple_query, engine):
@@ -519,35 +512,34 @@ def test_build_gsi_consistent_read(query):
 
 def test_build_lsi_consistent_read(query):
     query.index = ComplexModel.by_joined
-    # Can't use builder function - assume it was provided at __init__
-    query.consistent(False)
+    query.key = ComplexModel.name == "foo"
+    query.consistent = False
     prepared_request = query.build()._prepared_request
     assert prepared_request["ConsistentRead"] is False
 
 
 def test_build_no_limit(query):
-    query.limit(0)
+    query.limit = 0
     prepared_request = query.build()._prepared_request
     assert "Limit" not in prepared_request
 
 
 def test_build_limit(query):
-    query.limit(4)
+    query.limit = 4
     prepared_request = query.build()._prepared_request
     assert prepared_request["Limit"] == 4
 
 
 def test_build_scan_forward(query):
     query.mode = "scan"
-    # Can't have a key condition on scan
-    query.key(None)
+    query.forward = True
 
     prepared_request = query.build()._prepared_request
     assert "ScanIndexForward" not in prepared_request
 
 
 def test_build_query_forward(query):
-    query.forward(False)
+    query.forward = False
     prepared_request = query.build()._prepared_request
     assert prepared_request["ScanIndexForward"] is False
 
@@ -562,13 +554,12 @@ def test_build_table_name(query):
 
     # On the table...
     query.index = None
+    query.key = ComplexModel.name == "foo"
     prepared_request = query.build()._prepared_request
     assert prepared_request["TableName"] == ComplexModel.Meta.table_name
 
     # On scan...
     query.mode = "scan"
-    # Can't have a key condition on scan
-    query.key(None)
 
     prepared_request = query.build()._prepared_request
     assert prepared_request["TableName"] == ComplexModel.Meta.table_name
@@ -577,19 +568,20 @@ def test_build_table_name(query):
 def test_build_no_index_name(query):
     """IndexName isn't set on table queries"""
     query.index = None
+    query.key = ComplexModel.name == "foo"
     prepared_request = query.build()._prepared_request
     assert "IndexName" not in prepared_request
 
 
 def test_build_index_name(query):
     query.index = ComplexModel.by_joined
+    query.key = ComplexModel.name == "foo"
     prepared_request = query.build()._prepared_request
     assert prepared_request["IndexName"] == "by_joined"
 
 
 def test_build_filter(query):
-    condition = ComplexModel.email.contains("@")
-    query.filter(condition)
+    query.filter = ComplexModel.email.contains("@")
     prepared_request = query.build()._prepared_request
     # Filters are rendered first, so these name and value ids are stable
     assert prepared_request["FilterExpression"] == "(contains(#n0, :v1))"
@@ -598,13 +590,13 @@ def test_build_filter(query):
 
 
 def test_build_no_filter(query):
-    query.filter(None)
+    query.filter = None
     prepared_request = query.build()._prepared_request
     assert "FilterExpression" not in prepared_request
 
 
 def test_build_select_columns(query):
-    query.select({ComplexModel.date})
+    query.select = {ComplexModel.date}
     prepared_request = query.build()._prepared_request
     assert prepared_request["Select"] == "SPECIFIC_ATTRIBUTES"
     assert prepared_request["ExpressionAttributeNames"]["#n2"] == "date"
@@ -613,7 +605,8 @@ def test_build_select_columns(query):
 
 def test_build_select_all(query):
     query.index = None
-    query.select("all")
+    query.select = "all"
+    query.key = ComplexModel.name == "foo"
     prepared_request = query.build()._prepared_request
     assert prepared_request["Select"] == "ALL_ATTRIBUTES"
     assert "ProjectionExpression" not in prepared_request
@@ -621,33 +614,32 @@ def test_build_select_all(query):
 
 def test_build_select_projected(query):
     query.index = ComplexModel.by_email
-    query.select("projected")
+    query.select = "projected"
     prepared_request = query.build()._prepared_request
     assert prepared_request["Select"] == "ALL_PROJECTED_ATTRIBUTES"
     assert "ProjectionExpression" not in prepared_request
 
 
 def test_build_select_count(query):
-    query.select("count")
+    query.select = "count"
     prepared_request = query.build()._prepared_request
     assert prepared_request["Select"] == "COUNT"
     assert "ProjectionExpression" not in prepared_request
 
 
 def test_build_query_no_key(query):
-    # Bypass any validation on the key condition
     query.mode = "query"
-    query._key = None
+    query.key = None
 
     with pytest.raises(ValueError) as excinfo:
         query.build()
-    assert str(excinfo.value) == "Query must specify at least a hash key condition"
+    assert str(excinfo.value) == "Key condition must contain exactly 1 hash condition, at most 1 range condition"
 
 
 def test_build_query_key(query):
     query.mode = "query"
     query.index = None
-    query.key(ComplexModel.name == "foo")
+    query.key = ComplexModel.name == "foo"
 
     prepared_request = query.build()._prepared_request
     assert prepared_request["KeyConditionExpression"] == "(#n3 = :v4)"
@@ -657,50 +649,41 @@ def test_build_query_key(query):
 
 def test_build_scan_no_key(query):
     query.mode = "scan"
-    query.key(None)
+    query.key = ComplexModel.name == "omitted"
 
     prepared_request = query.build()._prepared_request
     assert "KeyConditionExpression" not in prepared_request
 
 
-def test_build_scan_key(query):
-    # Bypass any validation on the key condition
-    query.mode = "scan"
-    query._key = ComplexModel.name == "foo"
-
-    with pytest.raises(ValueError) as excinfo:
-        query.build()
-    assert str(excinfo.value) == "Scan cannot have a key condition"
-
-
 def test_build_expected_all(query):
     query.index = None
-    query.select("all")
+    query.select = "all"
+    query.key = ComplexModel.name == "foo"
     expected_columns = query.build()._expected_columns
     assert expected_columns == ComplexModel.Meta.columns
 
 
 def test_build_expected_projected(query):
     query.index = ComplexModel.by_email
-    query.select("projected")
+    query.select = "projected"
     expected_columns = query.build()._expected_columns
     assert expected_columns == ComplexModel.by_email.projection_attributes
 
 
 def test_build_expected_count(query):
     """No expected columns for a count"""
-    query.select("count")
+    query.select = "count"
     expected_columns = query.build()._expected_columns
     assert expected_columns == set()
 
 
 def test_build_expected_specific(query):
-    selected = {ComplexModel.date, ComplexModel.email}
     # Query on the table so all attributes are available
     query.index = None
-    query.select(selected)
+    query.key = ComplexModel.name == "foo"
+    query.select = {ComplexModel.date, ComplexModel.email}
     expected_columns = query.build()._expected_columns
-    assert expected_columns == selected
+    assert expected_columns == query.select
 
 
 def test_iter_reset(query):
@@ -744,7 +727,8 @@ def test_iter_empty_pages(simple_query, engine):
         {"Items": [], "Count": 0, "ScannedCount": 6}
     ]
     # Try to prefetch 3, even though there are only 2
-    iterator = simple_query.prefetch(3).build()
+    simple_query.prefetch = 3
+    iterator = simple_query.build()
     iterator_iter = iter(iterator)
 
     first = next(iterator_iter)
@@ -779,7 +763,8 @@ def test_iter_prefetch_buffering(simple_query, engine):
     ]
 
     # Try to prefetch 2, even though there are 3
-    iterator = simple_query.prefetch(2).build()
+    simple_query.prefetch = 2
+    iterator = simple_query.build()
     iterator_iter = iter(iterator)
 
     first = next(iterator_iter)

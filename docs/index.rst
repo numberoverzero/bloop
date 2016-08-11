@@ -87,8 +87,8 @@ Kick it up a notch with conditional operations:
     :hidden:
     :maxdepth: 3
 
-    user/01_define
-    user/02_mutate
-    user/03_query_scan
-    user/04_types
-    user/05_conditions
+    user/models
+    user/engine
+    user/query
+    user/types
+    user/conditions

@@ -167,6 +167,7 @@ while still preserving type information.  Instead, Bloop provides two Map types 
             ...
 
 .. attribute:: typedef
+    :noindex:
 
     The type for values in this Set.  Must be backed by one of ``S, N, B``.
 
@@ -203,6 +204,7 @@ Unlike Set, a List's inner type can be anything, including other Lists, Sets, an
             ...
 
 .. attribute:: typedef
+    :noindex:
 
     The type for values in this List.
 
@@ -228,6 +230,7 @@ TypedMap is one of two built-in Map types.  This type allows any number of keys,
             ...
 
 .. attribute:: typedef
+    :noindex:
 
     The type for values in this dict.
 
@@ -259,6 +262,7 @@ This type requires you to specify the modeled keys in the Map, but values don't 
             ...
 
 .. attribute:: types
+    :noindex:
 
     The type for each key in the Map's structure.  Any keys that aren't included in ``types``
     will be ignored.
@@ -395,6 +399,7 @@ the DELETE section of the UpdateItem.
             pass
 
 .. attribute:: backing_type
+    :noindex:
 
     This is the DynamoDB type that Bloop will store values under.  The available types are::
 
@@ -408,16 +413,16 @@ the DELETE section of the UpdateItem.
         M -- map
         L -- list
 
-.. function:: dynamo_load
+.. function:: dynamo_load(value, *, context, **kwargs)
 
     Takes a ``str`` or ``None`` and returns a value to use locally.
 
-.. function:: dynamo_dump
+.. function:: dynamo_dump(value, *, context, **kwargs)
 
     Takes a local value or ``None`` and returns a string or ``None``.  This should return ``None`` to indicate a
     missing or deleted value - DynamoDB will fail if you try to send an empty set or list.
 
-.. function:: _register
+.. function:: _register(type_engine)
 
     You only need to implement this if your type references another type.  This is called when your type is registered
     with the type engine.  Bloop will fail to load or dump your type unless you register the inner type with this

@@ -57,7 +57,7 @@ one our model expects.  Any mismatch will  cause bind to fail.
 Creating Instances
 ==================
 
-``BaseModel`` provides a kwarg-based ``__init__``, so we can create a new user with:
+``BaseModel`` provides a kwarg-based ``__init__``, so you can create a new user with:
 
 .. code-block:: python
 
@@ -67,8 +67,8 @@ Creating Instances
                 email="user@domain.com",
                 created_on=arrow.now())
 
-You need to specify a value for the hash and range -- if there is one -- keys before you can ``Load``, ``Save``, or
-``Delete`` the object, but locally it's not required.  This is also ok:
+You need to specify a value for the hash -- and range, if there is one -- keys before you can mutate the object in
+DynamoDB, but locally it's not required.  For local use, this is fine:
 
 .. code-block:: python
 
@@ -93,19 +93,19 @@ You can customize how the table is created with an inner ``Meta`` class:
 
 Available properties:
 
-.. attribute:: table_name
+.. attribute:: Meta.table_name
 
     The table name for this model in DynamoDB.  Defaults to the class name.
 
-.. attribute:: read_units
+.. attribute:: Meta.read_units
 
     The provisioned read units for the table.  Defaults to 1.
 
-.. attribute:: write_units
+.. attribute:: Meta.write_units
 
     The provisioned write units for the table.  Defaults to 1.
 
-.. attribute:: abstract
+.. attribute:: Meta.abstract
 
     True if this model is not backed by a DynamoDB table.  Defaults to False.
 
@@ -120,7 +120,7 @@ Columns
 
 .. code-block:: python
 
-    Column(typedef: [bloop.Type],
+    Column(typedef: bloop.Type,
            hash_key: bool=False,
            range_key: bool=False,
            name: Optional[str]=None,
@@ -142,16 +142,19 @@ Columns
     Some types like ``Set`` require arguments.  See :ref:`types` for details.
 
 .. attribute:: hash_key
+    :noindex:
 
     True if this column is the model's hash key.  Defaults to False.
 
 .. attribute:: range_key
+    :noindex:
 
     True if this column is the model's range key.  Defaults to False.
 
 .. _property-name:
 
 .. attribute:: name
+    :noindex:
 
     The name this column is stored as in DynamoDB.  Defaults to the column's name in the model.
 
@@ -187,30 +190,36 @@ Indexes
         name: Optional[str]=None)
 
 .. attribute:: projection
+    :noindex:
 
     The columns to project into this Index.  Must be one of ``"all"``, ``"keys"``, or a list of column names.
     The index and model hash and range keys are always included in the projection.
 
 .. attribute:: hash_key
+    :noindex:
 
     Required for GSIs.  The model name of the column that will be this index's hash key.
     You cannot specify the hash key for an LSI since it always shares the model's hash key.
 
 .. attribute:: range_key
+    :noindex:
 
     Required for LSIs.  Optional for GSIs.  The model name of the column that will be this index's range key.
 
 .. attribute:: name
+    :noindex:
 
     The name this index is stored as in DynamoDB.  Defaults to the index's name in the model.
 
     See the :ref:`name property <property-name>` above.
 
 .. attribute:: read_units
+    :noindex:
 
     The provisioned read units for the index.  LSIs share the model's read units.  Defaults to 1.
 
 .. attribute:: write_units
+    :noindex:
 
     The provisioned write units for the index.  LSIs share the model's write units.  Defaults to 1.
 

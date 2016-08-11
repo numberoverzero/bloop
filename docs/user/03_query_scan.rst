@@ -105,19 +105,27 @@ Scan and Query have the same interface:
         consistent: Optional[bool]=None) -> bloop.Filter
 
 .. attribute:: obj
+    :noindex:
 
     This is either an instance of a model, or an index on a model.  From the example above, this can
     be the ``File`` model, or any of its indexes ``Filter.on_created``, ``Filter.by_owner``, or ``Filter.by_size``.
 
 .. attribute:: consistent
+    :noindex:
 
     See the :ref:`consistent property <property-consistent>` below.
 
-----------
-Properties
-----------
+==================
+Building the Query
+==================
+
+First, get a Query or Scan from ``Engine.query`` or ``Engine.scan``.  Then, you can specify how the query or scan
+will execute by modifying the following attributes:
+
+.. _query-key:
 
 .. attribute:: key
+    :noindex:
 
     Queries require a key :ref:`condition <conditions>`.  Scans do not use key conditions.
 
@@ -138,13 +146,17 @@ Properties
         query.key = in_home & starts_with_a
 
 .. attribute:: select
+    :noindex:
 
     The columns to load.  One of ``"all"``, ``"projected"``, ``"count"``, or a list of columns.
     When select is "count", no objects will be returned, but the ``count`` and ``scanned`` properties
     will be set on the result iterator (see below).  If the Query or Scan is against a Model, you cannot
     use "projected".  Defaults to "all" for Models and "projected" for Indexes.
 
+.. _query-filter:
+
 .. attribute:: filter
+    :noindex:
 
     A server-side filter :ref:`condition <conditions>` that DynamoDB applies to objects before returning them.
     Only objects that match the filter will be returned.  Defaults to None.
@@ -152,20 +164,24 @@ Properties
 .. _property-consistent:
 
 .. attribute:: consistent
+    :noindex:
 
-    Whether or not `strongly consistent reads`_ should be used.  Keep in mind that Strongly Consistent Reads
+    Whether or not `strongly consistent reads`__ should be used.  Keep in mind that Strongly Consistent Reads
     consume twice as many read units as Eventually Consistent Reads. This setting has no effect when used
     with a GSI, since strongly consistent reads `can't be used with a Global Secondary Index`__.
     Defaults to ``engine.config["consistent"]``
 
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
     __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-ConsistentRead
 
 .. attribute:: forward
+    :noindex:
 
     Whether to scan in ascending order (see `ScanIndexForward`_).  When True, scans are ascending.
     When False, scans are descending.  This setting is not used for Queries.  Defaults to True.
 
 .. attribute:: limit
+    :noindex:
 
     The maximum number of objects that will be returned.  This is **NOT** the same as DynamoDB's `Limit`__, which
     is the maximum number of objects evaluated per continuation token.  Once the iterator has returned ``limit``
@@ -179,6 +195,10 @@ Properties
     can be useful if you want to use your read capacity in bursts.  Otherwise, the iterator will only follow
     continuation tokens when the buffer is empty and another object is requested.  Defaults to 0.
 
+===================
+Executing the Query
+===================
+
 After you have finished defining the Query or Scan, you can use ``first()``, ``one()``, or ``build()`` to
 retrieve results.  If there are no matching objects, ``first`` will raise a ``ConstraintViolation``.  If
 there is not exactly one matching object, ``one`` will raise a ``ConstraintViolation``.
@@ -188,17 +208,20 @@ The object returned by ``build`` does not cache objects.  You can start the iter
 ``reset()``.  The iterator has the following properties for inspecting the state of the scan or query:
 
 .. attribute:: count
+    :noindex:
 
     The number of objects loaded from DynamoDB so far.  This includes objects still in the iterator's buffer, which
     may not have been yielded yet.
 
 .. attribute:: scanned
+    :noindex:
 
     The number of objects that DynamoDB has scanned so far.  If you are not using a filter, this is equal
     to ``count``.  Otherwise, the difference ``scanned - count`` is the number of objects that so far have
     not met the filter condition.  See `Counting Items`_.
 
 .. attribute:: exhausted
+    :noindex:
 
     If there is no limit, this will be True when the buffer is empty and DynamoDB stops returning ContinuationTokens
     to follow.
@@ -207,6 +230,5 @@ The object returned by ``build`` does not cache objects.  You can start the iter
     whichever happens first.  With a limit, there may be objects in the internal buffer when the
     iterator is exhausted.
 
-.. _strongly consistent reads: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
 .. _ScanIndexForward: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-ScanIndexForward
 .. _Counting Items: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#Count

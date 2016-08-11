@@ -3,7 +3,11 @@
 Using Conditions
 ^^^^^^^^^^^^^^^^
 
-Conditions are awesome!
+Conditions are used for:
+
+* Optimistic concurrency when :ref:`Saving or Deleting <save-delete-interface>` objects
+* To specify a Query's :ref:`key condition <query-key>`
+* To :ref:`filter results <query-filter>` from a Query or Scan
 
 .. _available-conditions:
 
@@ -11,22 +15,39 @@ Conditions are awesome!
 Available Conditions
 ====================
 
-::
+There is no DynamoDB type that supports all of the conditions.  For example, ``contains`` does not work with
+a numeric type ``"N"`` such as Float or Integer.  DynamoDB's `ConditionExpression Reference`__ has the full
+specification.
 
-    <
-    <=
-    ==
-    >=
-    >
-    !=
+.. code-block:: python
 
-    begins_with
-    between
-    contains
-    in_
-    is_, is_not
+    class Model(new_base()):
+        column = Column(SomeType)
 
-    ~, &, |
+    # Comparisons
+    Model.column < value
+    Model.column <= value
+    Model.column == value
+    Model.column >= value
+    Model.column > value
+    Model.column != value
+
+    Model.column.begins_with(value)
+    Model.column.between(low, high)
+    Model.column.contains(value)
+    Model.column.in_([foo, bar, baz])
+    Model.column.is_(None)
+    Model.column.is_not(False)
+
+    # bitwise operators combine conditions
+    not_none = Model.column.is_not(None)
+    in_the_future = Model.column > now
+
+    in_the_past = ~in_the_future
+    either = not_none | in_the_future
+    both = not_none & in_the_future
+
+__ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html#ConditionExpressionReference
 
 .. _condition-paths:
 
@@ -34,7 +55,30 @@ Available Conditions
 Paths
 =====
 
-Paths.  You can use them.
+You can construct conditions against individual elements of List and Map types with the usual indexing notation.
+
+.. code-block:: python
+
+    Item = Map(
+        name=String,
+        price=Float,
+        quantity=Integer)
+    # Total checkout time, applying coupons, payment processing...
+    TimingData = TypedMap(Float)
+
+    class Receipt(new_base()):
+        transaction_id = Column(UUID, column=True)
+        total = Column(Integer)
+
+        items = Column(List(Item))
+        metrics = Column(TimingData)
+
+Here are some basic conditions using paths:
+
+.. code-block:: python
+
+    Receipt.metrics["payment-duration"] > 30000
+    Receipt.items[0]["name"].begins_with("deli:salami:")
 
 .. _atomic:
 

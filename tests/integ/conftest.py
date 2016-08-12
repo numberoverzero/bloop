@@ -1,3 +1,4 @@
+import blinker
 import boto3
 import itertools
 import pytest
@@ -15,6 +16,16 @@ def pytest_addoption(parser):
         help="make table names unique for parallel runs")
 
 
+def pytest_configure(config):
+    nonce = config.getoption("--nonce")
+
+    @before_create_table.connect_via(sender=blinker.ANY, weak=False)
+    def nonce_table_name(_, model, **__):
+        table_name = model.Meta.table_name
+        if not table_name.endswith(nonce):
+            model.Meta.table_name += nonce
+
+
 def pytest_unconfigure(config):
     it = boto_client.get_paginator("list_tables").paginate()
     tables = [response["TableNames"] for response in it]
@@ -30,20 +41,12 @@ def pytest_unconfigure(config):
             print("Failed to clean up table '{}'".format(table))
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def nonce(request):
     return request.config.getoption("--nonce")
 
 
 @pytest.fixture
-def engine(nonce):
+def engine():
     bloop_client = Client(boto_client=boto_client)
-    engine = Engine(client=bloop_client)
-
-    def nonce_table_name(sender, model, **kwargs):
-        table_name = model.Meta.table_name
-        if not table_name.endswith(nonce):
-            model.Meta.table_name += nonce
-
-    before_create_table.connect(nonce_table_name, weak=False)
-    return engine
+    return Engine(client=bloop_client)

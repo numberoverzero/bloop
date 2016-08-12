@@ -12,14 +12,13 @@ env:
     - TOXENV=unit
     - TOXENV=integ
     - TOXENV=docs
+
 install: pip install tox coveralls
 script: tox -e $TOXENV
+
 after_success:
 - test $TOXENV = "unit" && coveralls
 - test $TOXENV = "integ" && coveralls
-after_script:
-# Cleans up any created tables
-- test $TOXENV = "integ" && ./scripts/cleanup-integ
 
 notifications:
   slack:

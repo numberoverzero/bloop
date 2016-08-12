@@ -122,12 +122,8 @@ class Engine:
             abstract = model.Meta.abstract
             return not abstract
 
-        # whether the model needs to have create/validate calls made for its
-        # backing table
-        def is_verified(model):
-            return is_model_verified(model)
         concrete = set(filter(is_concrete, walk_subclasses(base)))
-        unverified = concrete - set(filter(is_verified, concrete))
+        unverified = concrete - set(filter(is_model_verified, concrete))
 
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe

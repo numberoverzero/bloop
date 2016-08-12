@@ -14,7 +14,7 @@ env:
     - TOXENV=docs
 
 install: pip install tox coveralls
-script: tox -e $TOXENV
+script: scripts/travis_script.sh
 
 after_success:
 - test $TOXENV = "unit" && coveralls

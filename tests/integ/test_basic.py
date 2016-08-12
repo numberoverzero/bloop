@@ -1,29 +1,25 @@
 """Basic scenarios, symmetric tests"""
 import pytest
-from bloop import String
-from bloop import new_base, Column, Integer, NotModified
+from bloop import NotModified
 
-
-class User(new_base()):
-    id = Column(Integer, hash_key=True)
-    name = Column(String)
+from .models import User
 
 
 def test_crud(engine):
     engine.bind(User)
 
-    user = User(id=0, name="first")
+    user = User(email="user@domain.com", username="user", profile="first")
     engine.save(user)
 
-    same_user = User(id=user.id)
+    same_user = User(email=user.email, username=user.username)
     engine.load(same_user)
-    assert user.name == same_user.name
+    assert user.profile == same_user.profile
 
-    same_user.name = "second"
+    same_user.profile = "second"
     engine.save(same_user)
 
     engine.load(user)
-    assert user.name == same_user.name
+    assert user.profile == same_user.profile
 
     engine.delete(user)
 

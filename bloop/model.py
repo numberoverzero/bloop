@@ -2,11 +2,15 @@ import declare
 
 from .column import Column
 from .index import GlobalSecondaryIndex, LocalSecondaryIndex
+from .util import signal
 
 
-__all__ = ["new_base", "BaseModel"]
-
+__all__ = ["BaseModel", "model_created", "new_base"]
 _MISSING = object()
+
+
+# Signals!
+model_created = signal("model_created")
 
 
 def new_base():
@@ -46,6 +50,7 @@ class ModelMetaclass(declare.ModelMetaclass):
         setdefault(meta, "init", model)
         setdefault(meta, "table_name", model.__name__)
 
+        model_created.send(model=model)
         return model
 
 

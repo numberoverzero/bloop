@@ -11,7 +11,7 @@ from .exceptions import (
     UnboundModel,
 )
 from .index import GlobalSecondaryIndex, LocalSecondaryIndex
-from .model import new_base
+from .model import model_created, new_base
 from .types import (
     UUID,
     Binary,
@@ -31,6 +31,6 @@ __all__ = [
     "AbstractModelException", "Boolean", "Binary", "BloopException", "Client", "Column", "Condition",
     "ConstraintViolation", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer", "List",
     "LocalSecondaryIndex", "Map", "NotModified", "Set", "String", "TableMismatch", "TypedMap",
-    "UnboundModel", "UUID", "before_bind_model", "before_create_table", "new_base"
+    "UnboundModel", "UUID", "before_bind_model", "before_create_table", "model_created", "new_base"
 ]
 __version__ = "0.9.12"

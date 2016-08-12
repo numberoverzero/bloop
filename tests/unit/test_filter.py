@@ -393,14 +393,14 @@ def test_consistent_gsi_raises(query):
     query.index = ComplexModel.by_email
     query.consistent = True
 
-    assert "ConsistentRead" not in query.build()._prepared_request
+    assert "ConsistentRead" not in query.build()._request
 
 
 def test_consistent(query):
     query.index = None
     query.key = ComplexModel.name == "foo"
     query.consistent = True
-    assert query.build()._prepared_request["ConsistentRead"] is True
+    assert query.build()._request["ConsistentRead"] is True
 
 
 def test_forward_scan(query):
@@ -408,18 +408,18 @@ def test_forward_scan(query):
     query.mode = "scan"
     query.forward = True
 
-    assert "ScanIndexForward" not in query.build()._prepared_request
+    assert "ScanIndexForward" not in query.build()._request
 
 
 def test_forward(query):
     query.mode = "query"
     query.forward = True
-    assert query.build()._prepared_request["ScanIndexForward"] is True
+    assert query.build()._request["ScanIndexForward"] is True
 
 
 def test_negative_limit(query):
     query.limit = -3
-    assert "Limit" not in query.build()._prepared_request
+    assert "Limit" not in query.build()._request
 
 
 @pytest.mark.parametrize("limit", [0, 3])
@@ -445,10 +445,10 @@ def test_one_no_results(simple_query, engine):
 
     with pytest.raises(ConstraintViolation) as excinfo:
         simple_query.one()
-    same_prepared_request = simple_query.build()._prepared_request
-    same_prepared_request["ExclusiveStartKey"] = None
+    same_request = simple_query.build()._request
+    same_request["ExclusiveStartKey"] = None
     assert excinfo.value.args[0] == "Failed to meet required condition during query.one"
-    assert excinfo.value.obj == same_prepared_request
+    assert excinfo.value.obj == same_request
     assert engine.client.query.call_count == 1
 
 
@@ -460,10 +460,10 @@ def test_one_extra_results(simple_query, engine):
 
     with pytest.raises(ConstraintViolation) as excinfo:
         simple_query.one()
-    same_prepared_request = simple_query.build()._prepared_request
-    same_prepared_request["ExclusiveStartKey"] = None
+    same_request = simple_query.build()._request
+    same_request["ExclusiveStartKey"] = None
     assert excinfo.value.args[0] == "Failed to meet required condition during query.one"
-    assert excinfo.value.obj == same_prepared_request
+    assert excinfo.value.obj == same_request
     assert engine.client.query.call_count == 1
 
 
@@ -483,10 +483,10 @@ def test_first_no_results(simple_query, engine):
 
     with pytest.raises(ConstraintViolation) as excinfo:
         simple_query.first()
-    same_prepared_request = simple_query.build()._prepared_request
-    same_prepared_request["ExclusiveStartKey"] = None
+    same_request = simple_query.build()._request
+    same_request["ExclusiveStartKey"] = None
     assert excinfo.value.args[0] == "Failed to meet required condition during query.first"
-    assert excinfo.value.obj == same_prepared_request
+    assert excinfo.value.obj == same_request
     assert engine.client.query.call_count == 1
 
 
@@ -506,7 +506,7 @@ def test_build_gsi_consistent_read(query):
     query.index = ComplexModel.by_email
     # Can't use builder function - assume it was provided at __init__
     query._consistent = True
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert "ConsistentRead" not in prepared_request
 
 
@@ -514,19 +514,19 @@ def test_build_lsi_consistent_read(query):
     query.index = ComplexModel.by_joined
     query.key = ComplexModel.name == "foo"
     query.consistent = False
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["ConsistentRead"] is False
 
 
 def test_build_no_limit(query):
     query.limit = 0
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert "Limit" not in prepared_request
 
 
 def test_build_limit(query):
     query.limit = 4
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["Limit"] == 4
 
 
@@ -534,13 +534,13 @@ def test_build_scan_forward(query):
     query.mode = "scan"
     query.forward = True
 
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert "ScanIndexForward" not in prepared_request
 
 
 def test_build_query_forward(query):
     query.forward = False
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["ScanIndexForward"] is False
 
 
@@ -549,19 +549,19 @@ def test_build_table_name(query):
     # On an index...
     query.mode = "query"
     query.index = ComplexModel.by_email
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["TableName"] == ComplexModel.Meta.table_name
 
     # On the table...
     query.index = None
     query.key = ComplexModel.name == "foo"
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["TableName"] == ComplexModel.Meta.table_name
 
     # On scan...
     query.mode = "scan"
 
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["TableName"] == ComplexModel.Meta.table_name
 
 
@@ -569,20 +569,20 @@ def test_build_no_index_name(query):
     """IndexName isn't set on table queries"""
     query.index = None
     query.key = ComplexModel.name == "foo"
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert "IndexName" not in prepared_request
 
 
 def test_build_index_name(query):
     query.index = ComplexModel.by_joined
     query.key = ComplexModel.name == "foo"
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["IndexName"] == "by_joined"
 
 
 def test_build_filter(query):
     query.filter = ComplexModel.email.contains("@")
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     # Filters are rendered first, so these name and value ids are stable
     assert prepared_request["FilterExpression"] == "(contains(#n0, :v1))"
     assert prepared_request["ExpressionAttributeNames"]["#n0"] == "email"
@@ -591,13 +591,13 @@ def test_build_filter(query):
 
 def test_build_no_filter(query):
     query.filter = None
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert "FilterExpression" not in prepared_request
 
 
 def test_build_select_columns(query):
     query.select = {ComplexModel.date}
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["Select"] == "SPECIFIC_ATTRIBUTES"
     assert prepared_request["ExpressionAttributeNames"]["#n2"] == "date"
     assert prepared_request["ProjectionExpression"] == "#n2"
@@ -607,7 +607,7 @@ def test_build_select_all(query):
     query.index = None
     query.select = "all"
     query.key = ComplexModel.name == "foo"
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["Select"] == "ALL_ATTRIBUTES"
     assert "ProjectionExpression" not in prepared_request
 
@@ -615,14 +615,14 @@ def test_build_select_all(query):
 def test_build_select_projected(query):
     query.index = ComplexModel.by_email
     query.select = "projected"
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["Select"] == "ALL_PROJECTED_ATTRIBUTES"
     assert "ProjectionExpression" not in prepared_request
 
 
 def test_build_select_count(query):
     query.select = "count"
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["Select"] == "COUNT"
     assert "ProjectionExpression" not in prepared_request
 
@@ -641,7 +641,7 @@ def test_build_query_key(query):
     query.index = None
     query.key = ComplexModel.name == "foo"
 
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert prepared_request["KeyConditionExpression"] == "(#n3 = :v4)"
     assert prepared_request["ExpressionAttributeNames"]["#n3"] == "name"
     assert prepared_request["ExpressionAttributeValues"][":v4"] == {"S": "foo"}
@@ -651,39 +651,34 @@ def test_build_scan_no_key(query):
     query.mode = "scan"
     query.key = ComplexModel.name == "omitted"
 
-    prepared_request = query.build()._prepared_request
+    prepared_request = query.build()._request
     assert "KeyConditionExpression" not in prepared_request
 
 
-def test_build_expected_all(query):
-    query.index = None
-    query.select = "all"
-    query.key = ComplexModel.name == "foo"
-    expected_columns = query.build()._expected_columns
+def test_build_expected_all():
+    expected_columns = expected_columns_for(
+        model=ComplexModel, index=None, select="all", select_attributes=None)
     assert expected_columns == ComplexModel.Meta.columns
 
 
-def test_build_expected_projected(query):
-    query.index = ComplexModel.by_email
-    query.select = "projected"
-    expected_columns = query.build()._expected_columns
-    assert expected_columns == ComplexModel.by_email.projection_attributes
+def test_build_expected_projected():
+    expected_columns = expected_columns_for(
+        model=ComplexModel, index=ComplexModel.by_email, select="projected", select_attributes=None)
+    assert expected_columns == ComplexModel.Meta.columns
 
 
-def test_build_expected_count(query):
+def test_build_expected_count():
     """No expected columns for a count"""
-    query.select = "count"
-    expected_columns = query.build()._expected_columns
+    expected_columns = expected_columns_for(
+        model=ComplexModel, index=None, select="count", select_attributes=None)
     assert expected_columns == set()
 
 
-def test_build_expected_specific(query):
-    # Query on the table so all attributes are available
-    query.index = None
-    query.key = ComplexModel.name == "foo"
-    query.select = {ComplexModel.date, ComplexModel.email}
-    expected_columns = query.build()._expected_columns
-    assert expected_columns == query.select
+def test_build_expected_specific():
+    select = {ComplexModel.date, ComplexModel.email}
+    expected_columns = expected_columns_for(
+        model=ComplexModel, index=None, select="specific", select_attributes=select)
+    assert expected_columns == select
 
 
 def test_iter_reset(query):
@@ -712,7 +707,7 @@ def test_iter_no_results(query, engine):
     list(iterator)
     assert iterator.count == 0
     assert iterator.scanned == 5
-    engine.client.query.assert_called_once_with(iterator._prepared_request)
+    engine.client.query.assert_called_once_with(iterator._request)
 
 
 def test_iter_empty_pages(simple_query, engine):

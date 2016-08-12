@@ -1,4 +1,5 @@
 import collections
+import functools
 import operator
 
 from .condition import And, BeginsWith, Between, Comparison, _BaseCondition
@@ -176,7 +177,7 @@ class Filter:
 
         # No results, or too many results
         if (first is None) or (second is not None):
-            raise ConstraintViolation(it._mode + ".one", it._prepared_request)
+            raise ConstraintViolation(self.mode + ".one", it._request)
         return first
 
     def first(self):
@@ -190,7 +191,7 @@ class Filter:
         value = next(it, None)
         # No results
         if value is None:
-            raise ConstraintViolation(it._mode + ".first", it._prepared_request)
+            raise ConstraintViolation(self.mode + ".first", it._request)
         return value
 
     def build(self):
@@ -253,24 +254,28 @@ class Filter:
 
         # Compute the expected columns for this filter
         expected_columns = expected_columns_for(self.model, self.index, select_mode, select_columns)
-        return FilterIterator(
-            engine=self.engine, model=self.model, prepared_request=prepared_request,
-            expected_columns=expected_columns, mode=self.mode, prefetch=int(self.prefetch))
+        unpack = functools.partial(unpack_obj, engine=self.engine, model=self.model, expected=expected_columns)
+        call = getattr(self.engine.client, self.mode)
+        return FilterIterator(call=call, unpack=unpack, request=prepared_request, prefetch=int(self.prefetch))
+
+
+def unpack_obj(*, engine, model, attrs, expected):
+    # Create an instance to load into
+    obj = model.Meta.init()
+    # Apply updates from attrs, only inserting expected columns, and sync the new object's tracking
+    engine._update(obj, attrs, expected)
+    sync(obj, engine)
+    return obj
 
 
 class FilterIterator:
-    def __init__(self, *, engine, model, prepared_request, expected_columns, mode, prefetch):
-        self._engine = engine
-        self._model = model
-        self._prepared_request = prepared_request
-        self._expected_columns = expected_columns
-        self._mode = mode
+    def __init__(self, *, call, unpack, request, prefetch):
+        self._call = call
+        self._unpack = unpack
+        self._request = request
         self._prefetch = max(prefetch, 1)
+
         self._buffer = collections.deque()
-
-        # Cache boto3 client call for performance
-        self._call = getattr(engine.client, mode)
-
         self._state = {"count": 0, "scanned": 0, "exhausted": False}
 
     @property
@@ -287,7 +292,7 @@ class FilterIterator:
 
     def reset(self):
         self._state = {"count": 0, "scanned": 0, "exhausted": False}
-        self._prepared_request.pop("ExclusiveStartKey", None)
+        self._request.pop("ExclusiveStartKey", None)
 
     def __iter__(self):
         return self
@@ -299,9 +304,9 @@ class FilterIterator:
 
         # Refill the buffer until we hit the limit, or Dynamo stops giving us continue tokens.
         while (not self.exhausted) and len(self._buffer) < self._prefetch:
-            response = self._call(self._prepared_request)
+            response = self._call(self._request)
             continuation_token = response.get("LastEvaluatedKey", None)
-            self._prepared_request["ExclusiveStartKey"] = continuation_token
+            self._request["ExclusiveStartKey"] = continuation_token
 
             self._state["exhausted"] = continuation_token is None
             self._state["count"] += response["Count"]
@@ -309,12 +314,7 @@ class FilterIterator:
 
             # Each item is a dict of attributes
             for attrs in response.get("Items", []):
-                # Create an instance to load into
-                obj = self._model.Meta.init()
-                # Apply updates from attrs, only inserting expected columns, and sync the new object's tracking
-                self._engine._update(obj, attrs, self._expected_columns)
-                sync(obj, self._engine)
-                self._buffer.append(obj)
+                self._buffer.append(self._unpack(attrs=attrs))
 
         # Clear the first element of a full buffer, or a remaining element after exhaustion
         if self._buffer:

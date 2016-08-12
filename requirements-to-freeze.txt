@@ -1,5 +1,6 @@
 alabaster
 arrow
+blinker
 boto3
 coverage
 declare

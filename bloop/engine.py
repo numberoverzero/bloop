@@ -1,3 +1,4 @@
+import blinker
 import declare
 
 from .client import Client
@@ -10,7 +11,7 @@ from .tracking import clear, is_model_verified, sync, verify_model
 from .util import walk_subclasses
 
 
-__all__ = ["Engine"]
+__all__ = ["Engine", "before_bind_model", "before_create_table"]
 
 MISSING = object()
 DEFAULT_CONFIG = {
@@ -18,6 +19,10 @@ DEFAULT_CONFIG = {
     "consistent": False,
     "strict": True
 }
+
+# Signals!
+before_bind_model = blinker.signal("before_bind_model")
+before_create_table = blinker.signal("before_create_table")
 
 
 def value_of(column):
@@ -129,6 +134,7 @@ class Engine:
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
         for model in unverified:
+            before_create_table.send(self, model=model)
             self.client.create_table(model)
 
         for model in concrete:
@@ -138,6 +144,7 @@ class Engine:
             # next time its BaseModel is bound to an engine
             verify_model(model)
 
+            before_bind_model.send(self, model=model)
             self.type_engine.register(model)
             for column in model.Meta.columns:
                 self.type_engine.register(column.typedef)

@@ -1,7 +1,7 @@
 from .client import Client
 from .column import Column
 from .condition import Condition
-from .engine import Engine
+from .engine import Engine, before_bind_model, before_create_table
 from .exceptions import (
     AbstractModelException,
     BloopException,
@@ -31,6 +31,6 @@ __all__ = [
     "AbstractModelException", "Boolean", "Binary", "BloopException", "Client", "Column", "Condition",
     "ConstraintViolation", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer", "List",
     "LocalSecondaryIndex", "Map", "NotModified", "Set", "String", "TableMismatch", "TypedMap",
-    "UnboundModel", "UUID", "new_base"
+    "UnboundModel", "UUID", "before_bind_model", "before_create_table", "new_base"
 ]
 __version__ = "0.9.12"

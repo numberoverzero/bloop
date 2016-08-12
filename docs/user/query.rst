@@ -189,12 +189,6 @@ will execute by modifying the following attributes:
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
 
-.. attribute:: prefetch
-
-    The number of objects to buffer from DynamoDB before the iterator will yield objects.  Setting this to a high value
-    can be useful if you want to use your read capacity in bursts.  Otherwise, the iterator will only follow
-    continuation tokens when the buffer is empty and another object is requested.  Defaults to 0.
-
 ===================
 Executing the Query
 ===================
@@ -203,7 +197,7 @@ After you have finished defining the Query or Scan, you can use ``first()``, ``o
 retrieve results.  If there are no matching objects, ``first`` will raise a ``ConstraintViolation``.  If
 there is not exactly one matching object, ``one`` will raise a ``ConstraintViolation``.
 
-You can use ``build`` to return an iterable, which fetches objects depending on ``prefetch`` and ``limit``.
+You can use ``build`` to return an iterable, which fetches objects up to ``limit`` (or unlimited).
 The object returned by ``build`` does not cache objects.  You can start the iterable over at any time by calling
 ``reset()``.  The iterator has the following properties for inspecting the state of the scan or query:
 

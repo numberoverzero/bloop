@@ -6,6 +6,9 @@ BaseModel = new_base()
 
 
 class User(BaseModel):
+    class Meta:
+        read_units = 1
+        write_units = 3
     email = Column(String, hash_key=True)
     username = Column(String, range_key=True)
 

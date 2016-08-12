@@ -13,3 +13,20 @@ def test_query_with_select_subset(engine):
 
     result = query.one()
     assert not hasattr(result, "profile")
+
+
+def test_limit(engine):
+    engine.bind(User)
+    users = [valid_user() for _ in range(10)]
+    engine.save(*users)
+
+    scan = engine.scan(User)
+    scan.limit = 3
+
+    it = scan.build()
+    results = list(it)
+
+    assert len(results) == 3
+    assert it.count == 10
+    assert it.scanned == 10
+    assert it.exhausted

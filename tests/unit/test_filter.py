@@ -59,7 +59,7 @@ invalid_range_conditions = [
 def query(engine):
     return Filter(
         engine=engine, mode="query", model=ComplexModel, index=ComplexModel.by_email, strict=False,
-        select={ComplexModel.joined}, prefetch=3, consistent=True, forward=False,
+        select={ComplexModel.joined}, consistent=True, forward=False,
         limit=4, key=(ComplexModel.email == "foo"), filter=(ComplexModel.not_projected > 3))
 
 
@@ -74,7 +74,7 @@ def simple_query(engine):
 def projection_query(engine):
     return Filter(
         engine=engine, mode="query", model=ProjectedIndexes, index=None, strict=False,
-        select="all", prefetch=3, consistent=True, forward=False, limit=4, key=None, filter=None)
+        select="all", consistent=True, forward=False, limit=4, key=None, filter=None)
 
 
 def test_copy(query):
@@ -82,7 +82,7 @@ def test_copy(query):
     same = query.copy()
     attrs = [
         "engine", "mode", "model", "index", "strict",
-        "prefetch", "consistent", "forward", "limit", "key", "filter", "select"]
+        "consistent", "forward", "limit", "key", "filter", "select"]
     assert all(map(lambda a: (getattr(query, a) == getattr(same, a)), attrs))
 
 
@@ -428,17 +428,6 @@ def test_limit(query, limit):
     query.build()
 
 
-def test_negative_prefetch(query):
-    query.prefetch = -5
-    assert query.build()._prefetch == 1
-
-
-@pytest.mark.parametrize("prefetch", [0, 3])
-def test_prefetch(query, prefetch):
-    query.prefetch = prefetch
-    query.build()
-
-
 def test_one_no_results(simple_query, engine):
     """one raises when there are no results"""
     engine.client.query.return_value = {"Count": 0, "ScannedCount": 6, "Items": []}
@@ -526,8 +515,7 @@ def test_build_no_limit(query):
 
 def test_build_limit(query):
     query.limit = 4
-    prepared_request = query.build()._request
-    assert prepared_request["Limit"] == 4
+    assert query.build()._limit == 4
 
 
 def test_build_scan_forward(query):
@@ -712,80 +700,33 @@ def test_iter_no_results(query, engine):
 
 def test_iter_empty_pages(simple_query, engine):
     """
-    prefetch is number of items, not pages.
-    Even if prefetch isn't met, items are returned after pages are exhausted
+    Automatically follow continue tokens until the buffer isn't empty
+    Items are returned after pages are exhausted
     """
     engine.client.query.side_effect = [
-        {"LastEvaluatedKey": "call2", "Items": [], "Count": 0, "ScannedCount": 3},
-        {"LastEvaluatedKey": "call3", "Items": [{"id": {"S": "first"}}], "Count": 1, "ScannedCount": 4},
-        {"LastEvaluatedKey": "call4", "Items": [{"id": {"S": "second"}}], "Count": 1, "ScannedCount": 5},
-        {"Items": [], "Count": 0, "ScannedCount": 6}
+        {"LastEvaluatedKey": "continue", "Items": [], "Count": 0, "ScannedCount": 3},
+        {"Items": [{"id": {"S": "first"}}, {"id": {"S": "second"}}], "Count": 2, "ScannedCount": 4}
     ]
-    # Try to prefetch 3, even though there are only 2
-    simple_query.prefetch = 3
     iterator = simple_query.build()
-    iterator_iter = iter(iterator)
 
-    first = next(iterator_iter)
-    # Exhausted after the first call, since we asked for at least 3 before items are yielded back.
+    first = next(iterator)
+    assert iterator._state["calls"] == 2
+    assert not iterator.exhausted
+    assert iterator.count == 2
+    assert iterator.scanned == 7
+
+    second = next(iterator)
+    # No new calls, but now the iterator is exhausted
+    assert iterator._state["calls"] == 2
     assert iterator.exhausted
-    assert iterator.count == 2
-    assert iterator.scanned == 18  # 3 + 4 + 5 + 6
-
-    second = next(iterator_iter)
-    # Make sure this is still coming from the buffer, and count/scanned don't change
-    assert iterator.count == 2
-    assert iterator.scanned == 18
 
     # And here we run out of items to fetch
     with pytest.raises(StopIteration):
-        next(iterator_iter)
+        next(iterator)
 
     # Things were loaded properly
     assert first.id == "first"
     assert second.id == "second"
 
     # Followed 3 continuation tokens
-    assert engine.client.query.call_count == 4
-
-
-def test_iter_prefetch_buffering(simple_query, engine):
-    """one page has more results than the prefetch number"""
-    items = [{"id": {"S": "first"}}, {"id": {"S": "second"}}, {"id": {"S": "third"}}]
-    engine.client.query.side_effect = [
-        {"Count": 3, "ScannedCount": 5, "Items": items, "LastEvaluatedKey": "next", },
-        {"Count": 0, "ScannedCount": 6, "Items": []}
-    ]
-
-    # Try to prefetch 2, even though there are 3
-    simple_query.prefetch = 2
-    iterator = simple_query.build()
-    iterator_iter = iter(iterator)
-
-    first = next(iterator_iter)
-    # Not exhausted after the first call, since there's a continue token we haven't followed yet
-    assert not iterator.exhausted
-    assert iterator.count == 3
-    assert iterator.scanned == 5
-
-    second = next(iterator_iter)
-    third = next(iterator_iter)
-    # Make sure those still coming from the buffer, and count/scanned don't change
-    assert iterator.count == 3
-    assert iterator.scanned == 5
-
-    # Now that we have cleared the buffer, we finally try to follow the
-    # continue token and discover that we're out of items.
-    with pytest.raises(StopIteration):
-        next(iterator_iter)
-
-    assert iterator.count == 3
-    assert iterator.scanned == 11  # 5 + 6
-
-    # Things were loaded properly
-    assert first.id == "first"
-    assert second.id == "second"
-    assert third.id == "third"
-
-    # Followed 1 continuation token
     assert engine.client.query.call_count == 2

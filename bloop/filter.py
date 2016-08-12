@@ -139,7 +139,7 @@ def validate_key_for(model, index, key):
 
 class Filter:
     def __init__(
-            self, *, engine, mode, model, index, strict, select, select_attributes=None, prefetch=0,
+            self, *, engine, mode, model, index, strict, select,
             consistent=False, forward=True, limit=None, key=None, filter=None):
         self.engine = engine
         self.mode = mode
@@ -148,7 +148,6 @@ class Filter:
         self.strict = strict
 
         self.select = select
-        self.prefetch = prefetch
         self.consistent = consistent
         self.forward = forward
         self.limit = limit or 0
@@ -160,8 +159,7 @@ class Filter:
         """Convenience method for building specific queries off of a shared base query."""
         return Filter(
             engine=self.engine, mode=self.mode, model=self.model, index=self.index, strict=self.strict,
-            select=self.select, prefetch=self.prefetch,
-            consistent=self.consistent, forward=self.forward,
+            select=self.select,  consistent=self.consistent, forward=self.forward,
             limit=self.limit, key=self.key, filter=self.filter)
 
     def one(self):
@@ -169,9 +167,7 @@ class Filter:
 
         If there is not exactly one matching result, raises ConstraintViolation.
         """
-        f = self.copy()
-        f.prefetch = 0
-        it = f.build()
+        it = self.build()
         first = next(it, None)
         second = next(it, None)
 
@@ -185,9 +181,7 @@ class Filter:
 
         If there is not at least one matching result, raises ConstraintViolation.
         """
-        f = self.copy()
-        f.prefetch = 0
-        it = f.build()
+        it = self.build()
         value = next(it, None)
         # No results
         if value is None:
@@ -216,7 +210,6 @@ class Filter:
         """
         prepared_request = {
             "ConsistentRead": bool(self.consistent),
-            "Limit": int(self.limit),
             "ScanIndexForward": bool(self.forward),
             "TableName": self.model.Meta.table_name,
         }
@@ -226,10 +219,6 @@ class Filter:
             # Can't perform consistent reads on a GSI
             if isinstance(self.index, GlobalSecondaryIndex):
                 del prepared_request["ConsistentRead"]
-
-        # Only send useful limits (omit 0 for no limit)
-        if self.limit < 1:
-            del prepared_request["Limit"]
 
         # Scans are always forward
         if self.mode == "scan":
@@ -256,7 +245,7 @@ class Filter:
         expected_columns = expected_columns_for(self.model, self.index, select_mode, select_columns)
         unpack = functools.partial(unpack_obj, engine=self.engine, model=self.model, expected=expected_columns)
         call = getattr(self.engine.client, self.mode)
-        return FilterIterator(call=call, unpack=unpack, request=prepared_request, prefetch=int(self.prefetch))
+        return FilterIterator(call=call, unpack=unpack, request=prepared_request, limit=int(self.limit))
 
 
 def unpack_obj(*, engine, model, attrs, expected):
@@ -269,14 +258,14 @@ def unpack_obj(*, engine, model, attrs, expected):
 
 
 class FilterIterator:
-    def __init__(self, *, call, unpack, request, prefetch):
+    def __init__(self, *, call, unpack, request, limit):
         self._call = call
         self._unpack = unpack
         self._request = request
-        self._prefetch = max(prefetch, 1)
+        self._limit = limit
 
         self._buffer = collections.deque()
-        self._state = {"count": 0, "scanned": 0, "exhausted": False}
+        self._state = {"count": 0, "scanned": 0, "exhausted": False, "yielded": 0, "calls": 0}
 
     @property
     def count(self):
@@ -288,22 +277,32 @@ class FilterIterator:
 
     @property
     def exhausted(self):
-        return self._state["exhausted"]
+        # 1) Already yielded `limit` items
+        # 2) No more continue tokens to follow, and the buffer's empty
+        return self._stop_yielding or (self._state["exhausted"] and not self._buffer)
 
     def reset(self):
-        self._state = {"count": 0, "scanned": 0, "exhausted": False}
+        self._state = {"count": 0, "scanned": 0, "exhausted": False, "yielded": 0, "calls": 0}
         self._request.pop("ExclusiveStartKey", None)
+
+    @property
+    def _stop_yielding(self):
+        return 0 < self._limit == self._state["yielded"]
+
+    @property
+    def _stop_buffering(self):
+        return self._state["exhausted"] or self._buffer
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        # still have buffered elements available
-        if len(self._buffer) > 0:
-            return self._buffer.popleft()
+        if self.exhausted:
+            raise StopIteration
 
-        # Refill the buffer until we hit the limit, or Dynamo stops giving us continue tokens.
-        while (not self.exhausted) and len(self._buffer) < self._prefetch:
+        # Keep following tokens until the buffer has a result or we run out of continuation tokens
+        while not self._stop_buffering:
+            self._state["calls"] += 1
             response = self._call(self._request)
             continuation_token = response.get("LastEvaluatedKey", None)
             self._request["ExclusiveStartKey"] = continuation_token
@@ -316,8 +315,10 @@ class FilterIterator:
             for attrs in response.get("Items", []):
                 self._buffer.append(self._unpack(attrs=attrs))
 
-        # Clear the first element of a full buffer, or a remaining element after exhaustion
+        # Return the first element; if self._buffer > 2 then the next
+        # self.__next__ will pull from self._buffer
         if self._buffer:
+            self._state["yielded"] += 1
             return self._buffer.popleft()
 
         # The filter must be exhausted, otherwise the while would have continued.

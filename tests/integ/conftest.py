@@ -6,6 +6,9 @@ import random
 import string
 
 from bloop import Client, Engine, model_created
+
+from .models import User
+
 boto_client = boto3.client("dynamodb", region_name="us-west-2")
 
 
@@ -50,6 +53,15 @@ def pytest_unconfigure(config):
 @pytest.fixture(scope="session")
 def nonce(request):
     return request.config.getoption("--nonce")
+
+
+@pytest.yield_fixture(autouse=True)
+def cleanup_objects(engine):
+    yield
+
+    # TODO track bound models w/model_bound signal (TODO), then use boto3 to scan/delete by Meta.table_name
+    users = list(engine.scan(User).build())
+    engine.delete(*users)
 
 
 @pytest.fixture

@@ -1,4 +1,3 @@
-import blinker
 import declare
 
 from .client import Client
@@ -8,7 +7,7 @@ from .filter import Filter
 from .index import Index
 from .model import ModelMetaclass
 from .tracking import clear, is_model_verified, sync, verify_model
-from .util import walk_subclasses
+from .util import walk_subclasses, signal
 
 
 __all__ = ["Engine", "before_bind_model", "before_create_table"]
@@ -21,8 +20,8 @@ DEFAULT_CONFIG = {
 }
 
 # Signals!
-before_bind_model = blinker.signal("before_bind_model")
-before_create_table = blinker.signal("before_create_table")
+before_bind_model = signal("before_bind_model")
+before_create_table = signal("before_create_table")
 
 
 def value_of(column):

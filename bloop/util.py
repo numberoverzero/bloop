@@ -1,7 +1,12 @@
+import blinker
 import weakref
 
+__all__ = ["WeakDefaultDictionary", "ordered", "signal", "walk_subclasses"]
 
-__all__ = ["ordered", "walk_subclasses", "WeakDefaultDictionary"]
+# Isolate to avoid collisions with other modules
+# Don't expose the namespace.
+__signals = blinker.Namespace()
+signal = __signals.signal
 
 
 def ordered(obj):

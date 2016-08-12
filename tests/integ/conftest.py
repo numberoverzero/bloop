@@ -5,7 +5,7 @@ import pytest
 import random
 import string
 
-from bloop import Client, Engine, model_created
+from bloop import Client, Engine, before_create_table
 
 from .models import User
 
@@ -25,8 +25,8 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     nonce = config.getoption("--nonce")
 
-    @model_created.connect_via(sender=blinker.ANY, weak=False)
-    def nonce_table_name(_, model, **__):
+    @before_create_table.connect_via(sender=blinker.ANY, weak=False)
+    def nonce_table_name(_, *, model, **__):
         table_name = model.Meta.table_name
         if nonce not in table_name:
             model.Meta.table_name += nonce
@@ -35,6 +35,7 @@ def pytest_configure(config):
 def pytest_unconfigure(config):
     skip_cleanup = config.getoption("--skip-cleanup")
     if skip_cleanup:
+        print("Skipping cleanup")
         return
     it = boto_client.get_paginator("list_tables").paginate()
     tables = [response["TableNames"] for response in it]

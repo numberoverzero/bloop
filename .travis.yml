@@ -1,9 +1,15 @@
 language: python
 python: 3.5
 env:
-- TOXENV=unit
-- TOXENV=integ
-- TOXENV=docs
+  global:
+    # AWS_ACCESS_KEY_ID bloop-integ-travis-001
+    - secure: SNhGK6Pyh1dX5J7Q6r/QipXSdG4oxm68S7DJ/nePNQqyXTNmGuT2Q9iXoVnB8UDoAsv82arqSEcu8qCroOv+dJ2rumPmJOkt5pcNk6TaWoSgWCBnvugpbrf4zxm1ZEz48MhmUtwO1bte2FeKas1dMt0YLcj/9WNwwf/u86kr53U=
+    # AWS_SECRET_ACCESS_KEY bloop-integ-travis-001
+    - secure: hQ7C29uZu97jeGLpc12ctbRb01+urXb5kMND4lsVdRslLrBnLAx6OUIrGNude1yEx6G8Qd1zOWuusa5WgGW8BtZ5hIiWzPuZK9jweXMABk9zxOjZ+39YYuCMzPNqPZhaihsEksbtryGZAsKRfwNtXPPDTY1hg/qui2+xP1/39vU=
+  matrix:
+    - TOXENV=unit
+    - TOXENV=integ
+    - TOXENV=docs
 install: pip install tox coveralls
 script: tox -e $TOXENV
 after_success:

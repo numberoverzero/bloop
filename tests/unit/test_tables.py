@@ -7,7 +7,7 @@ from bloop.tables import (
 )
 from bloop.util import ordered
 
-from .helpers.models import ComplexModel, SimpleModel, User
+from ..helpers.models import ComplexModel, SimpleModel, User
 
 
 statuses = [

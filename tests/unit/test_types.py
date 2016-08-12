@@ -18,7 +18,7 @@ from bloop.types import (
     TypedMap,
 )
 
-from .helpers.models import DocumentType
+from ..helpers.models import DocumentType
 
 
 def symmetric_test(typedef, *pairs):

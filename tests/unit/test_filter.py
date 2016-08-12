@@ -8,7 +8,7 @@ from bloop.index import LocalSecondaryIndex
 from bloop.model import new_base
 from bloop.types import Integer
 
-from .helpers.models import ComplexModel, ProjectedIndexes, SimpleModel, User
+from ..helpers.models import ComplexModel, ProjectedIndexes, SimpleModel, User
 
 
 valid_hash_conditions = [

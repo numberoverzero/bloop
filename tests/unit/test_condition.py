@@ -7,7 +7,7 @@ from bloop.expressions import ConditionRenderer, render
 from bloop.model import new_base
 from bloop.types import UUID, Integer, TypedMap
 
-from .helpers.models import Document, DocumentType, User, conditions
+from ..helpers.models import Document, DocumentType, User, conditions
 
 
 def test_duplicate_name_refs(engine):

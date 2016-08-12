@@ -13,7 +13,7 @@ from bloop.tracking import get_snapshot, sync
 from bloop.types import UUID, DateTime, Integer, String
 from bloop.util import ordered
 
-from .helpers.models import ComplexModel, User, VectorModel
+from ..helpers.models import ComplexModel, User, VectorModel
 
 
 def test_shared_type_engine():

@@ -2,7 +2,7 @@ import uuid
 
 from bloop.tracking import _obj_tracking, get_marked
 
-from .helpers.models import ComplexModel, User
+from ..helpers.models import ComplexModel, User
 
 
 def test_init_marks():

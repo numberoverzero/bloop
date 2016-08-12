@@ -17,7 +17,7 @@ script: tox -e $TOXENV
 after_success:
 - test $TOXENV = "unit" && coveralls
 - test $TOXENV = "integ" && coveralls
-after:
+after_script:
 # Cleans up any created tables
 - test $TOXENV = "integ" && ./scripts/cleanup-integ
 

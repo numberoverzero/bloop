@@ -1,7 +1,8 @@
 import collections
 
 from .exceptions import ConstraintViolation
-__all__ = ["Search", "Scan", "Query", "PreparedSearch", "SearchIterator", "ScanIterator", "QueryIterator"]
+
+__all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanIterator", "QueryIterator"]
 
 
 def search_repr(cls, model, index):
@@ -21,10 +22,8 @@ class Search:
     mode = None
 
     def __init__(
-            self, session=None,
-            model=None, index=None, key=None,
-            filter=None, select=None, limit=None,
-            strict=True, consistent=False, forward=True):
+            self, session=None, model=None, index=None, key=None, filter=None,
+            select=None, limit=None, strict=True, consistent=False, forward=True):
         self.session = session
         self.model = model
         self.index = index
@@ -74,14 +73,14 @@ class PreparedSearch:
         self.key = None
         self.filter = None
         self._select_mode = None
-        self._select_columns = None
+        self._projected_columns = None
         self.limit = None
-        self._prepared_request = None
+        self._request = None
         self._iterator_cls = None
 
-    def prepare(self, mode=None, session=None,
-                model=None, index=None, key=None, filter=None, select=None,
-                limit=None, strict=None, consistent=None, forward=None):
+    def prepare(
+            self, mode=None, session=None, model=None, index=None, key=None, filter=None,
+            select=None, limit=None, strict=None, consistent=None, forward=None):
 
         self.prepare_session(session, mode)
         self.prepare_model(model, index, consistent)
@@ -108,30 +107,35 @@ class PreparedSearch:
     def prepare_constraints(self, limit, forward):
         pass
 
-    def iterator(self):
+    def __repr__(self):
+        return search_repr(self.__class__, self.model, self.index)
+
+    def __iter__(self):
         return self._iterator_cls(
             session=self.session,
             model=self.model,
             index=self.index,
-            request=self._prepared_request,
             limit=self.limit,
+            request=self._request,
+            projected=self._projected_columns
         )
 
 
 class SearchIterator:
     mode = None
 
-    def __init__(self, session, request, limit, model, index):
-        self._session = session
-        self._request = request
-        self._limit = limit
-        self._model = model
-        self._index = index
+    def __init__(self, session, model, index, limit, request, projected):
+        self.session = session
+        self.request = request
+        self.limit = limit
+        self.model = model
+        self.index = index
+        self.projected = projected
 
-        self._buffer = collections.deque()
-        self._count = 0
-        self._scanned = 0
-        self._yielded = 0
+        self.buffer = collections.deque()
+        self.count = 0
+        self.scanned = 0
+        self.yielded = 0
         self._exhausted = False
 
     def one(self):
@@ -140,7 +144,7 @@ class SearchIterator:
         second = next(self, None)
         if (first is None) or (second is not None):
             raise ConstraintViolation(
-                self.__class__.__name__ + ".one", self._request)
+                self.__class__.__name__ + ".one", self.request)
         return first
 
     def first(self):
@@ -148,56 +152,47 @@ class SearchIterator:
         value = next(self, None)
         if value is None:
             raise ConstraintViolation(
-                self.__class__.__name__ + ".first", self._request)
+                self.__class__.__name__ + ".first", self.request)
         return value
 
     def reset(self):
-        self._buffer.clear()
-        self._count = 0
-        self._scanned = 0
-        self._yielded = 0
+        self.buffer.clear()
+        self.count = 0
+        self.scanned = 0
+        self.yielded = 0
         self._exhausted = False
 
     @property
-    def count(self):
-        return self._count
-
-    @property
-    def scanned(self):
-        return self._scanned
-
-    @property
     def exhausted(self):
-        reached_limit = self._limit and self._yielded >= self._limit
-        exhausted_buffer = self._exhausted and len(self._buffer) == 0
+        reached_limit = self.limit and self.yielded >= self.limit
+        exhausted_buffer = self._exhausted and len(self.buffer) == 0
         return reached_limit or exhausted_buffer
 
     def __repr__(self):
-        return search_repr(self.__class__, self._model, self._index)
+        return search_repr(self.__class__, self.model, self.index)
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        if self._limit and self._yielded >= self._limit:
+        if self.limit and self.yielded >= self.limit:
             raise StopIteration
 
-        while (not self._exhausted) and (not self._buffer):
-            response = self._session.search_items(self.mode, self._request)
+        while (not self._exhausted) and len(self.buffer) == 0:
+            response = self.session.search_items(self.mode, self.request)
 
-            continuation_token = self._request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
+            continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
             self._exhausted = continuation_token is None
 
-            self._count += response["Count"]
-            self._scanned += response["ScannedCount"]
+            self.count += response["Count"]
+            self.scanned += response["ScannedCount"]
 
             # Each item is a dict of attributes
-            for attrs in response.get("Items", []):
-                self._buffer.append(self._unpack(attrs=attrs))
+            self.buffer.extend(response.get("Items", []))
 
-        if self._buffer:
-            self._yielded += 1
-            return self._buffer.popleft()
+        if self.buffer:
+            self.yielded += 1
+            return self.buffer.popleft()
 
         # Buffer must be empty (if _buffer)
         # No more continue tokens (while not _exhausted)

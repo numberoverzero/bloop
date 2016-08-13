@@ -2,7 +2,7 @@ import botocore.exceptions
 
 from ..exceptions import AbstractModelException, TableMismatch
 from ..util import ordered
-from .models import handle_constraint_violation
+from .models import handle_constraint_violation, standardize_query_response
 from .tables import (
     create_table_request,
     expected_table_description,
@@ -15,7 +15,9 @@ __all__ = (
     "delete_item",
     "describe_table",
     "load_items",
+    "query_request",
     "save_item",
+    "scan_request",
     "validate_table"
 )
 
@@ -36,6 +38,18 @@ def delete_item(dynamodb_client, item):
 
 def load_items(dynamodb_client, items):  # pragma: no cover
     pass
+
+
+def query_request(dynamodb_client, request):
+    response = dynamodb_client.query(**request)
+    standardize_query_response(response)
+    return response
+
+
+def scan_request(dynamodb_client, request):
+    response = dynamodb_client.scan(**request)
+    standardize_query_response(response)
+    return response
 
 
 def create_table(dynamodb_client, model):

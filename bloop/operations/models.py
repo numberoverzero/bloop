@@ -1,6 +1,6 @@
 from ..exceptions import ConstraintViolation
 
-__all__ = ["handle_constraint_violation"]
+__all__ = ["handle_constraint_violation", "standardize_query_response"]
 
 
 def handle_constraint_violation(error, operation, item):
@@ -9,3 +9,8 @@ def handle_constraint_violation(error, operation, item):
         raise ConstraintViolation(operation, item)
     else:
         raise error
+
+
+def standardize_query_response(response):
+    count = response.setdefault("Count", 0)
+    response["ScannedCount"] = response.get("ScannedCount", count)

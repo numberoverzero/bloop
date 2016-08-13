@@ -3,7 +3,9 @@ from .operations import (
     create_table,
     delete_item,
     describe_table,
+    query_request,
     save_item,
+    scan_request,
     validate_table
 )
 
@@ -73,17 +75,6 @@ class Client(object):
         """
         # Fall back to the global session
         self.boto_client = boto_client or boto3.client("dynamodb")
-
-    def _filter(self, client_func, request):
-        # Wrap client function in retries
-        response = client_func(**request)
-
-        # When updating count, ScannedCount is omitted unless it differs
-        # from Count; thus we need to default to assume that the
-        # ScannedCount is equal to the Count
-        count = response.setdefault("Count", 0)
-        response["ScannedCount"] = response.get("ScannedCount", count)
-        return response
 
     def batch_get_items(self, items):
         """Load objects in batches from DynamoDB.
@@ -216,10 +207,10 @@ class Client(object):
         return describe_table(self.boto_client, model)
 
     def query(self, request):
-        return self._filter(self.boto_client.query, request)
+        return query_request(self.boto_client, request)
 
     def scan(self, request):
-        return self._filter(self.boto_client.scan, request)
+        return scan_request(self.boto_client, request)
 
     def update_item(self, item):
         """Update an item in DynamoDB.  Only modify given values.

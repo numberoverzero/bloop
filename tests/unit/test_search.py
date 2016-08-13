@@ -29,3 +29,8 @@ both = {"model": User, "index": User.by_email}
 def test_repr(kwargs, cls, expected):
     obj = cls(**kwargs)
     assert repr(obj) == expected
+
+
+def test_prepare_empty():
+    search = Search()
+    search.prepare()

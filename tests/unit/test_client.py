@@ -14,7 +14,7 @@ from bloop.exceptions import (
     ConstraintViolation,
     TableMismatch,
 )
-from bloop.model import BaseModel, Column
+from bloop.models import BaseModel, Column
 from bloop.tables import expected_table_description
 from bloop.types import String
 from bloop.util import ordered

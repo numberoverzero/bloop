@@ -3,7 +3,7 @@ import pytest
 from bloop.condition import And, Condition
 from bloop.exceptions import ConstraintViolation
 from bloop.filter import Filter, expected_columns_for
-from bloop.model import BaseModel, Column, LocalSecondaryIndex
+from bloop.models import BaseModel, Column, LocalSecondaryIndex
 from bloop.types import Integer
 
 from ..helpers.models import ComplexModel, ProjectedIndexes, SimpleModel, User

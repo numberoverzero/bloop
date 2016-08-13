@@ -9,7 +9,7 @@ from .exceptions import (
     TableMismatch,
     UnboundModel,
 )
-from .model import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex, model_created
+from .models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex, model_created
 from .types import (
     UUID,
     Binary,

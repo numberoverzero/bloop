@@ -2,7 +2,7 @@ import uuid
 
 import arrow
 import pytest
-from bloop.model import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
+from bloop.models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.types import UUID, Boolean, DateTime, String
 
 from ..helpers.models import User

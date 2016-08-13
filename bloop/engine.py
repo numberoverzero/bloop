@@ -4,7 +4,7 @@ from .client import Client
 from .exceptions import AbstractModelException, NotModified, UnboundModel
 from .expressions import render
 from .filter import Filter
-from .model import Index, ModelMetaclass
+from .models import Index, ModelMetaclass
 from .tracking import clear, is_model_verified, sync, verify_model
 from .util import missing, walk_subclasses, signal
 

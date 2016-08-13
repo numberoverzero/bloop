@@ -606,9 +606,10 @@ def test_bind_concrete_base(engine, session):
 
 
 def test_bind_different_engines():
-    first_engine = Engine()
+    _session = Mock(spec=boto3.Session)
+    first_engine = Engine(session=_session)
     first_engine._session = Mock(spec=SessionWrapper)
-    second_engine = Engine()
+    second_engine = Engine(session=_session)
     second_engine._session = Mock(spec=SessionWrapper)
 
     class Concrete(BaseModel):

@@ -15,7 +15,7 @@ from bloop.exceptions import (
     ConstraintViolation,
     TableMismatch,
 )
-from bloop.model import new_base
+from bloop.model import BaseModel
 from bloop.tables import expected_table_description
 from bloop.types import String
 from bloop.util import ordered
@@ -322,7 +322,7 @@ def test_create_raises_unknown(client):
 
 
 def test_create_abstract_raises(client):
-    abstract_model = new_base()
+    abstract_model = BaseModel
     with pytest.raises(AbstractModelException) as excinfo:
         client.create_table(abstract_model)
     assert excinfo.value.model is abstract_model

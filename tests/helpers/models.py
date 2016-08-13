@@ -1,4 +1,5 @@
 from bloop import (
+    BaseModel,
     UUID,
     Column,
     Condition,
@@ -11,8 +12,7 @@ from bloop import (
     Map,
     Set,
     String,
-    TypedMap,
-    new_base,
+    TypedMap
 )
 
 
@@ -27,7 +27,6 @@ DocumentType = Map(**{
     'Id': UUID,
     'Updated': DateTime
 })
-BaseModel = new_base()
 
 
 class Document(BaseModel):

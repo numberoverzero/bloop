@@ -4,7 +4,7 @@ import pytest
 from bloop.column import Column
 from bloop.condition import And, Comparison, Condition, Not, Or
 from bloop.expressions import ConditionRenderer, render
-from bloop.model import new_base
+from bloop.model import BaseModel
 from bloop.types import UUID, Integer, TypedMap
 
 from ..helpers.models import Document, DocumentType, User, conditions
@@ -181,7 +181,7 @@ def test_path_comparator(engine):
 
 def test_typedmap_path_comparator(engine):
     """ TypedMap should defer to the value typedef for conditions """
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(Integer, hash_key=True)
         data = Column(TypedMap(UUID))
     engine.bind(base=Model)
@@ -198,7 +198,7 @@ def test_typedmap_path_comparator(engine):
 
 def test_name_ref_with_path(engine):
     """ Columns with custom names with literal periods render correctly """
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(Integer, hash_key=True, name='this.is.id')
         data = Column(DocumentType)
     engine.bind(base=Model)

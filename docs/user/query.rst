@@ -6,10 +6,9 @@ We'll need a different model than the ``User`` from the previous sections:
 .. code-block:: python
 
     from bloop import (
-        Binary, Column, DateTime, Integer, String,
-        GlobalSecondaryIndex, LocalSecondaryIndex,
-        Engine, new_base)
-    BaseModel = new_base()
+        BaseModel, Binary, Column, DateTime, Integer,
+        String, GlobalSecondaryIndex, LocalSecondaryIndex,
+        Engine)
 
     class File(BaseModel):
         class Meta:

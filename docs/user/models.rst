@@ -5,13 +5,14 @@
 Define Models
 ^^^^^^^^^^^^^
 
-To start, you'll need to create a base class that your models inherit from:
+Every model inherits from ``BaseModel``:
 
 .. code-block:: python
 
-    from bloop import new_base
+    from bloop import BaseModel
 
-    BaseModel = new_base()
+    class User(BaseModel):
+        pass
 
 Add some Columns to your model.  You'll need at least a hash key:
 

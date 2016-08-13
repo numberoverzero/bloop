@@ -5,7 +5,7 @@ from bloop.condition import And, Condition
 from bloop.exceptions import ConstraintViolation
 from bloop.filter import Filter, expected_columns_for
 from bloop.index import LocalSecondaryIndex
-from bloop.model import new_base
+from bloop.model import BaseModel
 from bloop.types import Integer
 
 from ..helpers.models import ComplexModel, ProjectedIndexes, SimpleModel, User
@@ -221,7 +221,7 @@ def test_select_all_strict_lsi(query):
 
 def test_select_all_strict_lsi_projection(query, engine):
     """No problem selecting all on this strict LSI because its projection is all"""
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(Integer, hash_key=True)
         foo = Column(Integer, range_key=True)
         bar = Column(Integer)

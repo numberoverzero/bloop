@@ -1,7 +1,7 @@
 import pytest
 from bloop.column import Column
 from bloop.index import Index, LocalSecondaryIndex
-from bloop.model import new_base
+from bloop.model import BaseModel
 from bloop.types import String
 
 
@@ -48,7 +48,7 @@ def test_lsi_init_throughput():
 
 def test_lsi_delegates_throughput():
     """LSI read_units, write_units delegate to model.Meta"""
-    class Model(new_base()):
+    class Model(BaseModel):
         name = Column(String, hash_key=True)
         other = Column(String, range_key=True)
         joined = Column(String)

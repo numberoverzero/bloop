@@ -30,11 +30,11 @@ First, define and bind our model:
     import uuid
 
     from bloop import (
-        Column, Engine, GlobalSecondaryIndex,
-        String, UUID, new_base)
+        BaseModel, Column, Engine,
+        GlobalSecondaryIndex, String, UUID)
 
 
-    class Account(new_base()):
+    class Account(BaseModel):
         id = Column(UUID, hash_key=True)
         name = Column(String)
         email = Column(String)

@@ -4,7 +4,7 @@ import arrow
 import pytest
 from bloop.column import Column
 from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
-from bloop.model import new_base
+from bloop.model import BaseModel
 from bloop.types import UUID, Boolean, DateTime, String
 
 from ..helpers.models import User
@@ -21,7 +21,7 @@ def test_load_default_init(engine):
     """The default model loader uses the model's __init__ method"""
     init_called = False
 
-    class Blob(new_base()):
+    class Blob(BaseModel):
         def __init__(self, **kwargs):
             nonlocal init_called
             init_called = True
@@ -87,13 +87,13 @@ def test_load_dump_none(engine):
 
 def test_meta_read_write_units():
     """If `read_units` or `write_units` is missing from a model's Meta, it defaults to 1"""
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(UUID, hash_key=True)
 
     assert Model.Meta.write_units == 1
     assert Model.Meta.read_units == 1
 
-    class Other(new_base()):
+    class Other(BaseModel):
         class Meta:
             read_units = 2
             write_units = 3
@@ -117,16 +117,16 @@ def test_meta_keys():
     def range_column():
         return Column(UUID, range_key=True)
 
-    class HashOnly(new_base()):
+    class HashOnly(BaseModel):
         h = hash_column()
 
-    class RangeOnly(new_base()):
+    class RangeOnly(BaseModel):
         r = range_column()
 
-    class Neither(new_base()):
+    class Neither(BaseModel):
         pass
 
-    class Both(new_base()):
+    class Both(BaseModel):
         h = hash_column()
         r = range_column()
 
@@ -144,30 +144,30 @@ def test_meta_keys():
 
 def test_model_extra_keys():
     with pytest.raises(ValueError):
-        class DoubleHash(new_base()):
+        class DoubleHash(BaseModel):
             id = Column(UUID, hash_key=True)
             other = Column(UUID, hash_key=True)
 
     with pytest.raises(ValueError):
-        class DoubleRange(new_base()):
+        class DoubleRange(BaseModel):
             id = Column(UUID, range_key=True)
             other = Column(UUID, range_key=True)
 
     with pytest.raises(ValueError):
-        class SharedHashRange(new_base()):
+        class SharedHashRange(BaseModel):
             foo = Column(UUID, hash_key=True, range_key=True)
 
 
 def test_invalid_local_index():
     with pytest.raises(ValueError):
-        class InvalidIndex(new_base()):
+        class InvalidIndex(BaseModel):
             id = Column(UUID, hash_key=True)
             index = LocalSecondaryIndex(range_key="id", projection="keys")
 
 
 def test_index_keys():
     """Make sure index hash and range keys are objects, not strings"""
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(UUID, hash_key=True)
         other = Column(DateTime, range_key=True)
         another = Column(UUID)
@@ -186,7 +186,7 @@ def test_index_keys():
 def test_local_index_no_range_key():
     """A table range_key is required to specify a LocalSecondaryIndex"""
     with pytest.raises(ValueError):
-        class Model(new_base()):
+        class Model(BaseModel):
             id = Column(UUID, hash_key=True)
             another = Column(UUID)
             by_another = LocalSecondaryIndex(range_key="another", projection="keys")
@@ -195,7 +195,7 @@ def test_local_index_no_range_key():
 def test_index_projections():
     """Make sure index projections are calculated to include table keys"""
 
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(UUID, hash_key=True)
         other = Column(UUID, range_key=True)
         another = Column(UUID)
@@ -231,12 +231,12 @@ def test_index_projections():
 
 def test_meta_table_name():
     """If table_name is missing from a model's Meta, use the model's __name__"""
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(UUID, hash_key=True)
 
     assert Model.Meta.table_name == "Model"
 
-    class Other(new_base()):
+    class Other(BaseModel):
         class Meta:
             table_name = "table_name"
             write_units = 3
@@ -246,12 +246,10 @@ def test_meta_table_name():
 
 
 def test_abstract_not_inherited():
-    base = new_base()
-
-    class Concrete(base):
+    class Concrete(BaseModel):
         pass
 
-    assert base.Meta.abstract
+    assert BaseModel.Meta.abstract
     assert not Concrete.Meta.abstract
 
 

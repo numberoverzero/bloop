@@ -8,7 +8,7 @@ from bloop.client import Client
 from bloop.column import Column
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import AbstractModelException, NotModified, UnboundModel
-from bloop.model import new_base
+from bloop.model import BaseModel
 from bloop.tracking import get_snapshot, sync
 from bloop.types import UUID, DateTime, Integer, String
 from bloop.util import ordered
@@ -39,7 +39,7 @@ def test_missing_objects(engine):
 
 
 def test_dump_key(engine):
-    class HashAndRange(new_base()):
+    class HashAndRange(BaseModel):
         foo = Column(Integer, hash_key=True)
         bar = Column(Integer, range_key=True)
     engine.bind(base=HashAndRange)
@@ -149,9 +149,7 @@ def test_load_shared_table(engine):
     Two different models backed by the same table try to load the same hash key.
     They share the column "shared" but load the content differently
     """
-    base = new_base()
-
-    class FirstModel(base):
+    class FirstModel(BaseModel):
         class Meta:
             table_name = "SharedTable"
         id = Column(String, hash_key=True)
@@ -159,7 +157,7 @@ def test_load_shared_table(engine):
         first = Column(String)
         as_date = Column(DateTime, name="shared")
 
-    class SecondModel(base):
+    class SecondModel(BaseModel):
         class Meta:
             table_name = "SharedTable"
 
@@ -167,7 +165,7 @@ def test_load_shared_table(engine):
         range = Column(String, range_key=True)
         second = Column(String)
         as_string = Column(String, name="shared")
-    engine.bind(base=base)
+    engine.bind(BaseModel)
 
     id = "foo"
     range = "bar"
@@ -216,7 +214,7 @@ def test_load_missing_attrs(engine):
 
 
 def test_load_dump_unbound(engine):
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(UUID, hash_key=True)
         counter = Column(Integer)
     obj = Model(id=uuid.uuid4(), counter=5)
@@ -547,7 +545,7 @@ def test_scan(engine):
 
 
 def test_bind_non_model():
-    """Can't bind things that don't subclass new_base()"""
+    """Can't bind things that don't subclass BaseModel"""
     engine = Engine()
     engine.client = Mock(spec=Client)
     with pytest.raises(ValueError):
@@ -555,7 +553,7 @@ def test_bind_non_model():
 
 
 def test_bind_skip_abstract_models():
-    class Abstract(new_base()):
+    class Abstract(BaseModel):
         class Meta:
             abstract = True
 
@@ -583,7 +581,7 @@ def test_bind_concrete_base():
     engine = Engine()
     engine.client = Mock(spec=Client)
 
-    class Concrete(new_base()):
+    class Concrete(BaseModel):
         pass
     engine.bind(base=Concrete)
     engine.client.create_table.assert_called_once_with(Concrete)
@@ -596,7 +594,7 @@ def test_bind_different_engines():
     second_engine = Engine()
     second_engine.client = Mock(spec=Client)
 
-    class Concrete(new_base()):
+    class Concrete(BaseModel):
         pass
     first_engine.bind(base=Concrete)
     second_engine.bind(base=Concrete)
@@ -618,7 +616,7 @@ def test_bind_different_engines():
         ("save", True), ("load", True), ("delete", True),
         ("scan", False), ("query", False)], ids=str)
 def test_unbound_operations_raise(engine, op, plural):
-    class Abstract(new_base()):
+    class Abstract(BaseModel):
         class Meta:
             abstract = True
         id = Column(Integer, hash_key=True)

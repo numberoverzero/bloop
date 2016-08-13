@@ -98,7 +98,7 @@ class Engine:
 
         # Make sure we're looking at models
         if not isinstance(base, ModelMetaclass):
-            raise ValueError("base must derive from bloop.new_base()")
+            raise ValueError("base must derive from bloop.BaseModel")
 
         # whether the model's typedefs should be registered, and
         # whether the model should be eligible for validation
@@ -154,10 +154,10 @@ class Engine:
 
         Example
         -------
-        class HashOnly(bloop.new_base()):
+        class HashOnly(bloop.BaseModel):
             user_id = Column(NumberType, hash_key=True)
 
-        class HashAndRange(bloop.new_base()):
+        class HashAndRange(bloop.BaseModel):
             user_id = Column(NumberType, hash_key=True)
             game_title = Column(StringType, range_key=True)
 

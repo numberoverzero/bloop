@@ -347,7 +347,7 @@ Now it's all ``Image``, all the time:
 
 .. code-block:: python
 
-    class User(new_base()):
+    class User(BaseModel):
         name = Column(String, hash_key=True)
         profile_gif = Column(GIF)
 
@@ -506,7 +506,7 @@ And using that in a model:
 
 .. code-block:: python
 
-    class Shirt(new_base()):
+    class Shirt(BaseModel):
         id = Column(String, hash_key=True)
         color = Column(Enum(Color))
     engine.bind(base=Shirt)

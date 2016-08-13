@@ -5,19 +5,11 @@ from .index import GlobalSecondaryIndex, LocalSecondaryIndex
 from .util import missing, signal
 
 
-__all__ = ["BaseModel", "model_created", "new_base"]
+__all__ = ["BaseModel", "model_created"]
 
 
 # Signals!
 model_created = signal("model_created")
-
-
-def new_base():
-    """Return an unbound, abstract base model"""
-    class Model(BaseModel, metaclass=ModelMetaclass):
-        class Meta:
-            abstract = True
-    return Model
 
 
 def loaded_columns(obj):
@@ -105,20 +97,11 @@ def setup_indexes(meta):
         index._bind(meta.model)
 
 
-class BaseModel:
-    """
-    Do not subclass directly; use new_base.
+class BaseModel(metaclass=ModelMetaclass):
+    """An unbound, abstract base model"""
+    class Meta:
+        abstract = True
 
-    Example:
-
-        BaseModel = new_base()
-
-        class MyModel(BaseModel):
-            ...
-
-        engine = bloop.Engine()
-        engine.bind(base=BaseModel)
-    """
     def __init__(self, **attrs):
         # Only set values from **attrs if there's a
         # corresponding `model_name` for a column in the model

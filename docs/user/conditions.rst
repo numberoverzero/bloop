@@ -21,7 +21,7 @@ specification.
 
 .. code-block:: python
 
-    class Model(new_base()):
+    class Model(BaseModel):
         column = Column(SomeType)
 
     # Comparisons
@@ -66,7 +66,7 @@ You can construct conditions against individual elements of List and Map types w
     # Total checkout time, applying coupons, payment processing...
     TimingData = TypedMap(Float)
 
-    class Receipt(new_base()):
+    class Receipt(BaseModel):
         transaction_id = Column(UUID, column=True)
         total = Column(Integer)
 
@@ -109,7 +109,7 @@ The following examples use this model:
 
 .. code-block:: python
 
-    class Document(new_base()):
+    class Document(BaseModel):
         id = Column(Integer, hash_key=True)
         folder = Column(String)
         name = Column(String)

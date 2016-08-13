@@ -8,9 +8,8 @@ Reusing the model from :ref:`define-models`:
 .. code-block:: python
 
     from bloop import (
-        Boolean, Column, DateTime, String, UUID,
-        GlobalSecondaryIndex, new_base)
-    BaseModel = new_base()
+        BaseModel, Boolean, Column, DateTime, String,
+        UUID, GlobalSecondaryIndex)
 
     class User(BaseModel):
         id = Column(UUID, hash_key=True)

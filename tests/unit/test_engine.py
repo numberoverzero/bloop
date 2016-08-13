@@ -286,9 +286,7 @@ def test_load_missing_key(engine):
             engine.load(model)
 
 
-@pytest.mark.parametrize(
-    "atomic_mode", [True, False], ids=lambda v: "atomic:"+str(v))
-def test_load_snapshots(engine, atomic_mode):
+def test_load_snapshots(engine):
     """Loading builds a snapshot for future atomic operations"""
     user = User(id=uuid.uuid4())
 
@@ -299,7 +297,6 @@ def test_load_snapshots(engine, atomic_mode):
             {"age": {"N": 5},
              "id": {"S": str(user.id)},
              "extra_field": {"freeform data": "not parsed"}}]}
-    engine.config["atomic"] = atomic_mode
     engine.load(user)
 
     # Cached snapshots are in dumped form
@@ -368,15 +365,14 @@ def test_save_atomic_new(engine):
             '((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1)) '
             'AND (attribute_not_exists(#n2)) AND (attribute_not_exists(#n3))'
             ' AND (attribute_not_exists(#n4)))')}
-    engine.config["atomic"] = True
-    engine.save(user)
+    engine.save(user, atomic=True)
     engine.client.update_item.assert_called_once_with(expected)
 
 
-def test_save_atomic_condition(atomic):
+def test_save_atomic_condition(engine):
     user = User(id=uuid.uuid4())
     # Pretend the id was already persisted in dynamo
-    sync(user, atomic)
+    sync(user, engine)
     # Mutate a field; part of the update but not an expected condition
     user.name = "new_foo"
     # Condition on the mutated field with a different value
@@ -393,8 +389,8 @@ def test_save_atomic_condition(atomic):
         "TableName": "User",
         "UpdateExpression": "SET #n0=:v4"
     }
-    atomic.save(user, condition=condition)
-    atomic.client.update_item.assert_called_once_with(expected)
+    engine.save(user, condition=condition, atomic=True)
+    engine.client.update_item.assert_called_once_with(expected)
 
 
 def test_save_condition_key_only(engine):
@@ -460,11 +456,11 @@ def test_delete_multiple_condition(engine):
     assert engine.client.delete_item.call_count == 3
 
 
-def test_delete_atomic(atomic):
+def test_delete_atomic(engine):
     user = User(id=uuid.uuid4())
 
     # Manually snapshot so we think age is persisted
-    sync(user, atomic)
+    sync(user, engine)
 
     expected = {
         'ConditionExpression': '(#n0 = :v1)',
@@ -472,8 +468,8 @@ def test_delete_atomic(atomic):
         'TableName': 'User',
         'Key': {'id': {'S': str(user.id)}},
         'ExpressionAttributeNames': {'#n0': 'id'}}
-    atomic.delete(user)
-    atomic.client.delete_item.assert_called_once_with(expected)
+    engine.delete(user, atomic=True)
+    engine.client.delete_item.assert_called_once_with(expected)
 
 
 def test_delete_atomic_new(engine):
@@ -489,8 +485,7 @@ def test_delete_atomic_new(engine):
             '((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1)) '
             'AND (attribute_not_exists(#n2)) AND (attribute_not_exists(#n3))'
             ' AND (attribute_not_exists(#n4)))')}
-    engine.config["atomic"] = True
-    engine.delete(user)
+    engine.delete(user, atomic=True)
     engine.client.delete_item.assert_called_once_with(expected)
 
 
@@ -508,12 +503,12 @@ def test_delete_new(engine):
     engine.client.delete_item.assert_called_once_with(expected)
 
 
-def test_delete_atomic_condition(atomic):
+def test_delete_atomic_condition(engine):
     user_id = uuid.uuid4()
     user = User(id=user_id, email='foo@bar.com')
 
     # Manually snapshot so we think age is persisted
-    sync(user, atomic)
+    sync(user, engine)
 
     expected = {
         "ConditionExpression": "((#n0 = :v1) AND ((#n2 = :v3) AND (#n4 = :v5)))",
@@ -525,8 +520,8 @@ def test_delete_atomic_condition(atomic):
         "Key": {"id": {"S": str(user_id)}},
         "TableName": "User"
     }
-    atomic.delete(user, condition=User.name.is_("foo"))
-    atomic.client.delete_item.assert_called_once_with(expected)
+    engine.delete(user, condition=User.name.is_("foo"), atomic=True)
+    engine.client.delete_item.assert_called_once_with(expected)
 
 
 def test_query(engine):

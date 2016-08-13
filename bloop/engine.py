@@ -12,12 +12,6 @@ from .util import missing, walk_subclasses, signal
 
 __all__ = ["Engine", "before_bind_model", "before_create_table"]
 
-DEFAULT_CONFIG = {
-    "atomic": False,
-    "consistent": False,
-    "strict": True
-}
-
 # Signals!
 before_bind_model = signal("before_bind_model")
 before_create_table = signal("before_create_table")
@@ -54,27 +48,15 @@ def dump_key(engine, obj):
     return key
 
 
-def config(engine, key, value):
-    """Return a given config value unless it's None.
-
-    In that case, fall back to the engine's config value.
-    """
-    if value is None:
-        return engine.config[key]
-    return value
-
-
 class Engine:
     client = None
 
-    def __init__(self, client=None, type_engine=None, **config):
+    def __init__(self, client=None, type_engine=None):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = type_engine or declare.TypeEngine.unique()
 
         self.client = client
-        self.config = dict(DEFAULT_CONFIG)
-        self.config.update(config)
 
     def _dump(self, model, obj, context=None, **kwargs):
         """Return a dict of the obj in DynamoDB format"""
@@ -148,14 +130,14 @@ class Engine:
                 self.type_engine.register(column.typedef)
             self.type_engine.bind(context={"engine": self})
 
-    def delete(self, *objs, condition=None, atomic=None):
+    def delete(self, *objs, condition=None, atomic=False):
         objs = set(objs)
         for obj in objs:
             if obj.Meta.abstract:
                 raise AbstractModelException(obj)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
-            if config(self, "atomic", atomic):
+            if atomic:
                 rendered = render(self, atomic=obj, condition=condition)
             else:
                 rendered = render(self, condition=condition)
@@ -164,7 +146,7 @@ class Engine:
             self.client.delete_item(item)
             clear(obj)
 
-    def load(self, *objs, consistent=None):
+    def load(self, *objs, consistent=False):
         """Populate objects from dynamodb, optionally using consistent reads.
 
         If any objects are not found, raises NotModified with the attribute
@@ -188,9 +170,6 @@ class Engine:
         # Load multiple instances
         engine.load([hash_only, hash_and_range])
         """
-        # For an in-depth breakdown of the loading algorithm,
-        # see docs/dev/internal.rst::Loading
-        consistent = config(self, "consistent", consistent)
         objs = set(objs)
         for obj in objs:
             if obj.Meta.abstract:
@@ -234,7 +213,7 @@ class Engine:
                     not_loaded.update(index_set)
             raise NotModified("load", not_loaded)
 
-    def query(self, obj, consistent=None):
+    def query(self, obj, consistent=False, strict=True):
         if isinstance(obj, Index):
             model, index = obj.model, obj
             select = "projected"
@@ -245,10 +224,10 @@ class Engine:
             raise AbstractModelException(model)
 
         return Filter(
-            engine=self, mode="query", model=model, index=index, strict=self.config["strict"], select=select,
-            consistent=config(self, "consistent", consistent))
+            engine=self, mode="query", model=model, index=index, strict=strict, select=select,
+            consistent=consistent)
 
-    def save(self, *objs, condition=None, atomic=None):
+    def save(self, *objs, condition=None, atomic=False):
         objs = set(objs)
         for obj in objs:
             if obj.Meta.abstract:
@@ -256,7 +235,7 @@ class Engine:
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
 
-            if config(self, "atomic", atomic):
+            if atomic:
                 rendered = render(self, atomic=obj, condition=condition, update=obj)
             else:
                 rendered = render(self, condition=condition, update=obj)
@@ -265,7 +244,7 @@ class Engine:
             self.client.update_item(item)
             sync(obj, self)
 
-    def scan(self, obj, consistent=None):
+    def scan(self, obj, consistent=False, strict=True):
         if isinstance(obj, Index):
             model, index = obj.model, obj
             select = "projected"
@@ -275,5 +254,5 @@ class Engine:
         if model.Meta.abstract:
             raise AbstractModelException(model)
         return Filter(
-            engine=self, mode="scan", model=model, index=index, strict=self.config["strict"], select=select,
-            consistent=config(self, "consistent", consistent))
+            engine=self, mode="scan", model=model, index=index, strict=strict, select=select,
+            consistent=consistent)

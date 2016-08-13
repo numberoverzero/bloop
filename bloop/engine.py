@@ -124,8 +124,6 @@ class Engine:
             verify_model(model)
 
             self.type_engine.register(model)
-            for column in model.Meta.columns:
-                self.type_engine.register(column.typedef)
             self.type_engine.bind(context={"engine": self})
             model_bound.send(self, model=model)
 

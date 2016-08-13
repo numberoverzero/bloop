@@ -166,6 +166,11 @@ class BaseModel(metaclass=ModelMetaclass):
             ) for column in cls.Meta.columns))
         return dict(filtered) or None
 
+    @classmethod
+    def _register(cls, type_engine):
+        for column in cls.Meta.columns:
+            type_engine.register(column.typedef)
+
     def __str__(self):
         attrs = ", ".join("{}={}".format(*item) for item in loaded_columns(self))
         return "{}({})".format(self.__class__.__name__, attrs)

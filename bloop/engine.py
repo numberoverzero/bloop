@@ -42,7 +42,7 @@ def dump_key(engine, obj):
     for key_column in obj.Meta.keys:
         key_value = getattr(obj, key_column.model_name, missing)
         if key_value is missing:
-            raise ValueError("Missing required hash/range key '{}'".format(key_column.model_name))
+            raise ValueError("Missing required hash/range key {!r}".format(key_column.model_name))
         key_value = engine._dump(key_column.typedef, key_value)
         key[key_column.dynamo_name] = key_value
     return key

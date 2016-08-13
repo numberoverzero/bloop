@@ -178,7 +178,7 @@ class Comparison(_BaseCondition):
 
     def __init__(self, column, comparator, value, path=None):
         if comparator not in self.comparator_strings:
-            raise ValueError("Unknown comparator '{}'".format(comparator))
+            raise ValueError("Unknown comparator {!r}".format(comparator))
         self.column = column
         self.comparator = comparator
         self.value = value

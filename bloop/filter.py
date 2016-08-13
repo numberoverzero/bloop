@@ -60,7 +60,7 @@ def validate_select_for(model, index, strict, select):
             return select, None
         # Unknown select mode
         else:
-            raise ValueError("Unknown select mode '{}'".format(select))
+            raise ValueError("Unknown select mode {!r}".format(select))
 
     # Since it's not a string, we're in specific column territory.
     select = set(select)

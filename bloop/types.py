@@ -215,7 +215,7 @@ class Set(Type):
             raise TypeError("Sets requires a type")
         self.typedef = type_instance(typedef)
         if typedef.backing_type not in {"N", "S", "B"}:
-            raise TypeError("Set's typedef must be backed by one of N/S/B but was '{}'".format(typedef.backing_type))
+            raise TypeError("Set's typedef must be backed by one of N/S/B but was {!r}".format(typedef.backing_type))
         self.backing_type = typedef.backing_type + "S"
         super().__init__()
 

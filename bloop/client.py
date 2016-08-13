@@ -1,8 +1,11 @@
 import boto3
-import botocore
-
-from .exceptions import ConstraintViolation
-from .operations import create_table, describe_table, validate_table
+from .operations import (
+    create_table,
+    delete_item,
+    describe_table,
+    save_item,
+    validate_table
+)
 
 __all__ = ["Client"]
 
@@ -81,16 +84,6 @@ class Client(object):
         count = response.setdefault("Count", 0)
         response["ScannedCount"] = response.get("ScannedCount", count)
         return response
-
-    def _modify_item(self, client_func, name, item):
-        try:
-            client_func(**item)
-        except botocore.exceptions.ClientError as error:
-            error_code = error.response["Error"]["Code"]
-            if error_code == "ConditionalCheckFailedException":
-                raise ConstraintViolation(name, item)
-            else:
-                raise error
 
     def batch_get_items(self, items):
         """Load objects in batches from DynamoDB.
@@ -196,7 +189,7 @@ class Client(object):
         .. _delete_item (DynamoDB Client):
             https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.delete_item
         """
-        self._modify_item(self.boto_client.delete_item, "delete", item)
+        delete_item(self.boto_client, item)
 
     def describe_table(self, model):
         """Load the schema for a model's table.
@@ -250,7 +243,7 @@ class Client(object):
         .. _update_item (DynamoDB Client):
             https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.update_item
         """
-        self._modify_item(self.boto_client.update_item, "update", item)
+        save_item(self.boto_client, item)
 
     def validate_table(self, model):
         """Busy poll until table is ACTIVE.  Raises on schema mismatch.

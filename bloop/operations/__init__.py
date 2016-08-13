@@ -2,6 +2,7 @@ import botocore.exceptions
 
 from ..exceptions import AbstractModelException, TableMismatch
 from ..util import ordered
+from .models import handle_constraint_violation
 from .tables import (
     create_table_request,
     expected_table_description,
@@ -9,7 +10,32 @@ from .tables import (
     simple_table_status,
     sanitized_table_description
 )
-__all__ = ["create_table", "describe_table", "validate_table"]
+__all__ = (
+    "create_table",
+    "delete_item",
+    "describe_table",
+    "load_items",
+    "save_item",
+    "validate_table"
+)
+
+
+def save_item(dynamodb_client, item):
+    try:
+        dynamodb_client.update_item(**item)
+    except botocore.exceptions.ClientError as error:
+        handle_constraint_violation(error, "save", item)
+
+
+def delete_item(dynamodb_client, item):
+    try:
+        dynamodb_client.delete_item(**item)
+    except botocore.exceptions.ClientError as error:
+        handle_constraint_violation(error, "delete", item)
+
+
+def load_items(dynamodb_client, items):  # pragma: no cover
+    pass
 
 
 def create_table(dynamodb_client, model):

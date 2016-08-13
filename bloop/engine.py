@@ -10,11 +10,11 @@ from .tracking import clear, is_model_verified, sync, verify_model
 from .util import missing, walk_subclasses, signal
 
 
-__all__ = ["Engine", "before_bind_model", "before_create_table"]
+__all__ = ["Engine", "before_create_table", "model_bound"]
 
 # Signals!
-before_bind_model = signal("before_bind_model")
 before_create_table = signal("before_create_table")
+model_bound = signal("model_bound")
 
 
 def value_of(column):
@@ -124,11 +124,11 @@ class Engine:
             # next time its BaseModel is bound to an engine
             verify_model(model)
 
-            before_bind_model.send(self, model=model)
             self.type_engine.register(model)
             for column in model.Meta.columns:
                 self.type_engine.register(column.typedef)
             self.type_engine.bind(context={"engine": self})
+            model_bound.send(self, model=model)
 
     def delete(self, *objs, condition=None, atomic=False):
         objs = set(objs)

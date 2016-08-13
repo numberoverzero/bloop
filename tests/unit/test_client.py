@@ -361,6 +361,12 @@ def test_query_scan(session, dynamodb_client, response, expected):
     assert session.scan_items({}) == expected
 
 
+def test_search_unknown(session):
+    with pytest.raises(ValueError) as excinfo:
+        session.search_items(mode="foo", request="bar")
+    assert "foo" in str(excinfo.value)
+
+
 def test_validate_compares_tables(session, dynamodb_client):
     # Hardcoded to protect against bugs in bloop.client._table_for_model
     description = expected_table_description(User)

@@ -119,6 +119,8 @@ class PreparedSearch:
 
 
 class SearchIterator:
+    mode = None
+
     def __init__(self, session, request, limit, model, index):
         self._session = session
         self._request = request
@@ -177,8 +179,29 @@ class SearchIterator:
         return self
 
     def __next__(self):
-        #TODO
-        pass
+        if self._limit and self._yielded >= self._limit:
+            raise StopIteration
+
+        while (not self._exhausted) and (not self._buffer):
+            response = self._session.search_items(self.mode, self._request)
+
+            continuation_token = self._request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
+            self._exhausted = continuation_token is None
+
+            self._count += response["Count"]
+            self._scanned += response["ScannedCount"]
+
+            # Each item is a dict of attributes
+            for attrs in response.get("Items", []):
+                self._buffer.append(self._unpack(attrs=attrs))
+
+        if self._buffer:
+            self._yielded += 1
+            return self._buffer.popleft()
+
+        # Buffer must be empty (if _buffer)
+        # No more continue tokens (while not _exhausted)
+        raise StopIteration
 
 
 class ScanIterator(SearchIterator):

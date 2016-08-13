@@ -1,7 +1,7 @@
 import blinker
 import weakref
 
-__all__ = ["WeakDefaultDictionary", "ordered", "signal", "walk_subclasses"]
+__all__ = ["Sentinel", "WeakDefaultDictionary", "missing", "ordered", "signal", "walk_subclasses"]
 
 # Isolate to avoid collisions with other modules
 # Don't expose the namespace.
@@ -49,3 +49,23 @@ class WeakDefaultDictionary(weakref.WeakKeyDictionary):
     def __missing__(self, key):
         self[key] = value = self.default_factory()
         return value
+
+_symbols = {}
+
+
+class Sentinel:
+    def __new__(cls, name, *args, **kwargs):
+        name = name.lower()
+        sentinel = _symbols.get(name, None)
+        if sentinel is None:
+            sentinel = _symbols[name] = super().__new__(cls)
+        return sentinel
+
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):  # pragma: no cover
+        return "<Sentinel({})>".format(self.name)
+    __str__ = __repr__
+
+missing = Sentinel("missing")

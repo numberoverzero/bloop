@@ -2,11 +2,10 @@ import declare
 
 from .column import Column
 from .index import GlobalSecondaryIndex, LocalSecondaryIndex
-from .util import signal
+from .util import missing, signal
 
 
 __all__ = ["BaseModel", "model_created", "new_base"]
-_MISSING = object()
 
 
 # Signals!
@@ -24,8 +23,8 @@ def new_base():
 def loaded_columns(obj):
     """Yields each (model_name, value) tuple for all columns in an object that aren't missing"""
     for column in sorted(obj.Meta.columns, key=lambda c: c.model_name):
-        value = getattr(obj, column.model_name, _MISSING)
-        if value is not _MISSING:
+        value = getattr(obj, column.model_name, missing)
+        if value is not missing:
             yield (column.model_name, value)
 
 
@@ -124,8 +123,8 @@ class BaseModel:
         # Only set values from **attrs if there's a
         # corresponding `model_name` for a column in the model
         for column in self.Meta.columns:
-            value = attrs.get(column.model_name, _MISSING)
-            if value is not _MISSING:
+            value = attrs.get(column.model_name, missing)
+            if value is not missing:
                 setattr(self, column.model_name, value)
 
     @classmethod

@@ -7,12 +7,11 @@ from .filter import Filter
 from .index import Index
 from .model import ModelMetaclass
 from .tracking import clear, is_model_verified, sync, verify_model
-from .util import walk_subclasses, signal
+from .util import missing, walk_subclasses, signal
 
 
 __all__ = ["Engine", "before_bind_model", "before_create_table"]
 
-MISSING = object()
 DEFAULT_CONFIG = {
     "atomic": False,
     "consistent": False,
@@ -47,8 +46,8 @@ def dump_key(engine, obj):
     """
     key = {}
     for key_column in obj.Meta.keys:
-        key_value = getattr(obj, key_column.model_name, MISSING)
-        if key_value is MISSING:
+        key_value = getattr(obj, key_column.model_name, missing)
+        if key_value is missing:
             raise ValueError("Missing required hash/range key '{}'".format(key_column.model_name))
         key_value = engine._dump(key_column.typedef, key_value)
         key[key_column.dynamo_name] = key_value

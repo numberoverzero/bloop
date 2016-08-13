@@ -1,6 +1,6 @@
 import gc
 
-from bloop.util import WeakDefaultDictionary, walk_subclasses
+from bloop.util import Sentinel, WeakDefaultDictionary, walk_subclasses
 
 
 def test_weakref_default_dict():
@@ -45,3 +45,9 @@ def test_walk_subclasses():
         pass
 
     assert set(walk_subclasses(A)) == {A, C, D}
+
+
+def test_sentinel_uniqueness():
+    sentinel = Sentinel("name")
+    same_sentinel = Sentinel("NAME")
+    assert sentinel is same_sentinel

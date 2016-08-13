@@ -6,15 +6,14 @@ from bloop import (
     DateTime,
     Float,
     GlobalSecondaryIndex,
+    LocalSecondaryIndex,
     Integer,
     List,
-    LocalSecondaryIndex,
     Map,
     Set,
     String,
     TypedMap
 )
-
 
 DocumentType = Map(**{
     'Rating': Float(),

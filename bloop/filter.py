@@ -5,7 +5,7 @@ import operator
 from .condition import And, BeginsWith, Between, Comparison, _BaseCondition
 from .exceptions import ConstraintViolation
 from .expressions import render
-from .index import GlobalSecondaryIndex, LocalSecondaryIndex
+from .model import GlobalSecondaryIndex, LocalSecondaryIndex
 from .tracking import sync
 
 

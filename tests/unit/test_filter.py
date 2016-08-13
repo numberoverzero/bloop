@@ -4,8 +4,7 @@ from bloop.column import Column
 from bloop.condition import And, Condition
 from bloop.exceptions import ConstraintViolation
 from bloop.filter import Filter, expected_columns_for
-from bloop.index import LocalSecondaryIndex
-from bloop.model import BaseModel
+from bloop.model import BaseModel, LocalSecondaryIndex
 from bloop.types import Integer
 
 from ..helpers.models import ComplexModel, ProjectedIndexes, SimpleModel, User

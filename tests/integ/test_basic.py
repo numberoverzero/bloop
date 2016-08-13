@@ -1,6 +1,6 @@
 """Basic scenarios, symmetric tests"""
 import pytest
-from bloop import NotModified
+from bloop import NotLoaded
 
 from .models import User
 
@@ -23,6 +23,6 @@ def test_crud(engine):
 
     engine.delete(user)
 
-    with pytest.raises(NotModified) as excinfo:
+    with pytest.raises(NotLoaded) as excinfo:
         engine.load(same_user)
     assert same_user in excinfo.value.objects

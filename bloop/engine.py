@@ -1,7 +1,7 @@
 import declare
 
 from .client import Client
-from .exceptions import AbstractModelException, NotModified, UnboundModel
+from .exceptions import AbstractModelException, NotLoaded, UnboundModel
 from .expressions import render
 from .filter import Filter
 from .models import Index, ModelMetaclass
@@ -148,7 +148,7 @@ class Engine:
     def load(self, *objs, consistent=False):
         """Populate objects from dynamodb, optionally using consistent reads.
 
-        If any objects are not found, raises NotModified with the attribute
+        If any objects are not found, raises NotLoaded with the attribute
         `objects` containing a list of the objects that were not loaded.
 
         Example
@@ -210,7 +210,7 @@ class Engine:
             for index in object_index.values():
                 for index_set in index.values():
                     not_loaded.update(index_set)
-            raise NotModified("load", not_loaded)
+            raise NotLoaded(not_loaded)
 
     def query(self, obj, consistent=False, strict=True):
         if isinstance(obj, Index):

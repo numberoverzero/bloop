@@ -6,7 +6,7 @@ import declare
 import pytest
 from bloop.client import Client
 from bloop.engine import Engine, dump_key
-from bloop.exceptions import AbstractModelException, NotModified, UnboundModel
+from bloop.exceptions import AbstractModelException, NotLoaded, UnboundModel
 from bloop.models import BaseModel, Column
 from bloop.tracking import get_snapshot, sync
 from bloop.types import UUID, DateTime, Integer, String
@@ -31,9 +31,8 @@ def test_missing_objects(engine):
 
     users = [User(id=uuid.uuid4()) for _ in range(3)]
 
-    with pytest.raises(NotModified) as excinfo:
+    with pytest.raises(NotLoaded) as excinfo:
         engine.load(*users)
-
     assert set(excinfo.value.objects) == set(users)
 
 

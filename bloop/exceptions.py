@@ -10,10 +10,10 @@ automatically recover from that failure.
 
 __all__ = [
     "AbstractModelException", "BloopException", "ConstraintViolation",
-    "NotModified", "TableMismatch", "UnboundModel"]
+    "NotLoaded", "TableMismatch", "UnboundModel"]
 
 _CONSTRAINT_FAILURE = "Failed to meet required condition during {}"
-_NOT_MODIFIED = "Failed to modify some obects during {}"
+_NOT_LOADED = "Failed to load some objects"
 _TABLE_MISMATCH = "Existing table for model {} does not match expected"
 _UNBOUND = "Failed to {} unbound model.  Did you forget to call engine.bind()?"
 _ABSTRACT = "Cannot perform operation on abstract model {}"
@@ -47,15 +47,15 @@ class ConstraintViolation(BloopException):
         self.obj = obj
 
 
-class NotModified(BloopException):
-    """Raised when some objects are not loaded, saved, or deleted.
+class NotLoaded(BloopException):
+    """Raised when some objects were not loaded.
 
     Attributes:
-        objects (list): the objects not modified
+        objects (list): the objects not loaded
 
     """
-    def __init__(self, operation, objects):
-        super().__init__(_NOT_MODIFIED.format(operation), objects)
+    def __init__(self, objects):
+        super().__init__(_NOT_LOADED, objects)
         self.objects = list(objects)
 
 

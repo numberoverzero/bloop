@@ -1,3 +1,4 @@
+import boto3
 import uuid
 from unittest.mock import Mock
 
@@ -18,8 +19,9 @@ from ..helpers.models import ComplexModel, User, VectorModel
 def test_shared_type_engine():
     """Engine can use a specific type_engine to share bound instances"""
     type_engine = declare.TypeEngine.unique()
-    first = Engine(type_engine=type_engine)
-    second = Engine(type_engine=type_engine)
+    session = Mock(spec=boto3.Session)
+    first = Engine(type_engine=type_engine, session=session)
+    second = Engine(type_engine=type_engine, session=session)
 
     assert first.type_engine is second.type_engine
 

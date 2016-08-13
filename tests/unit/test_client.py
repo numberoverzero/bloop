@@ -15,7 +15,7 @@ from bloop.exceptions import (
     TableMismatch,
 )
 from bloop.models import BaseModel, Column
-from bloop.tables import expected_table_description
+from bloop.operations.tables import expected_table_description
 from bloop.types import String
 from bloop.util import ordered
 

@@ -1,6 +1,13 @@
+from ..util import Sentinel
+
 __all__ = [
-    "create_table_request", "expected_table_description",
-    "sanitized_table_description", "simple_table_status"]
+    "create_table_request",
+    "expected_table_description",
+    "ready",
+    "sanitized_table_description",
+    "simple_table_status"
+]
+ready = Sentinel("ready")
 
 
 def attribute_definitions(model):
@@ -185,10 +192,10 @@ def sanitized_table_description(description):
 
 
 def simple_table_status(description):
-    status = "ACTIVE"
+    status = ready
     if description.get("TableStatus") != "ACTIVE":
-        status = "BLOOP_NOT_ACTIVE"
+        status = None
     for index in description.get("GlobalSecondaryIndexes", []):
         if index.get("IndexStatus") != "ACTIVE":
-            status = "BLOOP_NOT_ACTIVE"
+            status = None
     return status

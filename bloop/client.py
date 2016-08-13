@@ -4,18 +4,8 @@ import time
 import boto3
 import botocore
 
-from .exceptions import (
-    AbstractModelException,
-    ConstraintViolation,
-    TableMismatch,
-)
-from .tables import (
-    create_table_request,
-    expected_table_description,
-    sanitized_table_description,
-    simple_table_status,
-)
-from .util import ordered
+from .exceptions import ConstraintViolation
+from .operations import create_table, describe_table, validate_table
 
 
 __all__ = ["Client"]
@@ -224,17 +214,7 @@ class Client(object):
         .. _create_table (DynamoDB Client):
             https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.create_table
         """
-        if model.Meta.abstract:
-            raise AbstractModelException(model)
-        table = create_table_request(model)
-        create = functools.partial(self._call_with_retries, self.boto_client.create_table)
-        try:
-            create(**table)
-        except botocore.exceptions.ClientError as error:
-            # Raise unless the table already exists
-            error_code = error.response["Error"]["Code"]
-            if error_code != "ResourceInUseException":
-                raise error
+        create_table(self.boto_client, model)
 
     def delete_item(self, item):
         """Delete an item from DynamoDB.
@@ -282,8 +262,7 @@ class Client(object):
             https://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.describe_table
 
         """
-        description = self._call_with_retries(self.boto_client.describe_table, TableName=model.Meta.table_name)
-        return description["Table"]
+        return describe_table(self.boto_client, model)
 
     def query(self, request):
         return self._filter(self.boto_client.query, request)
@@ -333,14 +312,4 @@ class Client(object):
             * :meth:`.create_table`
             * :meth:`.describe_table`
         """
-        expected = expected_table_description(model)
-        status = "BLOOP_NOT_ACTIVE"
-        while status == "BLOOP_NOT_ACTIVE":
-            description = self.describe_table(model)
-            status = simple_table_status(description)
-        try:
-            actual = sanitized_table_description(description)
-        except KeyError:
-            raise TableMismatch(model, expected, description)
-        if ordered(actual) != ordered(expected):
-            raise TableMismatch(model, expected, actual)
+        validate_table(self.boto_client, model)

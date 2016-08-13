@@ -1,22 +1,14 @@
 import pytest
-from bloop.tables import (
+from bloop.operations.tables import (
     create_table_request,
     expected_table_description,
     sanitized_table_description,
     simple_table_status,
+    ready
 )
 from bloop.util import ordered
 
 from ..helpers.models import ComplexModel, SimpleModel, User
-
-
-statuses = [
-    ("ACTIVE", "ACTIVE", "ACTIVE"),
-    ("ACTIVE", None, "ACTIVE"),
-    ("ACTIVE", "BUSY", "BLOOP_NOT_ACTIVE"),
-    ("BUSY", "ACTIVE", "BLOOP_NOT_ACTIVE"),
-    ("BUSY", "BUSY", "BLOOP_NOT_ACTIVE")
-]
 
 
 def assert_unordered(obj, other):
@@ -126,7 +118,13 @@ def test_sanitize_expected():
     assert_unordered(expected, sanitized)
 
 
-@pytest.mark.parametrize("table_status, gsi_status, expected_status", statuses)
+@pytest.mark.parametrize("table_status, gsi_status, expected_status", [
+    ("ACTIVE", "ACTIVE", ready),
+    ("ACTIVE", None, ready),
+    ("ACTIVE", "BUSY", None),
+    ("BUSY", "ACTIVE", None),
+    ("BUSY", "BUSY", None)
+])
 def test_simple_status(table_status, gsi_status, expected_status):
     """Status is busy because table isn't ACTIVE, no GSIs"""
     description = {"TableStatus": table_status}

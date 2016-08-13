@@ -1,33 +1,12 @@
-import functools
-import time
-
 import boto3
 import botocore
 
 from .exceptions import ConstraintViolation
 from .operations import create_table, describe_table, validate_table
 
-
 __all__ = ["Client"]
 
-DEFAULT_BACKOFF_COEFF = 50.0
-DEFAULT_MAX_ATTEMPTS = 4
 DYNAMO_BATCH_SIZE = 25
-RETRYABLE_ERRORS = [
-    "InternalServerError",
-    "ProvisionedThroughputExceededException"
-]
-
-
-def default_backoff_func(failed_attempts):
-    """
-    Exponential backoff helper.
-
-    attempts is the number of calls so far that have failed
-    """
-    if failed_attempts == DEFAULT_MAX_ATTEMPTS:
-        raise RuntimeError("Failed after {} attempts".format(failed_attempts))
-    return (DEFAULT_BACKOFF_COEFF * (2 ** failed_attempts)) / 1000.0
 
 
 def partition_batch_get_input(items):
@@ -78,7 +57,7 @@ class Client(object):
     .. _DynamoDB API Reference:
         http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Operations.html
     """
-    def __init__(self, boto_client=None, backoff_func=None):
+    def __init__(self, boto_client=None):
         """Create a new bloop Client that wraps the boto3 clients.
 
         boto_client is an optional instance of a boto3 client, either
@@ -91,30 +70,10 @@ class Client(object):
         """
         # Fall back to the global session
         self.boto_client = boto_client or boto3.client("dynamodb")
-        self.backoff_func = backoff_func or default_backoff_func
-
-    def _call_with_retries(self, func, *args, **kwargs):
-        attempts = 1
-        while True:
-            try:
-                output = func(*args, **kwargs)
-            except botocore.exceptions.ClientError as error:
-                error_code = error.response["Error"]["Code"]
-                if error_code not in RETRYABLE_ERRORS:
-                    raise error
-            else:
-                # No exception, success!
-                return output
-
-            # Backoff in milliseconds
-            # backoff_func will return a number of seconds to wait, or raise
-            delay = self.backoff_func(attempts)
-            time.sleep(delay)
-            attempts += 1
 
     def _filter(self, client_func, request):
         # Wrap client function in retries
-        response = self._call_with_retries(client_func, **request)
+        response = client_func(**request)
 
         # When updating count, ScannedCount is omitted unless it differs
         # from Count; thus we need to default to assume that the
@@ -125,7 +84,7 @@ class Client(object):
 
     def _modify_item(self, client_func, name, item):
         try:
-            self._call_with_retries(client_func, **item)
+            client_func(**item)
         except botocore.exceptions.ClientError as error:
             error_code = error.response["Error"]["Code"]
             if error_code == "ConditionalCheckFailedException":
@@ -171,13 +130,12 @@ class Client(object):
 
         """
         response = {}
-        get_batch = functools.partial(self._call_with_retries, self.boto_client.batch_get_item)
         request_batches = partition_batch_get_input(items)
 
         for request_batch in request_batches:
             # After the first call, request_batch is the UnprocessedKeys from the first call
             while request_batch:
-                batch_response = get_batch(RequestItems=request_batch)
+                batch_response = self.boto_client.batch_get_item(RequestItems=request_batch)
                 items = batch_response.get("Responses", {}).items()
                 for table_name, table_items in items:
                     if table_name not in response:

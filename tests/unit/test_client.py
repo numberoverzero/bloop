@@ -3,12 +3,7 @@ from unittest.mock import Mock
 
 import botocore.exceptions
 import pytest
-from bloop.client import (
-    DEFAULT_MAX_ATTEMPTS,
-    RETRYABLE_ERRORS,
-    Client,
-    default_backoff_func,
-)
+from bloop.client import Client
 from bloop.exceptions import (
     AbstractModelException,
     ConstraintViolation,
@@ -180,77 +175,6 @@ def test_batch_get_unprocessed(client):
 
     assert calls == 2
     assert response == expected_response
-
-
-def test_call_with_retries(client):
-    max_tries = 4
-    tries = 0
-
-    def backoff(attempts):
-        nonlocal tries
-        tries += 1
-        if attempts == max_tries:
-            raise RuntimeError("Failed after {} attempts".format(attempts))
-        # Don't sleep at all
-        return 0
-    client.backoff_func = backoff
-
-    def always_raise_retryable(context):
-        context["calls"] += 1
-        raise client_error(RETRYABLE_ERRORS[0])
-
-    def raise_twice_retryable(context):
-        context["calls"] += 1
-        if context["calls"] <= 2:
-            raise client_error(RETRYABLE_ERRORS[0])
-
-    def raise_unretryable(context):
-        context["calls"] += 1
-        raise client_error("FooError")
-
-    def raise_non_botocore(context):
-        context["calls"] += 1
-        raise ValueError("not botocore error")
-
-    # Try the call 4 times, then raise RuntimeError
-    tries, context = 0, {"calls": 0}
-    with pytest.raises(RuntimeError):
-        client._call_with_retries(always_raise_retryable, context)
-    assert tries == 4
-    assert context["calls"] == 4
-
-    # Fails on first call, first retry, succeeds third call
-    tries, context = 0, {"calls": 0}
-    client._call_with_retries(raise_twice_retryable, context)
-    assert tries == 2
-    assert context["calls"] == 3
-
-    # Fails on first call, no retries
-    tries, context = 0, {"calls": 0}
-    with pytest.raises(botocore.exceptions.ClientError) as excinfo:
-        client._call_with_retries(raise_unretryable, context)
-    assert tries == 0
-    assert context["calls"] == 1
-    assert excinfo.value.response["Error"]["Code"] == "FooError"
-
-    # Fails on first call, no retries
-    tries, context = 0, {"calls": 0}
-    with pytest.raises(ValueError):
-        client._call_with_retries(raise_non_botocore, context)
-    assert tries == 0
-    assert context["calls"] == 1
-
-
-def test_default_backoff():
-    attempts = range(DEFAULT_MAX_ATTEMPTS)
-    durations = [(50.0 * (2 ** x)) / 1000.0 for x in attempts]
-
-    for (attempts, expected) in zip(attempts, durations):
-        actual = default_backoff_func(attempts)
-        assert actual == expected
-
-    with pytest.raises(RuntimeError):
-        default_backoff_func(DEFAULT_MAX_ATTEMPTS)
 
 
 def test_create_table(client):

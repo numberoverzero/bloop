@@ -98,11 +98,11 @@ Scan and Query have the same interface:
 
     Engine.query(
         obj: Union[bloop.BaseModel, bloop.Index],
-        consistent: Optional[bool]=None) -> bloop.Filter
+        consistent: bool=False, strict: bool=True) -> bloop.Filter
 
     Engine.scan(
         obj: Union[bloop.BaseModel, bloop.Index],
-        consistent: Optional[bool]=None) -> bloop.Filter
+        consistent: bool=False, strict: bool=True) -> bloop.Filter
 
 .. attribute:: obj
     :noindex:
@@ -114,6 +114,11 @@ Scan and Query have the same interface:
     :noindex:
 
     See the :ref:`consistent property <property-consistent>` below.
+
+.. attribute:: strict
+    :noindex:
+
+    See the :ref:`strict property <property-strict>` below.
 
 ==================
 Building the Query
@@ -169,10 +174,21 @@ will execute by modifying the following attributes:
     Whether or not `strongly consistent reads`__ should be used.  Keep in mind that Strongly Consistent Reads
     consume twice as many read units as Eventually Consistent Reads. This setting has no effect when used
     with a GSI, since strongly consistent reads `can't be used with a Global Secondary Index`__.
-    Defaults to ``engine.config["consistent"]``
+    Defaults to False.
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
     __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-ConsistentRead
+
+.. _property-strict:
+
+.. attribute:: strict
+    :noindex:
+
+    Whether or not a query or scan is prevented from incurring additional reads against the table.
+    If you query or scan a Local Secondary Index and ask for more columns than are projected into the index,
+    DynamoDB will incur an additional read against the table in order to return the non-projected columns.
+
+    It is highly recommended to keep this enabled.  Defaults to True.
 
 .. attribute:: forward
     :noindex:

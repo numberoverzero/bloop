@@ -65,7 +65,7 @@ Load
 
 .. code-block:: python
 
-    Engine.load(*objs, consistent: Optional[bool]=None) -> None
+    Engine.load(*objs, consistent: bool=False) -> None
 
 .. attribute:: objs
     :noindex:
@@ -76,7 +76,7 @@ Load
     :noindex:
 
     Whether or not `strongly consistent reads`__ (which consume 2x read units) should be used.
-    Defaults to ``engine.config["consistent"]``
+    Defaults to False.
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
 
@@ -117,7 +117,7 @@ Save and Delete share the same interface; they both conditionally modify the sta
     :noindex:
 
     Whether or not to use an atomic condition for this operation.  When True, DynamoDB and the local state must match
-    to perform the operation (in addition to any other condition).  Defaults to ``engine.config["atomic"]``
+    to perform the operation (in addition to any other condition).  Defaults to False.
 
 .. _save-delete-conditions:
 

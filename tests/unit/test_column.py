@@ -1,7 +1,7 @@
 import operator as op
 import pytest
-from bloop.column import Column
 from bloop.condition import AttributeExists, BeginsWith, Between, Contains, In
+from bloop.model import Column
 from bloop.types import Integer
 
 

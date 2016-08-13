@@ -1,10 +1,9 @@
 import uuid
 
 import pytest
-from bloop.column import Column
 from bloop.condition import And, Comparison, Condition, Not, Or
 from bloop.expressions import ConditionRenderer, render
-from bloop.model import BaseModel
+from bloop.model import BaseModel, Column
 from bloop.types import UUID, Integer, TypedMap
 
 from ..helpers.models import Document, DocumentType, User, conditions

@@ -1,6 +1,5 @@
 import pytest
-from bloop.column import Column
-from bloop.model import BaseModel, Index, LocalSecondaryIndex
+from bloop.model import BaseModel, Column, Index, LocalSecondaryIndex
 from bloop.types import String
 
 

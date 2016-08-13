@@ -5,11 +5,11 @@ import pytest
 import random
 import string
 
-from bloop import Client, Engine, before_create_table
+from bloop import Engine, before_create_table
 
 from .models import User
 
-boto_client = boto3.client("dynamodb", region_name="us-west-2")
+session = boto3.Session(region_name="us-west-2")
 
 
 def pytest_addoption(parser):
@@ -37,7 +37,8 @@ def pytest_unconfigure(config):
     if skip_cleanup:
         print("Skipping cleanup")
         return
-    it = boto_client.get_paginator("list_tables").paginate()
+    dynamodb_client = session.client("dynamodb")
+    it = dynamodb_client.get_paginator("list_tables").paginate()
     tables = [response["TableNames"] for response in it]
     tables = itertools.chain(*tables)
     nonce = config.getoption("--nonce")
@@ -46,7 +47,7 @@ def pytest_unconfigure(config):
         if nonce not in table:
             continue
         try:
-            boto_client.delete_table(TableName=table)
+            dynamodb_client.delete_table(TableName=table)
         except Exception:
             print("Failed to clean up table '{}'".format(table))
 
@@ -67,5 +68,4 @@ def cleanup_objects(engine):
 
 @pytest.fixture
 def engine():
-    bloop_client = Client(boto_client=boto_client)
-    return Engine(client=bloop_client)
+    return Engine(session=session)

@@ -2,12 +2,17 @@ from ..util import Sentinel
 
 __all__ = (
     "create_table_request",
+    "describe_table",
     "expected_table_description",
     "ready",
     "sanitized_table_description",
     "simple_table_status"
 )
 ready = Sentinel("ready")
+
+
+def describe_table(dynamodb_client, model):
+    return dynamodb_client.describe_table(TableName=model.Meta.table_name)["Table"]
 
 
 def attribute_definitions(model):

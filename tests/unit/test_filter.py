@@ -426,9 +426,9 @@ def test_limit(query, limit):
     query.build()
 
 
-def test_one_no_results(simple_query, engine):
+def test_one_no_results(simple_query, engine, session):
     """one raises when there are no results"""
-    engine.client.query.return_value = {"Count": 0, "ScannedCount": 6, "Items": []}
+    session.query_items.return_value = {"Count": 0, "ScannedCount": 6, "Items": []}
 
     with pytest.raises(ConstraintViolation) as excinfo:
         simple_query.one()
@@ -436,12 +436,12 @@ def test_one_no_results(simple_query, engine):
     same_request["ExclusiveStartKey"] = None
     assert excinfo.value.args[0] == "Failed to meet required condition during query.one"
     assert excinfo.value.obj == same_request
-    assert engine.client.query.call_count == 1
+    assert session.query_items.call_count == 1
 
 
-def test_one_extra_results(simple_query, engine):
+def test_one_extra_results(simple_query, engine, session):
     """one raises when there are too many results"""
-    engine.client.query.return_value = {
+    session.query_items.return_value = {
         "Count": 2, "ScannedCount": 6,
         "Items": [{"id": {"S": "first"}}, {"id": {"S": "second"}}]}
 
@@ -451,22 +451,22 @@ def test_one_extra_results(simple_query, engine):
     same_request["ExclusiveStartKey"] = None
     assert excinfo.value.args[0] == "Failed to meet required condition during query.one"
     assert excinfo.value.obj == same_request
-    assert engine.client.query.call_count == 1
+    assert session.query_items.call_count == 1
 
 
-def test_one_exact(simple_query, engine):
+def test_one_exact(simple_query, engine, session):
     """one returns when there is exactly one value in the full query"""
-    engine.client.query.return_value = {"Count": 1, "ScannedCount": 6, "Items": [{"id": {"S": "unique"}}]}
+    session.query_items.return_value = {"Count": 1, "ScannedCount": 6, "Items": [{"id": {"S": "unique"}}]}
 
     result = simple_query.one()
     assert result.id == "unique"
 
-    assert engine.client.query.call_count == 1
+    assert session.query_items.call_count == 1
 
 
-def test_first_no_results(simple_query, engine):
+def test_first_no_results(simple_query, engine, session):
     """first raises when there are no results"""
-    engine.client.query.return_value = {"Count": 0, "ScannedCount": 6, "Items": []}
+    session.query_items.return_value = {"Count": 0, "ScannedCount": 6, "Items": []}
 
     with pytest.raises(ConstraintViolation) as excinfo:
         simple_query.first()
@@ -474,18 +474,18 @@ def test_first_no_results(simple_query, engine):
     same_request["ExclusiveStartKey"] = None
     assert excinfo.value.args[0] == "Failed to meet required condition during query.first"
     assert excinfo.value.obj == same_request
-    assert engine.client.query.call_count == 1
+    assert session.query_items.call_count == 1
 
 
-def test_first_extra_results(simple_query, engine):
+def test_first_extra_results(simple_query, engine, session):
     """first returns the first result, even when there are multiple values"""
-    engine.client.query.return_value = {
+    session.query_items.return_value = {
         "Count": 2, "ScannedCount": 6,
         "Items": [{"id": {"S": "first"}}, {"id": {"S": "second"}}]}
 
     result = simple_query.first()
     assert result.id == "first"
-    assert engine.client.query.call_count == 1
+    assert session.query_items.call_count == 1
 
 
 def test_build_gsi_consistent_read(query):
@@ -679,8 +679,8 @@ def test_iter_reset(query):
     assert iterator.exhausted is False
 
 
-def test_iter_no_results(query, engine):
-    engine.client.query.return_value = {"Items": [], "Count": 0, "ScannedCount": 5}
+def test_iter_no_results(query, engine, session):
+    session.query_items.return_value = {"Items": [], "Count": 0, "ScannedCount": 5}
 
     iterator = query.build()
     results = list(iterator)
@@ -693,15 +693,15 @@ def test_iter_no_results(query, engine):
     list(iterator)
     assert iterator.count == 0
     assert iterator.scanned == 5
-    engine.client.query.assert_called_once_with(iterator._request)
+    session.query_items.assert_called_once_with(iterator._request)
 
 
-def test_iter_empty_pages(simple_query, engine):
+def test_iter_empty_pages(simple_query, engine, session):
     """
     Automatically follow continue tokens until the buffer isn't empty
     Items are returned after pages are exhausted
     """
-    engine.client.query.side_effect = [
+    session.query_items.side_effect = [
         {"LastEvaluatedKey": "continue", "Items": [], "Count": 0, "ScannedCount": 3},
         {"Items": [{"id": {"S": "first"}}, {"id": {"S": "second"}}], "Count": 2, "ScannedCount": 4}
     ]
@@ -727,4 +727,4 @@ def test_iter_empty_pages(simple_query, engine):
     assert second.id == "second"
 
     # Followed 3 continuation tokens
-    assert engine.client.query.call_count == 2
+    assert session.query_items.call_count == 2

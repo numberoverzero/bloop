@@ -1,10 +1,11 @@
+import boto3
 import declare
 
-from .client import Client
 from .exceptions import AbstractModelException, NotLoaded, UnboundModel
 from .expressions import render
 from .filter import Filter
 from .models import Index, ModelMetaclass
+from .operations import SessionWrapper
 from .tracking import clear, is_model_verified, sync, verify_model
 from .util import missing, walk_subclasses, signal
 
@@ -48,14 +49,11 @@ def dump_key(engine, obj):
 
 
 class Engine:
-    client = None
-
-    def __init__(self, client=None, type_engine=None):
+    def __init__(self, session=None, type_engine=None):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = type_engine or declare.TypeEngine.unique()
-
-        self.client = client
+        self._session = SessionWrapper(session or boto3)
 
     def _dump(self, model, obj, context=None, **kwargs):
         """Return a dict of the obj in DynamoDB format"""
@@ -91,10 +89,6 @@ class Engine:
 
     def bind(self, base):
         """Create tables for all models subclassing base"""
-        # If not manually configured, use a default bloop.Client
-        # with the default boto3.client("dynamodb")
-        self.client = self.client or Client()
-
         # Make sure we're looking at models
         if not isinstance(base, ModelMetaclass):
             raise ValueError("base must derive from bloop.BaseModel")
@@ -114,11 +108,11 @@ class Engine:
         # to call multiple times for the same unbound model.
         for model in unverified:
             before_create_table.send(self, model=model)
-            self.client.create_table(model)
+            self._session.create_table(model)
 
         for model in concrete:
             if model in unverified:
-                self.client.validate_table(model)
+                self._session.validate_table(model)
             # Model won't need to be verified the
             # next time its BaseModel is bound to an engine
             verify_model(model)
@@ -140,7 +134,7 @@ class Engine:
                 rendered = render(self, condition=condition)
             item.update(rendered)
 
-            self.client.delete_item(item)
+            self._session.delete_item(item)
             clear(obj)
 
     def load(self, *objs, consistent=False):
@@ -189,7 +183,7 @@ class Engine:
                 object_index[table_name][index] = set()
             object_index[table_name][index].add(obj)
 
-        response = self.client.batch_get_items(request)
+        response = self._session.load_items(request)
 
         for table_name, blobs in response.items():
             for blob in blobs:
@@ -238,7 +232,7 @@ class Engine:
                 rendered = render(self, condition=condition, update=obj)
             item.update(rendered)
 
-            self.client.update_item(item)
+            self._session.save_item(item)
             sync(obj, self)
 
     def scan(self, obj, consistent=False, strict=True):

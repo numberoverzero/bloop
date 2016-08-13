@@ -2,6 +2,9 @@ from ..exceptions import ConstraintViolation
 
 __all__ = ["create_batch_get_chunks", "handle_constraint_violation", "standardize_query_response"]
 
+# https://boto3.readthedocs.io/en/latest/reference/services/dynamodb.html#DynamoDB.Client.batch_get_item
+BATCH_GET_ITEM_CHUNK_SIZE = 100
+
 
 def handle_constraint_violation(error, operation, item):
     error_code = error.response["Error"]["Code"]
@@ -30,7 +33,7 @@ def create_batch_get_chunks(items):
 
             table["Keys"].append(key)
             count += 1
-            if count >= 25:
+            if count >= BATCH_GET_ITEM_CHUNK_SIZE:
                 yield buffer
                 buffer, count = {}, 0
 

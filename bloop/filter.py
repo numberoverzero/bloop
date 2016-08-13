@@ -244,7 +244,11 @@ class Filter:
         # Compute the expected columns for this filter
         expected_columns = expected_columns_for(self.model, self.index, select_mode, select_columns)
         unpack = functools.partial(unpack_obj, engine=self.engine, model=self.model, expected=expected_columns)
-        call = getattr(self.engine.client, self.mode)
+        # TODO: clean up when Filter is rewritten
+        if self.mode == "scan":
+            call = self.engine._session.scan_items
+        else:
+            call = self.engine._session.query_items
         return FilterIterator(call=call, unpack=unpack, request=prepared_request, limit=int(self.limit))
 
 

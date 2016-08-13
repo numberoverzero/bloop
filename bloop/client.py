@@ -3,6 +3,7 @@ from .operations import (
     create_table,
     delete_item,
     describe_table,
+    load_items,
     query_request,
     save_item,
     scan_request,
@@ -10,31 +11,6 @@ from .operations import (
 )
 
 __all__ = ["Client"]
-
-DYNAMO_BATCH_SIZE = 25
-
-
-def partition_batch_get_input(items):
-    """ Takes a batch_get input and partitions into 25 object chunks """
-    chunk = {}
-    count = 0
-    for table_name, table_attrs in items.items():
-        consistent_read = table_attrs.get("ConsistentRead", False)
-        for key in table_attrs["Keys"]:
-            # This check needs to be in the inner loop, in case the chunk
-            # clears in the middle of iterating this table's keys.
-            table = chunk.get(table_name, None)
-            if table is None:
-                table = chunk[table_name] = {"ConsistentRead": consistent_read, "Keys": []}
-            table["Keys"].append(key)
-            count += 1
-            if count >= DYNAMO_BATCH_SIZE:
-                yield chunk
-                count = 0
-                chunk = {}
-    # Last chunk, less than batch_size items
-    if chunk:
-        yield chunk
 
 
 class Client(object):
@@ -113,24 +89,7 @@ class Client(object):
             http://boto3.readthedocs.org/en/latest/reference/services/dynamodb.html#DynamoDB.Client.batch_get_item
 
         """
-        response = {}
-        request_batches = partition_batch_get_input(items)
-
-        for request_batch in request_batches:
-            # After the first call, request_batch is the UnprocessedKeys from the first call
-            while request_batch:
-                batch_response = self.boto_client.batch_get_item(RequestItems=request_batch)
-                items = batch_response.get("Responses", {}).items()
-                for table_name, table_items in items:
-                    if table_name not in response:
-                        response[table_name] = []
-                    response[table_name].extend(table_items)
-
-                # If there are no unprocessed keys, this will be an empty
-                # list which will break the while loop, moving to the next
-                # batch of items
-                request_batch = batch_response.get("UnprocessedKeys",  None)
-        return response
+        return load_items(self.boto_client, items)
 
     def create_table(self, model):
         """Create a new table from the model.

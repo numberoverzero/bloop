@@ -1,8 +1,9 @@
+import collections
 import botocore.exceptions
 
 from ..exceptions import AbstractModelException, TableMismatch
 from ..util import ordered
-from .models import handle_constraint_violation, standardize_query_response
+from .models import create_batch_get_chunks, handle_constraint_violation, standardize_query_response
 from .tables import (
     create_table_request,
     expected_table_description,
@@ -36,8 +37,20 @@ def delete_item(dynamodb_client, item):
         handle_constraint_violation(error, "delete", item)
 
 
-def load_items(dynamodb_client, items):  # pragma: no cover
-    pass
+def load_items(dynamodb_client, items):
+    loaded_items = {}
+    requests = collections.deque(create_batch_get_chunks(items))
+    while requests:
+        request = requests.pop()
+        response = dynamodb_client.batch_get_item(RequestItems=request)
+        # Accumulate results
+        for table_name, table_items in response.get("Responses", {}).items():
+            loaded_items.setdefault(table_name, []).extend(table_items)
+        # Push additional requests onto the deque.
+        # "UnprocessedKeys" is {} if this request is done
+        if response["UnprocessedKeys"]:
+            requests.append(response["UnprocessedKeys"])
+    return loaded_items
 
 
 def query_request(dynamodb_client, request):
@@ -71,7 +84,7 @@ def describe_table(dynamodb_client, model):
 
 def validate_table(dynamodb_client, model):
     expected = expected_table_description(model)
-    status = None
+    status, description = None, {}
     while status is not ready:
         description = describe_table(dynamodb_client, model)
         status = simple_table_status(description)

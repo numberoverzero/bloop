@@ -42,11 +42,14 @@ def test_batch_get_one_item(client):
     # When batching input with less keys than the batch size, the request
     # will look identical
     expected_request = request
-    response = {"Responses": {"User": [{"id": {"S": str(user1.id)},
-                                        "age": {"N": "4"}}]}}
+    response = {
+        "Responses": {
+            "User": [{"id": {"S": str(user1.id)}, "age": {"N": "4"}}]
+        },
+        "UnprocessedKeys": {}
+    }
     # Expected response is a single list of users
-    expected_response = {"User": [{"id": {"S": str(user1.id)},
-                                   "age": {"N": "4"}}]}
+    expected_response = {"User": [{"id": {"S": str(user1.id)}, "age": {"N": "4"}}]}
 
     def handle(RequestItems):
         assert RequestItems == expected_request
@@ -79,7 +82,8 @@ def test_batch_get_one_batch(client):
                     {"id": {"S": str(user.id)}, "age": {"N": "4"}}
                     for user in users
                 ]
-            }
+            },
+            "UnprocessedKeys": {}
         }
 
     # The response that the bloop client should return
@@ -112,7 +116,8 @@ def test_batch_get_paginated(client):
                     {"id": {"S": str(user.id)}, "age": {"N": "4"}}
                     for user in users[:25]
                 ]
-            }
+            },
+            "UnprocessedKeys": {}
         },
         # 26+ items
         {
@@ -121,7 +126,8 @@ def test_batch_get_paginated(client):
                     {"id": {"S": str(user.id)}, "age": {"N": "4"}}
                     for user in users[25:]
                 ]
-            }
+            },
+            "UnprocessedKeys": {}
         }
     ]
 
@@ -144,22 +150,35 @@ def test_batch_get_unprocessed(client):
     """ Re-request unprocessed keys """
     user1 = User(id=uuid.uuid4())
 
-    request = {"User": {"Keys": [{"id": {"S": str(user1.id)}}],
-                        "ConsistentRead": False}}
-    expected_requests = [
-        {"User": {"Keys": [{"id": {"S": str(user1.id)}}],
-                  "ConsistentRead": False}},
-        {"User": {"Keys": [{"id": {"S": str(user1.id)}}],
-                  "ConsistentRead": False}}
-    ]
-    responses = [
-        {"UnprocessedKeys": {"User": {"Keys": [{"id": {"S": str(user1.id)}}],
-                             "ConsistentRead": False}}},
-        {"Responses": {"User": [{"id": {"S": str(user1.id)},
-                                 "age": {"N": "4"}}]}}
-    ]
-    expected_response = {"User": [{"id": {"S": str(user1.id)},
-                                   "age": {"N": "4"}}]}
+    request = {
+        "User": {
+            "Keys": [{"id": {"S": str(user1.id)}}],
+            "ConsistentRead": False
+        }
+    }
+    expected_requests = [{
+        "User": {
+            "Keys": [{"id": {"S": str(user1.id)}}],
+            "ConsistentRead": False}
+    }, {
+        "User": {
+            "Keys": [{"id": {"S": str(user1.id)}}],
+            "ConsistentRead": False}
+    }]
+
+    responses = [{
+        "UnprocessedKeys": {
+            "User": {
+                "Keys": [{"id": {"S": str(user1.id)}}],
+                "ConsistentRead": False}}
+    }, {
+        "Responses": {
+            "User": [{"id": {"S": str(user1.id)}, "age": {"N": "4"}}]
+        },
+        "UnprocessedKeys": {}
+    }]
+
+    expected_response = {"User": [{"id": {"S": str(user1.id)}, "age": {"N": "4"}}]}
     calls = 0
 
     def handle(RequestItems):

@@ -47,12 +47,18 @@ class SessionWrapper:
         return loaded_items
 
     def query_items(self, request):
-        response = self._dynamodb_client.query(**request)
-        standardize_query_response(response)
-        return response
+        return self.search_items("query", request)
 
     def scan_items(self, request):
-        response = self._dynamodb_client.scan(**request)
+        return self.search_items("scan", request)
+
+    def search_items(self, mode, request):
+        if mode == "scan":
+            response = self._dynamodb_client.scan(**request)
+        elif mode == "query":
+            response = self._dynamodb_client.query(**request)
+        else:
+            raise ValueError("Unknown search mode {!r}".format(mode))
         standardize_query_response(response)
         return response
 

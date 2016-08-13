@@ -3,7 +3,6 @@ from unittest.mock import Mock
 
 import botocore.exceptions
 import pytest
-from bloop.client import Client
 from bloop.exceptions import (
     AbstractModelException,
     ConstraintViolation,
@@ -11,6 +10,16 @@ from bloop.exceptions import (
 )
 from bloop.models import BaseModel, Column
 from bloop.operations.tables import expected_table_description
+from bloop.operations import (
+    delete_item,
+    load_items,
+    query_request,
+    save_item,
+    scan_request,
+    create_table,
+    describe_table,
+    validate_table
+)
 from bloop.types import String
 from bloop.util import ordered
 
@@ -18,22 +27,23 @@ from ..helpers.models import ComplexModel, SimpleModel, User
 
 
 @pytest.fixture
-def client():
+def dynamodb_client():
     # No spec since clients are generated dynamically.
     # We could use botocore.client.BaseClient but it's so generic
     # that we don't gain any useful inspections
-    return Client(boto_client=Mock())
+    return Mock()
 
 
 def client_error(code):
-    error_response = {"Error": {
-        "Code": code,
-        "Message": "FooMessage"}}
+    error_response = {
+        "Error": {
+            "Code": code,
+            "Message": "FooMessage"}}
     operation_name = "OperationName"
     return botocore.exceptions.ClientError(error_response, operation_name)
 
 
-def test_batch_get_one_item(client):
+def test_batch_get_one_item(dynamodb_client):
     """A single call for a single item"""
     user1 = User(id=uuid.uuid4())
 
@@ -54,14 +64,14 @@ def test_batch_get_one_item(client):
     def handle(RequestItems):
         assert RequestItems == expected_request
         return response
-    client.boto_client.batch_get_item.side_effect = handle
+    dynamodb_client.batch_get_item.side_effect = handle
 
-    response = client.batch_get_items(request)
+    response = load_items(dynamodb_client, request)
     assert response == expected_response
-    client.boto_client.batch_get_item.assert_called_once_with(RequestItems=expected_request)
+    dynamodb_client.batch_get_item.assert_called_once_with(RequestItems=expected_request)
 
 
-def test_batch_get_one_batch(client):
+def test_batch_get_one_batch(dynamodb_client):
     """A single call when the number of requested items is <= batch size"""
     users = [User(id=uuid.uuid4()) for _ in range(25)]
 
@@ -89,14 +99,14 @@ def test_batch_get_one_batch(client):
     # The response that the bloop client should return
     expected_client_response = boto3_client_response["Responses"]
 
-    client.boto_client.batch_get_item.return_value = boto3_client_response
-    response = client.batch_get_items(client_request)
+    dynamodb_client.batch_get_item.return_value = boto3_client_response
+    response = load_items(dynamodb_client, client_request)
 
-    client.boto_client.batch_get_item.assert_called_once_with(RequestItems=client_request)
+    dynamodb_client.batch_get_item.assert_called_once_with(RequestItems=client_request)
     assert response == expected_client_response
 
 
-def test_batch_get_paginated(client):
+def test_batch_get_paginated(dynamodb_client):
     """Paginate requests to fit within the max batch size"""
     users = [User(id=uuid.uuid4()) for _ in range(26)]
     keys = [
@@ -139,14 +149,14 @@ def test_batch_get_paginated(client):
             ]
         }
 
-    client.boto_client.batch_get_item.side_effect = batched_responses
-    response = client.batch_get_items(client_request)
+    dynamodb_client.batch_get_item.side_effect = batched_responses
+    response = load_items(dynamodb_client, client_request)
 
-    assert client.boto_client.batch_get_item.call_count == 2
+    assert dynamodb_client.batch_get_item.call_count == 2
     assert response == expected_client_response
 
 
-def test_batch_get_unprocessed(client):
+def test_batch_get_unprocessed(dynamodb_client):
     """ Re-request unprocessed keys """
     user1 = User(id=uuid.uuid4())
 
@@ -188,15 +198,15 @@ def test_batch_get_unprocessed(client):
         calls += 1
         assert RequestItems == expected
         return response
-    client.boto_client.batch_get_item = handle
+    dynamodb_client.batch_get_item = handle
 
-    response = client.batch_get_items(request)
+    response = load_items(dynamodb_client, request)
 
     assert calls == 2
     assert response == expected_response
 
 
-def test_create_table(client):
+def test_create_table(dynamodb_client):
     expected = {
         "LocalSecondaryIndexes": [
             {"Projection": {"NonKeyAttributes": ["date", "name",
@@ -224,14 +234,14 @@ def test_create_table(client):
             {"AttributeType": "S", "AttributeName": "joined"},
             {"AttributeType": "S", "AttributeName": "email"}]}
 
-    def create_table(**table):
+    def handle(**table):
         assert ordered(table) == ordered(expected)
-    client.boto_client.create_table.side_effect = create_table
-    client.create_table(ComplexModel)
-    assert client.boto_client.create_table.call_count == 1
+    dynamodb_client.create_table.side_effect = handle
+    create_table(dynamodb_client, ComplexModel)
+    assert dynamodb_client.create_table.call_count == 1
 
 
-def test_create_subclass(client):
+def test_create_subclass(dynamodb_client):
     base_model = User
 
     # Shouldn't include base model's columns in create_table call
@@ -246,99 +256,94 @@ def test_create_subclass(client):
             'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1},
         'TableName': 'SubModel'}
 
-    def create_table(**table):
+    def handle(**table):
         assert ordered(table) == ordered(expected)
 
-    client.boto_client.create_table.side_effect = create_table
-    client.create_table(SubModel)
-    assert client.boto_client.create_table.call_count == 1
+    dynamodb_client.create_table.side_effect = handle
+    create_table(dynamodb_client, SubModel)
+    assert dynamodb_client.create_table.call_count == 1
 
 
-def test_create_raises_unknown(client):
-    client.boto_client.create_table.side_effect = client_error("FooError")
+def test_create_raises_unknown(dynamodb_client):
+    dynamodb_client.create_table.side_effect = client_error("FooError")
 
     with pytest.raises(botocore.exceptions.ClientError) as excinfo:
-        client.create_table(User)
+        create_table(dynamodb_client, User)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
-    assert client.boto_client.create_table.call_count == 1
+    assert dynamodb_client.create_table.call_count == 1
 
 
-def test_create_abstract_raises(client):
-    abstract_model = BaseModel
+def test_create_abstract_raises(dynamodb_client):
     with pytest.raises(AbstractModelException) as excinfo:
-        client.create_table(abstract_model)
-    assert excinfo.value.model is abstract_model
+        create_table(dynamodb_client, BaseModel)
+    assert excinfo.value.model is BaseModel
 
 
-def test_create_already_exists(client):
-    client.boto_client.create_table.side_effect = \
-        client_error("ResourceInUseException")
+def test_create_already_exists(dynamodb_client):
+    dynamodb_client.create_table.side_effect = client_error("ResourceInUseException")
 
-    client.create_table(User)
-    assert client.boto_client.create_table.call_count == 1
+    create_table(dynamodb_client, User)
+    assert dynamodb_client.create_table.call_count == 1
 
 
-def test_delete_item(client):
+def test_delete_item(dynamodb_client):
     request = {"foo": "bar"}
-    client.delete_item(request)
-    client.boto_client.delete_item.assert_called_once_with(**request)
+    delete_item(dynamodb_client, request)
+    dynamodb_client.delete_item.assert_called_once_with(**request)
 
 
-def test_delete_item_unknown_error(client):
+def test_delete_item_unknown_error(dynamodb_client):
     request = {"foo": "bar"}
-    client.boto_client.delete_item.side_effect = client_error("FooError")
+    dynamodb_client.delete_item.side_effect = client_error("FooError")
 
     with pytest.raises(botocore.exceptions.ClientError) as excinfo:
-        client.delete_item(request)
+        delete_item(dynamodb_client, request)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
-    client.boto_client.delete_item.assert_called_once_with(**request)
+    dynamodb_client.delete_item.assert_called_once_with(**request)
 
 
-def test_delete_item_condition_failed(client):
+def test_delete_item_condition_failed(dynamodb_client):
     request = {"foo": "bar"}
-    client.boto_client.delete_item.side_effect = \
-        client_error("ConditionalCheckFailedException")
+    dynamodb_client.delete_item.side_effect = client_error("ConditionalCheckFailedException")
 
     with pytest.raises(ConstraintViolation) as excinfo:
-        client.delete_item(request)
+        delete_item(dynamodb_client, request)
     assert excinfo.value.obj == request
-    client.boto_client.delete_item.assert_called_once_with(**request)
+    dynamodb_client.delete_item.assert_called_once_with(**request)
 
 
-def test_update_item(client):
+def test_save_item(dynamodb_client):
     request = {"foo": "bar"}
-    client.update_item(request)
-    client.boto_client.update_item.assert_called_once_with(**request)
+    save_item(dynamodb_client, request)
+    dynamodb_client.update_item.assert_called_once_with(**request)
 
 
-def test_update_item_unknown_error(client):
+def test_save_item_unknown_error(dynamodb_client):
     request = {"foo": "bar"}
-    client.boto_client.update_item.side_effect = client_error("FooError")
+    dynamodb_client.update_item.side_effect = client_error("FooError")
 
     with pytest.raises(botocore.exceptions.ClientError) as excinfo:
-        client.update_item(request)
+        save_item(dynamodb_client, request)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
-    client.boto_client.update_item.assert_called_once_with(**request)
+    dynamodb_client.update_item.assert_called_once_with(**request)
 
 
-def test_update_item_condition_failed(client):
+def test_save_item_condition_failed(dynamodb_client):
     request = {"foo": "bar"}
-    client.boto_client.update_item.side_effect = \
-        client_error("ConditionalCheckFailedException")
+    dynamodb_client.update_item.side_effect = client_error("ConditionalCheckFailedException")
 
     with pytest.raises(ConstraintViolation) as excinfo:
-        client.update_item(request)
+        save_item(dynamodb_client, request)
     assert excinfo.value.obj == request
-    client.boto_client.update_item.assert_called_once_with(**request)
+    dynamodb_client.update_item.assert_called_once_with(**request)
 
 
-def test_describe_table(client):
+def test_describe_table(dynamodb_client):
     """client.describe_table is a passthrough with retries"""
-    client.boto_client.describe_table.return_value = \
-        {"Table": {"test": "value"}}
+    dynamodb_client.describe_table.return_value = {"Table": {"test": "value"}}
 
-    assert client.describe_table(ComplexModel) == {"test": "value"}
-    client.boto_client.describe_table.assert_called_once_with(
+    assert describe_table(dynamodb_client, ComplexModel) == {"test": "value"}
+    dynamodb_client.describe_table.assert_called_once_with(
         TableName=ComplexModel.Meta.table_name)
 
 
@@ -348,51 +353,51 @@ def test_describe_table(client):
     ({"ScannedCount": -1}, (0, -1)),
     ({"Count": 1, "ScannedCount": 2}, (1, 2))
 ], ids=str)
-def test_query_scan(client, response, expected):
-    client.boto_client.query.return_value = response
-    client.boto_client.scan.return_value = response
+def test_query_scan(dynamodb_client, response, expected):
+    dynamodb_client.query.return_value = response
+    dynamodb_client.scan.return_value = response
 
     expected = {"Count": expected[0], "ScannedCount": expected[1]}
-    assert client.query({}) == expected
-    assert client.scan({}) == expected
+    assert query_request(dynamodb_client, {}) == expected
+    assert scan_request(dynamodb_client, {}) == expected
 
 
-def test_validate_compares_tables(client):
+def test_validate_compares_tables(dynamodb_client):
     # Hardcoded to protect against bugs in bloop.client._table_for_model
     description = expected_table_description(User)
     description["TableStatus"] = "ACTIVE"
     description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
 
-    client.boto_client.describe_table.return_value = {"Table": description}
-    client.validate_table(User)
-    client.boto_client.describe_table.assert_called_once_with(TableName="User")
+    dynamodb_client.describe_table.return_value = {"Table": description}
+    validate_table(dynamodb_client, User)
+    dynamodb_client.describe_table.assert_called_once_with(TableName="User")
 
 
-def test_validate_checks_status(client):
+def test_validate_checks_status(dynamodb_client):
     # Don't care about the value checking, just want to observe retries
     # based on busy tables or indexes
     full = expected_table_description(User)
     full["TableStatus"] = "ACTIVE"
     full["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
 
-    client.boto_client.describe_table.side_effect = [
+    dynamodb_client.describe_table.side_effect = [
         {"Table": {"TableStatus": "CREATING"}},
         {"Table": {"TableStatus": "ACTIVE",
                    "GlobalSecondaryIndexes": [
                        {"IndexStatus": "CREATING"}]}},
         {"Table": full}
     ]
-    client.validate_table(User)
-    client.boto_client.describe_table.assert_called_with(TableName="User")
-    assert client.boto_client.describe_table.call_count == 3
+    validate_table(dynamodb_client, User)
+    dynamodb_client.describe_table.assert_called_with(TableName="User")
+    assert dynamodb_client.describe_table.call_count == 3
 
 
-def test_validate_fails(client):
+def test_validate_fails(dynamodb_client):
     """dynamo returns a json document that doesn't match the expected table"""
-    client.boto_client.describe_table.return_value = \
+    dynamodb_client.describe_table.return_value = \
         {"Table": {"TableStatus": "ACTIVE"}}
     with pytest.raises(TableMismatch) as excinfo:
-        client.validate_table(SimpleModel)
+        validate_table(dynamodb_client, SimpleModel)
 
     # Exception includes the model that failed
     assert excinfo.value.model is SimpleModel
@@ -404,7 +409,7 @@ def test_validate_fails(client):
     assert excinfo.value.actual == {"TableStatus": "ACTIVE"}
 
 
-def test_validate_simple_model(client):
+def test_validate_simple_model(dynamodb_client):
     full = {
         "AttributeDefinitions": [
             {"AttributeName": "id", "AttributeType": "S"}],
@@ -413,22 +418,22 @@ def test_validate_simple_model(client):
             "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
         "TableName": "Simple",
         "TableStatus": "ACTIVE"}
-    client.boto_client.describe_table.return_value = {"Table": full}
-    client.validate_table(SimpleModel)
-    client.boto_client.describe_table.assert_called_once_with(
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    validate_table(dynamodb_client, SimpleModel)
+    dynamodb_client.describe_table.assert_called_once_with(
         TableName="Simple")
 
 
-def test_validate_mismatch(client):
+def test_validate_mismatch(dynamodb_client):
     """dynamo returns a valid document but it doesn't match"""
     full = expected_table_description(SimpleModel)
     full["TableStatus"] = "ACTIVE"
 
     full["TableName"] = "wrong table name"
 
-    client.boto_client.describe_table.return_value = {"Table": full}
+    dynamodb_client.describe_table.return_value = {"Table": full}
     with pytest.raises(TableMismatch) as excinfo:
-        client.validate_table(SimpleModel)
+        validate_table(dynamodb_client, SimpleModel)
 
     # Exception includes the model that failed
     assert excinfo.value.model is SimpleModel

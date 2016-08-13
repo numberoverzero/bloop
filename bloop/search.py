@@ -1,12 +1,7 @@
 import collections
 
 from .exceptions import ConstraintViolation
-from .util import Sentinel
-
 __all__ = ["Search", "Scan", "Query", "PreparedSearch", "SearchIterator", "ScanIterator", "QueryIterator"]
-
-scan = Sentinel("scan")
-query = Sentinel("query")
 
 
 def search_repr(cls, model, index):
@@ -63,28 +58,26 @@ class Search:
 
 
 class Scan(Search):
-    mode = scan
+    mode = "scan"
 
 
 class Query(Search):
-    mode = query
+    mode = "query"
 
 
 class PreparedSearch:
     def __init__(self):
+        self.session = None
         self.model = None
+        self.mode = None
         self.index = None
-
         self.key = None
         self.filter = None
-
         self._select_mode = None
         self._select_columns = None
-
         self.limit = None
-
-        self._session_method = None
         self._prepared_request = None
+        self._iterator_cls = None
 
     def prepare(self, mode=None, session=None,
                 model=None, index=None, key=None, filter=None, select=None,
@@ -116,12 +109,23 @@ class PreparedSearch:
         pass
 
     def iterator(self):
-        pass
+        return self._iterator_cls(
+            session=self.session,
+            model=self.model,
+            index=self.index,
+            request=self._prepared_request,
+            limit=self.limit,
+        )
 
 
 class SearchIterator:
-    def __init__(self, request):
+    def __init__(self, session, request, limit, model, index):
+        self._session = session
         self._request = request
+        self._limit = limit
+        self._model = model
+        self._index = index
+
         self._buffer = collections.deque()
         self._count = 0
         self._scanned = 0
@@ -162,23 +166,24 @@ class SearchIterator:
 
     @property
     def exhausted(self):
-        # TODO
-        pass
+        reached_limit = self._limit and self._yielded >= self._limit
+        exhausted_buffer = self._exhausted and len(self._buffer) == 0
+        return reached_limit or exhausted_buffer
 
     def __repr__(self):
-        return search_repr(self.__class__, self.model, self.index)
+        return search_repr(self.__class__, self._model, self._index)
 
     def __iter__(self):
         return self
 
     def __next__(self):
-        # TODO
+        #TODO
         pass
 
 
 class ScanIterator(SearchIterator):
-    pass
+    mode = "scan"
 
 
 class QueryIterator(SearchIterator):
-    pass
+    mode = "query"

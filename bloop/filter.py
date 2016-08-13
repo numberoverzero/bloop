@@ -269,7 +269,7 @@ class FilterIterator:
         self._limit = limit
 
         self._buffer = collections.deque()
-        self._state = {"count": 0, "scanned": 0, "exhausted": False, "yielded": 0, "calls": 0}
+        self._state = {"count": 0, "scanned": 0, "exhausted": False, "yielded": 0}
 
     @property
     def count(self):
@@ -286,7 +286,7 @@ class FilterIterator:
         return self._stop_yielding or (self._state["exhausted"] and not self._buffer)
 
     def reset(self):
-        self._state = {"count": 0, "scanned": 0, "exhausted": False, "yielded": 0, "calls": 0}
+        self._state = {"count": 0, "scanned": 0, "exhausted": False, "yielded": 0}
         self._request.pop("ExclusiveStartKey", None)
 
     @property
@@ -306,7 +306,6 @@ class FilterIterator:
 
         # Keep following tokens until the buffer has a result or we run out of continuation tokens
         while not self._stop_buffering:
-            self._state["calls"] += 1
             response = self._call(self._request)
             continuation_token = response.get("LastEvaluatedKey", None)
             self._request["ExclusiveStartKey"] = continuation_token

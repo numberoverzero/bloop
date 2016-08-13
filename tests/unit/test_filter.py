@@ -708,14 +708,12 @@ def test_iter_empty_pages(simple_query, engine, session):
     iterator = simple_query.build()
 
     first = next(iterator)
-    assert iterator._state["calls"] == 2
     assert not iterator.exhausted
     assert iterator.count == 2
     assert iterator.scanned == 7
 
     second = next(iterator)
     # No new calls, but now the iterator is exhausted
-    assert iterator._state["calls"] == 2
     assert iterator.exhausted
 
     # And here we run out of items to fetch

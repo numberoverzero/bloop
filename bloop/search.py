@@ -1,13 +1,25 @@
+import collections
+
+from .exceptions import ConstraintViolation
 from .util import Sentinel
 
-__all__ = ["Search", "Scan", "Query"]
+__all__ = ["Search", "Scan", "Query", "PreparedSearch", "SearchIterator", "ScanIterator", "QueryIterator"]
 
 scan = Sentinel("scan")
 query = Sentinel("query")
 
 
-def cls_name(obj):
-    return obj.__class__.__name__
+def search_repr(cls, model, index):
+    if model:
+        if index:
+            return "<{}[{}.{}]>".format(cls.__name__, model.__name__, index.model_name)
+        else:
+            return "<{}[{}]>".format(cls.__name__, model.__name__)
+    else:
+        if index:
+            return "<{}[None.{}]>".format(cls.__name__, index.model_name)
+        else:
+            return "<{}[None]>".format(cls.__name__)
 
 
 class Search:
@@ -30,16 +42,7 @@ class Search:
         self.forward = forward
 
     def __repr__(self):
-        if self.model:
-            if self.index:
-                return "<{}[{}.{}]>".format(cls_name(self), self.model.__name__, self.index.model_name)
-            else:
-                return "<{}[{}]>".format(cls_name(self), self.model.__name__)
-        else:
-            if self.index:
-                return "<{}[None.{}]>".format(cls_name(self), self.index.model_name)
-            else:
-                return "<{}[None]>".format(cls_name(self))
+        return search_repr(self.__class__, self.model, self.index)
 
     def prepare(self):
         p = PreparedSearch()
@@ -79,7 +82,6 @@ class PreparedSearch:
         self._select_columns = None
 
         self.limit = None
-        self.strict = None
 
         self._session_method = None
         self._prepared_request = None
@@ -112,3 +114,71 @@ class PreparedSearch:
 
     def prepare_constraints(self, limit, forward):
         pass
+
+    def iterator(self):
+        pass
+
+
+class SearchIterator:
+    def __init__(self, request):
+        self._request = request
+        self._buffer = collections.deque()
+        self._count = 0
+        self._scanned = 0
+        self._yielded = 0
+        self._exhausted = False
+
+    def one(self):
+        self.reset()
+        first = next(self, None)
+        second = next(self, None)
+        if (first is None) or (second is not None):
+            raise ConstraintViolation(
+                self.__class__.__name__ + ".one", self._request)
+        return first
+
+    def first(self):
+        self.reset()
+        value = next(self, None)
+        if value is None:
+            raise ConstraintViolation(
+                self.__class__.__name__ + ".first", self._request)
+        return value
+
+    def reset(self):
+        self._buffer.clear()
+        self._count = 0
+        self._scanned = 0
+        self._yielded = 0
+        self._exhausted = False
+
+    @property
+    def count(self):
+        return self._count
+
+    @property
+    def scanned(self):
+        return self._scanned
+
+    @property
+    def exhausted(self):
+        # TODO
+        pass
+
+    def __repr__(self):
+        return search_repr(self.__class__, self.model, self.index)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        # TODO
+        pass
+
+
+class ScanIterator(SearchIterator):
+    pass
+
+
+class QueryIterator(SearchIterator):
+    pass

@@ -10,7 +10,7 @@ automatically recover from that failure.
 
 __all__ = [
     "AbstractModelError", "BloopException", "ConstraintViolation",
-    "NotLoaded", "TableMismatch", "UnboundModel"]
+    "MissingObjects", "TableMismatch", "UnboundModel"]
 
 _CONSTRAINT_FAILURE = "Failed to meet required condition during {}"
 _NOT_LOADED = "Failed to load some objects"
@@ -42,16 +42,11 @@ class ConstraintViolation(BloopException):
         self.obj = obj
 
 
-class NotLoaded(BloopException):
-    """Raised when some objects were not loaded.
-
-    Attributes:
-        objects (list): the objects not loaded
-
-    """
-    def __init__(self, objects):
-        super().__init__(_NOT_LOADED, objects)
-        self.objects = list(objects)
+class MissingObjects(BloopException):
+    """Some objects were not found."""
+    def __init__(self, *args, objects=None):
+        super().__init__(*args)
+        self.objects = list(objects) if objects else []
 
 
 class TableMismatch(BloopException):

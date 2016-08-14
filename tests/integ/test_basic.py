@@ -1,6 +1,6 @@
 """Basic scenarios, symmetric tests"""
 import pytest
-from bloop import NotLoaded
+from bloop import MissingObjects
 
 from .models import User
 
@@ -23,6 +23,6 @@ def test_crud(engine):
 
     engine.delete(user)
 
-    with pytest.raises(NotLoaded) as excinfo:
+    with pytest.raises(MissingObjects) as excinfo:
         engine.load(same_user)
-    assert same_user in excinfo.value.objects
+    assert [same_user] == excinfo.value.objects

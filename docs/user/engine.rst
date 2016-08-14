@@ -82,7 +82,7 @@ Load
 You can load instances of different models at the same time.  Bloop will automatically split requests into the
 appropriate chunks for BatchGetItems and then inject the results into the corresponding objects.
 
-Raises ``NotLoaded`` if any items fail to load.  The ``objects`` attribute holds the set of objects not loaded.
+Raises ``MissingObjects`` if any items fail to load.  The ``objects`` attribute holds the set of objects not loaded.
 
 .. _save-delete-interface:
 

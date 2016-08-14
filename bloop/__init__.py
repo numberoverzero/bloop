@@ -4,7 +4,7 @@ from .exceptions import (
     AbstractModelError,
     BloopException,
     ConstraintViolation,
-    NotLoaded,
+    MissingObjects,
     TableMismatch,
     UnboundModel,
 )
@@ -27,7 +27,7 @@ from .types import (
 __all__ = [
     "AbstractModelError", "BaseModel", "Boolean", "Binary", "BloopException", "Column",
     "Condition", "ConstraintViolation", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer",
-    "List", "LocalSecondaryIndex", "Map", "NotLoaded", "Set", "String", "TableMismatch", "TypedMap",
+    "List", "LocalSecondaryIndex", "Map", "MissingObjects", "Set", "String", "TableMismatch", "TypedMap",
     "UnboundModel", "UUID", "before_create_table", "model_bound", "model_created"
 ]
 __version__ = "0.9.12"

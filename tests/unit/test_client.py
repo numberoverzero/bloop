@@ -4,11 +4,10 @@ from unittest.mock import Mock
 import botocore.exceptions
 import pytest
 from bloop.exceptions import (
-    AbstractModelError,
     ConstraintViolation,
     TableMismatch,
 )
-from bloop.models import BaseModel, Column
+from bloop.models import Column
 from bloop.operations.models import BATCH_GET_ITEM_CHUNK_SIZE
 from bloop.operations.tables import describe_table, expected_table_description
 from bloop.operations import SessionWrapper

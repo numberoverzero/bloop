@@ -1,7 +1,7 @@
 import collections
 import botocore.exceptions
 
-from ..exceptions import AbstractModelError, TableMismatch
+from ..exceptions import TableMismatch
 from ..util import ordered
 from .models import create_batch_get_chunks, handle_constraint_violation, standardize_query_response
 from .tables import (

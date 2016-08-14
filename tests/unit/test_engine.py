@@ -6,7 +6,7 @@ import arrow
 import declare
 import pytest
 from bloop.engine import Engine, dump_key
-from bloop.exceptions import AbstractModelError, NotLoaded, UnboundModel
+from bloop.exceptions import AbstractModelError, MissingObjects, UnboundModel
 from bloop.models import BaseModel, Column
 from bloop.operations import SessionWrapper
 from bloop.tracking import get_snapshot, sync
@@ -27,13 +27,13 @@ def test_shared_type_engine():
 
 
 def test_missing_objects(engine, session):
-    """When objects aren't loaded, NotLoaded is raised with a list of missing objects"""
+    """When objects aren't loaded, MissingObjects is raised with a list of missing objects"""
     # Patch batch_get_items to return no results
     session.load_items.return_value = {}
 
     users = [User(id=uuid.uuid4()) for _ in range(3)]
 
-    with pytest.raises(NotLoaded) as excinfo:
+    with pytest.raises(MissingObjects) as excinfo:
         engine.load(*users)
     assert set(excinfo.value.objects) == set(users)
 

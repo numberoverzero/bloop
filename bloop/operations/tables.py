@@ -1,18 +1,14 @@
-from ..util import Sentinel
-
-__all__ = (
-    "create_table_request",
-    "describe_table",
-    "expected_table_description",
-    "ready",
-    "sanitized_table_description",
-    "simple_table_status"
-)
+from ..util import Sentinel, ordered
 ready = Sentinel("ready")
 
 
-def describe_table(dynamodb_client, model):
-    return dynamodb_client.describe_table(TableName=model.Meta.table_name)["Table"]
+def compare_tables(actual_description, model):
+    expected = expected_table_description(model)
+    try:
+        actual = sanitized_table_description(actual_description)
+    except KeyError:
+        return False
+    return ordered(actual) == ordered(expected)
 
 
 def attribute_definitions(model):

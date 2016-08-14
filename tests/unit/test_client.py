@@ -1,15 +1,16 @@
+import botocore.exceptions
 import uuid
 from unittest.mock import Mock
 
-import botocore.exceptions
 import pytest
 from bloop.exceptions import (
+    BloopException,
     ConstraintViolation,
     TableMismatch,
 )
 from bloop.models import Column
 from bloop.operations.models import BATCH_GET_ITEM_CHUNK_SIZE
-from bloop.operations.tables import describe_table, expected_table_description
+from bloop.operations.tables import expected_table_description
 from bloop.operations import SessionWrapper
 from bloop.types import String
 from bloop.util import ordered
@@ -40,6 +41,14 @@ def client_error(code):
             "Message": "FooMessage"}}
     operation_name = "OperationName"
     return botocore.exceptions.ClientError(error_response, operation_name)
+
+
+def test_batch_get_raises(session, dynamodb_client):
+    cause = dynamodb_client.batch_get_item.side_effect = client_error("FooError")
+    request = {"TableName": {"Keys": ["key"], "ConsistentRead": False}}
+    with pytest.raises(BloopException) as excinfo:
+        session.load_items(request)
+    assert excinfo.value.__cause__ is cause
 
 
 def test_batch_get_one_item(session, dynamodb_client):
@@ -264,11 +273,11 @@ def test_create_subclass(session, dynamodb_client):
 
 
 def test_create_raises_unknown(session, dynamodb_client):
-    dynamodb_client.create_table.side_effect = client_error("FooError")
+    cause = dynamodb_client.create_table.side_effect = client_error("FooError")
 
-    with pytest.raises(botocore.exceptions.ClientError) as excinfo:
+    with pytest.raises(BloopException) as excinfo:
         session.create_table(User)
-    assert excinfo.value.response["Error"]["Code"] == "FooError"
+    assert excinfo.value.__cause__ is cause
     assert dynamodb_client.create_table.call_count == 1
 
 
@@ -287,11 +296,11 @@ def test_delete_item(session, dynamodb_client):
 
 def test_delete_item_unknown_error(session, dynamodb_client):
     request = {"foo": "bar"}
-    dynamodb_client.delete_item.side_effect = client_error("FooError")
+    cause = dynamodb_client.delete_item.side_effect = client_error("FooError")
 
-    with pytest.raises(botocore.exceptions.ClientError) as excinfo:
+    with pytest.raises(BloopException) as excinfo:
         session.delete_item(request)
-    assert excinfo.value.response["Error"]["Code"] == "FooError"
+    assert excinfo.value.__cause__ is cause
     dynamodb_client.delete_item.assert_called_once_with(**request)
 
 
@@ -312,11 +321,11 @@ def test_save_item(session, dynamodb_client):
 
 def test_save_item_unknown_error(session, dynamodb_client):
     request = {"foo": "bar"}
-    dynamodb_client.update_item.side_effect = client_error("FooError")
+    cause = dynamodb_client.update_item.side_effect = client_error("FooError")
 
-    with pytest.raises(botocore.exceptions.ClientError) as excinfo:
+    with pytest.raises(BloopException) as excinfo:
         session.save_item(request)
-    assert excinfo.value.response["Error"]["Code"] == "FooError"
+    assert excinfo.value.__cause__ is cause
     dynamodb_client.update_item.assert_called_once_with(**request)
 
 
@@ -327,14 +336,6 @@ def test_save_item_condition_failed(session, dynamodb_client):
     with pytest.raises(ConstraintViolation):
         session.save_item(request)
     dynamodb_client.update_item.assert_called_once_with(**request)
-
-
-def test_describe_table(dynamodb_client):
-    dynamodb_client.describe_table.return_value = {"Table": {"test": "value"}}
-
-    assert describe_table(dynamodb_client, ComplexModel) == {"test": "value"}
-    dynamodb_client.describe_table.assert_called_once_with(
-        TableName=ComplexModel.Meta.table_name)
 
 
 @pytest.mark.parametrize("response, expected", [
@@ -352,14 +353,25 @@ def test_query_scan(session, dynamodb_client, response, expected):
     assert session.scan_items({}) == expected
 
 
+def test_query_scan_raise(session, dynamodb_client):
+    cause = dynamodb_client.query.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.query_items({})
+    assert excinfo.value.__cause__ is cause
+
+    cause = dynamodb_client.scan.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.scan_items({})
+    assert excinfo.value.__cause__ is cause
+
+
 def test_search_unknown(session):
     with pytest.raises(ValueError) as excinfo:
-        session.search_items(mode="foo", request="bar")
+        session.search_items(mode="foo", request={})
     assert "foo" in str(excinfo.value)
 
 
 def test_validate_compares_tables(session, dynamodb_client):
-    # Hardcoded to protect against bugs in bloop.client._table_for_model
     description = expected_table_description(User)
     description["TableStatus"] = "ACTIVE"
     description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
@@ -421,3 +433,11 @@ def test_validate_wrong_table(session, dynamodb_client):
     dynamodb_client.describe_table.return_value = {"Table": full}
     with pytest.raises(TableMismatch):
         session.validate_table(SimpleModel)
+
+
+def test_validate_raises(session, dynamodb_client):
+    cause = dynamodb_client.describe_table.side_effect = client_error("FooError")
+
+    with pytest.raises(BloopException) as excinfo:
+        session.validate_table(User)
+    assert excinfo.value.__cause__ is cause

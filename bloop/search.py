@@ -138,20 +138,19 @@ class SearchIterator:
         self.yielded = 0
         self._exhausted = False
 
-    def one(self):
-        self.reset()
-        first = next(self, None)
-        second = next(self, None)
-        if (first is None) or (second is not None):
-            raise ConstraintViolation("{} did not find exactly one result".format(self.mode.capitalize()))
-        return first
-
     def first(self):
         self.reset()
         value = next(self, None)
         if value is None:
             raise ConstraintViolation("{} did not find any results".format(self.mode.capitalize()))
         return value
+
+    def one(self):
+        first = self.first()
+        second = next(self, None)
+        if second is not None:
+            raise ConstraintViolation("{} found more than one result".format(self.mode.capitalize()))
+        return first
 
     def reset(self):
         self.buffer.clear()

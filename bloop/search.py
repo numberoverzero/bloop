@@ -6,13 +6,13 @@ __all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanI
 
 
 def search_repr(cls, model, index):
-    if model:
-        if index:
+    if model is not None:
+        if index is not None:
             return "<{}[{}.{}]>".format(cls.__name__, model.__name__, index.model_name)
         else:
             return "<{}[{}]>".format(cls.__name__, model.__name__)
     else:
-        if index:
+        if index is not None:
             return "<{}[None.{}]>".format(cls.__name__, index.model_name)
         else:
             return "<{}[None]>".format(cls.__name__)
@@ -35,7 +35,7 @@ class Search:
         self.consistent = consistent
         self.forward = forward
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return search_repr(self.__class__, self.model, self.index)
 
     def prepare(self):
@@ -107,7 +107,7 @@ class PreparedSearch:
     def prepare_constraints(self, limit, forward):
         pass
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return search_repr(self.__class__, self.model, self.index)
 
     def __iter__(self):
@@ -124,7 +124,7 @@ class PreparedSearch:
 class SearchIterator:
     mode = None
 
-    def __init__(self, session, model, index, limit, request, projected):
+    def __init__(self, *, session, model, index, limit, request, projected):
         self.session = session
         self.request = request
         self.limit = limit
@@ -168,7 +168,7 @@ class SearchIterator:
         exhausted_buffer = self._exhausted and len(self.buffer) == 0
         return reached_limit or exhausted_buffer
 
-    def __repr__(self):
+    def __repr__(self):  # pragma: no cover
         return search_repr(self.__class__, self.model, self.index)
 
     def __iter__(self):
@@ -181,14 +181,14 @@ class SearchIterator:
         while (not self._exhausted) and len(self.buffer) == 0:
             response = self.session.search_items(self.mode, self.request)
 
-            continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
-            self._exhausted = continuation_token is None
+            continuation_token = self.request["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+            self._exhausted = not continuation_token
 
             self.count += response["Count"]
             self.scanned += response["ScannedCount"]
 
             # Each item is a dict of attributes
-            self.buffer.extend(response.get("Items", []))
+            self.buffer.extend(response["Items"])
 
         if self.buffer:
             self.yielded += 1

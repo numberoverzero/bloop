@@ -299,9 +299,8 @@ def test_delete_item_condition_failed(session, dynamodb_client):
     request = {"foo": "bar"}
     dynamodb_client.delete_item.side_effect = client_error("ConditionalCheckFailedException")
 
-    with pytest.raises(ConstraintViolation) as excinfo:
+    with pytest.raises(ConstraintViolation):
         session.delete_item(request)
-    assert excinfo.value.obj == request
     dynamodb_client.delete_item.assert_called_once_with(**request)
 
 
@@ -325,9 +324,8 @@ def test_save_item_condition_failed(session, dynamodb_client):
     request = {"foo": "bar"}
     dynamodb_client.update_item.side_effect = client_error("ConditionalCheckFailedException")
 
-    with pytest.raises(ConstraintViolation) as excinfo:
+    with pytest.raises(ConstraintViolation):
         session.save_item(request)
-    assert excinfo.value.obj == request
     dynamodb_client.update_item.assert_called_once_with(**request)
 
 

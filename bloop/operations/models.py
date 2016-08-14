@@ -1,4 +1,4 @@
-from ..exceptions import ConstraintViolation
+from ..exceptions import BloopException, ConstraintViolation
 
 __all__ = ["create_batch_get_chunks", "handle_constraint_violation", "standardize_query_response"]
 
@@ -6,12 +6,12 @@ __all__ = ["create_batch_get_chunks", "handle_constraint_violation", "standardiz
 BATCH_GET_ITEM_CHUNK_SIZE = 100
 
 
-def handle_constraint_violation(error, operation, item):
+def handle_constraint_violation(error):
     error_code = error.response["Error"]["Code"]
     if error_code == "ConditionalCheckFailedException":
-        raise ConstraintViolation(operation, item)
+        raise ConstraintViolation("The provided condition was not met") from error
     else:
-        raise error
+        raise BloopException("There was an unexpected error from DynamoDB") from error
 
 
 def standardize_query_response(response):

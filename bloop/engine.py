@@ -56,13 +56,14 @@ def raise_on_abstract(*objs, cls=False):
                     obj if cls else obj.__class__))
 
 
-def raise_on_unknown(model):
+def raise_on_unknown(model, from_declare):
     # Best-effort check for a more helpful message
     if isinstance(model, ModelMetaclass):
-        raise UnboundModel(
-            "The model {0!r} is not bound.  Did you call engine.bind({0})?".format(model.__name__))
+        msg = "The model {0!r} is not bound.  Did you call engine.bind({0})?"
+        raise UnboundModel(msg.format(model.__name__)) from from_declare
     else:
-        raise UnknownType("The engine never registered the type {!r}.".format(model.__name__))
+        msg = "The type {!r} was never registered."
+        raise UnknownType(msg.format(model.__name__)) from from_declare
 
 
 class Engine:
@@ -76,15 +77,15 @@ class Engine:
         context = context or {"engine": self}
         try:
             return context["engine"].type_engine.dump(model, obj, context=context, **kwargs)
-        except declare.DeclareException:
-            raise_on_unknown(model)
+        except declare.DeclareException as from_declare:
+            raise_on_unknown(model, from_declare)
 
     def _load(self, model, value, context=None, **kwargs):
         context = context or {"engine": self}
         try:
             return context["engine"].type_engine.load(model, value, context=context, **kwargs)
-        except declare.DeclareException:
-            raise_on_unknown(model)
+        except declare.DeclareException as from_declare:
+            raise_on_unknown(model, from_declare)
 
     def _update(self, obj, attrs, expected, context=None, **kwargs):
         """Push values by dynamo_name into an object"""

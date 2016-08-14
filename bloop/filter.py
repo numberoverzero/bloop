@@ -173,7 +173,7 @@ class Filter:
 
         # No results, or too many results
         if (first is None) or (second is not None):
-            raise ConstraintViolation(self.mode + ".one", it._request)
+            raise ConstraintViolation("{} did not find exactly one result".format(self.mode.capitalize()))
         return first
 
     def first(self):
@@ -185,7 +185,7 @@ class Filter:
         value = next(it, None)
         # No results
         if value is None:
-            raise ConstraintViolation(self.mode + ".first", it._request)
+            raise ConstraintViolation("{} did not find any results".format(self.mode.capitalize()))
         return value
 
     def build(self):

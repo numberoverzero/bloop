@@ -23,13 +23,13 @@ class SessionWrapper:
         try:
             self._dynamodb_client.update_item(**item)
         except botocore.exceptions.ClientError as error:
-            handle_constraint_violation(error, "save", item)
+            handle_constraint_violation(error)
 
     def delete_item(self, item):
         try:
             self._dynamodb_client.delete_item(**item)
         except botocore.exceptions.ClientError as error:
-            handle_constraint_violation(error, "delete", item)
+            handle_constraint_violation(error)
 
     def load_items(self, items):
         loaded_items = {}

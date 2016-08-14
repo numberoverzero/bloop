@@ -332,8 +332,6 @@ class _ComparisonMixin:
         return Contains(self.__obj, value, path=self.path)
 
     def __getitem__(self, path):
-        if not isinstance(path, (str, int)):
-            raise ValueError("Documents can only be indexed by strings or integers.")
         return _ComparisonMixin(obj=self.__obj, path=self.path + [path])
 
 

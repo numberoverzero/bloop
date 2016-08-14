@@ -89,17 +89,3 @@ def test_dynamo_name():
     column = Column(Integer, name="foo")
     column.model_name = "bar"
     assert column.dynamo_name == "foo"
-
-
-def test_column_path():
-    """ Paths can be iteratively built up, with strings or ints as keys """
-    column = Column(Integer)
-
-    comparison = column["foo"]
-    assert comparison.path == ["foo"]
-
-    comparison = column["f"]["o"]["o"]["b"]["a"]["r"]
-    assert comparison.path == list("foobar")
-
-    with pytest.raises(ValueError):
-        column[object()]

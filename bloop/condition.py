@@ -167,7 +167,7 @@ class Not(_BaseCondition):
 
 
 class Comparison(_BaseCondition):
-    comparator_strings = {
+    comparison_strings = {
         operator.eq: "=",
         operator.ne: "<>",
         operator.lt: "<",
@@ -177,8 +177,8 @@ class Comparison(_BaseCondition):
     }
 
     def __init__(self, column, comparator, value, path=None):
-        if comparator not in self.comparator_strings:
-            raise ValueError("Unknown comparator {!r}".format(comparator))
+        if comparator not in self.comparison_strings:
+            raise ValueError("Unknown comparison {!r}".format(comparator))
         self.column = column
         self.comparator = comparator
         self.value = value
@@ -186,13 +186,13 @@ class Comparison(_BaseCondition):
 
     def __repr__(self):  # pragma: no cover
         return "Compare({}(path={}), {}, {})".format(
-            self.column, self.path, self.comparator_strings[self.comparator],
+            self.column, self.path, self.comparison_strings[self.comparator],
             self.value)
 
     def __str__(self):  # pragma: no cover
         name = printable_name(self.column, self.path)
         return "({} {} {})".format(
-            name, self.comparator_strings[self.comparator], self.value)
+            name, self.comparison_strings[self.comparator], self.value)
 
     def __eq__(self, other):
         if not isinstance(other, Comparison):
@@ -211,7 +211,7 @@ class Comparison(_BaseCondition):
         vref = renderer.value_ref(self.column, self.value,
                                   dumped=self.dumped, path=self.path)
         # TODO special handling for == and != when value dumps to None
-        comparator = self.comparator_strings[self.comparator]
+        comparator = self.comparison_strings[self.comparator]
         return "({} {} {})".format(nref, comparator, vref)
 
 

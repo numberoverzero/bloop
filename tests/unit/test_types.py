@@ -234,7 +234,7 @@ def test_set_illegal_backing_type():
     for typedef in [Boolean, Set(Integer)]:
         with pytest.raises(TypeError) as excinfo:
             Set(typedef)
-        assert "Set's typedef must be backed by" in str(excinfo.value)
+        assert "typedef must be backed by" in str(excinfo.value)
 
 
 def test_set_registered():
@@ -269,13 +269,6 @@ def test_list(engine):
     dumped = typedef.dynamo_dump(loaded, context={"engine": engine})
     assert dumped == expected
     assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
-
-
-@pytest.mark.parametrize("typedef", [List, Set, TypedMap])
-def test_required_subtypes(typedef):
-    """Typed containers require an inner type"""
-    with pytest.raises(TypeError):
-        typedef()
 
 
 def test_map_dump(engine):

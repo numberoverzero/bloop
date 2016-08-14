@@ -208,14 +208,10 @@ class Set(Type):
     """Adapter for sets of objects"""
     python_type = collections.abc.Set
 
-    def __init__(self, typedef=None):
-        # Default None allows the TypeEngine to call without args,
-        # and still provide a helpful error message for a required param
-        if typedef is None:
-            raise TypeError("Sets requires a type")
+    def __init__(self, typedef):
         self.typedef = type_instance(typedef)
         if typedef.backing_type not in {"N", "S", "B"}:
-            raise TypeError("Set's typedef must be backed by one of N/S/B but was {!r}".format(typedef.backing_type))
+            raise TypeError("typedef must be backed by one of N/S/B but was {!r}".format(typedef.backing_type))
         self.backing_type = typedef.backing_type + "S"
         super().__init__()
 
@@ -250,11 +246,7 @@ class List(Type):
     python_type = collections.abc.Iterable
     backing_type = LIST
 
-    def __init__(self, typedef=None):
-        # Default None allows the TypeEngine to call without args,
-        # and still provide a helpful error message for a required param
-        if typedef is None:
-            raise TypeError("List requires a type")
+    def __init__(self, typedef):
         self.typedef = type_instance(typedef)
         super().__init__()
 
@@ -291,11 +283,7 @@ class TypedMap(Type):
     python_type = collections.abc.Mapping
     backing_type = MAP
 
-    def __init__(self, typedef=None):
-        # Default None allows the TypeEngine to call without args,
-        # and still provide a helpful error message for a required param
-        if typedef is None:
-            raise TypeError("TypedMap requires a type")
+    def __init__(self, typedef):
         self.typedef = type_instance(typedef)
         super().__init__()
 

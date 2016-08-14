@@ -50,19 +50,7 @@ class MissingObjects(BloopException):
 
 
 class TableMismatch(BloopException):
-    """Raised when binding a model to an existing table with the wrong schema.
-
-    Attributes:
-        model (:class:`bloop.models.BaseModel`):
-            The model that was trying to bind
-        expected (dict): The expected schema for the table
-        actual (dict): The actual schema of the table
-    """
-    def __init__(self, model, expected, actual):
-        super().__init__(_TABLE_MISMATCH.format(model), expected, actual)
-        self.model = model
-        self.expected = expected
-        self.actual = actual
+    """The expected and actual tables for a model do not match."""
 
 
 class UnboundModel(BloopException):

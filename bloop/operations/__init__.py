@@ -81,6 +81,8 @@ class SessionWrapper:
         try:
             actual = sanitized_table_description(description)
         except KeyError:
-            raise TableMismatch(model, expected, description)
+            raise TableMismatch(
+                "The expected and actual tables for {!r} do not match".format(model.__name__))
         if ordered(actual) != ordered(expected):
-            raise TableMismatch(model, expected, actual)
+            raise TableMismatch(
+                "The expected and actual tables for {!r} do not match".format(model.__name__))

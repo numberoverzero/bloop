@@ -390,21 +390,12 @@ def test_validate_checks_status(session, dynamodb_client):
     assert dynamodb_client.describe_table.call_count == 3
 
 
-def test_validate_fails(session, dynamodb_client):
-    """dynamo returns a json document that doesn't match the expected table"""
+def test_validate_invalid_table(session, dynamodb_client):
+    """dynamo returns an invalid json document"""
     dynamodb_client.describe_table.return_value = \
         {"Table": {"TableStatus": "ACTIVE"}}
-    with pytest.raises(TableMismatch) as excinfo:
+    with pytest.raises(TableMismatch):
         session.validate_table(SimpleModel)
-
-    # Exception includes the model that failed
-    assert excinfo.value.model is SimpleModel
-    # Exception should include the full table description that was expected
-    expected = expected_table_description(SimpleModel)
-    assert ordered(excinfo.value.expected) == ordered(expected)
-    # And the actual table that was returned - the unsanitized description,
-    # since the parsing failed
-    assert excinfo.value.actual == {"TableStatus": "ACTIVE"}
 
 
 def test_validate_simple_model(session, dynamodb_client):
@@ -422,7 +413,7 @@ def test_validate_simple_model(session, dynamodb_client):
         TableName="Simple")
 
 
-def test_validate_mismatch(session, dynamodb_client):
+def test_validate_wrong_table(session, dynamodb_client):
     """dynamo returns a valid document but it doesn't match"""
     full = expected_table_description(SimpleModel)
     full["TableStatus"] = "ACTIVE"
@@ -430,14 +421,5 @@ def test_validate_mismatch(session, dynamodb_client):
     full["TableName"] = "wrong table name"
 
     dynamodb_client.describe_table.return_value = {"Table": full}
-    with pytest.raises(TableMismatch) as excinfo:
+    with pytest.raises(TableMismatch):
         session.validate_table(SimpleModel)
-
-    # Exception includes the model that failed
-    assert excinfo.value.model is SimpleModel
-    # Exception should include the full table description that was expected
-    expected = expected_table_description(SimpleModel)
-    assert ordered(excinfo.value.expected) == ordered(expected)
-    # And the actual table that was returned
-    del full["TableStatus"]
-    assert excinfo.value.actual == full

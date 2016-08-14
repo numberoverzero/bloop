@@ -6,7 +6,7 @@ import arrow
 import declare
 import pytest
 from bloop.engine import Engine, dump_key
-from bloop.exceptions import AbstractModelError, MissingObjects, UnboundModel
+from bloop.exceptions import AbstractModelError, MissingObjects, UnboundModel, UnknownType
 from bloop.models import BaseModel, Column
 from bloop.operations import SessionWrapper
 from bloop.tracking import get_snapshot, sync
@@ -237,15 +237,11 @@ def test_load_dump_unbound(engine):
     obj = Model(id=5)
     value = {"id": {"N": "5"}}
 
-    with pytest.raises(UnboundModel) as excinfo:
+    with pytest.raises(UnboundModel):
         engine._load(Model, value)
-    assert excinfo.value.model is Model
-    assert excinfo.value.obj is None
 
-    with pytest.raises(UnboundModel) as excinfo:
+    with pytest.raises(UnboundModel):
         engine._dump(Model, obj)
-    assert excinfo.value.model is Model
-    assert excinfo.value.obj is obj
 
 
 def test_load_dump_subclass(engine):
@@ -281,9 +277,9 @@ def test_load_dump_unknown(engine):
         "id": {"S": str(uuid.uuid4())}
     }
 
-    with pytest.raises(ValueError):
+    with pytest.raises(UnknownType):
         engine._load(NotModeled, value)
-    with pytest.raises(ValueError):
+    with pytest.raises(UnknownType):
         engine._dump(NotModeled, obj)
 
 

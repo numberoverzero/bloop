@@ -1,7 +1,7 @@
 import boto3
 import declare
 
-from .exceptions import AbstractModelError, MissingObjects, UnboundModel
+from .exceptions import AbstractModelError, MissingObjects, UnboundModel, UnknownType
 from .expressions import render
 from .filter import Filter
 from .models import Index, ModelMetaclass
@@ -56,6 +56,15 @@ def raise_on_abstract(*objs, cls=False):
                     obj if cls else obj.__class__))
 
 
+def raise_on_unknown(model):
+    # Best-effort check for a more helpful message
+    if isinstance(model, ModelMetaclass):
+        raise UnboundModel(
+            "The model {0!r} is not bound.  Did you call engine.bind({0})?".format(model.__name__))
+    else:
+        raise UnknownType("The engine never registered the type {!r}.".format(model.__name__))
+
+
 class Engine:
     def __init__(self, session=None, type_engine=None):
         # Unique namespace so the type engine for multiple bloop Engines
@@ -64,27 +73,18 @@ class Engine:
         self._session = SessionWrapper(session or boto3)
 
     def _dump(self, model, obj, context=None, **kwargs):
-        """Return a dict of the obj in DynamoDB format"""
+        context = context or {"engine": self}
         try:
-            context = context or {"engine": self}
             return context["engine"].type_engine.dump(model, obj, context=context, **kwargs)
         except declare.DeclareException:
-            # Best-effort check for a more helpful message
-            if isinstance(model, ModelMetaclass):
-                raise UnboundModel("load", model, obj)
-            else:
-                raise ValueError("Failed to dump unknown model {}".format(model))
+            raise_on_unknown(model)
 
     def _load(self, model, value, context=None, **kwargs):
+        context = context or {"engine": self}
         try:
-            context = context or {"engine": self}
             return context["engine"].type_engine.load(model, value, context=context, **kwargs)
         except declare.DeclareException:
-            # Best-effort check for a more helpful message
-            if isinstance(model, ModelMetaclass):
-                raise UnboundModel("load", model, None)
-            else:
-                raise ValueError("Failed to load unknown model {}".format(model))
+            raise_on_unknown(model)
 
     def _update(self, obj, attrs, expected, context=None, **kwargs):
         """Push values by dynamo_name into an object"""

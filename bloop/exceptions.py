@@ -53,18 +53,9 @@ class TableMismatch(BloopException):
     """The expected and actual tables for a model do not match."""
 
 
-class UnboundModel(BloopException):
-    """Raised when loading or dumping on a model before binding it to an engine
+class UnboundModel(BloopException, ValueError):
+    """There is no way to load or save instances of an unbound model."""
 
-    Attributes:
-        model (:class:`bloop.models.BaseModel`):
-            The model of the object being loaded, or dumped
-        obj (object or None): The instance of the model that was being dumped,
-            or loaded into.  If a new instance of the model was being created,
-            this will be None
 
-    """
-    def __init__(self, operation, model, obj):
-        super().__init__(_UNBOUND.format(operation), model, obj)
-        self.model = model
-        self.obj = obj
+class UnknownType(BloopException, ValueError):
+    """The provided type has not been registered with the type engine."""

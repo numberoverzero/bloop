@@ -6,7 +6,7 @@ import arrow
 import declare
 import pytest
 from bloop.engine import Engine, dump_key
-from bloop.exceptions import AbstractModelException, NotLoaded, UnboundModel
+from bloop.exceptions import AbstractModelError, NotLoaded, UnboundModel
 from bloop.models import BaseModel, Column
 from bloop.operations import SessionWrapper
 from bloop.tracking import get_snapshot, sync
@@ -643,15 +643,13 @@ def test_unbound_operations_raise(engine, op, plural):
     abstract = Abstract(id=5)
     concrete = User(age=5)
 
-    with pytest.raises(AbstractModelException) as excinfo:
+    with pytest.raises(AbstractModelError):
         operation = getattr(engine, op)
         operation(abstract)
-    assert excinfo.value.model is abstract
     if plural:
-        with pytest.raises(AbstractModelException) as excinfo:
+        with pytest.raises(AbstractModelError):
             operation = getattr(engine, op)
             operation(abstract, concrete)
-        assert excinfo.value.model is abstract
 
 
 def test_load_missing_vector_types(engine, session):

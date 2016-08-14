@@ -4,7 +4,7 @@ from unittest.mock import Mock
 import botocore.exceptions
 import pytest
 from bloop.exceptions import (
-    AbstractModelException,
+    AbstractModelError,
     ConstraintViolation,
     TableMismatch,
 )
@@ -271,12 +271,6 @@ def test_create_raises_unknown(session, dynamodb_client):
         session.create_table(User)
     assert excinfo.value.response["Error"]["Code"] == "FooError"
     assert dynamodb_client.create_table.call_count == 1
-
-
-def test_create_abstract_raises(session, dynamodb_client):
-    with pytest.raises(AbstractModelException) as excinfo:
-        session.create_table(BaseModel)
-    assert excinfo.value.model is BaseModel
 
 
 def test_create_already_exists(session, dynamodb_client):

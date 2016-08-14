@@ -1,7 +1,7 @@
 import boto3
 import declare
 
-from .exceptions import AbstractModelException, NotLoaded, UnboundModel
+from .exceptions import AbstractModelError, NotLoaded, UnboundModel
 from .expressions import render
 from .filter import Filter
 from .models import Index, ModelMetaclass
@@ -46,6 +46,14 @@ def dump_key(engine, obj):
         key_value = engine._dump(key_column.typedef, key_value)
         key[key_column.dynamo_name] = key_value
     return key
+
+
+def raise_on_abstract(*objs, cls=False):
+    for obj in objs:
+        if obj.Meta.abstract:
+            raise AbstractModelError(
+                "You cannot load or save an instance of abstract model {!r}".format(
+                    obj if cls else obj.__class__))
 
 
 class Engine:
@@ -123,9 +131,7 @@ class Engine:
 
     def delete(self, *objs, condition=None, atomic=False):
         objs = set(objs)
-        for obj in objs:
-            if obj.Meta.abstract:
-                raise AbstractModelException(obj)
+        raise_on_abstract(*objs)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
             if atomic:
@@ -162,9 +168,7 @@ class Engine:
         engine.load([hash_only, hash_and_range])
         """
         objs = set(objs)
-        for obj in objs:
-            if obj.Meta.abstract:
-                raise AbstractModelException(obj)
+        raise_on_abstract(*objs)
 
         table_index, object_index, request = {}, {}, {}
 
@@ -211,18 +215,14 @@ class Engine:
         else:
             model, index = obj, None
             select = "all"
-        if model.Meta.abstract:
-            raise AbstractModelException(model)
-
+        raise_on_abstract(model, cls=True)
         return Filter(
             engine=self, mode="query", model=model, index=index, strict=strict, select=select,
             consistent=consistent)
 
     def save(self, *objs, condition=None, atomic=False):
         objs = set(objs)
-        for obj in objs:
-            if obj.Meta.abstract:
-                raise AbstractModelException(obj)
+        raise_on_abstract(*objs)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
 
@@ -242,8 +242,7 @@ class Engine:
         else:
             model, index = obj, None
             select = "all"
-        if model.Meta.abstract:
-            raise AbstractModelException(model)
+        raise_on_abstract(model, cls=True)
         return Filter(
             engine=self, mode="scan", model=model, index=index, strict=strict, select=select,
             consistent=consistent)

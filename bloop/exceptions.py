@@ -9,26 +9,21 @@ automatically recover from that failure.
 """
 
 __all__ = [
-    "AbstractModelException", "BloopException", "ConstraintViolation",
+    "AbstractModelError", "BloopException", "ConstraintViolation",
     "NotLoaded", "TableMismatch", "UnboundModel"]
 
 _CONSTRAINT_FAILURE = "Failed to meet required condition during {}"
 _NOT_LOADED = "Failed to load some objects"
 _TABLE_MISMATCH = "Existing table for model {} does not match expected"
 _UNBOUND = "Failed to {} unbound model.  Did you forget to call engine.bind()?"
-_ABSTRACT = "Cannot perform operation on abstract model {}"
 
 
 class BloopException(Exception):
-    """Base exception for blanket catching"""
-    pass
+    """An unexpected exception occurred."""
 
 
-class AbstractModelException(BloopException):
-    """Raised when an operation is attempted on an abstract model"""
-    def __init__(self, model):
-        super().__init__(_ABSTRACT.format(model))
-        self.model = model
+class AbstractModelError(BloopException, ValueError):
+    """There is no way to load or save an abstract model."""
 
 
 class ConstraintViolation(BloopException):

@@ -1,7 +1,7 @@
 import collections
 import botocore.exceptions
 
-from ..exceptions import AbstractModelException, TableMismatch
+from ..exceptions import AbstractModelError, TableMismatch
 from ..util import ordered
 from .models import create_batch_get_chunks, handle_constraint_violation, standardize_query_response
 from .tables import (
@@ -63,8 +63,6 @@ class SessionWrapper:
         return response
 
     def create_table(self, model):
-        if model.Meta.abstract:
-            raise AbstractModelException(model)
         table = create_table_request(model)
         try:
             self._dynamodb_client.create_table(**table)

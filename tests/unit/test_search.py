@@ -1,5 +1,6 @@
 import collections
 import pytest
+from bloop.exceptions import ConstraintViolation
 from bloop.search import ScanIterator, QueryIterator, SearchIterator, search_repr
 from bloop.util import Sentinel
 
@@ -8,7 +9,34 @@ from ..helpers.models import User
 proceed = Sentinel("proceed")
 
 
-def response(count, terminate=False):
+def next_non_zero_index(chain, start=0):
+    """Return the next index >= start of a non-zero value. -1 on failure to find"""
+    non_zeros = filter(lambda x: x, chain[start:])
+    value = next(non_zeros, None)
+    return chain.index(value) if value else -1
+
+
+def calls_for_current_steps(chain, current_steps):
+    """The number of dynamodb calls that are required to iterate the given chain in the given number of steps.
+
+    For example, the chain [3, 0, 1, 4] has the following table:
+
+        +-------+---+---+---+---+---+---+---+---+---+---+
+        | steps | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
+        +-------+---+---+---+---+---+---+---+---+---+---+
+        | calls | 1 | 1 | 1 | 1 | 3 | 4 | 4 | 4 | 4 | 4 |
+        +-------+---+---+---+---+---+---+---+---+---+---+
+    """
+    required_steps = 0
+    call_count = 0
+    for call_count, page in enumerate(chain):
+        required_steps += page
+        if required_steps >= current_steps:
+            break
+    return call_count + 1
+
+
+def response(count=1, terminate=False, item=Sentinel("item"), items=None):
     """This fills in the required response structure from a single query/scan call:
 
     Count, ScannedCount
@@ -21,21 +49,30 @@ def response(count, terminate=False):
         fully drained before the next page is loaded.  It also lets us verify that the while loop will
         follow LastEvaluatedKeys until it hits a non-empty page.
     """
+    items = items or [item] * count
     return {
         "Count": count,
         "ScannedCount": count * 3,
-        "Items": [True] * count,
+        "Items": items,
         "LastEvaluatedKey": None if terminate else proceed
     }
 
 
-def build_responses(chain):
+def build_responses(chain, items=None):
     """This expands a compact integer description of a set of pages into the appropriate response structure.
 
     For example: [0, 2, 1] expands into (0 results, proceed) -> (2 results, proceed) -> (1 result, stop).
     We'll also use those integers in the verifier to compare number of results and number of calls.
     """
-    return [response(count) for count in chain[:-1]] + [response(chain[-1], terminate=True)]
+    items = items or []
+    responses = []
+    for count in chain[:-1]:
+        response_items = None
+        if items:
+            response_items, items = items[:count], items[count:]
+        responses.append(response(count=count, items=response_items))
+    responses.append(response(count=chain[-1], items=items, terminate=True))
+    return responses
 
 
 def simple_iter(session, cls=SearchIterator):
@@ -155,25 +192,6 @@ def test_next_states(session, iterator_cls):
         [2], [0, 2], [1, 1], [2, 0]
     ]
 
-    def calls_for_current_steps(chain, current_steps):
-        """The number of dynamodb calls that are required to iterate the given chain in the given number of steps.
-
-        For example, the chain [3, 0, 1, 4] has the following table:
-
-            +-------+---+---+---+---+---+---+---+---+---+---+
-            | steps | 0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 |
-            +-------+---+---+---+---+---+---+---+---+---+---+
-            | calls | 1 | 1 | 1 | 1 | 3 | 4 | 4 | 4 | 4 | 4 |
-            +-------+---+---+---+---+---+---+---+---+---+---+
-        """
-        required_steps = 0
-        call_count = 0
-        for call_count, page in enumerate(chain):
-            required_steps += page
-            if required_steps >= current_steps:
-                break
-        return call_count + 1
-
     def verify_iterator(chain):
         """For a given sequence of result page sizes, verify that __next__ steps forward as expected.
 
@@ -199,3 +217,53 @@ def test_next_states(session, iterator_cls):
     # Kick it all off
     for chain in chains:
         verify_iterator(chain)
+
+
+@pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
+@pytest.mark.parametrize("chain", [[1], [0, 1], [1, 0], [2, 0]])
+def test_first_success(session, iterator_cls, chain):
+    iterator = simple_iter(session, cls=iterator_cls)
+    item_count = sum(chain)
+    session.search_items.side_effect = build_responses(chain, items=list(range(item_count)))
+
+    first = iterator.first()
+
+    assert first == 0
+    assert session.search_items.call_count == next_non_zero_index(chain) + 1
+
+
+@pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
+@pytest.mark.parametrize("chain", [[0], [0, 0]])
+def test_first_failure(session, iterator_cls, chain):
+    iterator = simple_iter(session, cls=iterator_cls)
+    session.search_items.side_effect = build_responses(chain)
+
+    with pytest.raises(ConstraintViolation):
+        iterator.first()
+    assert session.search_items.call_count == len(chain)
+
+
+@pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
+@pytest.mark.parametrize("chain", [[1], [0, 1], [1, 0]])
+def test_one_success(session, iterator_cls, chain):
+    iterator = simple_iter(session, cls=iterator_cls)
+    one = Sentinel("one")
+    session.search_items.side_effect = build_responses(chain, items=[one])
+
+    assert iterator.one() is one
+    # SearchIterator.one should advance exactly twice, every time
+    expected_calls = calls_for_current_steps(chain, 2)
+    assert session.search_items.call_count == expected_calls
+
+
+@pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
+@pytest.mark.parametrize("chain", [[0], [0, 0], [2], [2, 0], [1, 1], [0, 2]])
+def test_one_failure(session, iterator_cls, chain):
+    iterator = simple_iter(session, cls=iterator_cls)
+    session.search_items.side_effect = build_responses(chain)
+
+    with pytest.raises(ConstraintViolation):
+        iterator.one()
+    # SearchIterator.one should advance exactly twice, every time
+    expected_calls = calls_for_current_steps(chain, 2)
+    assert session.search_items.call_count == expected_calls

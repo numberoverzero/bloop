@@ -1,6 +1,5 @@
 import collections
 import functools
-import operator
 
 from .condition import And, BeginsWith, Between, Comparison, _BaseCondition
 from .exceptions import ConstraintViolation
@@ -102,14 +101,14 @@ def validate_hash_key_condition(condition, hash_column):
         # 1) Comparison
         isinstance(condition, Comparison) and
         # 2) ==
-        condition.comparator is operator.eq and
+        condition.comparator == "==" and
         # 3) hash_column
         condition.column is hash_column)
 
 
 def validate_range_key_condition(condition, range_column):
     # Valid comparators are EQ | LE | LT | GE | GT -- not NE
-    is_comparison = isinstance(condition, Comparison) and (condition.comparator is not operator.ne)
+    is_comparison = isinstance(condition, Comparison) and (condition.comparator != "!=")
     # ... or begins_with, or between
     is_special_condition = isinstance(condition, (BeginsWith, Between))
     return (is_comparison or is_special_condition) and condition.column is range_column

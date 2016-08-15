@@ -1,11 +1,20 @@
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
-import operator
 
+from .exceptions import InvalidComparisonOperator
 
 __all__ = [
     "And", "AttributeExists", "BeginsWith", "Between", "Comparison",
     "Condition", "Contains", "In", "Not", "Or"]
+
+comparison_aliases = {
+    "==": "=",
+    "!=": "<>",
+    "<": "<",
+    ">": ">",
+    "<=": "<=",
+    ">=": ">=",
+}
 
 
 def printable_name(column, path):  # pragma: no cover
@@ -84,6 +93,9 @@ class Condition(_BaseCondition):
 
 
 class _MultiCondition(_BaseCondition):
+    name = None
+    uname = None
+
     def __init__(self, *conditions):
         self.conditions = list(conditions)
 
@@ -167,18 +179,11 @@ class Not(_BaseCondition):
 
 
 class Comparison(_BaseCondition):
-    comparison_strings = {
-        operator.eq: "=",
-        operator.ne: "<>",
-        operator.lt: "<",
-        operator.gt: ">",
-        operator.le: "<=",
-        operator.ge: ">=",
-    }
 
     def __init__(self, column, comparator, value, path=None):
-        if comparator not in self.comparison_strings:
-            raise ValueError("Unknown comparison {!r}".format(comparator))
+        if comparator not in comparison_aliases:
+            raise InvalidComparisonOperator(
+                "{!r} is not a valid Comparison operator".format(comparator))
         self.column = column
         self.comparator = comparator
         self.value = value
@@ -186,13 +191,13 @@ class Comparison(_BaseCondition):
 
     def __repr__(self):  # pragma: no cover
         return "Compare({}(path={}), {}, {})".format(
-            self.column, self.path, self.comparison_strings[self.comparator],
+            self.column, self.path, comparison_aliases[self.comparator],
             self.value)
 
     def __str__(self):  # pragma: no cover
         name = printable_name(self.column, self.path)
         return "({} {} {})".format(
-            name, self.comparison_strings[self.comparator], self.value)
+            name, comparison_aliases[self.comparator], self.value)
 
     def __eq__(self, other):
         if not isinstance(other, Comparison):
@@ -211,7 +216,7 @@ class Comparison(_BaseCondition):
         vref = renderer.value_ref(self.column, self.value,
                                   dumped=self.dumped, path=self.path)
         # TODO special handling for == and != when value dumps to None
-        comparator = self.comparison_strings[self.comparator]
+        comparator = comparison_aliases[self.comparator]
         return "({} {} {})".format(nref, comparator, vref)
 
 

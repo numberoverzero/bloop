@@ -1,5 +1,4 @@
 import collections.abc
-import operator
 
 import declare
 from .condition import (
@@ -295,27 +294,27 @@ class _ComparisonMixin:
         # Special case - None should use function attribute_not_exists
         if value is None:
             return AttributeExists(self.__obj, negate=True, path=self.path)
-        return Comparison(self.__obj, operator.eq, value, path=self.path)
+        return Comparison(self.__obj, "==", value, path=self.path)
     is_ = __eq__
 
     def __ne__(self, value):
         # Special case - None should use function attribute_exists
         if value is None:
             return AttributeExists(self.__obj, negate=False, path=self.path)
-        return Comparison(self.__obj, operator.ne, value, path=self.path)
+        return Comparison(self.__obj, "!=", value, path=self.path)
     is_not = __ne__
 
     def __lt__(self, value):
-        return Comparison(self.__obj, operator.lt, value, path=self.path)
+        return Comparison(self.__obj, "<", value, path=self.path)
 
     def __gt__(self, value):
-        return Comparison(self.__obj, operator.gt, value, path=self.path)
+        return Comparison(self.__obj, ">", value, path=self.path)
 
     def __le__(self, value):
-        return Comparison(self.__obj, operator.le, value, path=self.path)
+        return Comparison(self.__obj, "<=", value, path=self.path)
 
     def __ge__(self, value):
-        return Comparison(self.__obj, operator.ge, value, path=self.path)
+        return Comparison(self.__obj, ">=", value, path=self.path)
 
     def between(self, lower, upper):
         """ lower <= column.value <= upper """

@@ -49,13 +49,13 @@ class InvalidComparisonOperator(BloopException, ValueError):
     """This is not a valid Comparison operator."""
 
 
-class InvalidSelect(BloopException, ValueError):
-    """This is not a valid Select option."""
-
-
 class InvalidKeyCondition(BloopException, ValueError):
     """This is not a valid key condition for the Model and Index."""
 
 
 class InvalidFilterCondition(BloopException, ValueError):
     """This is not a valid filter condition for the Model and Index."""
+
+
+class InvalidSelect(BloopException, ValueError):
+    """This is not a valid select option for the Model and Index."""

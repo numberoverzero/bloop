@@ -1,12 +1,18 @@
-import operator as op
+import operator
 import pytest
 from bloop.condition import AttributeExists, BeginsWith, Between, Contains, In
 from bloop.models import Column
 from bloop.types import Integer
 
 
-operations = [op.ne, op.eq, op.lt, op.le, op.gt, op.ge]
-operation_ids = ["!=", "==", "<", "<=", ">", ">="]
+operations = [
+    (operator.ne, "!="),
+    (operator.eq, "=="),
+    (operator.lt, "<"),
+    (operator.le, "<="),
+    (operator.gt, ">"),
+    (operator.ge, ">=")
+]
 
 
 def test_equals_alias_exists():
@@ -27,13 +33,13 @@ def test_equals_alias_exists():
     assert condition.negate is False
 
 
-@pytest.mark.parametrize("operation", operations, ids=operation_ids)
-def test_comparison(operation):
+@pytest.mark.parametrize("op_func, op_name", operations, ids=repr)
+def test_comparison(op_func, op_name):
     column = Column(Integer)
     value = object()
 
-    condition = operation(column, value)
-    assert condition.comparator is operation
+    condition = op_func(column, value)
+    assert condition.comparator == op_name
     assert condition.column is column
     assert condition.value is value
 

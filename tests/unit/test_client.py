@@ -9,9 +9,7 @@ from bloop.exceptions import (
     TableMismatch,
 )
 from bloop.models import Column
-from bloop.operations.models import BATCH_GET_ITEM_CHUNK_SIZE
-from bloop.operations.tables import expected_table_description
-from bloop.operations import SessionWrapper
+from bloop.operations import SessionWrapper, expected_table_description, BATCH_GET_ITEM_CHUNK_SIZE
 from bloop.types import String
 from bloop.util import ordered
 

@@ -101,6 +101,8 @@ class PreparedSearch:
         self._projection_mode = None
         self._projected_columns = None
         self.limit = None
+        self.forward = None
+        self.consistent = None
         self._request = None
         self._iterator_cls = None
 
@@ -115,10 +117,16 @@ class PreparedSearch:
         self.prepare_filter(filter)
         self.prepare_constraints(limit, forward)
 
-    def prepare_session(self, session, mode):
-        pass
+        self.prepare_request()
+
+    def prepare_session(self, engine, session, mode):
+        self.engine = engine
+        self.session = session
+        self.mode = mode
 
     def prepare_model(self, model, index, consistent):
+        # if index not in model.Meta.indexes:
+        #    raise
         pass
 
     def prepare_key(self, key):
@@ -131,6 +139,12 @@ class PreparedSearch:
         pass
 
     def prepare_constraints(self, limit, forward):
+        self.limit = limit
+        self.forward = forward
+
+    def prepare_request(self):
+        # TODO
+        # request = self._request = {}
         pass
 
     def __repr__(self):  # pragma: no cover

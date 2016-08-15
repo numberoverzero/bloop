@@ -1,5 +1,5 @@
 import pytest
-from bloop.operations.tables import (
+from bloop.operations import (
     create_table_request,
     expected_table_description,
     sanitized_table_description,

@@ -19,10 +19,6 @@ __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex",
 model_created = signal("model_created")
 
 
-INVALID_PROJECTION = ValueError(
-    "Index projections must be either 'keys', 'all', or an iterable of model attributes to include.")
-
-
 def loaded_columns(obj):
     """Yields each (model_name, value) tuple for all columns in an object that aren't missing"""
     for column in sorted(obj.Meta.columns, key=lambda c: c.model_name):
@@ -36,14 +32,16 @@ def validate_projection(projection):
     if isinstance(projection, str):
         projection = projection.upper()
         if projection not in ["KEYS", "ALL"]:
-            raise INVALID_PROJECTION
+            raise InvalidIndex("{!r} is not a valid Index projection.".format(projection))
     elif isinstance(projection, collections.abc.Iterable):
         projection = list(projection)
-        for attribute in projection:
-            if not isinstance(attribute, str):
-                raise INVALID_PROJECTION
+        all_names = all(isinstance(item, str) for item in projection)
+        if not all_names:
+            raise InvalidIndex(
+                "Index projection must be a list of strings when selecting specific Columns.")
     else:
-        raise INVALID_PROJECTION
+        raise InvalidIndex(
+            "Index projection must be 'all', 'keys', or a list of Column names.")
     return projection
 
 

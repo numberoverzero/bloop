@@ -1,7 +1,7 @@
 import boto3
 import declare
 
-from .exceptions import AbstractModelError, MissingObjects, UnboundModel, UnknownType
+from .exceptions import AbstractModelError, InvalidModel, MissingKey, MissingObjects, UnboundModel, UnknownType
 from .expressions import render
 from .filter import Filter
 from .models import Index, ModelMetaclass
@@ -42,7 +42,7 @@ def dump_key(engine, obj):
     for key_column in obj.Meta.keys:
         key_value = getattr(obj, key_column.model_name, missing)
         if key_value is missing:
-            raise ValueError("Missing required hash/range key {!r}".format(key_column.model_name))
+            raise MissingKey("You must provide a value for every key column in {!r}".format(obj))
         key_value = engine._dump(key_column.typedef, key_value)
         key[key_column.dynamo_name] = key_value
     return key
@@ -100,7 +100,7 @@ class Engine:
         """Create tables for all models subclassing base"""
         # Make sure we're looking at models
         if not isinstance(base, ModelMetaclass):
-            raise ValueError("base must derive from bloop.BaseModel")
+            raise InvalidModel("Can only bind base that derives from BaseModel")
 
         # whether the model's typedefs should be registered, and
         # whether the model should be eligible for validation

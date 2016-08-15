@@ -25,9 +25,9 @@ def printable_name(column, path):  # pragma: no cover
         pieces = []
         for segment in path:
             if isinstance(segment, str):
-                fmt = '["{}"]'
+                fmt = '["{!r}"]'
             else:
-                fmt = '[{}]'
+                fmt = '[{!r}]'
             pieces.append(fmt.format(segment))
         name += "".join(pieces)
     return name
@@ -79,10 +79,7 @@ class Condition(_BaseCondition):
         return 0
 
     def __repr__(self):  # pragma: no cover
-        return "EmptyCondition()"
-
-    def __str__(self):  # pragma: no cover
-        return "()"
+        return "(<empty condition>)"
 
     def __eq__(self, other):
         return isinstance(other, Condition)
@@ -100,15 +97,12 @@ class _MultiCondition(_BaseCondition):
         self.conditions = list(conditions)
 
     def __repr__(self):  # pragma: no cover
-        conditions = ", ".join(str(c) for c in self.conditions)
-        return self.name + "({})".format(conditions)
-
-    def __str__(self):  # pragma: no cover
         joiner = " | " if self.uname == "OR" else " & "
-        # Renders as "((condition) |)" to indicate a single-value multi
+        conditions = joiner.join(repr(c) for c in self.conditions)
+        # Renders as "((condition) | )" to indicate a single-value multi
         if len(self.conditions) == 1:
-            return "({}{})".format(self.conditions[0], joiner)
-        return "({})".format(joiner.join(str(c) for c in self.conditions))
+            return "({} {})".format(conditions, joiner.strip())
+        return "({})".format(conditions)
 
     def __len__(self):
         return sum(map(len, self.conditions))
@@ -160,10 +154,7 @@ class Not(_BaseCondition):
         self.condition = condition
 
     def __repr__(self):  # pragma: no cover
-        return "Not({})".format(self.condition)
-
-    def __str__(self):  # pragma: no cover
-        return "(~{})".format(self.condition)
+        return "~{!r}".format(self.condition)
 
     def __len__(self):
         return len(self.condition)
@@ -190,14 +181,10 @@ class Comparison(_BaseCondition):
         self.path = path
 
     def __repr__(self):  # pragma: no cover
-        return "Compare({}(path={}), {}, {})".format(
-            self.column, self.path, comparison_aliases[self.comparator],
+        return "({} {} {!r})".format(
+            printable_name(self.column, self.path),
+            self.comparator,
             self.value)
-
-    def __str__(self):  # pragma: no cover
-        name = printable_name(self.column, self.path)
-        return "({} {} {})".format(
-            name, comparison_aliases[self.comparator], self.value)
 
     def __eq__(self, other):
         if not isinstance(other, Comparison):
@@ -227,13 +214,9 @@ class AttributeExists(_BaseCondition):
         self.path = path
 
     def __repr__(self):  # pragma: no cover
-        name = "AttributeNotExists" if self.negate else "AttributeExists"
-        return "{}({}(path={}))".format(name, self.column, self.path)
-
-    def __str__(self):  # pragma: no cover
-        name = printable_name(self.column, self.path)
-        return "({} {} None)".format(
-            name, "is" if self.negate else "is not")
+        return "{}exists({})".format(
+            "not_" if self.negate else "",
+            printable_name(self.column, self.path))
 
     def __eq__(self, other):
         if not isinstance(other, AttributeExists):
@@ -260,12 +243,9 @@ class BeginsWith(_BaseCondition):
         self.path = path
 
     def __repr__(self):  # pragma: no cover
-        return "BeginsWith({}(path={}), {})".format(
-            self.column, self.path, self.value)
-
-    def __str__(self):  # pragma: no cover
-        name = printable_name(self.column, self.path)
-        return "({} begins with {})".format(name, self.value)
+        return "begins_with({}, {!r})".format(
+            printable_name(self.column, self.path),
+            self.value)
 
     def __eq__(self, other):
         if not isinstance(other, BeginsWith):
@@ -293,12 +273,9 @@ class Contains(_BaseCondition):
         self.path = path
 
     def __repr__(self):  # pragma: no cover
-        return "Contains({}(path={}), {})".format(
-            self.column, self.path, self.value)
-
-    def __str__(self):  # pragma: no cover
-        name = printable_name(self.column, self.path)
-        return "({} contains {})".format(name, self.value)
+        return "contains({}, {!r})".format(
+            printable_name(self.column, self.path),
+            self.value)
 
     def __eq__(self, other):
         if not isinstance(other, Contains):
@@ -327,12 +304,9 @@ class Between(_BaseCondition):
         self.path = path
 
     def __repr__(self):  # pragma: no cover
-        return "Between({}(path={}), {}, {})".format(
-            self.column, self.path, self.lower, self.upper)
-
-    def __str__(self):  # pragma: no cover
-        name = printable_name(self.column, self.path)
-        return "({} between [{},{}])".format(name, self.lower, self.upper)
+        return "between({}, {!r}, {!r})".format(
+            printable_name(self.column, self.path),
+            self.lower, self.upper)
 
     def __eq__(self, other):
         if not isinstance(other, Between):
@@ -363,12 +337,9 @@ class In(_BaseCondition):
         self.path = path
 
     def __repr__(self):  # pragma: no cover
-        values = ", ".join(str(c) for c in self.values)
-        return "In({}(path={}), [{}])".format(self.column, self.path, values)
-
-    def __str__(self):  # pragma: no cover
-        name = printable_name(self.column, self.path)
-        return "({} in {})".format(name, list(self.values))
+        return "in({}, {!r})".format(
+            printable_name(self.column, self.path),
+            self.values)
 
     def __eq__(self, other):
         if not isinstance(other, In):

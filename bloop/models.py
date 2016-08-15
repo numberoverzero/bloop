@@ -9,7 +9,7 @@ from .condition import (
     Contains,
     In
 )
-from .exceptions import InvalidModel
+from .exceptions import InvalidIndex, InvalidModel
 from .tracking import mark
 from .util import missing, signal
 
@@ -118,19 +118,17 @@ def setup_columns(meta):
 
 def setup_indexes(meta):
     """Filter indexes from fields, compute projection for each index"""
-    # These are sets instead of lists, because sets use __hash__
-    # while some list operations use __eq__ which will break
-    # with the ComparisonMixin
-    meta.gsis = set(filter(
-        lambda field: isinstance(field, GlobalSecondaryIndex),
-        meta.fields))
-    meta.lsis = set(filter(
-        lambda field: isinstance(field, LocalSecondaryIndex),
-        meta.fields))
-    meta.indexes = set.union(meta.gsis, meta.lsis)
+    # Don't put these in the metadata until they bind successfully.
+    gsis = set(filter(lambda field: isinstance(field, GlobalSecondaryIndex), meta.fields))
+    lsis = set(filter(lambda field: isinstance(field, LocalSecondaryIndex), meta.fields))
+    indexes = set.union(gsis, lsis)
 
-    for index in meta.indexes:
+    for index in indexes:
         index._bind(meta.model)
+
+    meta.gsis = gsis
+    meta.lsis = lsis
+    meta.indexes = indexes
 
 
 class BaseModel(metaclass=ModelMetaclass):
@@ -180,10 +178,9 @@ class BaseModel(metaclass=ModelMetaclass):
         for column in cls.Meta.columns:
             type_engine.register(column.typedef)
 
-    def __str__(self):
+    def __repr__(self):
         attrs = ", ".join("{}={}".format(*item) for item in loaded_columns(self))
         return "{}({})".format(self.__class__.__name__, attrs)
-    __repr__ = __str__
 
 
 class Index(declare.Field):
@@ -196,6 +193,31 @@ class Index(declare.Field):
 
         # projection_attributes will be set up in `_bind`
         self.projection = validate_projection(projection)
+
+    def __repr__(self):  # pragma: no cover
+        if isinstance(self, LocalSecondaryIndex):
+            cls_name = "LSI"
+        elif isinstance(self, GlobalSecondaryIndex):
+            cls_name = "GSI"
+        else:
+            cls_name = self.__class__.__name__
+
+        # TODO clean up projection name.  Lowercase everywhere, "all", "keys", "select".
+        # TODO   only the renderer should care about the wire format
+        projection = {
+            "ALL": "all",
+            "KEYS_ONLY": "keys",
+            "INCLUDE": "select"
+        }[self.projection]
+
+        # <GSI[User.by_email=all]>
+        # <GSI[User.by_email=keys]>
+        # <LSI[User.by_email=select]>
+        return "<{}[{}.{}={}]>".format(
+            cls_name,
+            self.model.__class__.__name__, self.model_name,
+            projection
+        )
 
     @property
     def dynamo_name(self):
@@ -235,7 +257,7 @@ class Index(declare.Field):
             projected.update(attrs)
             self.projection = "INCLUDE"
 
-    # TODO: disallow set/get/del for an index.  Raise RuntimeError.
+    # TODO: disallow set/get/del for an index; these don't store values.  Raise AttributeError.
 
 
 class GlobalSecondaryIndex(Index):
@@ -250,15 +272,15 @@ class LocalSecondaryIndex(Index):
     def __init__(self, *, projection, range_key, name=None, **kwargs):
         # Hash key MUST be the table hash; do not specify
         if "hash_key" in kwargs:
-            raise ValueError("Can't specify the hash_key of a LocalSecondaryIndex")
+            raise InvalidIndex("An LSI shares its hash key with the Model.")
         if ("write_units" in kwargs) or ("read_units" in kwargs):
-            raise ValueError("A LocalSecondaryIndex does not have its own read/write units")
+            raise InvalidIndex("An LSI shares its provisioned throughput with the Model.")
         super().__init__(range_key=range_key, name=name, projection=projection, **kwargs)
 
     def _bind(self, model):
         """Raise if the model doesn't have a range key"""
         if not model.Meta.range_key:
-            raise ValueError("Can't specify a LocalSecondaryIndex on a table without a range key")
+            raise InvalidIndex("An LSI requires the Model to have a range key.")
         # this is model_name (string) because super()._bind will do the string -> Column lookup
         self.hash_key = model.Meta.hash_key.model_name
         super()._bind(model)
@@ -354,13 +376,21 @@ class Column(declare.Field, _ComparisonMixin):
         super().__init__(**kwargs)
 
     def __repr__(self):  # pragma: no cover
-        attrs = ["model_name", "dynamo_name", "hash_key", "range_key"]
+        if self.hash_key:
+            extra = "=hash"
+        elif self.range_key:
+            extra = "=range"
+        else:
+            extra = ""
 
-        attrs = ", ".join(
-            "{}={}".format(attr, getattr(self, attr))
-            for attr in attrs)
-        return "{}({})".format(self.__class__.__name__, attrs)
-    __str__ = __repr__
+        # <Column[Pin.url]>
+        # <Column[User.id=hash]>
+        # <Column[File.fragment=range]>
+        return "<Column[{}.{}{}]>".format(
+            self.model.__name__,
+            getattr(self, "model_name"),
+            extra
+        )
 
     @property
     def dynamo_name(self):

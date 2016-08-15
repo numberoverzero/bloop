@@ -47,9 +47,10 @@ class Type(declare.TypeDefinition):
         raise NotImplementedError()
 
     def __repr__(self, *a, **kw):  # pragma: no cover
-        return "{}(python_type={}, backing_type={})".format(
-            self.__class__.__name__, self.python_type, self.backing_type)
-    __str__ = __repr__
+        return "<{}[{}:{}]>".format(
+            self.__class__.__name__,
+            self.backing_type, self.python_type
+        )
 
 
 class String(Type):

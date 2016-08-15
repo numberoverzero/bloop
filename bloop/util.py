@@ -66,6 +66,5 @@ class Sentinel:
 
     def __repr__(self):  # pragma: no cover
         return "<Sentinel({})>".format(self.name)
-    __str__ = __repr__
 
 missing = Sentinel("missing")

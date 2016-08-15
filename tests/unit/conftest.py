@@ -3,7 +3,7 @@ import pytest
 
 from unittest.mock import Mock
 from bloop import Engine, BaseModel
-from bloop.operations import SessionWrapper
+from bloop.session import SessionWrapper
 
 
 @pytest.fixture

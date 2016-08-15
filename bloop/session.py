@@ -1,8 +1,8 @@
 import collections
 import botocore.exceptions
 
-from ..exceptions import BloopException, ConstraintViolation, TableMismatch, UnknownSearchMode
-from ..util import Sentinel, ordered
+from .exceptions import BloopException, ConstraintViolation, TableMismatch, UnknownSearchMode
+from .util import Sentinel, ordered
 ready = Sentinel("ready")
 
 __all__ = ["SessionWrapper"]

@@ -5,7 +5,7 @@ from .exceptions import AbstractModelError, InvalidModel, MissingKey, MissingObj
 from .expressions import render
 from .filter import Filter
 from .models import Index, ModelMetaclass
-from .operations import SessionWrapper
+from .session import SessionWrapper
 from .tracking import clear, is_model_verified, sync, verify_model
 from .util import missing, walk_subclasses, signal
 

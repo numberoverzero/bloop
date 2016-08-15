@@ -8,7 +8,7 @@ import pytest
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import AbstractModelError, MissingObjects, UnboundModel, UnknownType
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
-from bloop.operations import SessionWrapper
+from bloop.session import SessionWrapper
 from bloop.tracking import get_snapshot, sync
 from bloop.types import DateTime, Integer, String
 from bloop.util import ordered

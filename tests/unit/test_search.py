@@ -75,8 +75,9 @@ def build_responses(chain, items=None):
     return responses
 
 
-def simple_iter(session, cls=SearchIterator):
+def simple_iter(engine, session, cls=SearchIterator):
     return cls(
+        engine=engine,
         session=session,
         model=User,
         index=None,
@@ -100,14 +101,14 @@ def test_search_repr():
         assert search_repr(cls, has_model and model, has_index and index) == expected
 
 
-def test_iterator_returns_self(session):
-    iterator = simple_iter(session)
+def test_iterator_returns_self(engine, session):
+    iterator = simple_iter(engine, session)
     assert iterator is iter(iterator)
 
 
-def test_iterator_reset(session):
+def test_iterator_reset(engine, session):
     """reset clears buffer, count, scanned, exhausted, yielded"""
-    iterator = simple_iter(session)
+    iterator = simple_iter(engine, session)
 
     # Pretend we've stepped the iterator a few times
     iterator.yielded = 8
@@ -130,7 +131,7 @@ def test_iterator_reset(session):
 @pytest.mark.parametrize("yielded", [0, 1, 2])
 @pytest.mark.parametrize("buffer_size", [0, 1])
 @pytest.mark.parametrize("has_tokens", [False, True])
-def test_iterator_exhausted(session, limit, yielded, buffer_size, has_tokens):
+def test_iterator_exhausted(engine, session, limit, yielded, buffer_size, has_tokens):
     """Various states for the buffer's limit, yielded, _exhausted, and buffer.
 
     Exhausted if either:
@@ -139,7 +140,7 @@ def test_iterator_exhausted(session, limit, yielded, buffer_size, has_tokens):
 
     Any other combination of states is not exhausted.
     """
-    iterator = simple_iter(session)
+    iterator = simple_iter(engine, session)
 
     iterator.limit = limit
     iterator.yielded = yielded
@@ -150,9 +151,9 @@ def test_iterator_exhausted(session, limit, yielded, buffer_size, has_tokens):
     assert iterator.exhausted == should_be_exhausted
 
 
-def test_iterator_next_limit_reached(session):
+def test_iterator_next_limit_reached(engine, session):
     """If the iterator has yielded >= limit, next raises (regardless of buffer, continue tokens)"""
-    iterator = simple_iter(session)
+    iterator = simple_iter(engine, session)
 
     # Put something in the buffer so that isn't the cause of StopIteration
     iterator.buffer.append(True)
@@ -167,7 +168,7 @@ def test_iterator_next_limit_reached(session):
 
 
 @pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
-def test_next_states(session, iterator_cls):
+def test_next_states(engine, session, iterator_cls):
     """This monster tests all of the buffer management in SearchIterator.__next__"""
 
     # Here are the possible boundaries for pagination:
@@ -200,7 +201,7 @@ def test_next_states(session, iterator_cls):
         3) Advance the iterator until it raises StopIteration.  Each step, make sure the iterator is only
            calling dynamodb when the buffer is empty, and that it follows continue tokens on empty pages.
         """
-        iterator = simple_iter(session, cls=iterator_cls)
+        iterator = simple_iter(engine, session, cls=iterator_cls)
         # VERY IMPORTANT!  Without the reset, calls from
         # the previous chain will count against this chain.
         session.search_items.reset_mock()
@@ -221,8 +222,8 @@ def test_next_states(session, iterator_cls):
 
 @pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
 @pytest.mark.parametrize("chain", [[1], [0, 1], [1, 0], [2, 0]])
-def test_first_success(session, iterator_cls, chain):
-    iterator = simple_iter(session, cls=iterator_cls)
+def test_first_success(engine, session, iterator_cls, chain):
+    iterator = simple_iter(engine, session, cls=iterator_cls)
     item_count = sum(chain)
     session.search_items.side_effect = build_responses(chain, items=list(range(item_count)))
 
@@ -234,8 +235,8 @@ def test_first_success(session, iterator_cls, chain):
 
 @pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
 @pytest.mark.parametrize("chain", [[0], [0, 0]])
-def test_first_failure(session, iterator_cls, chain):
-    iterator = simple_iter(session, cls=iterator_cls)
+def test_first_failure(engine, session, iterator_cls, chain):
+    iterator = simple_iter(engine, session, cls=iterator_cls)
     session.search_items.side_effect = build_responses(chain)
 
     with pytest.raises(ConstraintViolation):
@@ -245,8 +246,8 @@ def test_first_failure(session, iterator_cls, chain):
 
 @pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
 @pytest.mark.parametrize("chain", [[1], [0, 1], [1, 0]])
-def test_one_success(session, iterator_cls, chain):
-    iterator = simple_iter(session, cls=iterator_cls)
+def test_one_success(engine, session, iterator_cls, chain):
+    iterator = simple_iter(engine, session, cls=iterator_cls)
     one = Sentinel("one")
     session.search_items.side_effect = build_responses(chain, items=[one])
 
@@ -258,8 +259,8 @@ def test_one_success(session, iterator_cls, chain):
 
 @pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
 @pytest.mark.parametrize("chain", [[0], [0, 0], [2], [2, 0], [1, 1], [0, 2]])
-def test_one_failure(session, iterator_cls, chain):
-    iterator = simple_iter(session, cls=iterator_cls)
+def test_one_failure(engine, session, iterator_cls, chain):
+    iterator = simple_iter(engine, session, cls=iterator_cls)
     session.search_items.side_effect = build_responses(chain)
 
     with pytest.raises(ConstraintViolation):

@@ -45,8 +45,9 @@ class Search:
     mode = None
 
     def __init__(
-            self, session=None, model=None, index=None, key=None, filter=None,
+            self, engine=None, session=None, model=None, index=None, key=None, filter=None,
             select=None, limit=None, strict=True, consistent=False, forward=True):
+        self.engine = engine
         self.session = session
         self.model = model
         self.index = index
@@ -64,6 +65,7 @@ class Search:
     def prepare(self):
         p = PreparedSearch()
         p.prepare(
+            engine=self.engine,
             mode=self.mode,
             session=self.session,
             model=self.model,
@@ -89,6 +91,7 @@ class Query(Search):
 
 class PreparedSearch:
     def __init__(self):
+        self.engine = None
         self.session = None
         self.model = None
         self.mode = None
@@ -102,10 +105,10 @@ class PreparedSearch:
         self._iterator_cls = None
 
     def prepare(
-            self, mode=None, session=None, model=None, index=None, key=None, filter=None,
-            select=None, limit=None, strict=None, consistent=None, forward=None):
+            self, engine=None, mode=None, session=None, model=None, index=None, key=None,
+            filter=None, select=None, limit=None, strict=None, consistent=None, forward=None):
 
-        self.prepare_session(session, mode)
+        self.prepare_session(engine, session, mode)
         self.prepare_model(model, index, consistent)
         self.prepare_key(key)
         self.prepare_select(select, strict)
@@ -135,6 +138,7 @@ class PreparedSearch:
 
     def __iter__(self):
         return self._iterator_cls(
+            engine=self.engine,
             session=self.session,
             model=self.model,
             index=self.index,
@@ -147,7 +151,7 @@ class PreparedSearch:
 class SearchIterator:
     mode = None
 
-    def __init__(self, *, session, model, index, limit, request, projected):
+    def __init__(self, *, session, model, index, limit, request, projected, **kwargs):
         self.session = session
         self.request = request
         self.limit = limit
@@ -219,9 +223,20 @@ class SearchIterator:
         raise StopIteration
 
 
-class ScanIterator(SearchIterator):
+class SearchModelIterator(SearchIterator):
+    def __init__(self, *, engine, **kwargs):
+        self.engine = engine
+        super().__init__(**kwargs)
+
+    def __next__(self):
+        # TODO unpack super through engine
+        object_dict = super().__next__()
+        return object_dict
+
+
+class ScanIterator(SearchModelIterator):
     mode = "scan"
 
 
-class QueryIterator(SearchIterator):
+class QueryIterator(SearchModelIterator):
     mode = "query"

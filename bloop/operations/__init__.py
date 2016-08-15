@@ -1,7 +1,7 @@
 import collections
 import botocore.exceptions
 
-from ..exceptions import BloopException, ConstraintViolation, TableMismatch
+from ..exceptions import BloopException, ConstraintViolation, TableMismatch, UnknownSearchMode
 from .models import create_batch_get_chunks, standardize_query_response
 from .tables import (
     compare_tables,
@@ -59,21 +59,21 @@ class SessionWrapper:
             description = wrapped_describe_table(self._dynamodb_client, table_name)
             status = simple_table_status(description)
         if not compare_tables(description, model):
-            raise TableMismatch("The expected and actual tables for {!r} do not match".format(model.__name__))
+            raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
 
 
 def handle_constraint_violation(error):
     error_code = error.response["Error"]["Code"]
     if error_code == "ConditionalCheckFailedException":
-        raise ConstraintViolation("The provided condition was not met") from error
+        raise ConstraintViolation("The condition was not met.") from error
     else:
-        raise BloopException("Unexpected error while modifying item") from error
+        raise BloopException("Unexpected error while modifying item.") from error
 
 
 def handle_table_exists(error, model):
     error_code = error.response["Error"]["Code"]
     if error_code != "ResourceInUseException":
-        raise BloopException("Unexpected error while creating table {!r}".format(model.__name__)) from error
+        raise BloopException("Unexpected error while creating table {!r}.".format(model.__name__)) from error
     # Don't raise if the table already exists
 
 
@@ -81,7 +81,7 @@ def wrapped_batch_get_item(dynamodb_client, request):
     try:
         return dynamodb_client.batch_get_item(RequestItems=request)
     except botocore.exceptions.ClientError as error:
-        raise BloopException("Unexpected error while loading items") from error
+        raise BloopException("Unexpected error while loading items.") from error
 
 
 def wrapped_update_item(dynamodb_client, item):
@@ -104,11 +104,11 @@ def wrapped_search(dynamodb_client, mode, request):
     elif mode == "query":
         method = dynamodb_client.query
     else:
-        raise ValueError("Unknown search mode {!r}".format(mode))
+        raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
     try:
         return method(**request)
     except botocore.exceptions.ClientError as error:
-        raise BloopException("Unexpected error during {}".format(mode)) from error
+        raise BloopException("Unexpected error during {}.".format(mode)) from error
 
 
 def wrapped_create_table(dynamodb_client, table, model):
@@ -122,4 +122,4 @@ def wrapped_describe_table(dynamodb_client, table_name):
     try:
         return dynamodb_client.describe_table(TableName=table_name)["Table"]
     except botocore.exceptions.ClientError as error:
-        raise BloopException("Unexpected error while loading items") from error
+        raise BloopException("Unexpected error while describing table.") from error

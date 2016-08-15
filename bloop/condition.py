@@ -183,7 +183,7 @@ class Comparison(_BaseCondition):
     def __init__(self, column, comparator, value, path=None):
         if comparator not in comparison_aliases:
             raise InvalidComparisonOperator(
-                "{!r} is not a valid Comparison operator".format(comparator))
+                "{!r} is not a valid Comparison operator.".format(comparator))
         self.column = column
         self.comparator = comparator
         self.value = value

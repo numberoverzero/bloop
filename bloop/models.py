@@ -9,6 +9,7 @@ from .condition import (
     Contains,
     In
 )
+from .exceptions import InvalidModel
 from .tracking import mark
 from .util import missing, signal
 
@@ -88,22 +89,31 @@ def setup_columns(meta):
     meta.hash_key = None
     meta.range_key = None
     meta.keys = set()
+
+    if not meta.abstract:
+        cls_name = meta.model.__name__
+
+        hash_keys = [c for c in meta.columns if c.hash_key]
+        range_keys = [c for c in meta.columns if c.range_key]
+
+        if len(hash_keys) == 0:
+            raise InvalidModel("{!r} has no hash key.".format(cls_name))
+        elif len(hash_keys) > 1:
+            raise InvalidModel("{!r} has more than one hash key.".format(cls_name))
+
+        if len(range_keys) > 1:
+            raise InvalidModel("{!r} has more than one range key.".format(cls_name))
+
+        if range_keys:
+            if hash_keys[0] is range_keys[0]:
+                raise InvalidModel("{!r} has the same hash and range key".format(cls_name))
+            meta.range_key = range_keys[0]
+            meta.keys.add(meta.range_key)
+        meta.hash_key = hash_keys[0]
+        meta.keys.add(meta.hash_key)
+
     for column in meta.columns:
-        if column.hash_key:
-            if meta.hash_key:
-                raise ValueError("Model hash_key over-specified")
-            meta.hash_key = column
-            meta.keys.add(column)
-        if column.range_key:
-            if meta.range_key:
-                raise ValueError("Model range_key over-specified")
-            meta.range_key = column
-            meta.keys.add(column)
         column.model = meta.model
-    # Don't throw when they're both None (could be abstract)
-    # but absolutely throw when they're both the same Column instance.
-    if meta.hash_key and (meta.hash_key is meta.range_key):
-        raise ValueError("hash_key and range_key must be different columns")
 
 
 def setup_indexes(meta):

@@ -107,53 +107,25 @@ def test_meta_indexes_columns():
     assert User.by_email in set(User.Meta.indexes)
 
 
-def test_meta_keys():
-    """Various combinations of hash and range keys (some impossible)"""
-    def hash_column():
-        return Column(UUID, hash_key=True)
-
-    def range_column():
-        return Column(UUID, range_key=True)
-
-    class HashOnly(BaseModel):
-        h = hash_column()
-
-    class RangeOnly(BaseModel):
-        r = range_column()
-
-    class Neither(BaseModel):
-        pass
-
-    class Both(BaseModel):
-        h = hash_column()
-        r = range_column()
-
-    expect = [
-        (HashOnly, (HashOnly.h, None)),
-        (RangeOnly, (None, RangeOnly.r)),
-        (Neither, (None, None)),
-        (Both, (Both.h, Both.r))
-    ]
-
-    for (model, (hash_key, range_key)) in expect:
-        assert model.Meta.hash_key is hash_key
-        assert model.Meta.range_key is range_key
-
-
-def test_model_extra_keys():
+def test_invalid_model_keys():
     with pytest.raises(ValueError):
         class DoubleHash(BaseModel):
-            id = Column(UUID, hash_key=True)
-            other = Column(UUID, hash_key=True)
+            hash1 = Column(UUID, hash_key=True)
+            hash2 = Column(UUID, hash_key=True)
 
     with pytest.raises(ValueError):
         class DoubleRange(BaseModel):
-            id = Column(UUID, range_key=True)
+            id = Column(UUID, hash_key=True)
+            range1 = Column(UUID, range_key=True)
+            range2 = Column(UUID, range_key=True)
+
+    with pytest.raises(ValueError):
+        class NoHash(BaseModel):
             other = Column(UUID, range_key=True)
 
     with pytest.raises(ValueError):
         class SharedHashRange(BaseModel):
-            foo = Column(UUID, hash_key=True, range_key=True)
+            both = Column(UUID, hash_key=True, range_key=True)
 
 
 def test_invalid_local_index():
@@ -245,7 +217,7 @@ def test_meta_table_name():
 
 def test_abstract_not_inherited():
     class Concrete(BaseModel):
-        pass
+        id = Column(UUID, hash_key=True)
 
     assert BaseModel.Meta.abstract
     assert not Concrete.Meta.abstract

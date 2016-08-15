@@ -42,7 +42,7 @@ def dump_key(engine, obj):
     for key_column in obj.Meta.keys:
         key_value = getattr(obj, key_column.model_name, missing)
         if key_value is missing:
-            raise MissingKey("You must provide a value for every key column in {!r}".format(obj))
+            raise MissingKey("{!r} is missing values for its keys.".format(obj))
         key_value = engine._dump(key_column.typedef, key_value)
         key[key_column.dynamo_name] = key_value
     return key
@@ -51,18 +51,17 @@ def dump_key(engine, obj):
 def raise_on_abstract(*objs, cls=False):
     for obj in objs:
         if obj.Meta.abstract:
-            raise AbstractModelError(
-                "You cannot load or save an instance of abstract model {!r}".format(
-                    obj if cls else obj.__class__))
+            cls = obj if cls else obj.__class__
+            raise AbstractModelError("{!r} is abstract.".format(cls.__name__))
 
 
 def raise_on_unknown(model, from_declare):
     # Best-effort check for a more helpful message
     if isinstance(model, ModelMetaclass):
-        msg = "The model {0!r} is not bound.  Did you call engine.bind({0})?"
+        msg = "{!r} is not bound.  Did you forget to call engine.bind?"
         raise UnboundModel(msg.format(model.__name__)) from from_declare
     else:
-        msg = "The type {!r} was never registered."
+        msg = "{!r} is not a registered Type."
         raise UnknownType(msg.format(model.__name__)) from from_declare
 
 
@@ -100,7 +99,7 @@ class Engine:
         """Create tables for all models subclassing base"""
         # Make sure we're looking at models
         if not isinstance(base, ModelMetaclass):
-            raise InvalidModel("Can only bind base that derives from BaseModel")
+            raise InvalidModel("The base class must subclass BaseModel.")
 
         # whether the model's typedefs should be registered, and
         # whether the model should be eligible for validation
@@ -207,7 +206,7 @@ class Engine:
             for index in object_index.values():
                 for index_set in index.values():
                     not_loaded.update(index_set)
-            raise MissingObjects("Failed to load some objects", objects=not_loaded)
+            raise MissingObjects("Failed to load some objects.", objects=not_loaded)
 
     def query(self, obj, consistent=False, strict=True):
         if isinstance(obj, Index):

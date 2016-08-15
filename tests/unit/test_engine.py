@@ -7,7 +7,7 @@ import declare
 import pytest
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import AbstractModelError, MissingObjects, UnboundModel, UnknownType
-from bloop.models import BaseModel, Column
+from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.operations import SessionWrapper
 from bloop.tracking import get_snapshot, sync
 from bloop.types import DateTime, Integer, String
@@ -595,7 +595,7 @@ def test_bind_skip_abstract_models(engine, session):
 
 def test_bind_concrete_base(engine, session):
     class Concrete(BaseModel):
-        pass
+        id = Column(Integer, hash_key=True)
     engine.bind(Concrete)
     session.create_table.assert_called_once_with(Concrete)
     session.validate_table.assert_called_once_with(Concrete)
@@ -609,7 +609,7 @@ def test_bind_different_engines():
     second_engine._session = Mock(spec=SessionWrapper)
 
     class Concrete(BaseModel):
-        pass
+        id = Column(Integer, hash_key=True)
     first_engine.bind(Concrete)
     second_engine.bind(Concrete)
 
@@ -626,26 +626,37 @@ def test_bind_different_engines():
     assert Concrete in second_engine.type_engine.bound_types
 
 
-@pytest.mark.parametrize("op, plural", [
-        ("save", True), ("load", True), ("delete", True),
-        ("scan", False), ("query", False)], ids=str)
-def test_unbound_operations_raise(engine, op, plural):
+@pytest.mark.parametrize("op_name, plural", [("save", True), ("load", True), ("delete", True)], ids=str)
+def test_abstract_object_operations_raise(engine, op_name, plural):
     class Abstract(BaseModel):
         class Meta:
             abstract = True
-        id = Column(Integer, hash_key=True)
     engine.bind(Abstract)
 
     abstract = Abstract(id=5)
     concrete = User(age=5)
 
     with pytest.raises(AbstractModelError):
-        operation = getattr(engine, op)
+        operation = getattr(engine, op_name)
         operation(abstract)
     if plural:
         with pytest.raises(AbstractModelError):
-            operation = getattr(engine, op)
+            operation = getattr(engine, op_name)
             operation(abstract, concrete)
+
+
+@pytest.mark.parametrize("op_name", ["scan", "query"])
+def test_abstract_model_operations_raise(engine, op_name):
+    class Abstract(BaseModel):
+        class Meta:
+            abstract = True
+        id = Column(Integer, hash_key=True)
+        other = Column(Integer)
+        by_other = GlobalSecondaryIndex(projection="all", hash_key="other")
+
+    with pytest.raises(AbstractModelError):
+        operation = getattr(engine, op_name)
+        operation(Abstract)
 
 
 def test_load_missing_vector_types(engine, session):

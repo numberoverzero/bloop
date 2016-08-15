@@ -104,7 +104,7 @@ def setup_columns(meta):
 
         if range_keys:
             if hash_keys[0] is range_keys[0]:
-                raise InvalidModel("{!r} has the same hash and range key".format(cls_name))
+                raise InvalidModel("{!r} has the same hash and range key.".format(cls_name))
             meta.range_key = range_keys[0]
             meta.keys.add(meta.range_key)
         meta.hash_key = hash_keys[0]

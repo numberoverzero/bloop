@@ -41,10 +41,10 @@ class Type(declare.TypeDefinition):
         return {self.backing_type: value}
 
     def dynamo_load(self, value, *, context, **kwargs):
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def dynamo_dump(self, value, *, context, **kwargs):
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def __repr__(self, *a, **kw):  # pragma: no cover
         return "<{}[{}:{}]>".format(
@@ -139,7 +139,7 @@ class Float(Type):
             return None
         n = str(DYNAMODB_CONTEXT.create_decimal(value))
         if any(filter(lambda x: x in n, ("Infinity", "NaN"))):
-            raise TypeError("Infinity and NaN not supported")
+            raise TypeError("{!r} does not support Infinity and NaN.".format(self))
         return n
 
 
@@ -211,9 +211,9 @@ class Set(Type):
 
     def __init__(self, typedef):
         self.typedef = type_instance(typedef)
-        if typedef.backing_type not in {"N", "S", "B"}:
-            raise TypeError("typedef must be backed by one of N/S/B but was {!r}".format(typedef.backing_type))
         self.backing_type = typedef.backing_type + "S"
+        if self.backing_type not in {"NS", "SS", "BS"}:
+            raise TypeError("{!r} is not a valid set type.".format(self.backing_type))
         super().__init__()
 
     def _register(self, engine):

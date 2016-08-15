@@ -232,9 +232,8 @@ def test_set_type_instance():
 def test_set_illegal_backing_type():
     """The backing type for a set MUST be one of S/N/B, not BOOL"""
     for typedef in [Boolean, Set(Integer)]:
-        with pytest.raises(TypeError) as excinfo:
+        with pytest.raises(TypeError):
             Set(typedef)
-        assert "typedef must be backed by" in str(excinfo.value)
 
 
 def test_set_registered():

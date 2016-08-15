@@ -1,7 +1,7 @@
 import collections
 import pytest
 from bloop.exceptions import ConstraintViolation
-from bloop.search import ScanIterator, QueryIterator, SearchIterator, search_repr
+from bloop.search import SearchIterator, ScanIterator, QueryIterator, search_repr
 from bloop.util import Sentinel
 
 from ..helpers.models import User
@@ -167,8 +167,7 @@ def test_iterator_next_limit_reached(engine, session):
     assert next(iterator, None) is None
 
 
-@pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
-def test_next_states(engine, session, iterator_cls):
+def test_next_states(engine, session):
     """This monster tests all of the buffer management in SearchIterator.__next__"""
 
     # Here are the possible boundaries for pagination:
@@ -201,7 +200,7 @@ def test_next_states(engine, session, iterator_cls):
         3) Advance the iterator until it raises StopIteration.  Each step, make sure the iterator is only
            calling dynamodb when the buffer is empty, and that it follows continue tokens on empty pages.
         """
-        iterator = simple_iter(engine, session, cls=iterator_cls)
+        iterator = simple_iter(engine, session)
         # VERY IMPORTANT!  Without the reset, calls from
         # the previous chain will count against this chain.
         session.search_items.reset_mock()
@@ -220,10 +219,9 @@ def test_next_states(engine, session, iterator_cls):
         verify_iterator(chain)
 
 
-@pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
 @pytest.mark.parametrize("chain", [[1], [0, 1], [1, 0], [2, 0]])
-def test_first_success(engine, session, iterator_cls, chain):
-    iterator = simple_iter(engine, session, cls=iterator_cls)
+def test_first_success(engine, session, chain):
+    iterator = simple_iter(engine, session)
     item_count = sum(chain)
     session.search_items.side_effect = build_responses(chain, items=list(range(item_count)))
 
@@ -233,10 +231,9 @@ def test_first_success(engine, session, iterator_cls, chain):
     assert session.search_items.call_count == next_non_zero_index(chain) + 1
 
 
-@pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
 @pytest.mark.parametrize("chain", [[0], [0, 0]])
-def test_first_failure(engine, session, iterator_cls, chain):
-    iterator = simple_iter(engine, session, cls=iterator_cls)
+def test_first_failure(engine, session, chain):
+    iterator = simple_iter(engine, session)
     session.search_items.side_effect = build_responses(chain)
 
     with pytest.raises(ConstraintViolation):
@@ -244,10 +241,9 @@ def test_first_failure(engine, session, iterator_cls, chain):
     assert session.search_items.call_count == len(chain)
 
 
-@pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
 @pytest.mark.parametrize("chain", [[1], [0, 1], [1, 0]])
-def test_one_success(engine, session, iterator_cls, chain):
-    iterator = simple_iter(engine, session, cls=iterator_cls)
+def test_one_success(engine, session, chain):
+    iterator = simple_iter(engine, session)
     one = Sentinel("one")
     session.search_items.side_effect = build_responses(chain, items=[one])
 
@@ -257,10 +253,9 @@ def test_one_success(engine, session, iterator_cls, chain):
     assert session.search_items.call_count == expected_calls
 
 
-@pytest.mark.parametrize("iterator_cls", [QueryIterator, ScanIterator])
 @pytest.mark.parametrize("chain", [[0], [0, 0], [2], [2, 0], [1, 1], [0, 2]])
-def test_one_failure(engine, session, iterator_cls, chain):
-    iterator = simple_iter(engine, session, cls=iterator_cls)
+def test_one_failure(engine, session, chain):
+    iterator = simple_iter(engine, session)
     session.search_items.side_effect = build_responses(chain)
 
     with pytest.raises(ConstraintViolation):
@@ -268,3 +263,19 @@ def test_one_failure(engine, session, iterator_cls, chain):
     # SearchIterator.one should advance exactly twice, every time
     expected_calls = calls_for_current_steps(chain, 2)
     assert session.search_items.call_count == expected_calls
+
+
+@pytest.mark.parametrize("cls", [ScanIterator, QueryIterator])
+def test_model_iterator_unpacks(engine, session, cls):
+    iterator = simple_iter(engine, session, cls=cls)
+    iterator.projected = {User.name, User.joined}
+
+    attrs = {"name": {"S": "numberoverzero"}}
+    session.search_items.return_value = response(terminate=True, count=1, item=attrs)
+
+    obj = iterator.first()
+
+    assert obj.name == "numberoverzero"
+    assert obj.joined is None
+    for attr in ["id", "age", "email"]:
+        assert not hasattr(obj, attr)

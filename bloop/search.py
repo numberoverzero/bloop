@@ -1,6 +1,8 @@
 import collections
 
 from .exceptions import ConstraintViolation
+from .tracking import sync
+from .util import unpack_from_dynamodb
 
 __all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanIterator", "QueryIterator"]
 
@@ -163,7 +165,7 @@ class PreparedSearch:
 
 
 class SearchIterator:
-    mode = None
+    mode = "<mode-placeholder>"
 
     def __init__(self, *, session, model, index, limit, request, projected, **kwargs):
         self.session = session
@@ -243,9 +245,14 @@ class SearchModelIterator(SearchIterator):
         super().__init__(**kwargs)
 
     def __next__(self):
-        # TODO unpack super through engine
-        object_dict = super().__next__()
-        return object_dict
+        attrs = super().__next__()
+        obj = unpack_from_dynamodb(
+            attrs=attrs,
+            expected=self.projected,
+            model=self.model,
+            engine=self.engine)
+        sync(obj, self.engine)
+        return obj
 
 
 class ScanIterator(SearchModelIterator):

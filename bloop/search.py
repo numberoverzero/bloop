@@ -17,6 +17,29 @@ def search_repr(cls, model, index):
         else:
             return "<{}[None]>".format(cls.__name__)
 
+# TODO
+# swap Engine.scan, Engine.query to use Query, Scan.
+#
+# User syntax will look like this:
+#
+#     scan = engine.scan(
+#         User,
+#         key=(User.name == "foo"),
+#         filter=(User.created_on > yesterday),
+#         select={User.data, User.final},
+#         strict=False
+#     )
+#
+# Engine will do the following:
+#
+# def scan(...):
+#     s = Scan(
+#         ...
+#         ...
+#     )
+#     return iter(s.prepare())
+#
+
 
 class Search:
     mode = None

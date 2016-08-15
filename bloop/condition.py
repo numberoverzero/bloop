@@ -149,7 +149,6 @@ class Or(_MultiCondition):
 
 
 class Not(_BaseCondition):
-    # TODO special-case simplified negations (invert comparison operators, negate AttributeExists)
     def __init__(self, condition):
         self.condition = condition
 

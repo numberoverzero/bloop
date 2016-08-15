@@ -26,7 +26,7 @@ def search_repr(cls, model, index):
 #         User,
 #         key=(User.name == "foo"),
 #         filter=(User.created_on > yesterday),
-#         select={User.data, User.final},
+#         projection={User.data, User.final},
 #         strict=False
 #     )
 #
@@ -46,14 +46,14 @@ class Search:
 
     def __init__(
             self, engine=None, session=None, model=None, index=None, key=None, filter=None,
-            select=None, limit=None, strict=True, consistent=False, forward=True):
+            projection=None, limit=None, strict=True, consistent=False, forward=True):
         self.engine = engine
         self.session = session
         self.model = model
         self.index = index
         self.key = key
         self.filter = filter
-        self.select = select
+        self.projection = projection
         self.limit = limit
         self.strict = strict
         self.consistent = consistent
@@ -72,7 +72,7 @@ class Search:
             index=self.index,
             key=self.key,
             filter=self.filter,
-            select=self.select,
+            projection=self.projection,
             limit=self.limit,
             strict=self.strict,
             consistent=self.consistent,
@@ -98,7 +98,7 @@ class PreparedSearch:
         self.index = None
         self.key = None
         self.filter = None
-        self._select_mode = None
+        self._projection_mode = None
         self._projected_columns = None
         self.limit = None
         self._request = None
@@ -106,12 +106,12 @@ class PreparedSearch:
 
     def prepare(
             self, engine=None, mode=None, session=None, model=None, index=None, key=None,
-            filter=None, select=None, limit=None, strict=None, consistent=None, forward=None):
+            filter=None, projection=None, limit=None, strict=None, consistent=None, forward=None):
 
         self.prepare_session(engine, session, mode)
         self.prepare_model(model, index, consistent)
         self.prepare_key(key)
-        self.prepare_select(select, strict)
+        self.prepare_projection(projection, strict)
         self.prepare_filter(filter)
         self.prepare_constraints(limit, forward)
 
@@ -124,7 +124,7 @@ class PreparedSearch:
     def prepare_key(self, key):
         pass
 
-    def prepare_select(self, select, strict):
+    def prepare_projection(self, projection, strict):
         pass
 
     def prepare_filter(self, filter):

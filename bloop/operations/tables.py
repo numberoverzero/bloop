@@ -1,6 +1,12 @@
 from ..util import Sentinel, ordered
 ready = Sentinel("ready")
 
+projection_type_map = {
+    "all": "ALL",
+    "keys": "KEYS_ONLY",
+    "include": "INCLUDE"
+}
+
 
 def compare_tables(actual_description, model):
     expected = expected_table_description(model)
@@ -36,11 +42,11 @@ def attribute_definitions(model):
 
 
 def index_projection(index):
-    projection = {"ProjectionType": index.projection}
-    if index.projection == "INCLUDE" and index.projection_attributes:
+    projection = {"ProjectionType": projection_type_map[index.projection]}
+    if index.projection == "include":
         projection["NonKeyAttributes"] = [
             column.dynamo_name
-            for column in index.projection_attributes
+            for column in index.projected_columns
         ]
     return projection
 

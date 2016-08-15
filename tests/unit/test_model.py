@@ -184,19 +184,19 @@ def test_index_projections():
     no_boolean = set(Model.Meta.columns)
     no_boolean.remove(Model.boolean)
 
-    assert Model.g_all.projection == "ALL"
-    assert Model.g_all.projection_attributes == set(Model.Meta.columns)
-    assert Model.g_key.projection == "KEYS_ONLY"
-    assert Model.g_key.projection_attributes == uuids
-    assert Model.g_inc.projection == "INCLUDE"
-    assert Model.g_inc.projection_attributes == no_boolean
+    assert Model.g_all.projection == "all"
+    assert Model.g_all.projected_columns == set(Model.Meta.columns)
+    assert Model.g_key.projection == "keys"
+    assert Model.g_key.projected_columns == uuids
+    assert Model.g_inc.projection == "include"
+    assert Model.g_inc.projected_columns == no_boolean
 
-    assert Model.l_all.projection == "ALL"
-    assert Model.l_all.projection_attributes == set(Model.Meta.columns)
-    assert Model.l_key.projection == "KEYS_ONLY"
-    assert Model.l_key.projection_attributes == uuids
-    assert Model.l_inc.projection == "INCLUDE"
-    assert Model.l_inc.projection_attributes == no_boolean
+    assert Model.l_all.projection == "all"
+    assert Model.l_all.projected_columns == set(Model.Meta.columns)
+    assert Model.l_key.projection == "keys"
+    assert Model.l_key.projected_columns == uuids
+    assert Model.l_inc.projection == "include"
+    assert Model.l_inc.projected_columns == no_boolean
 
 
 def test_meta_table_name():

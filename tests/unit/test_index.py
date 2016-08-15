@@ -24,10 +24,17 @@ def test_projection_validation():
     with pytest.raises(ValueError):
         Index(projection=["only strings", 1, None])
 
-    assert Index(projection="all").projection == "ALL"
-    # This won't be changed to the DynamoDB value "KEYS_ONLY" until the index is bound to the model
-    assert Index(projection="keys").projection == "KEYS"
-    assert Index(projection=["foo", "bar"]).projection == ["foo", "bar"]
+    index = Index(projection="all")
+    assert index.projection == "all"
+    assert index.projected_columns is None
+
+    index = Index(projection="keys")
+    assert index.projection == "keys"
+    assert index.projected_columns is None
+
+    index = Index(projection=["foo", "bar"])
+    assert index.projection == "include"
+    assert index.projected_columns == ["foo", "bar"]
 
 
 def test_lsi_specifies_hash_key():

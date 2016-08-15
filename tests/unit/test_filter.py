@@ -315,7 +315,7 @@ def test_select_specific_table(query):
 
 
 def test_select_gsi_subset(projection_query):
-    """Subset of GSI projection_attributes is valid"""
+    """Subset of GSI projected_columns is valid"""
     projection_query.key = ProjectedIndexes.h == 4
     projection_query.index = ProjectedIndexes.by_gsi
     # ProjectedIndexes.h is available since it's part of the hash/range key of the index
@@ -325,7 +325,7 @@ def test_select_gsi_subset(projection_query):
 
 
 def test_select_gsi_superset(projection_query):
-    """Superset of GSI projection_attributes fails, can't outside projection"""
+    """Superset of GSI projected_columns fails, can't outside projection"""
     projection_query.key = ProjectedIndexes.h == 4
     projection_query.index = ProjectedIndexes.by_gsi
     # ProjectedIndexes.neither isn't projected into the GSI
@@ -336,7 +336,7 @@ def test_select_gsi_superset(projection_query):
 
 
 def test_select_strict_lsi_subset(projection_query):
-    """Subset of strict LSI projection_attributes is valid"""
+    """Subset of strict LSI projected_columns is valid"""
     projection_query.key = ProjectedIndexes.h == 4
     projection_query.index = ProjectedIndexes.by_lsi
     projection_query.strict = True
@@ -347,7 +347,7 @@ def test_select_strict_lsi_subset(projection_query):
 
 
 def test_select_strict_lsi_superset(projection_query):
-    """Superset of strict LSI projection_attributes fails, can't outside projection"""
+    """Superset of strict LSI projected_columns fails, can't outside projection"""
     projection_query.key = ProjectedIndexes.h == 4
     projection_query.index = ProjectedIndexes.by_lsi
     projection_query.strict = True
@@ -359,7 +359,7 @@ def test_select_strict_lsi_superset(projection_query):
 
 
 def test_select_non_strict_lsi_superset(projection_query):
-    """Superset of non-strict LSI projection_attributes is valid, will incur additional reads"""
+    """Superset of non-strict LSI projected_columns is valid, will incur additional reads"""
     projection_query.key = ProjectedIndexes.h == 4
     projection_query.index = ProjectedIndexes.by_lsi
     projection_query.strict = False

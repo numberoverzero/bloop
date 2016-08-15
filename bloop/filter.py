@@ -25,7 +25,7 @@ def expected_columns_for(model, index, select, select_attributes):
     if select == "all":
         return model.Meta.columns
     elif select == "projected":
-        return index.projection_attributes
+        return index.projected_columns
     elif select == "count":
         return set()
     elif select == "specific":
@@ -44,7 +44,7 @@ def validate_select_for(model, index, strict, select):
             if isinstance(index, LocalSecondaryIndex) and not strict:
                 return select, None
             # GSIs and strict LSIs can load all attributes if they project all
-            elif index.projection == "ALL":
+            elif index.projection == "all":
                 return select, None
             # Out of luck
             else:
@@ -76,8 +76,8 @@ def validate_select_for(model, index, strict, select):
     if index is None:
         return "specific", select
     elif isinstance(index, GlobalSecondaryIndex):
-        # Selected columns must be a subset of projection_attributes
-        if select <= index.projection_attributes:
+        # Selected columns must be a subset of projected_columns
+        if select <= index.projected_columns:
             return "specific", select
         raise ValueError("Tried to select a superset of the GSI's projected columns")
 
@@ -85,13 +85,13 @@ def validate_select_for(model, index, strict, select):
     else:
         # Unlike a GSI, the LSI can load a superset of the projection, and DynamoDB will happily do this.
         # Unfortunately, it will also incur an additional read per row.  Strict mode checks the cardinality of the
-        # requested columns against the LSI's projection_attributes, just like a GSI.
+        # requested columns against the LSI's projected_columns, just like a GSI.
 
         # When strict mode is disabled, however, any selection is valid (just like a table query)
         if not strict:
             return "specific", select
-        # Strict mode - selected columns must be a subset of projection_attributes
-        if select <= index.projection_attributes:
+        # Strict mode - selected columns must be a subset of projected_columns
+        if select <= index.projected_columns:
             return "specific", select
         raise ValueError("Tried to select a superset of the LSI's projected columns in strict mode")
 

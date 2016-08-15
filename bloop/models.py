@@ -30,19 +30,20 @@ def loaded_columns(obj):
 def validate_projection(projection):
     # String check first since it is also an Iterable
     if isinstance(projection, str):
-        projection = projection.upper()
-        if projection not in ["KEYS", "ALL"]:
+        if projection not in ("keys", "all"):
             raise InvalidIndex("{!r} is not a valid Index projection.".format(projection))
+        projection, projected_columns = projection, None
     elif isinstance(projection, collections.abc.Iterable):
         projection = list(projection)
         all_names = all(isinstance(item, str) for item in projection)
         if not all_names:
             raise InvalidIndex(
                 "Index projection must be a list of strings when selecting specific Columns.")
+        projection, projected_columns = "include", projection
     else:
         raise InvalidIndex(
             "Index projection must be 'all', 'keys', or a list of Column names.")
-    return projection
+    return projection, projected_columns
 
 
 class ModelMetaclass(declare.ModelMetaclass):
@@ -189,8 +190,8 @@ class Index(declare.Field):
         self._dynamo_name = name
         super().__init__(**kwargs)
 
-        # projection_attributes will be set up in `_bind`
-        self.projection = validate_projection(projection)
+        # projected_columns will be set up in `_bind`
+        self.projection, self.projected_columns = validate_projection(projection)
 
     def __repr__(self):  # pragma: no cover
         if isinstance(self, LocalSecondaryIndex):
@@ -200,21 +201,13 @@ class Index(declare.Field):
         else:
             cls_name = self.__class__.__name__
 
-        # TODO clean up projection name.  Lowercase everywhere, "all", "keys", "select".
-        # TODO   only the renderer should care about the wire format
-        projection = {
-            "ALL": "all",
-            "KEYS_ONLY": "keys",
-            "INCLUDE": "select"
-        }[self.projection]
-
         # <GSI[User.by_email=all]>
         # <GSI[User.by_email=keys]>
-        # <LSI[User.by_email=select]>
+        # <LSI[User.by_email=include]>
         return "<{}[{}.{}={}]>".format(
             cls_name,
             self.model.__class__.__name__, self.model_name,
-            projection
+            self.projection
         )
 
     @property
@@ -237,23 +230,17 @@ class Index(declare.Field):
         if self.range_key:
             self.keys.add(self.range_key)
 
-        # Compute and cache the projected columns
-        projected = self.projection_attributes = set()
-
+        # Compute and the projected columns
         # All projections include model + index keys
-        projected.update(model.Meta.keys)
-        projected.update(self.keys)
+        projected = set.union(model.Meta.keys, self.keys)
 
-        if self.projection == "ALL":
-            projected.update(columns.values())
-        elif self.projection == "KEYS":
-            self.projection = "KEYS_ONLY"
-        else:
-            # List of column model_names - convert to `bloop.Column`
-            # objects and merge with keys in projection_attributes
-            attrs = (columns[attr] for attr in self.projection)
-            projected.update(attrs)
-            self.projection = "INCLUDE"
+        # nothing to do when projection is "keys"
+        if self.projection == "all":
+            projected.update(model.Meta.columns)
+        if self.projection == "include":
+            projected.update(columns[name] for name in self.projected_columns)
+
+        self.projected_columns = projected
 
     # TODO: disallow set/get/del for an index; these don't store values.  Raise AttributeError.
 

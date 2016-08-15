@@ -2,6 +2,7 @@ import collections
 import functools
 
 from .condition import And, BeginsWith, Between, Comparison, _BaseCondition
+from .util import unpack_from_dynamodb
 from .exceptions import ConstraintViolation
 from .expressions import render
 from .models import GlobalSecondaryIndex, LocalSecondaryIndex
@@ -242,26 +243,21 @@ class Filter:
 
         # Compute the expected columns for this filter
         expected_columns = expected_columns_for(self.model, self.index, select_mode, select_columns)
-        unpack = functools.partial(unpack_obj, engine=self.engine, model=self.model, expected=expected_columns)
+        unpack = functools.partial(
+            unpack_from_dynamodb,
+            engine=self.engine, model=self.model, expected=expected_columns)
         # TODO: clean up when Filter is rewritten
         if self.mode == "scan":
             call = self.engine._session.scan_items
         else:
             call = self.engine._session.query_items
-        return FilterIterator(call=call, unpack=unpack, request=prepared_request, limit=int(self.limit))
-
-
-def unpack_obj(*, engine, model, attrs, expected):
-    # Create an instance to load into
-    obj = model.Meta.init()
-    # Apply updates from attrs, only inserting expected columns, and sync the new object's tracking
-    engine._update(obj, attrs, expected)
-    sync(obj, engine)
-    return obj
+        return FilterIterator(
+            engine=self.engine, call=call, unpack=unpack, request=prepared_request, limit=int(self.limit))
 
 
 class FilterIterator:
-    def __init__(self, *, call, unpack, request, limit):
+    def __init__(self, *, engine, call, unpack, request, limit):
+        self._engine = engine
         self._call = call
         self._unpack = unpack
         self._request = request
@@ -315,7 +311,9 @@ class FilterIterator:
 
             # Each item is a dict of attributes
             for attrs in response.get("Items", []):
-                self._buffer.append(self._unpack(attrs=attrs))
+                obj = self._unpack(attrs=attrs)
+                sync(obj, self._engine)
+                self._buffer.append(obj)
 
         # Return the first element; if self._buffer > 2 then the next
         # self.__next__ will pull from self._buffer

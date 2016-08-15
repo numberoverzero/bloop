@@ -11,7 +11,7 @@ from .condition import (
 )
 from .exceptions import InvalidIndex, InvalidModel
 from .tracking import mark
-from .util import missing, signal
+from .util import missing, signal, unpack_from_dynamodb
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex", "Index", "model_created"]
 
@@ -146,17 +146,11 @@ class BaseModel(metaclass=ModelMetaclass):
     @classmethod
     def _load(cls, attrs, *, context, **kwargs):
         """ dict (dynamo name) -> obj """
-        obj = cls.Meta.init()
-        if attrs is None:
-            attrs = {}
-        # Like any other Type, Model._load gives every inner type (in this case,
-        # the type in each column) the chance to load None (for missing attr keys)
-        # into another values (such as an empty set or dict).
-        # For tracking purposes, this means that the method will always mark EVERY column.
-        # If you're considering using this method, you may want to look at engine._update,
-        # Which allows you to specify the columns to extract.
-        context["engine"]._update(obj, attrs, obj.Meta.columns, **kwargs)
-        return obj
+        return unpack_from_dynamodb(
+            model=cls,
+            attrs=attrs or {},
+            expected=cls.Meta.columns,
+            context=context, **kwargs)
 
     @classmethod
     def _dump(cls, obj, *, context, **kwargs):

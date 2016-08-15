@@ -7,8 +7,7 @@ from .filter import Filter
 from .models import Index, ModelMetaclass
 from .session import SessionWrapper
 from .tracking import clear, is_model_verified, sync, verify_model
-from .util import missing, walk_subclasses, signal
-
+from .util import missing, walk_subclasses, signal, unpack_from_dynamodb
 
 __all__ = ["Engine", "before_create_table", "model_bound"]
 
@@ -85,15 +84,6 @@ class Engine:
             return context["engine"].type_engine.load(model, value, context=context, **kwargs)
         except declare.DeclareException as from_declare:
             raise_on_unknown(model, from_declare)
-
-    def _update(self, obj, attrs, expected, context=None, **kwargs):
-        """Push values by dynamo_name into an object"""
-        context = context or {"engine": self}
-        load = context["engine"]._load
-        for column in expected:
-            value = attrs.get(column.dynamo_name, None)
-            value = load(column.typedef, value, context=context, **kwargs)
-            setattr(obj, column.model_name, value)
 
     def bind(self, base):
         """Create tables for all models subclassing base"""
@@ -189,14 +179,15 @@ class Engine:
 
         response = self._session.load_items(request)
 
-        for table_name, blobs in response.items():
-            for blob in blobs:
+        for table_name, list_of_attrs in response.items():
+            for attrs in list_of_attrs:
                 key_shape = table_index[table_name]
-                key = extract_key(key_shape, blob)
+                key = extract_key(key_shape, attrs)
                 index = index_for(key)
 
                 for obj in object_index[table_name].pop(index):
-                    self._update(obj, blob, obj.Meta.columns)
+                    unpack_from_dynamodb(
+                        attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
                     sync(obj, self)
                 if not object_index[table_name]:
                     object_index.pop(table_name)

@@ -1,12 +1,41 @@
 import blinker
 import weakref
 
-__all__ = ["Sentinel", "WeakDefaultDictionary", "missing", "ordered", "signal", "walk_subclasses"]
+__all__ = [
+    "Sentinel",
+    "WeakDefaultDictionary",
+    "missing",
+    "ordered",
+    "signal",
+    "walk_subclasses",
+    "unpack_from_dynamodb"
+]
 
 # Isolate to avoid collisions with other modules
 # Don't expose the namespace.
 __signals = blinker.Namespace()
 signal = __signals.signal
+
+
+def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, context=None, **kwargs):
+    """Push values by dynamo_name into an object"""
+    context = context or {"engine": engine}
+    engine = engine or context.get("engine", None)
+    if not engine:
+        raise ValueError("You must provide engine or a context with an engine.")
+    if model is None and obj is None:
+        raise ValueError("You must provide a model or obj to unpack.")
+    if model is not None and obj is not None:
+        raise ValueError("Only specify model or obj.")
+    if model:
+        obj = model.Meta.init()
+
+    load = context["engine"]._load
+    for column in expected:
+        value = attrs.get(column.dynamo_name, None)
+        value = load(column.typedef, value, context=context, **kwargs)
+        setattr(obj, column.model_name, value)
+    return obj
 
 
 def ordered(obj):

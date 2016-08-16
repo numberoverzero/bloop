@@ -604,9 +604,9 @@ def test_bind_concrete_base(engine, session):
 def test_bind_different_engines():
     _session = Mock(spec=boto3.Session)
     first_engine = Engine(session=_session)
-    first_engine._session = Mock(spec=SessionWrapper)
+    first_engine.session = Mock(spec=SessionWrapper)
     second_engine = Engine(session=_session)
-    second_engine._session = Mock(spec=SessionWrapper)
+    second_engine.session = Mock(spec=SessionWrapper)
 
     class Concrete(BaseModel):
         id = Column(Integer, hash_key=True)
@@ -615,10 +615,10 @@ def test_bind_different_engines():
 
     # Create/Validate are only called once per model, regardless of how many
     # times the model is bound to different engines
-    first_engine._session.create_table.assert_called_once_with(Concrete)
-    first_engine._session.validate_table.assert_called_once_with(Concrete)
-    second_engine._session.create_table.assert_not_called()
-    second_engine._session.validate_table.assert_not_called()
+    first_engine.session.create_table.assert_called_once_with(Concrete)
+    first_engine.session.validate_table.assert_called_once_with(Concrete)
+    second_engine.session.create_table.assert_not_called()
+    second_engine.session.validate_table.assert_not_called()
 
     # The model (and its columns) are bound to each engine's TypeEngine,
     # regardless of how many times the model has been bound already

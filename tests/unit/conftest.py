@@ -15,6 +15,6 @@ def session():
 def engine(session):
     _engine = Engine(session=Mock(spec=boto3.Session))
     # Immediately replace that session wrapper
-    _engine._session = session
+    _engine.session = session
     _engine.bind(base=BaseModel)
     return _engine

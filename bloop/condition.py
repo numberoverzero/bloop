@@ -37,15 +37,22 @@ class _BaseCondition:
     dumped = False
 
     def __and__(self, other):
-        return And(self, other)
+        # And with empty condition is the original condition
+        if other:
+            return And(self, other)
+        return self
     __iand__ = __and__
 
     def __or__(self, other):
-        return Or(self, other)
+        if other:
+            return Or(self, other)
+        return self
     __ior__ = __or__
 
     def __invert__(self):
-        return Not(self)
+        if self:
+            return Not(self)
+        return self
     __neg__ = __invert__
 
     def __len__(self):
@@ -133,7 +140,8 @@ class And(_MultiCondition):
     uname = "AND"
 
     def __and__(self, other):
-        self.conditions.append(other)
+        if other:
+            self.conditions.append(other)
         return self
     __iand__ = __and__
 
@@ -143,7 +151,8 @@ class Or(_MultiCondition):
     uname = "OR"
 
     def __or__(self, other):
-        self.conditions.append(other)
+        if other:
+            self.conditions.append(other)
         return self
     __ior__ = __or__
 
@@ -163,6 +172,9 @@ class Not(_BaseCondition):
             return False
         return self.condition == other.condition
     __hash__ = _BaseCondition.__hash__
+
+    def __invert__(self):
+        return self.condition
 
     def render(self, renderer):
         return "(NOT {})".format(self.condition.render(renderer))

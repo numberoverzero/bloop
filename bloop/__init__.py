@@ -23,7 +23,6 @@ from .types import (
     TypedMap,
 )
 
-
 __all__ = [
     "AbstractModelError", "BaseModel", "Boolean", "Binary", "BloopException", "Column",
     "Condition", "ConstraintViolation", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer",

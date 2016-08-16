@@ -6,14 +6,15 @@ from .expressions import render
 from .filter import Filter
 from .models import Index, ModelMetaclass
 from .session import SessionWrapper
-from .tracking import clear, is_model_verified, sync, verify_model
+from .tracking import clear, is_model_validated, sync
 from .util import missing, walk_subclasses, signal, unpack_from_dynamodb
 
-__all__ = ["Engine", "before_create_table", "model_bound"]
+__all__ = ["Engine", "before_create_table", "model_bound", "model_validated"]
 
 # Signals!
 before_create_table = signal("before_create_table")
 model_bound = signal("model_bound")
+model_validated = signal("model_validated")
 
 
 def value_of(column):
@@ -69,7 +70,7 @@ class Engine:
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = type_engine or declare.TypeEngine.unique()
-        self._session = SessionWrapper(session or boto3)
+        self.session = SessionWrapper(session or boto3)
 
     def _dump(self, model, obj, context=None, **kwargs):
         context = context or {"engine": self}
@@ -99,21 +100,21 @@ class Engine:
             return not abstract
 
         concrete = set(filter(is_concrete, walk_subclasses(base)))
-        unverified = concrete - set(filter(is_model_verified, concrete))
+        unvalidated = concrete - set(filter(is_model_validated, concrete))
 
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
-        for model in unverified:
+        for model in unvalidated:
             before_create_table.send(self, model=model)
-            self._session.create_table(model)
+            self.session.create_table(model)
 
         for model in concrete:
-            if model in unverified:
-                self._session.validate_table(model)
+            if model in unvalidated:
+                self.session.validate_table(model)
             # Model won't need to be verified the
             # next time its BaseModel is bound to an engine
-            verify_model(model)
+            model_validated.send(self, model=model)
 
             self.type_engine.register(model)
             self.type_engine.bind(context={"engine": self})
@@ -124,13 +125,11 @@ class Engine:
         raise_on_abstract(*objs)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
-            if atomic:
-                rendered = render(self, atomic=obj, condition=condition)
-            else:
-                rendered = render(self, condition=condition)
+            atomic = atomic and obj or None
+            rendered = render(self, atomic=atomic, condition=condition)
             item.update(rendered)
 
-            self._session.delete_item(item)
+            self.session.delete_item(item)
             clear(obj)
 
     def load(self, *objs, consistent=False):
@@ -177,7 +176,7 @@ class Engine:
                 object_index[table_name][index] = set()
             object_index[table_name][index].add(obj)
 
-        response = self._session.load_items(request)
+        response = self.session.load_items(request)
 
         for table_name, list_of_attrs in response.items():
             for attrs in list_of_attrs:
@@ -199,12 +198,12 @@ class Engine:
                     not_loaded.update(index_set)
             raise MissingObjects("Failed to load some objects.", objects=not_loaded)
 
-    def query(self, obj, consistent=False, strict=True):
-        if isinstance(obj, Index):
-            model, index = obj.model, obj
+    def query(self, model_or_index, consistent=False, strict=True):
+        if isinstance(model_or_index, Index):
+            model, index = model_or_index.model, model_or_index
             select = "projected"
         else:
-            model, index = obj, None
+            model, index = model_or_index, None
             select = "all"
         raise_on_abstract(model, cls=True)
         return Filter(
@@ -217,21 +216,19 @@ class Engine:
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
 
-            if atomic:
-                rendered = render(self, atomic=obj, condition=condition, update=obj)
-            else:
-                rendered = render(self, condition=condition, update=obj)
+            atomic = atomic and obj or None
+            rendered = render(self, atomic=atomic, condition=condition, update=obj)
             item.update(rendered)
 
-            self._session.save_item(item)
+            self.session.save_item(item)
             sync(obj, self)
 
-    def scan(self, obj, consistent=False, strict=True):
-        if isinstance(obj, Index):
-            model, index = obj.model, obj
+    def scan(self, model_or_index, consistent=False, strict=True):
+        if isinstance(model_or_index, Index):
+            model, index = model_or_index.model, model_or_index
             select = "projected"
         else:
-            model, index = obj, None
+            model, index = model_or_index, None
             select = "all"
         raise_on_abstract(model, cls=True)
         return Filter(

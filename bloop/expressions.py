@@ -14,10 +14,8 @@ def render(engine, filter=None, select=None, key=None, atomic=None, condition=No
     if key is not None:
         renderer.key_expression(key)
     if (atomic is not None) or (condition is not None):
-        if condition is None:
-            condition = Condition()
-        if atomic is not None:
-            condition &= get_snapshot(atomic)
+        condition = condition or Condition()
+        condition &= get_snapshot(atomic) if atomic else Condition()
         renderer.condition_expression(condition)
     if update is not None:
         renderer.update_expression(update)

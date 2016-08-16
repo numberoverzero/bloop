@@ -1,5 +1,17 @@
 from .condition import Condition
-from .util import WeakDefaultDictionary
+from .util import WeakDefaultDictionary, signal
+
+
+# Watched signals
+model_validated = signal("model_validated")
+# Ensure signals aren't connected twice
+__signals_connected = False
+if not __signals_connected:  # pragma: no branch
+    __signals_connected = True
+
+    @model_validated.connect
+    def on_model_validated(engine, model, **kwargs):
+        _model_tracking[model]["validated"] = True
 
 
 # Tracks the state of instances of models:
@@ -9,7 +21,7 @@ _obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None
 
 # Tracks the state of models (tables):
 # 1) Has the table been created/verified to match the given Meta attributes?
-_model_tracking = WeakDefaultDictionary(lambda: {"verified": False})
+_model_tracking = WeakDefaultDictionary(lambda: {"validated": False})
 
 
 def clear(obj):
@@ -67,9 +79,5 @@ def get_marked(obj):
     return set(_obj_tracking[obj]["marked"])
 
 
-def is_model_verified(model):
-    return _model_tracking[model]["verified"]
-
-
-def verify_model(model):
-    _model_tracking[model]["verified"] = True
+def is_model_validated(model):
+    return _model_tracking[model]["validated"]

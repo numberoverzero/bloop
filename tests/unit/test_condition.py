@@ -1,3 +1,4 @@
+import operator
 import uuid
 
 import pytest
@@ -20,8 +21,37 @@ def test_no_refs(engine):
     when name/value refs are missing, ExpressionAttributeNames/Values
     aren't populated """
     condition = And()
-    expected = {"ConditionExpression": "()"}
+    expected = {}
     assert render(engine, condition=condition) == expected
+
+
+@pytest.mark.parametrize("op", [operator.and_, operator.or_])
+@pytest.mark.parametrize("empty_cls", [Condition, Or, And])
+def test_basic_simplification(op, empty_cls):
+    condition = Comparison(User.name, "==", "foo")
+    same = op(condition, empty_cls())
+    assert same is condition
+
+
+@pytest.mark.parametrize("cls", [Condition, Or, And])
+def test_negate_empty_conditions(cls):
+    empty = cls()
+    assert ~empty is empty
+
+
+@pytest.mark.parametrize("cls, op", [(And, operator.and_), (Or, operator.or_)])
+@pytest.mark.parametrize("empty_cls", [Condition, Or, And])
+def test_shortcut_multi_appends(cls, op, empty_cls):
+    # And() & None -> same And
+    # Or() & None -> same Or
+    obj = cls()
+    same = op(obj, empty_cls())
+    assert same is obj
+
+
+def test_double_negate():
+    condition = Comparison(User.name, "==", "foo")
+    assert ~~condition is condition
 
 
 def test_condition_ops():

@@ -248,9 +248,9 @@ class Filter:
             engine=self.engine, model=self.model, expected=expected_columns)
         # TODO: clean up when Filter is rewritten
         if self.mode == "scan":
-            call = self.engine._session.scan_items
+            call = self.engine.session.scan_items
         else:
-            call = self.engine._session.query_items
+            call = self.engine.session.query_items
         return FilterIterator(
             engine=self.engine, call=call, unpack=unpack, request=prepared_request, limit=int(self.limit))
 

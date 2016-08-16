@@ -17,6 +17,27 @@ comparison_aliases = {
 }
 
 
+def iter_columns(condition):
+    """Yield all columns in the condition; handles nesting and cycles"""
+    # Track visited to avoid circular conditions.
+    # Who's using a circular condition?!
+    conditions = {condition}
+    visited = set()
+    while conditions:
+        condition = conditions.pop()
+        if condition in visited:
+            continue
+        visited.add(condition)
+        if isinstance(condition, _MultiCondition):
+            conditions.update(condition.conditions)
+        elif isinstance(condition, Not):
+            conditions.add(condition.condition)
+        elif isinstance(condition, Condition):
+            continue
+        else:  # AttributeExists, BeginsWith, Between, Comparison, Contains, In
+            yield condition.column
+
+
 def printable_name(column, path):  # pragma: no cover
     """Provided for debug output when rendering conditions"""
     model_name = column.model.__name__

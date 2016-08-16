@@ -114,9 +114,9 @@ def test_load_repeated_objects(engine, session):
     """The same object is only loaded once"""
     user = User(id=uuid.uuid4())
     expected = {
-            "User": {
-                "Keys": [{"id": {"S": str(user.id)}}],
-                "ConsistentRead": False}
+        "User": {
+            "Keys": [{"id": {"S": str(user.id)}}],
+            "ConsistentRead": False}
     }
     response = {
         "User": [{"age": {"N": 5}, "name": {"S": "foo"}, "id": {"S": str(user.id)}}],
@@ -346,10 +346,10 @@ def test_save_list_with_condition(engine, session):
     condition = User.id.is_(None)
     expected_calls = [
         {
-          "ConditionExpression": "(attribute_not_exists(#n0))",
-          "ExpressionAttributeNames": {"#n0": "id"},
-          "Key": {"id": {"S": str(user.id)}},
-          "TableName": "User"}
+            "ConditionExpression": "(attribute_not_exists(#n0))",
+            "ExpressionAttributeNames": {"#n0": "id"},
+            "Key": {"id": {"S": str(user.id)}},
+            "TableName": "User"}
         for user in users]
     engine.save(*users, condition=condition)
     for expected in expected_calls:

@@ -165,13 +165,13 @@ def test_datetime():
 def test_float():
     typedef = Float()
     d = decimal.Decimal
-    symmetric_test(typedef, (1.5, "1.5"), (d(4)/d(3), "1.333333333333333333333333333"))
+    symmetric_test(typedef, (1.5, "1.5"), (d(4) / d(3), "1.333333333333333333333333333"))
 
 
 @pytest.mark.parametrize(
     "value, raises",
     [
-        (decimal.Decimal(4/3), decimal.Inexact),
+        (decimal.Decimal(4 / 3), decimal.Inexact),
         (decimal.Decimal(10) ** 900, decimal.Overflow),
         (decimal.Decimal(0.9) ** 9000, decimal.Underflow),
         ("Infinity", TypeError),

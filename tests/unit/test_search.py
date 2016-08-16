@@ -96,7 +96,7 @@ def test_search_repr():
         (None, None, "<Class[None]>"),
         (None, True, "<Class[None.by_gsi]>"),
         (True, None, "<Class[Model]>"),
-        (True, True,  "<Class[Model.by_gsi]>"),
+        (True, True, "<Class[Model.by_gsi]>"),
     ]:
         assert search_repr(cls, has_model and model, has_index and index) == expected
 

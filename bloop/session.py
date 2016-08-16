@@ -295,19 +295,16 @@ def sanitized_table_description(description):
              "KeySchema": [
                  {"AttributeName": gsi_key["AttributeName"],
                   "KeyType": gsi_key["KeyType"]}
-                 for gsi_key in gsi["KeySchema"]
-                 ],
+                 for gsi_key in gsi["KeySchema"]],
              "Projection": {
                  "NonKeyAttributes":
                      gsi["Projection"].get("NonKeyAttributes", []),
-                 "ProjectionType": gsi["Projection"]["ProjectionType"]
-             },
+                 "ProjectionType": gsi["Projection"]["ProjectionType"]},
              "ProvisionedThroughput": {
                  "ReadCapacityUnits":
                      gsi["ProvisionedThroughput"]["ReadCapacityUnits"],
                  "WriteCapacityUnits":
-                     gsi["ProvisionedThroughput"]["WriteCapacityUnits"]
-             }}
+                     gsi["ProvisionedThroughput"]["WriteCapacityUnits"]}}
             for gsi in description.get("GlobalSecondaryIndexes", [])
         ],
         "KeySchema": [
@@ -320,13 +317,11 @@ def sanitized_table_description(description):
              "KeySchema": [
                  {"AttributeName": lsi_key["AttributeName"],
                   "KeyType": lsi_key["KeyType"]}
-                 for lsi_key in lsi["KeySchema"]
-                 ],
+                 for lsi_key in lsi["KeySchema"]],
              "Projection": {
                  "NonKeyAttributes":
                      lsi["Projection"].get("NonKeyAttributes", []),
-                 "ProjectionType": lsi["Projection"]["ProjectionType"]
-             }}
+                 "ProjectionType": lsi["Projection"]["ProjectionType"]}}
             for lsi in description.get("LocalSecondaryIndexes", [])
         ],
         "ProvisionedThroughput": {

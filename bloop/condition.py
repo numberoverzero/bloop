@@ -17,27 +17,6 @@ comparison_aliases = {
 }
 
 
-def iter_columns(condition):
-    """Yield all columns in the condition; handles nesting and cycles"""
-    # Track visited to avoid circular conditions.
-    # Who's using a circular condition?!
-    conditions = {condition}
-    visited = set()
-    while conditions:
-        condition = conditions.pop()
-        if condition in visited:
-            continue
-        visited.add(condition)
-        if isinstance(condition, _MultiCondition):
-            conditions.update(condition.conditions)
-        elif isinstance(condition, Not):
-            conditions.add(condition.condition)
-        elif isinstance(condition, Condition):
-            continue
-        else:  # AttributeExists, BeginsWith, Between, Comparison, Contains, In
-            yield condition.column
-
-
 def printable_name(column, path):  # pragma: no cover
     """Provided for debug output when rendering conditions"""
     model_name = column.model.__name__
@@ -203,12 +182,12 @@ class Not(_BaseCondition):
 
 class Comparison(_BaseCondition):
 
-    def __init__(self, column, comparator, value, path=None):
-        if comparator not in comparison_aliases:
+    def __init__(self, column, operator, value, path=None):
+        if operator not in comparison_aliases:
             raise InvalidComparisonOperator(
-                "{!r} is not a valid Comparison operator.".format(comparator))
+                "{!r} is not a valid Comparison operator.".format(operator))
         self.column = column
-        self.comparator = comparator
+        self.comparator = operator
         self.value = value
         self.path = path
 

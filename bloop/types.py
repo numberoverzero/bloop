@@ -314,8 +314,8 @@ class TypedMap(Type):
         filtered = filter(
             lambda item: item[1] is not None,
             ((
-                 key, dump(typedef, value, context=context, **kwargs)
-             ) for key, value in values.items()))
+                key, dump(typedef, value, context=context, **kwargs)
+            ) for key, value in values.items()))
         return dict(filtered) or None
 
 
@@ -355,6 +355,6 @@ class Map(Type):
         filtered = filter(
             lambda item: item[1] is not None,
             ((
-                 key, dump(typedef, get(key, None), context=context, **kwargs)
-             ) for key, typedef in self.types.items()))
+                key, dump(typedef, get(key, None), context=context, **kwargs)
+            ) for key, typedef in self.types.items()))
         return dict(filtered) or None

@@ -3,6 +3,7 @@ import collections
 from .exceptions import ConstraintViolation
 from .tracking import sync
 from .util import unpack_from_dynamodb
+from .validation import validate_key_condition
 
 __all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanIterator", "QueryIterator"]
 
@@ -127,12 +128,15 @@ class PreparedSearch:
         self.mode = mode
 
     def prepare_model(self, model, index, consistent):
-        # if index not in model.Meta.indexes:
-        #    raise
-        pass
+        self.model = model
+        self.index = index
+        self.consistent = consistent
 
     def prepare_key(self, key):
-        pass
+        if self.mode != "query":
+            return
+        self.key = key
+        validate_key_condition(self.model, self.index, self.key)
 
     def prepare_projection(self, projection, strict):
         pass

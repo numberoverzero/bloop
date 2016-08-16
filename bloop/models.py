@@ -70,6 +70,9 @@ class ModelMetaclass(declare.ModelMetaclass):
         model_created.send(model=model)
         return model
 
+    def __repr__(cls):  # pragma: no cover
+        return "<Model[{}]>".format(cls.__name__)
+
 
 def setdefault(obj, field, default):
     """Set an object's field to default if it doesn't have a value"""
@@ -200,7 +203,7 @@ class Index(declare.Field):
         # <LSI[User.by_email=include]>
         return "<{}[{}.{}={}]>".format(
             cls_name,
-            self.model.__class__.__name__, self.model_name,
+            self.model.__name__, self.model_name,
             self.projection
         )
 

@@ -2,12 +2,12 @@ import operator
 import uuid
 
 import pytest
-from bloop.condition import And, Comparison, Condition, Not, Or, iter_columns
+from bloop.condition import And, Comparison, Condition, Not, Or
 from bloop.expressions import ConditionRenderer, render
 from bloop.models import BaseModel, Column
 from bloop.types import UUID, Integer, TypedMap
 
-from ..helpers.models import ComplexModel, Document, DocumentType, User, conditions
+from ..helpers.models import Document, DocumentType, User, conditions
 
 
 def test_duplicate_name_refs(engine):
@@ -264,32 +264,3 @@ def test_equality(condition):
             assert condition == other
         else:
             assert condition != other
-
-
-def test_complex_iter_columns():
-    """Includes cycles, empty conditions, Not, MultiConditions"""
-
-    first_comp = ComplexModel.name == "foo"
-    second_comp = ComplexModel.date == "bar"
-    third_comp = ComplexModel.email == "baz"
-
-    negate = Not(third_comp)
-    empty = Condition()
-
-    both = first_comp & second_comp
-    either = Or(negate, empty)
-
-    # cycle = (
-    #   (1 & 2) &
-    #   (~ | _) &
-    #   cycle
-    # )
-    cycle = And(both, either)
-    cycle.conditions.append(cycle)
-
-    expected = {
-        ComplexModel.name,
-        ComplexModel.date,
-        ComplexModel.email
-    }
-    assert set(iter_columns(cycle)) == expected

@@ -159,7 +159,7 @@ class Filter:
         """Convenience method for building specific queries off of a shared base query."""
         return Filter(
             engine=self.engine, mode=self.mode, model=self.model, index=self.index, strict=self.strict,
-            select=self.select,  consistent=self.consistent, forward=self.forward,
+            select=self.select, consistent=self.consistent, forward=self.forward,
             limit=self.limit, key=self.key, filter=self.filter)
 
     def one(self):

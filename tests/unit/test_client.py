@@ -93,14 +93,14 @@ def test_batch_get_one_batch(session, dynamodb_client):
     }
 
     boto3_client_response = {
-            "Responses": {
-                "User": [
-                    {"id": {"S": str(user.id)}, "age": {"N": "4"}}
-                    for user in users
-                ]
-            },
-            "UnprocessedKeys": {}
-        }
+        "Responses": {
+            "User": [
+                {"id": {"S": str(user.id)}, "age": {"N": "4"}}
+                for user in users
+            ]
+        },
+        "UnprocessedKeys": {}
+    }
 
     # The response that the bloop client should return
     expected_client_response = boto3_client_response["Responses"]
@@ -114,7 +114,7 @@ def test_batch_get_one_batch(session, dynamodb_client):
 
 def test_batch_get_paginated(session, dynamodb_client):
     """Paginate requests to fit within the max batch size"""
-    users = [User(id=uuid.uuid4()) for _ in range(BATCH_GET_ITEM_CHUNK_SIZE+1)]
+    users = [User(id=uuid.uuid4()) for _ in range(BATCH_GET_ITEM_CHUNK_SIZE + 1)]
     keys = [
         {"id": {"S": str(user.id)}}
         for user in users
@@ -149,11 +149,11 @@ def test_batch_get_paginated(session, dynamodb_client):
 
     # The response that the bloop client should return (all items)
     expected_client_response = {
-            "User": [
-                {"id": {"S": str(user.id)}, "age": {"N": "4"}}
-                for user in users
-            ]
-        }
+        "User": [
+            {"id": {"S": str(user.id)}, "age": {"N": "4"}}
+            for user in users
+        ]
+    }
 
     dynamodb_client.batch_get_item.side_effect = batched_responses
     response = session.load_items(client_request)

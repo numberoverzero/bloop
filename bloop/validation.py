@@ -1,5 +1,8 @@
+import declare
+
 from .condition import And, BeginsWith, Between, Comparison
-from .exceptions import InvalidKeyCondition
+from .models import Column, LocalSecondaryIndex
+from .exceptions import InvalidKeyCondition, InvalidProjection
 
 
 def validate_key_condition(model, index, key):
@@ -36,6 +39,54 @@ def validate_key_condition(model, index, key):
 
     # Nothing else is valid.
     fail_bad_range(query_on)
+
+
+def validate_search_projection(model, index, projection, strict):
+    if not projection:
+        raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
+    if projection == "count":
+        return None
+
+    # Table or non-strict LSI
+    if not index or (not strict and isinstance(index, LocalSecondaryIndex)):
+        available_columns = model.Meta.columns
+    # GSI or strict LSI
+    else:
+        available_columns = index.projected_columns
+
+    if projection == "all":
+        return available_columns
+
+    # Keep original around for error messages
+    original_projection = projection
+
+    # model_name -> Column
+    if all(isinstance(p, str) for p in projection):
+        by_model_name = declare.index(model.Meta.columns, "model_name")
+        projection = [by_model_name[p] for p in projection]
+
+    # Could have been str/Column mix, or just not Columns.
+    if not all(isinstance(p, Column) for p in projection):
+        raise InvalidProjection(
+            "{!r} is not valid: it must be only Columns or only their model names.".format(original_projection))
+
+    # Must be subset of the available columns
+    if set(projection) <= available_columns:
+        return projection
+
+    raise InvalidProjection(
+        "{!r} includes columns that are not available for {!r}.".format(
+            original_projection, simple_query(index or model.Meta)))
+
+
+def validate_filter_condition(condition, projected_columns):
+    if condition is None:
+        return
+    # Extract columns from condition.  They must
+    # be a subset of the projected_columns
+
+    # TODO re-include condition.iter_columns to make this way easier.
+    pass
 
 
 def check_hash_key(query_on, key):

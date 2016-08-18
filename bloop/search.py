@@ -3,7 +3,7 @@ import collections
 from .exceptions import ConstraintViolation
 from .tracking import sync
 from .util import unpack_from_dynamodb
-from .validation import validate_key_condition
+from .validation import validate_filter_condition, validate_key_condition, validate_search_projection
 
 __all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanIterator", "QueryIterator"]
 
@@ -96,16 +96,22 @@ class PreparedSearch:
     def __init__(self):
         self.engine = None
         self.session = None
-        self.model = None
         self.mode = None
+
+        self.model = None
         self.index = None
+        self.consistent = None
+
         self.key = None
-        self.filter = None
+
         self._projection_mode = None
         self._projected_columns = None
+
+        self.filter = None
+
         self.limit = None
         self.forward = None
-        self.consistent = None
+
         self._request = None
         self._iterator_cls = None
 
@@ -139,10 +145,20 @@ class PreparedSearch:
         validate_key_condition(self.model, self.index, self.key)
 
     def prepare_projection(self, projection, strict):
-        pass
+        projected_columns = validate_search_projection(self.model, self.index, projection, strict)
+        if projected_columns is None:
+            self._projection_mode = "count"
+            self._projected_columns = None
+        else:
+            # Everything else is specific, even "all" on a non-strict LSI.
+            # A table could have columns than this model doesn't cares about;
+            # don't load those when they'll be discarded immediately.
+            self._projection_mode = "specific"
+            self._projected_columns = projected_columns
 
     def prepare_filter(self, filter):
-        pass
+        self.filter = filter
+        validate_filter_condition(self.filter, self._projected_columns)
 
     def prepare_constraints(self, limit, forward):
         self.limit = limit

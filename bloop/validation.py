@@ -63,7 +63,16 @@ def validate_search_projection(model, index, projection, strict):
     # model_name -> Column
     if all(isinstance(p, str) for p in projection):
         by_model_name = declare.index(model.Meta.columns, "model_name")
-        projection = [by_model_name[p] for p in projection]
+        # This could be a list comprehension, but then the
+        # user gets a KeyError when they passed a list.  So,
+        # do each individually and throw a useful exception.
+        converted_projection = []
+        for p in projection:
+            try:
+                converted_projection.append(by_model_name[p])
+            except KeyError:
+                raise InvalidProjection("{!r} is not a column of {!r}.".format(p, model))
+        projection = converted_projection
 
     # Could have been str/Column mix, or just not Columns.
     if not all(isinstance(p, Column) for p in projection):

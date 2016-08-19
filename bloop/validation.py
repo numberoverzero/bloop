@@ -45,7 +45,7 @@ def validate_search_projection(model, index, projection, strict):
     if not projection:
         raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
     if projection == "count":
-        return None
+        return [None, None]
 
     # Table or non-strict LSI
     if not index or (not strict and isinstance(index, LocalSecondaryIndex)):
@@ -55,7 +55,7 @@ def validate_search_projection(model, index, projection, strict):
         available_columns = index.projected_columns
 
     if projection == "all":
-        return available_columns
+        return available_columns, available_columns
 
     # Keep original around for error messages
     original_projection = projection
@@ -81,14 +81,14 @@ def validate_search_projection(model, index, projection, strict):
 
     # Must be subset of the available columns
     if set(projection) <= available_columns:
-        return projection
+        return projection, available_columns
 
     raise InvalidProjection(
         "{!r} includes columns that are not available for {!r}.".format(
             original_projection, simple_query(index or model.Meta)))
 
 
-def validate_filter_condition(condition, projected_columns):
+def validate_filter_condition(condition, available_columns):
     if condition is None:
         return
     # Extract columns from condition.  They must

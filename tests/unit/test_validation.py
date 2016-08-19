@@ -8,10 +8,10 @@ from bloop.condition import (
     Contains, In, Not, Or,
     comparison_aliases
 )
-from bloop.exceptions import InvalidKeyCondition
-from bloop.models import BaseModel, Column, GlobalSecondaryIndex
+from bloop.exceptions import InvalidKeyCondition, InvalidProjection
+from bloop.models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.types import Integer
-from bloop.validation import validate_key_condition
+from bloop.validation import validate_key_condition, validate_search_projection
 
 all_conditions = {
     And, AttributeExists, BeginsWith, Between,
@@ -22,38 +22,76 @@ range_conditions = {BeginsWith, Between, Comparison}
 bad_range_conditions = all_conditions - {BeginsWith, Between}
 
 
-def model_for(has_model_range=False, has_index=False, has_index_range=False):
-    class Model(BaseModel):
-        model_hash = Column(Integer, hash_key=True)
-        if has_model_range:
-            model_range = Column(Integer, range_key=True)
-        if has_index:
-            index_hash = Column(Integer)
+def model_for(has_model_range=False, has_index=False, has_index_range=False,
+              index_type="gsi", index_projection="all"):
+    """Not all permutations are possible.  Impossible selections will always self-correct.
+
+    For instance, has_model_range=False, has_index=True, index_type="gsi" can't happen.
+    Instead, the model won't have an index."""
+    model_range_ = None
+    index_hash_ = None
+    index_range_ = None
+    by_index_ = None
+
+    if has_model_range:
+        model_range_ = Column(Integer, range_key=True)
+    # Sets up index_hash, index_range, by_index
+    if has_index:
+        if index_type == "gsi":
+            index_hash_ = Column(Integer)
             if has_index_range:
-                index_range = Column(Integer)
-            by_gsi = GlobalSecondaryIndex(
-                projection="all",
+                index_range_ = Column(Integer)
+            by_index_ = GlobalSecondaryIndex(
+                projection=index_projection,
                 hash_key="index_hash",
-                range_key=("index_range" if has_index_range else False))
-    return Model, (Model.by_gsi if has_index else None)
+                range_key="index_range" if has_index_range else None)
+        elif index_type == "lsi" and has_model_range and has_index_range:
+            index_range_ = Column(Integer)
+            by_index_ = LocalSecondaryIndex(
+                projection=index_projection,
+                range_key="index_range"
+            )
+
+    class TestModel(BaseModel):
+        # Included in an "all" projection, not "keys"
+        not_projected = Column(Integer)
+
+        model_hash = Column(Integer, hash_key=True)
+        model_range = model_range_
+        index_hash = index_hash_
+        index_range = index_range_
+        by_index = by_index_
+
+    return TestModel, by_index_
+
+# permutations with a range key
+range_permutations = [
+    # Model - hash and range
+    model_for(has_model_range=True, has_index=False),
+
+    # LSIs always require a model range key and index range key.
+    model_for(has_model_range=True, has_index=True, has_index_range=True, index_type="lsi", index_projection="all"),
+    model_for(has_model_range=True, has_index=True, has_index_range=True, index_type="lsi", index_projection="keys"),
+
+    # GSIs with index range key; with and without model range key
+    model_for(has_model_range=False, has_index=True, has_index_range=True, index_type="gsi", index_projection="all"),
+    model_for(has_model_range=False, has_index=True, has_index_range=True, index_type="gsi", index_projection="keys"),
+    model_for(has_model_range=True, has_index=True, has_index_range=True, index_type="gsi", index_projection="all"),
+    model_for(has_model_range=True, has_index=True, has_index_range=True, index_type="gsi", index_projection="keys"),
+]
 
 all_permutations = [
-    # Model hash only
-    (False, False, False),
-    # Model hash + range
-    (True, False, False),
-    # Index hash only
-    (False, True, False),
-    # Index hash + range
-    (False, True, True),
-]
+    # Model - hash key only
+    model_for(has_model_range=False, has_index=False),
 
-hash_and_range_permutations = [
-    # Model
-    (True, False, False),
-    # Index
-    (False, True, True)
-]
+    # LSIs included above, always require a model range key and index range key
+
+    # GSIs without an index range key; with and without model range key
+    model_for(has_model_range=False, has_index=True, has_index_range=False, index_type="gsi", index_projection="all"),
+    model_for(has_model_range=False, has_index=True, has_index_range=False, index_type="gsi", index_projection="keys"),
+    model_for(has_model_range=True, has_index=True, has_index_range=False, index_type="gsi", index_projection="all"),
+    model_for(has_model_range=True, has_index=True, has_index_range=False, index_type="gsi", index_projection="keys"),
+] + range_permutations
 
 
 def comparisons_for(include=None, exclude=None):
@@ -110,20 +148,18 @@ def conditions_for(classes, include=None, exclude=None):
     return condition_lambdas
 
 
-@pytest.mark.parametrize("permutation", all_permutations)
-def test_single_hash_key_success(permutation):
+@pytest.mark.parametrize("model, index", all_permutations)
+def test_single_hash_key_success(model, index):
     """Single key condition: equality comparison on hash key"""
-    model, index = model_for(*permutation)
     query_on = index or model.Meta
     key = query_on.hash_key == "value"
     validate_key_condition(model, index, key)
 
 
-@pytest.mark.parametrize("permutation", all_permutations)
+@pytest.mark.parametrize("model, index", all_permutations)
 @pytest.mark.parametrize("key_lambda", conditions_for(all_conditions - {And}, exclude=["=="]))
-def test_single_key_failure(permutation, key_lambda):
+def test_single_key_failure(model, index, key_lambda):
     """No other single key condition (except AND) will succeed"""
-    model, index = model_for(*permutation)
     # Get the correct hash key so only the condition type is wrong
     hash_key_column = (index or model.Meta).hash_key
     key = key_lambda(column=hash_key_column)
@@ -132,22 +168,20 @@ def test_single_key_failure(permutation, key_lambda):
         validate_key_condition(model, index, key)
 
 
-@pytest.mark.parametrize("permutation", hash_and_range_permutations)
+@pytest.mark.parametrize("model, index", range_permutations)
 @pytest.mark.parametrize("count", [0, 1, 3])
-def test_and_not_two(permutation, count):
+def test_and_not_two(model, index, count):
     """AND on hash+range fails if there aren't exactly 2 key conditions"""
-    model, index = model_for(*permutation)
     hash_key_column = (index or model.Meta).hash_key
     key = And(*[hash_key_column == "value"] * count)
     with pytest.raises(InvalidKeyCondition):
         validate_key_condition(model, index, key)
 
 
-@pytest.mark.parametrize("permutation", hash_and_range_permutations)
+@pytest.mark.parametrize("model, index", range_permutations)
 @pytest.mark.parametrize("key_name", ["hash_key", "range_key"])
-def test_and_both_same_key(permutation, key_name):
+def test_and_both_same_key(model, index, key_name):
     """AND with 2 conditions, but both conditions are on the same key"""
-    model, index = model_for(*permutation)
     key_column = getattr(index or model.Meta, key_name)
     condition = key_column == "value"
     key = And(condition, condition)
@@ -155,22 +189,20 @@ def test_and_both_same_key(permutation, key_name):
         validate_key_condition(model, index, key)
 
 
-@pytest.mark.parametrize("permutation", hash_and_range_permutations)
+@pytest.mark.parametrize("model, index", range_permutations)
 @pytest.mark.parametrize("range_condition_lambda", conditions_for(range_conditions, exclude=["!="]))
-def test_hash_and_range_key_success(permutation, range_condition_lambda):
+def test_hash_and_range_key_success(model, index, range_condition_lambda):
     """AND(hash, range) + AND(range, hash) for valid hash and range key conditions"""
-    model, index = model_for(*permutation)
     hash_condition = (index or model.Meta).hash_key == "value"
     range_condition = range_condition_lambda(column=(index or model.Meta).range_key)
     validate_key_condition(model, index, And(hash_condition, range_condition))
     validate_key_condition(model, index, And(range_condition, hash_condition))
 
 
-@pytest.mark.parametrize("permutation", hash_and_range_permutations)
+@pytest.mark.parametrize("model, index", range_permutations)
 @pytest.mark.parametrize("range_condition_lambda", conditions_for(range_conditions, exclude=["!="]))
-def test_and_bad_hash_key(permutation, range_condition_lambda):
+def test_and_bad_hash_key(model, index, range_condition_lambda):
     """AND with valid range key condition but bad hash key condition"""
-    model, index = model_for(*permutation)
     hash_condition = (index or model.Meta).hash_key.between("bad", "condition")
     range_condition = range_condition_lambda(column=(index or model.Meta).range_key)
 
@@ -180,11 +212,10 @@ def test_and_bad_hash_key(permutation, range_condition_lambda):
         validate_key_condition(model, index, And(range_condition, hash_condition))
 
 
-@pytest.mark.parametrize("permutation", hash_and_range_permutations)
+@pytest.mark.parametrize("model, index", range_permutations)
 @pytest.mark.parametrize("range_condition_lambda", conditions_for(bad_range_conditions, include=["!="]))
-def test_and_bad_range_key(permutation, range_condition_lambda):
+def test_and_bad_range_key(model, index, range_condition_lambda):
     """AND with valid hash range condition but bad hash key condition"""
-    model, index = model_for(*permutation)
     hash_condition = (index or model.Meta).hash_key == "value"
     range_condition = range_condition_lambda(column=(index or model.Meta).range_key)
 
@@ -192,3 +223,39 @@ def test_and_bad_range_key(permutation, range_condition_lambda):
         validate_key_condition(model, index, And(hash_condition, range_condition))
     with pytest.raises(InvalidKeyCondition):
         validate_key_condition(model, index, And(range_condition, hash_condition))
+
+
+@pytest.mark.parametrize("model, index", all_permutations)
+@pytest.mark.parametrize("strict", [False, True])
+def test_search_projection_is_required(model, index, strict):
+    with pytest.raises(InvalidProjection):
+        validate_search_projection(model, index, projection=None, strict=strict)
+
+
+@pytest.mark.parametrize("model, index", all_permutations)
+@pytest.mark.parametrize("strict", [False, True])
+def test_search_projection_is_count(model, index, strict):
+    assert validate_search_projection(model, index, projection="count", strict=strict) is None
+
+
+@pytest.mark.parametrize("model, index", all_permutations)
+@pytest.mark.parametrize("strict", [False, True])
+def test_search_projection_all(model, index, strict):
+    projected = validate_search_projection(model, index, projection="all", strict=strict)
+
+    if not index:
+        # Model searches don't care about strict
+        expected = model.Meta.columns
+    else:
+        # GSI all doesn't care about strict
+        if isinstance(index, GlobalSecondaryIndex):
+            expected = index.projected_columns
+        else:
+            # LSI strict is only the index projection
+            if strict:
+                expected = index.projected_columns
+            # Grab it all
+            else:
+                expected = model.Meta.columns
+
+    assert projected == expected

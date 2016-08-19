@@ -273,7 +273,8 @@ def test_search_projection_unknown_column(model, index, strict, bad_column):
 
 @pytest.mark.parametrize("model, index", all_permutations)
 @pytest.mark.parametrize("strict", [False, True])
-def test_search_projection_includes_non_projected_column(model, index, strict):
+@pytest.mark.parametrize("as_strings", [False, True])
+def test_search_projection_includes_non_projected_column(model, index, strict, as_strings):
     """Specific column names exist.
 
     Table, non-strict LSI, and indexes that project all columns will succeed; the rest fail."""
@@ -286,7 +287,11 @@ def test_search_projection_includes_non_projected_column(model, index, strict):
     elif index.projection == "all":
         should_succeed = True
 
-    projection = ["model_hash", "not_projected"]
+    if as_strings:
+        projection = ["model_hash", "not_projected"]
+    else:
+        projection = [model.model_hash, model.not_projected]
+
     if should_succeed:
         available = validate_search_projection(
             model, index, projection=projection, strict=strict)

@@ -231,19 +231,19 @@ def test_and_bad_range_key(model, index, range_condition_lambda):
 def test_search_projection_is_required(model, index, strict, empty_projection):
     """Test a missing projection, and an empty list of column names"""
     with pytest.raises(InvalidProjection):
-        validate_search_projection(model, index, projection=empty_projection, strict=strict)
+        validate_search_projection(model, index, strict, projection=empty_projection)
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
 @pytest.mark.parametrize("strict", [False, True])
 def test_search_projection_is_count(model, index, strict):
-    assert validate_search_projection(model, index, projection="count", strict=strict) == [None, None]
+    assert validate_search_projection(model, index, strict, projection="count") == [None, None]
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
 @pytest.mark.parametrize("strict", [False, True])
 def test_search_projection_all(model, index, strict):
-    projected, available = validate_search_projection(model, index, projection="all", strict=strict)
+    projected, available = validate_search_projection(model, index, strict, projection="all")
 
     if not index:
         # Model searches don't care about strict
@@ -269,7 +269,7 @@ def test_search_projection_all(model, index, strict):
 @pytest.mark.parametrize("bad_column", ["unknown", None])
 def test_search_projection_unknown_column(model, index, strict, bad_column):
     with pytest.raises(InvalidProjection):
-        validate_search_projection(model, index, projection=["model_hash", bad_column], strict=strict)
+        validate_search_projection(model, index, strict, projection=["model_hash", bad_column])
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
@@ -295,11 +295,11 @@ def test_search_projection_includes_non_projected_column(model, index, strict, a
 
     if should_succeed:
         projected, available = validate_search_projection(
-            model, index, projection=projection, strict=strict)
+            model, index, strict, projection=projection)
         assert projected == [model.model_hash, model.not_projected]
         assert set(available) == model.Meta.columns
 
     else:
         with pytest.raises(InvalidProjection):
             validate_search_projection(
-                model, index, projection=projection, strict=strict)
+                model, index, strict, projection=projection)

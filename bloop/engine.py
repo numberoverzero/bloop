@@ -62,7 +62,8 @@ def raise_on_unknown(model, from_declare):
         raise UnboundModel(msg.format(model.__name__)) from from_declare
     else:
         msg = "{!r} is not a registered Type."
-        raise UnknownType(msg.format(model.__name__)) from from_declare
+        obj = model.__name__ if hasattr(model, "__name__") else model
+        raise UnknownType(msg.format(obj)) from from_declare
 
 
 class Engine:

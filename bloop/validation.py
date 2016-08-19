@@ -1,7 +1,7 @@
 import declare
 
 from .condition import And, BeginsWith, Between, Comparison
-from .models import Column, LocalSecondaryIndex
+from .models import Column, available_columns_for
 from .exceptions import InvalidKeyCondition, InvalidProjection
 
 
@@ -41,18 +41,13 @@ def validate_key_condition(model, index, key):
     fail_bad_range(query_on)
 
 
-def validate_search_projection(model, index, projection, strict):
+def validate_search_projection(model, index, strict, projection):
     if not projection:
         raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
     if projection == "count":
         return [None, None]
 
-    # Table or non-strict LSI
-    if not index or (not strict and isinstance(index, LocalSecondaryIndex)):
-        available_columns = model.Meta.columns
-    # GSI or strict LSI
-    else:
-        available_columns = index.projected_columns
+    available_columns = available_columns_for(model, index, strict)
 
     if projection == "all":
         return available_columns, available_columns

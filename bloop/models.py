@@ -19,6 +19,14 @@ __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex",
 model_created = signal("model_created")
 
 
+def available_columns_for(model, index, strict):
+    if not index or (not strict and isinstance(index, LocalSecondaryIndex)):
+        return model.Meta.columns
+    # GSI or strict LSI
+    else:
+        return index.projected_columns
+
+
 def loaded_columns(obj):
     """Yields each (model_name, value) tuple for all columns in an object that aren't missing"""
     for column in sorted(obj.Meta.columns, key=lambda c: c.model_name):

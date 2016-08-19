@@ -1,6 +1,7 @@
 import collections
 
 from .exceptions import ConstraintViolation
+from .models import available_columns_for
 from .tracking import sync
 from .util import unpack_from_dynamodb
 from .validation import validate_filter_condition, validate_key_condition, validate_search_projection
@@ -100,6 +101,7 @@ class PreparedSearch:
 
         self.model = None
         self.index = None
+        self.strict = None
         self.consistent = None
 
         self.key = None
@@ -146,20 +148,17 @@ class PreparedSearch:
         validate_key_condition(self.model, self.index, self.key)
 
     def prepare_projection(self, projection, strict):
-        projected_columns, available_columns = validate_search_projection(self.model, self.index, projection, strict)
-        if projected_columns is None:
+        self.strict = strict
+        self._available_columns = available_columns_for(self.model, self.index, self.strict)
+        self._projected_columns = validate_search_projection(self.model, self.index, self.strict, projection)
+
+        if self._projected_columns is None:
             self._projection_mode = "count"
-            self._projected_columns = None
-            self._available_columns = None
         else:
             # Everything else is specific, even "all" on a non-strict LSI.
             # A table could have columns than this model doesn't cares about;
             # don't load those when they'll be discarded immediately.
             self._projection_mode = "specific"
-            self._projected_columns = projected_columns
-            # The projection describes what to return, while available
-            # describes the columns that can be referenced in a filter.
-            self._available_columns = available_columns
 
     def prepare_filter(self, filter):
         self.filter = filter

@@ -39,41 +39,43 @@ Find all files named "setup.py" with a scan:
 
 .. code-block:: python
 
-    scan = engine.scan(File)
-    scan.filter = File.name == "setup.py"
+    scan = engine.scan(
+        File, filter=File.name == "setup.py")
 
-    for file in scan.build():
+    for file in scan:
         print(file)
 
 Find all files owned by "root" with a query on a GSI:
 
 .. code-block:: python
 
-    query = engine.query(File.by_owner)
-    query.key = File.owner == "root"
+    query = engine.query(
+        File.by_owner, key=File.owner == "root")
 
-    for file in query.build():
+    for file in query:
         print(file)
 
 Find all files in "~/bloop" created over a year ago with a query on the LSI:
 
 .. code-block:: python
 
-    query = engine.query(File.on_created)
-
     in_bloop = File.path == "~/bloop"
     over_one_year_old = File.created < arrow.now().replace(years=-1)
-    query.key = in_bloop & over_one_year_old
 
-    for file in query.build():
+    query = engine.query(
+        File.on_created,
+        key=in_bloop & over_one_year_old)
+
+    for file in query:
         print(file)
 
 The first file with a size of 4096:
 
 .. code-block:: python
 
-    query = engine.query(File.by_size)
-    query.key = File.size == 4096
+    query = engine.query(
+        File.by_size,
+        key=File.size == 4096)
 
     print(query.first())
 
@@ -81,8 +83,8 @@ Find exactly one file in the path "~/bloop/scripts":
 
 .. code-block:: python
 
-    query = engine.query(File)
-    query.key = File.path == "~/bloop/scripts"
+    query = engine.query(
+        File, key=File.path == "~/bloop/scripts")
 
     print(query.one())
 
@@ -91,40 +93,33 @@ Find exactly one file in the path "~/bloop/scripts":
 Interface
 =========
 
-Scan and Query have the same interface:
+Scan and Query have very similar interfaces:
 
 .. code-block:: python
 
     Engine.query(
-        obj: Union[bloop.BaseModel, bloop.Index],
-        consistent: bool=False, strict: bool=True) -> bloop.Filter
+        model_or_index: Union[bloop.BaseModel, bloop.Index],
+        key=None,
+        filter=None,
+        projection: Union[str, List[str]]="all",
+        limit: Optional[int]=None,
+        strict: bool=True,
+        consistent: bool=False,
+        forward: bool=True, **kwargs) -> bloop.QueryIterator
 
     Engine.scan(
-        obj: Union[bloop.BaseModel, bloop.Index],
-        consistent: bool=False, strict: bool=True) -> bloop.Filter
+        model_or_index: Union[bloop.BaseModel, bloop.Index],
+        filter=None,
+        projection: Union[str, List[str]]="all",
+        limit: Optional[int]=None,
+        strict: bool=True,
+        consistent: bool=False, **kwargs) -> bloop.ScanIterator
 
-.. attribute:: obj
+.. attribute:: model_or_index
     :noindex:
 
     This is either an instance of a model, or an index on a model.  From the example above, this can
     be the ``File`` model, or any of its indexes ``Filter.on_created``, ``Filter.by_owner``, or ``Filter.by_size``.
-
-.. attribute:: consistent
-    :noindex:
-
-    See the :ref:`consistent property <property-consistent>` below.
-
-.. attribute:: strict
-    :noindex:
-
-    See the :ref:`strict property <property-strict>` below.
-
-==================
-Building the Query
-==================
-
-First, get a Query or Scan from ``Engine.query`` or ``Engine.scan``.  Then, you can specify how the query or scan
-will execute by modifying the following attributes:
 
 .. _query-key:
 
@@ -147,15 +142,7 @@ will execute by modifying the following attributes:
         in_home = File.path == "~"
         start_with_a = File.name.begins_with("a")
 
-        query.key = in_home & starts_with_a
-
-.. attribute:: select
-    :noindex:
-
-    The columns to load.  One of ``"all"``, ``"projected"``, ``"count"``, or a list of columns.
-    When select is "count", no objects will be returned, but the ``count`` and ``scanned`` properties
-    will be set on the result iterator (see below).  If the Query or Scan is against a Model, you cannot
-    use "projected".  Defaults to "all" for Models and "projected" for Indexes.
+        q = engine.query(File, key=in_home & starts_with_a)
 
 .. _query-filter:
 
@@ -164,6 +151,33 @@ will execute by modifying the following attributes:
 
     A server-side filter :ref:`condition <conditions>` that DynamoDB applies to objects before returning them.
     Only objects that match the filter will be returned.  Defaults to None.
+
+.. attribute:: projection
+    :noindex:
+
+    The columns to load.  One of ``"all"``, ``"count"``, or a list of columns.
+    When select is "count", no objects will be returned, but the ``count`` and ``scanned`` properties
+    will be set on the result iterator (see below).  Defaults to "all".
+
+.. attribute:: limit
+    :noindex:
+
+    The maximum number of objects that will be returned.  This is **NOT** the same as DynamoDB's `Limit`__, which
+    is the maximum number of objects evaluated per continuation token.  Once the iterator has returned ``limit``
+    object, it will not return any more (even if the internal buffer is not empty).  Defaults to None.
+
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
+
+.. _property-strict:
+
+.. attribute:: strict
+    :noindex:
+
+    Whether or not a query or scan is prevented from incurring additional reads against the table.
+    If you query or scan a Local Secondary Index without strict set to True,
+    DynamoDB will incur an additional read against the table in order to return all columns.
+
+    It is highly recommended to keep this enabled.  Defaults to True.
 
 .. _property-consistent:
 
@@ -178,43 +192,23 @@ will execute by modifying the following attributes:
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
     __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-ConsistentRead
 
-.. _property-strict:
-
-.. attribute:: strict
-    :noindex:
-
-    Whether or not a query or scan is prevented from incurring additional reads against the table.
-    If you query or scan a Local Secondary Index and ask for more columns than are projected into the index,
-    DynamoDB will incur an additional read against the table in order to return the non-projected columns.
-
-    It is highly recommended to keep this enabled.  Defaults to True.
-
 .. attribute:: forward
     :noindex:
 
-    Whether to scan in ascending order (see `ScanIndexForward`_).  When True, scans are ascending.
-    When False, scans are descending.  This setting is not used for Queries.  Defaults to True.
-
-.. attribute:: limit
-    :noindex:
-
-    The maximum number of objects that will be returned.  This is **NOT** the same as DynamoDB's `Limit`__, which
-    is the maximum number of objects evaluated per continuation token.  Once the iterator has returned ``limit``
-    object, it will not return any more (even if the internal buffer is not empty).  Defaults to None.
-
-    __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
+    Whether to query in ascending order (see `ScanIndexForward`_).  When True, queries are ascending.
+    When False, queries are descending.  This setting is not used for Scans.  Defaults to True.
 
 ===================
 Executing the Query
 ===================
 
-After you have finished defining the Query or Scan, you can use ``first()``, ``one()``, or ``build()`` to
-retrieve results.  If there are no matching objects, ``first`` will raise a ``ConstraintViolation``.  If
+``QueryIterator`` and ``ScanIterator`` have the same interface.  You can use ``first()``, ``one()``, or iterate over
+the object to retrieve results.  If there are no matching objects, ``first`` will raise a ``ConstraintViolation``.  If
 there is not exactly one matching object, ``one`` will raise a ``ConstraintViolation``.
 
-You can use ``build`` to return an iterable, which fetches objects up to ``limit`` (or unlimited).
-The object returned by ``build`` does not cache objects.  You can start the iterable over at any time by calling
-``reset()``.  The iterator has the following properties for inspecting the state of the scan or query:
+The iterator will fetch objects up to ``limit`` (or unlimited).  These results are no cached; you can start
+the iterable over at any time by calling ``reset()``.  Iterators have the following properties for inspecting
+the state of the scan or query:
 
 .. attribute:: count
     :noindex:

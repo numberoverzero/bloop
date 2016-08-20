@@ -207,10 +207,8 @@ Here, the scan uses ``select`` to only return a few columns (and the hash key co
 
 .. code-block:: python
 
-    scan = engine.scan(Document)
-    scan.select = [Document.name]
-
-    results = list(scan.build())
+    scan = engine.scan(Document, projection=[Document.name])
+    results = list(scan)
 
 Each result will have values for ``id`` and ``name``, but the scan did not try to load the other columns.
 Those columns won't be set to ``None`` - they won't even be loaded by the Column's typedef.  Here's a document the
@@ -251,9 +249,9 @@ subset of all columns (using the index's projection) but the value will be missi
 
 .. code-block:: python
 
-    query = engine.query(Document.by_name)
-    query.key = name == ".profile"
-
+    query = engine.query(
+        Document.by_name,
+        key=Document.name == ".profile")
     result = query.first()
 
 This index projects the ``size`` column, which means it's expected to populate the columns ``id, name, size``.

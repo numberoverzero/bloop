@@ -1,6 +1,6 @@
 import collections
 
-from .exceptions import ConstraintViolation
+from .exceptions import ConstraintViolation, UnknownSearchMode
 from .expressions import render
 from .models import GlobalSecondaryIndex, available_columns_for
 from .tracking import sync
@@ -99,7 +99,7 @@ class PreparedSearch:
         self.engine = None
         self.session = None
         self.mode = None
-        self._request = None
+        self._iterator_cls = None
 
         self.model = None
         self.index = None
@@ -117,7 +117,7 @@ class PreparedSearch:
         self.limit = None
         self.forward = None
 
-        self._iterator_cls = None
+        self._request = None
 
     def prepare(
             self, engine=None, mode=None, session=None, model=None, index=None, key=None,
@@ -135,8 +135,10 @@ class PreparedSearch:
     def prepare_session(self, engine, session, mode):
         self.engine = engine
         self.session = session
+        if mode not in {"query", "scan"}:
+            raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
         self.mode = mode
-        self._request = ScanIterator if mode == "scan" else QueryIterator
+        self._iterator_cls = ScanIterator if mode == "scan" else QueryIterator
 
     def prepare_model(self, model, index, consistent):
         self.model = model
@@ -164,7 +166,12 @@ class PreparedSearch:
 
     def prepare_filter(self, filter):
         self.filter = filter
-        validate_filter_condition(self.filter, self._available_columns)
+        if self.mode == "query":
+            # Query filters can't include the key columns
+            column_blacklist = (self.index or self.model.Meta).keys
+        else:
+            column_blacklist = set()
+        validate_filter_condition(self.filter, self._available_columns, column_blacklist)
 
     def prepare_constraints(self, limit, forward):
         self.limit = limit
@@ -186,10 +193,12 @@ class PreparedSearch:
 
         if self.mode == "count":
             request["Select"] = "COUNT"
+            projected = None
         else:
             request["Select"] = "SPECIFIC_ATTRIBUTES"
+            projected = self._projected_columns
 
-        rendered = render(self.engine, filter=self.filter, select=self._projected_columns, key=self.key)
+        rendered = render(self.engine, filter=self.filter, select=projected, key=self.key)
         request.update(rendered)
 
     def __repr__(self):  # pragma: no cover

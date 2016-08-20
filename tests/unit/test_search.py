@@ -1,10 +1,10 @@
 import collections
 import pytest
-from bloop.exceptions import ConstraintViolation
-from bloop.search import SearchIterator, ScanIterator, QueryIterator, search_repr
+from bloop.exceptions import ConstraintViolation, InvalidKeyCondition, UnknownSearchMode
+from bloop.search import Search, SearchIterator, ScanIterator, QueryIterator, search_repr
 from bloop.util import Sentinel
 
-from ..helpers.models import User
+from ..helpers.models import ComplexModel, User
 
 proceed = Sentinel("proceed")
 
@@ -75,16 +75,73 @@ def build_responses(chain, items=None):
     return responses
 
 
-def simple_iter(engine, session, cls=SearchIterator):
-    return cls(
-        engine=engine,
-        session=session,
-        model=User,
-        index=None,
-        limit=None,
-        request={},
-        projected=set()
-    )
+@pytest.fixture
+def simple_iter(engine, session):
+    def _simple_iter(cls=SearchIterator):
+        return cls(
+            engine=engine,
+            session=session,
+            model=User,
+            index=None,
+            limit=None,
+            request={},
+            projected=set()
+        )
+    return _simple_iter
+
+
+@pytest.fixture
+def valid_search(engine, session):
+    search = Search(
+        engine=engine, session=session, model=ComplexModel, index=None, key=ComplexModel.name == "foo",
+        filter=None, projection="all", limit=None, strict=False, consistent=True, forward=False)
+    search.mode = "query"
+    return search
+
+
+@pytest.mark.parametrize("mode, cls", [("query", QueryIterator), ("scan", ScanIterator)])
+def test_prepare_session(valid_search, engine, session, mode, cls):
+    valid_search.mode = mode
+    prepared = valid_search.prepare()
+
+    assert prepared.engine is engine
+    assert prepared.session is session
+    assert prepared.mode == mode
+    assert prepared._iterator_cls is cls
+
+
+def test_prepare_unknown_mode(valid_search):
+    valid_search.mode = "foo"
+    with pytest.raises(UnknownSearchMode):
+        valid_search.prepare()
+
+
+def test_prepare_model(valid_search):
+    prepared = valid_search.prepare()
+    assert prepared.model is valid_search.model
+    assert prepared.index is valid_search.index
+    assert prepared.consistent == valid_search.consistent
+
+
+def test_prepare_key_for_scan(valid_search):
+    """Key isn't validated or set for a scan"""
+    valid_search.mode = "scan"
+    # Key condition isn't even on the right model
+    valid_search.key = User.joined < "now"
+    prepared = valid_search.prepare()
+    assert prepared.key is None
+
+
+def test_prepare_key_bad_condition(valid_search):
+    valid_search.key = ComplexModel.email <= "foobar"
+    with pytest.raises(InvalidKeyCondition):
+        valid_search.prepare()
+
+
+def test_prepare_key_good_condition(valid_search):
+    valid_search.key = ComplexModel.name == "bar"
+    prepared = valid_search.prepare()
+    assert prepared.key is valid_search.key
 
 
 def test_search_repr():
@@ -101,14 +158,14 @@ def test_search_repr():
         assert search_repr(cls, has_model and model, has_index and index) == expected
 
 
-def test_iterator_returns_self(engine, session):
-    iterator = simple_iter(engine, session)
+def test_iterator_returns_self(simple_iter):
+    iterator = simple_iter()
     assert iterator is iter(iterator)
 
 
-def test_iterator_reset(engine, session):
+def test_iterator_reset(simple_iter):
     """reset clears buffer, count, scanned, exhausted, yielded"""
-    iterator = simple_iter(engine, session)
+    iterator = simple_iter()
 
     # Pretend we've stepped the iterator a few times
     iterator.yielded = 8
@@ -124,14 +181,14 @@ def test_iterator_reset(engine, session):
     assert iterator.count == 0
     assert iterator.scanned == 0
     assert len(iterator.buffer) == 0
-    assert not iterator._exhausted
+    assert not iterator.exhausted
 
 
 @pytest.mark.parametrize("limit", [None, 1])
 @pytest.mark.parametrize("yielded", [0, 1, 2])
 @pytest.mark.parametrize("buffer_size", [0, 1])
 @pytest.mark.parametrize("has_tokens", [False, True])
-def test_iterator_exhausted(engine, session, limit, yielded, buffer_size, has_tokens):
+def test_iterator_exhausted(simple_iter, limit, yielded, buffer_size, has_tokens):
     """Various states for the buffer's limit, yielded, _exhausted, and buffer.
 
     Exhausted if either:
@@ -140,7 +197,7 @@ def test_iterator_exhausted(engine, session, limit, yielded, buffer_size, has_to
 
     Any other combination of states is not exhausted.
     """
-    iterator = simple_iter(engine, session)
+    iterator = simple_iter()
 
     iterator.limit = limit
     iterator.yielded = yielded
@@ -151,9 +208,9 @@ def test_iterator_exhausted(engine, session, limit, yielded, buffer_size, has_to
     assert iterator.exhausted == should_be_exhausted
 
 
-def test_iterator_next_limit_reached(engine, session):
+def test_iterator_next_limit_reached(simple_iter):
     """If the iterator has yielded >= limit, next raises (regardless of buffer, continue tokens)"""
-    iterator = simple_iter(engine, session)
+    iterator = simple_iter()
 
     # Put something in the buffer so that isn't the cause of StopIteration
     iterator.buffer.append(True)
@@ -167,7 +224,7 @@ def test_iterator_next_limit_reached(engine, session):
     assert next(iterator, None) is None
 
 
-def test_next_states(engine, session):
+def test_next_states(simple_iter, session):
     """This monster tests all of the buffer management in SearchIterator.__next__"""
 
     # Here are the possible boundaries for pagination:
@@ -200,7 +257,7 @@ def test_next_states(engine, session):
         3) Advance the iterator until it raises StopIteration.  Each step, make sure the iterator is only
            calling dynamodb when the buffer is empty, and that it follows continue tokens on empty pages.
         """
-        iterator = simple_iter(engine, session)
+        iterator = simple_iter()
         # VERY IMPORTANT!  Without the reset, calls from
         # the previous chain will count against this chain.
         session.search_items.reset_mock()
@@ -220,8 +277,8 @@ def test_next_states(engine, session):
 
 
 @pytest.mark.parametrize("chain", [[1], [0, 1], [1, 0], [2, 0]])
-def test_first_success(engine, session, chain):
-    iterator = simple_iter(engine, session)
+def test_first_success(simple_iter, engine, session, chain):
+    iterator = simple_iter()
     item_count = sum(chain)
     session.search_items.side_effect = build_responses(chain, items=list(range(item_count)))
 
@@ -232,8 +289,8 @@ def test_first_success(engine, session, chain):
 
 
 @pytest.mark.parametrize("chain", [[0], [0, 0]])
-def test_first_failure(engine, session, chain):
-    iterator = simple_iter(engine, session)
+def test_first_failure(simple_iter, engine, session, chain):
+    iterator = simple_iter()
     session.search_items.side_effect = build_responses(chain)
 
     with pytest.raises(ConstraintViolation):
@@ -242,8 +299,8 @@ def test_first_failure(engine, session, chain):
 
 
 @pytest.mark.parametrize("chain", [[1], [0, 1], [1, 0]])
-def test_one_success(engine, session, chain):
-    iterator = simple_iter(engine, session)
+def test_one_success(simple_iter, engine, session, chain):
+    iterator = simple_iter()
     one = Sentinel("one")
     session.search_items.side_effect = build_responses(chain, items=[one])
 
@@ -254,8 +311,8 @@ def test_one_success(engine, session, chain):
 
 
 @pytest.mark.parametrize("chain", [[0], [0, 0], [2], [2, 0], [1, 1], [0, 2]])
-def test_one_failure(engine, session, chain):
-    iterator = simple_iter(engine, session)
+def test_one_failure(simple_iter, engine, session, chain):
+    iterator = simple_iter()
     session.search_items.side_effect = build_responses(chain)
 
     with pytest.raises(ConstraintViolation):
@@ -266,8 +323,8 @@ def test_one_failure(engine, session, chain):
 
 
 @pytest.mark.parametrize("cls", [ScanIterator, QueryIterator])
-def test_model_iterator_unpacks(engine, session, cls):
-    iterator = simple_iter(engine, session, cls=cls)
+def test_model_iterator_unpacks(simple_iter, engine, session, cls):
+    iterator = simple_iter(cls=cls)
     iterator.projected = {User.name, User.joined}
 
     attrs = {"name": {"S": "numberoverzero"}}

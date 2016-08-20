@@ -239,13 +239,13 @@ def test_search_projection_is_required(model, index, strict, empty_projection):
 @pytest.mark.parametrize("model, index", all_permutations)
 @pytest.mark.parametrize("strict", [False, True])
 def test_search_projection_is_count(model, index, strict):
-    assert validate_search_projection(model, index, strict, projection="count") == [None, None]
+    assert validate_search_projection(model, index, strict, projection="count") is None
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
 @pytest.mark.parametrize("strict", [False, True])
 def test_search_projection_all(model, index, strict):
-    projected, available = validate_search_projection(model, index, strict, projection="all")
+    projected = validate_search_projection(model, index, strict, projection="all")
 
     if not index:
         # Model searches don't care about strict
@@ -263,7 +263,6 @@ def test_search_projection_all(model, index, strict):
                 expected = model.Meta.columns
 
     assert projected == expected
-    assert available == expected
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
@@ -296,10 +295,9 @@ def test_search_projection_includes_non_projected_column(model, index, strict, a
         projection = [model.model_hash, model.not_projected]
 
     if should_succeed:
-        projected, available = validate_search_projection(
+        projected = validate_search_projection(
             model, index, strict, projection=projection)
         assert projected == [model.model_hash, model.not_projected]
-        assert set(available) == model.Meta.columns
 
     else:
         with pytest.raises(InvalidProjection):

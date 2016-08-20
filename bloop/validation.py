@@ -45,12 +45,12 @@ def validate_search_projection(model, index, strict, projection):
     if not projection:
         raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
     if projection == "count":
-        return [None, None]
+        return None
 
     available_columns = available_columns_for(model, index, strict)
 
     if projection == "all":
-        return available_columns, available_columns
+        return available_columns
 
     # Keep original around for error messages
     original_projection = projection
@@ -76,7 +76,7 @@ def validate_search_projection(model, index, strict, projection):
 
     # Must be subset of the available columns
     if set(projection) <= available_columns:
-        return projection, available_columns
+        return projection
 
     raise InvalidProjection(
         "{!r} includes columns that are not available for {!r}.".format(

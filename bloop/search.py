@@ -1,11 +1,16 @@
 import collections
 
-from .exceptions import ConstraintViolation, UnknownSearchMode
+from .exceptions import ConstraintViolation
 from .expressions import render
 from .models import GlobalSecondaryIndex, available_columns_for
 from .tracking import sync
 from .util import unpack_from_dynamodb
-from .validation import validate_filter_condition, validate_key_condition, validate_search_projection
+from .validation import (
+    validate_filter_condition,
+    validate_key_condition,
+    validate_search_mode,
+    validate_search_projection
+)
 
 __all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanIterator", "QueryIterator"]
 
@@ -112,9 +117,8 @@ class PreparedSearch:
     def prepare_session(self, engine, session, mode):
         self.engine = engine
         self.session = session
-        if mode not in {"query", "scan"}:
-            raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
         self.mode = mode
+        validate_search_mode(mode)
         self._iterator_cls = ScanIterator if mode == "scan" else QueryIterator
 
     def prepare_model(self, model, index, consistent):

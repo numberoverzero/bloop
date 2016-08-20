@@ -1,13 +1,14 @@
 import boto3
 import declare
 
-from .exceptions import AbstractModelError, InvalidModel, MissingKey, MissingObjects, UnboundModel, UnknownType
+from .exceptions import MissingKey, MissingObjects
 from .expressions import render
-from .models import Index, ModelMetaclass
+from .models import Index
 from .search import Query, Scan
 from .session import SessionWrapper
 from .tracking import clear, is_model_validated, sync
 from .util import missing, walk_subclasses, signal, unpack_from_dynamodb
+from .validation import validate_not_abstract, fail_unknown, validate_is_model
 
 __all__ = ["Engine", "before_create_table", "model_bound", "model_validated"]
 
@@ -48,24 +49,6 @@ def dump_key(engine, obj):
     return key
 
 
-def raise_on_abstract(*objs, cls=False):
-    for obj in objs:
-        if obj.Meta.abstract:
-            cls = obj if cls else obj.__class__
-            raise AbstractModelError("{!r} is abstract.".format(cls.__name__))
-
-
-def raise_on_unknown(model, from_declare):
-    # Best-effort check for a more helpful message
-    if isinstance(model, ModelMetaclass):
-        msg = "{!r} is not bound.  Did you forget to call engine.bind?"
-        raise UnboundModel(msg.format(model.__name__)) from from_declare
-    else:
-        msg = "{!r} is not a registered Type."
-        obj = model.__name__ if hasattr(model, "__name__") else model
-        raise UnknownType(msg.format(obj)) from from_declare
-
-
 class Engine:
     def __init__(self, session=None, type_engine=None):
         # Unique namespace so the type engine for multiple bloop Engines
@@ -78,20 +61,19 @@ class Engine:
         try:
             return context["engine"].type_engine.dump(model, obj, context=context, **kwargs)
         except declare.DeclareException as from_declare:
-            raise_on_unknown(model, from_declare)
+            fail_unknown(model, from_declare)
 
     def _load(self, model, value, context=None, **kwargs):
         context = context or {"engine": self}
         try:
             return context["engine"].type_engine.load(model, value, context=context, **kwargs)
         except declare.DeclareException as from_declare:
-            raise_on_unknown(model, from_declare)
+            fail_unknown(model, from_declare)
 
     def bind(self, base):
         """Create tables for all models subclassing base"""
         # Make sure we're looking at models
-        if not isinstance(base, ModelMetaclass):
-            raise InvalidModel("The base class must subclass BaseModel.")
+        validate_is_model(base)
 
         # whether the model's typedefs should be registered, and
         # whether the model should be eligible for validation
@@ -123,7 +105,7 @@ class Engine:
 
     def delete(self, *objs, condition=None, atomic=False):
         objs = set(objs)
-        raise_on_abstract(*objs)
+        validate_not_abstract(*objs)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
             atomic = atomic and obj or None
@@ -158,7 +140,7 @@ class Engine:
         engine.load([hash_only, hash_and_range])
         """
         objs = set(objs)
-        raise_on_abstract(*objs)
+        validate_not_abstract(*objs)
 
         table_index, object_index, request = {}, {}, {}
 
@@ -205,7 +187,7 @@ class Engine:
             model, index = model_or_index.model, model_or_index
         else:
             model, index = model_or_index, None
-        raise_on_abstract(model, cls=True)
+        validate_not_abstract(model)
         q = Query(
             engine=self, session=self.session, model=model, index=index, key=key, filter=filter,
             projection=projection, limit=limit, strict=strict, consistent=consistent, forward=forward)
@@ -213,7 +195,7 @@ class Engine:
 
     def save(self, *objs, condition=None, atomic=False):
         objs = set(objs)
-        raise_on_abstract(*objs)
+        validate_not_abstract(*objs)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
 
@@ -229,7 +211,7 @@ class Engine:
             model, index = model_or_index.model, model_or_index
         else:
             model, index = model_or_index, None
-        raise_on_abstract(model, cls=True)
+        validate_not_abstract(model)
         s = Scan(
             engine=self, session=self.session, model=model, index=index, filter=filter,
             projection=projection, limit=limit, strict=strict, consistent=consistent)

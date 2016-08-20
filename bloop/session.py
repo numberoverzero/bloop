@@ -1,8 +1,9 @@
 import collections
 import botocore.exceptions
 
-from .exceptions import BloopException, ConstraintViolation, TableMismatch, UnknownSearchMode
+from .exceptions import BloopException, ConstraintViolation, TableMismatch
 from .util import Sentinel, ordered
+from .validation import validate_search_mode
 ready = Sentinel("ready")
 
 __all__ = ["SessionWrapper"]
@@ -99,12 +100,8 @@ def wrapped_delete_item(dynamodb_client, item):
 
 
 def wrapped_search(dynamodb_client, mode, request):
-    if mode == "scan":
-        method = dynamodb_client.scan
-    elif mode == "query":
-        method = dynamodb_client.query
-    else:
-        raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
+    validate_search_mode(mode)
+    method = getattr(dynamodb_client, mode)
     try:
         return method(**request)
     except botocore.exceptions.ClientError as error:

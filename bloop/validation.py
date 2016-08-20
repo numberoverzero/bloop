@@ -1,8 +1,22 @@
 import declare
 
 from .condition import And, BeginsWith, Between, Comparison, iter_columns
-from .models import Column, available_columns_for
-from .exceptions import InvalidFilterCondition, InvalidKeyCondition, InvalidProjection
+from .models import Column, ModelMetaclass, available_columns_for
+from .exceptions import (
+    AbstractModelError,
+    InvalidFilterCondition,
+    InvalidKeyCondition,
+    InvalidModel,
+    InvalidProjection,
+    UnboundModel,
+    UnknownSearchMode,
+    UnknownType
+)
+
+
+def validate_search_mode(mode):
+    if mode not in {"query", "scan"}:
+        raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
 
 
 def validate_key_condition(model, index, key):
@@ -98,6 +112,19 @@ def validate_filter_condition(condition, available_columns, column_blacklist):
             raise InvalidFilterCondition("{!r} can not be included in the filter condition.".format(column))
 
 
+def validate_not_abstract(*objs):
+    for obj in objs:
+        if obj.Meta.abstract:
+            cls = obj if isinstance(obj, type) else obj.__class__
+            raise AbstractModelError("{!r} is abstract.".format(cls.__name__))
+
+
+def validate_is_model(model):
+    if not isinstance(model, ModelMetaclass):
+        cls = model if isinstance(model, type) else model.__class__
+        raise InvalidModel("{!r} does not subclass BaseModel.".format(cls.__name__))
+
+
 def check_hash_key(query_on, key):
     """Only allows Comparison("==") against query_on.hash_key"""
     return (
@@ -124,6 +151,17 @@ def fail_bad_hash(query_on):
 def fail_bad_range(query_on):
     msg = "Invalid key condition for a Query on {!r}."
     raise InvalidKeyCondition(msg.format(simple_query(query_on)))
+
+
+def fail_unknown(model, from_declare):
+    # Best-effort check for a more helpful message
+    if isinstance(model, ModelMetaclass):
+        msg = "{!r} is not bound.  Did you forget to call engine.bind?"
+        raise UnboundModel(msg.format(model.__name__)) from from_declare
+    else:
+        msg = "{!r} is not a registered Type."
+        obj = model.__name__ if hasattr(model, "__name__") else model
+        raise UnknownType(msg.format(obj)) from from_declare
 
 
 def simple_query(query_on):

@@ -542,11 +542,11 @@ def test_delete_atomic_condition(engine, session):
 
 def test_query(engine):
     """ Engine.query supports model and index-based queries """
-    index_query = engine.query(User.by_email)
+    index_query = engine.query(User.by_email, key=User.by_email.hash_key == "placeholder")
     assert index_query.model is User
     assert index_query.index is User.by_email
 
-    model_query = engine.query(User)
+    model_query = engine.query(User, key=User.Meta.hash_key == "other")
     assert model_query.model is User
     assert model_query.index is None
 

@@ -22,29 +22,6 @@ def search_repr(cls, model, index):
         else:
             return "<{}[None]>".format(cls.__name__)
 
-# TODO
-# swap Engine.scan, Engine.query to use Query, Scan.
-#
-# User syntax will look like this:
-#
-#     scan = engine.scan(
-#         User,
-#         key=(User.name == "foo"),
-#         filter=(User.created_on > yesterday),
-#         projection={User.data, User.final},
-#         strict=False
-#     )
-#
-# Engine will do the following:
-#
-# def scan(...):
-#     s = Scan(
-#         ...
-#         ...
-#     )
-#     return iter(s.prepare())
-#
-
 
 class Search:
     mode = None
@@ -272,8 +249,7 @@ class SearchIterator:
 
         while (not self._exhausted) and len(self.buffer) == 0:
             response = self.session.search_items(self.mode, self.request)
-
-            continuation_token = self.request["ExclusiveStartKey"] = response["LastEvaluatedKey"]
+            continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
             self._exhausted = not continuation_token
 
             self.count += response["Count"]

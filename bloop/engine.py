@@ -3,8 +3,8 @@ import declare
 
 from .exceptions import AbstractModelError, InvalidModel, MissingKey, MissingObjects, UnboundModel, UnknownType
 from .expressions import render
-from .filter import Filter
 from .models import Index, ModelMetaclass
+from .search import Query, Scan
 from .session import SessionWrapper
 from .tracking import clear, is_model_validated, sync
 from .util import missing, walk_subclasses, signal, unpack_from_dynamodb
@@ -199,17 +199,17 @@ class Engine:
                     not_loaded.update(index_set)
             raise MissingObjects("Failed to load some objects.", objects=not_loaded)
 
-    def query(self, model_or_index, consistent=False, strict=True):
+    def query(self, model_or_index, key=None, filter=None, projection="all", limit=None, strict=True,
+              consistent=False, forward=True, **kwargs):
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
-            select = "projected"
         else:
             model, index = model_or_index, None
-            select = "all"
         raise_on_abstract(model, cls=True)
-        return Filter(
-            engine=self, mode="query", model=model, index=index, strict=strict, select=select,
-            consistent=consistent)
+        q = Query(
+            engine=self, session=self.session, model=model, index=index, key=key, filter=filter,
+            projection=projection, limit=limit, strict=strict, consistent=consistent, forward=forward)
+        return iter(q.prepare())
 
     def save(self, *objs, condition=None, atomic=False):
         objs = set(objs)
@@ -224,14 +224,13 @@ class Engine:
             self.session.save_item(item)
             sync(obj, self)
 
-    def scan(self, model_or_index, consistent=False, strict=True):
+    def scan(self, model_or_index, filter=None, projection="all", limit=None, strict=True, consistent=False, **kwargs):
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
-            select = "projected"
         else:
             model, index = model_or_index, None
-            select = "all"
         raise_on_abstract(model, cls=True)
-        return Filter(
-            engine=self, mode="scan", model=model, index=index, strict=strict, select=select,
-            consistent=consistent)
+        s = Scan(
+            engine=self, session=self.session, model=model, index=index, filter=filter,
+            projection=projection, limit=limit, strict=strict, consistent=consistent)
+        return iter(s.prepare())

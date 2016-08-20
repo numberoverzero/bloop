@@ -63,7 +63,7 @@ def cleanup_objects(engine):
 
     # TODO track bound models w/model_bound signal (TODO), then use boto3 to scan/delete by Meta.table_name
     # Running tests individually may break if the User table isn't bound as part of that test
-    users = list(engine.scan(User).build())
+    users = list(engine.scan(User))
     engine.delete(*users)
 
 

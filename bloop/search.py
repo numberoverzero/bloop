@@ -191,7 +191,7 @@ class PreparedSearch:
             if isinstance(self.index, GlobalSecondaryIndex):
                 del request["ConsistentRead"]
 
-        if self.mode == "count":
+        if self._projection_mode == "count":
             request["Select"] = "COUNT"
             projected = None
         else:

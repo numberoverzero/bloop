@@ -194,6 +194,50 @@ def test_prepare_constraints(valid_search):
     assert prepared.forward is False
 
 
+@pytest.mark.parametrize("mode, cls", [("query", QueryIterator), ("scan", ScanIterator)])
+def test_prepare_iter(valid_search, mode, cls):
+    valid_search.mode = mode
+    prepared = valid_search.prepare()
+    it = iter(prepared)
+    assert isinstance(it, cls)
+
+
+@pytest.mark.parametrize("mode, include", [("scan", False), ("query", True)])
+def test_prepare_request_forward(valid_search, mode, include):
+    valid_search.mode = mode
+    prepared = valid_search.prepare()
+    assert ("ScanIndexForward" in prepared._request) is include
+
+
+@pytest.mark.parametrize("index, consistent", [(ComplexModel.by_joined, True), (ComplexModel.by_email, False)])
+def test_prepare_request_consistent(valid_search, index, consistent):
+    valid_search.index = index
+    # So we don't have to fix the key condition
+    valid_search.mode = "scan"
+    prepared = valid_search.prepare()
+    assert ("ConsistentRead" in prepared._request) is consistent
+
+
+def test_prepare_request_count(valid_search):
+    """count has Select=COUNT and no entry for ProjectionExpression"""
+    valid_search.projection = "count"
+    prepared = valid_search.prepare()
+    assert prepared._request["Select"] == "COUNT"
+    assert "ProjectionExpression" not in prepared._request["Select"]
+
+
+@pytest.mark.parametrize("index", [ComplexModel.by_joined, ComplexModel.by_email])
+def test_prepare_request_specific(valid_search, index):
+    valid_search.index = index
+    valid_search.projection = {ComplexModel.email}
+    # So we don't have to fix the key condition
+    valid_search.mode = "scan"
+
+    prepared = valid_search.prepare()
+    assert prepared._request["Select"] == "SPECIFIC_ATTRIBUTES"
+    assert prepared._request["ProjectionExpression"] == "#n0"
+
+
 def test_search_repr():
     cls = type("Class", tuple(), {})
     model = type("Model", tuple(), {})

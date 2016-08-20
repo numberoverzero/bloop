@@ -8,10 +8,12 @@ from bloop.condition import (
     Contains, In, Not, Or,
     comparison_aliases
 )
-from bloop.exceptions import InvalidKeyCondition, InvalidProjection
+from bloop.exceptions import InvalidFilterCondition, InvalidKeyCondition, InvalidProjection
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.types import Integer
-from bloop.validation import validate_key_condition, validate_search_projection
+from bloop.validation import validate_filter_condition, validate_key_condition, validate_search_projection
+
+from ..helpers.models import ComplexModel
 
 all_conditions = {
     And, AttributeExists, BeginsWith, Between,
@@ -303,3 +305,30 @@ def test_search_projection_includes_non_projected_column(model, index, strict, a
         with pytest.raises(InvalidProjection):
             validate_search_projection(
                 model, index, strict, projection=projection)
+
+
+def test_validate_no_filter():
+    """Filter can be None"""
+    validate_filter_condition(None, ComplexModel.Meta.columns, set())
+
+
+def test_validate_filter_not_available():
+    """The condition uses a column that's not available"""
+    with pytest.raises(InvalidFilterCondition):
+        validate_filter_condition(ComplexModel.date == "now", set(), set())
+
+
+def test_validate_filter_blacklisted():
+    """The condition uses a column that's on the blacklist"""
+    with pytest.raises(InvalidFilterCondition):
+        validate_filter_condition(ComplexModel.date == "now", ComplexModel.Meta.columns, {ComplexModel.date})
+
+
+def test_validate_filter_success():
+    """All of the columns in the condition are available and not blacklisted"""
+    condition = (
+        (ComplexModel.date >= "now") &
+        (ComplexModel.email.contains("@")) &
+        ((ComplexModel.joined.is_(None)) | (ComplexModel.name.in_(["foo", "bar"])))
+    )
+    validate_filter_condition(condition, ComplexModel.Meta.columns, set())

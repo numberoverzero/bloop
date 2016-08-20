@@ -1,8 +1,8 @@
 import declare
 
-from .condition import And, BeginsWith, Between, Comparison
+from .condition import And, BeginsWith, Between, Comparison, iter_columns
 from .models import Column, available_columns_for
-from .exceptions import InvalidKeyCondition, InvalidProjection
+from .exceptions import InvalidFilterCondition, InvalidKeyCondition, InvalidProjection
 
 
 def validate_key_condition(model, index, key):
@@ -83,14 +83,19 @@ def validate_search_projection(model, index, strict, projection):
             original_projection, simple_query(index or model.Meta)))
 
 
-def validate_filter_condition(condition, available_columns):
+def validate_filter_condition(condition, available_columns, column_blacklist):
     if condition is None:
         return
-    # Extract columns from condition.  They must
-    # be a subset of the projected_columns
 
-    # TODO re-include condition.iter_columns to make this way easier.
-    pass
+    for column in iter_columns(condition):
+        # All of the columns in the condition must be in the available columns
+        if column not in available_columns:
+            raise InvalidFilterCondition(
+                "{!r} is not available for the projection.".format(column))
+        # If this is a query, the condition can't contain the hash or range keys.
+        # Those are passed in as the column_blacklist.
+        if column in column_blacklist:
+            raise InvalidFilterCondition("{!r} can not be included in the filter condition.".format(column))
 
 
 def check_hash_key(query_on, key):

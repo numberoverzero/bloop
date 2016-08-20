@@ -1,17 +1,19 @@
 import collections.abc
 
 import declare
+
 from .condition import (
     AttributeExists,
     BeginsWith,
     Between,
     Comparison,
     Contains,
-    In
+    In,
 )
 from .exceptions import InvalidIndex, InvalidModel
 from .tracking import mark
-from .util import missing, signal, unpack_from_dynamodb, printable_column_name
+from .util import missing, printable_column_name, signal, unpack_from_dynamodb
+
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex", "Index", "model_created"]
 

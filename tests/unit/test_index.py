@@ -1,5 +1,11 @@
 import pytest
-from bloop.models import BaseModel, Column, Index, GlobalSecondaryIndex, LocalSecondaryIndex
+from bloop.models import (
+    BaseModel,
+    Column,
+    GlobalSecondaryIndex,
+    Index,
+    LocalSecondaryIndex,
+)
 from bloop.types import String
 
 from ..helpers.models import User

@@ -9,8 +9,9 @@ from .validation import (
     validate_filter_condition,
     validate_key_condition,
     validate_search_mode,
-    validate_search_projection
+    validate_search_projection,
 )
+
 
 __all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanIterator", "QueryIterator"]
 

@@ -1,7 +1,12 @@
 import gc
-import pytest
 
-from bloop.util import Sentinel, WeakDefaultDictionary, walk_subclasses, unpack_from_dynamodb
+import pytest
+from bloop.util import (
+    Sentinel,
+    WeakDefaultDictionary,
+    unpack_from_dynamodb,
+    walk_subclasses,
+)
 
 from ..helpers.models import User
 

@@ -1,19 +1,39 @@
 import functools
-import pytest
 
+import pytest
 from bloop.condition import (
-    And, AttributeExists,
-    BeginsWith, Between,
-    Comparison, Condition,
-    Contains, In, Not, Or,
-    comparison_aliases
+    And,
+    AttributeExists,
+    BeginsWith,
+    Between,
+    Comparison,
+    Condition,
+    Contains,
+    In,
+    Not,
+    Or,
+    comparison_aliases,
 )
-from bloop.exceptions import InvalidFilterCondition, InvalidKeyCondition, InvalidProjection
-from bloop.models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
+from bloop.exceptions import (
+    InvalidFilterCondition,
+    InvalidKeyCondition,
+    InvalidProjection,
+)
+from bloop.models import (
+    BaseModel,
+    Column,
+    GlobalSecondaryIndex,
+    LocalSecondaryIndex,
+)
 from bloop.types import Integer
-from bloop.validation import validate_filter_condition, validate_key_condition, validate_search_projection
+from bloop.validation import (
+    validate_filter_condition,
+    validate_key_condition,
+    validate_search_projection,
+)
 
 from ..helpers.models import ComplexModel
+
 
 all_conditions = {
     And, AttributeExists, BeginsWith, Between,

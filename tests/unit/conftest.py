@@ -1,8 +1,8 @@
+from unittest.mock import Mock
+
 import boto3
 import pytest
-
-from unittest.mock import Mock
-from bloop import Engine, BaseModel
+from bloop import BaseModel, Engine
 from bloop.session import SessionWrapper
 
 

@@ -1,7 +1,6 @@
 import declare
 
 from .condition import And, BeginsWith, Between, Comparison, iter_columns
-from .models import Column, ModelMetaclass, available_columns_for
 from .exceptions import (
     AbstractModelError,
     InvalidFilterCondition,
@@ -10,8 +9,9 @@ from .exceptions import (
     InvalidProjection,
     UnboundModel,
     UnknownSearchMode,
-    UnknownType
+    UnknownType,
 )
+from .models import Column, ModelMetaclass, available_columns_for
 
 
 def validate_search_mode(mode):

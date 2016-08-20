@@ -13,13 +13,19 @@ from bloop.condition import (
     In,
     Not,
     Or,
-    iter_columns
+    iter_columns,
 )
 from bloop.expressions import ConditionRenderer, render
 from bloop.models import BaseModel, Column
 from bloop.types import UUID, Integer, TypedMap
 
-from ..helpers.models import ComplexModel, Document, DocumentType, User, conditions
+from ..helpers.models import (
+    ComplexModel,
+    Document,
+    DocumentType,
+    User,
+    conditions,
+)
 
 
 def test_duplicate_name_refs(engine):

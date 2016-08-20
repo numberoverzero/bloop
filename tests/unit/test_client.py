@@ -1,15 +1,15 @@
-import botocore.exceptions
 import uuid
 from unittest.mock import Mock
 
+import botocore.exceptions
 import pytest
-from bloop.exceptions import (
-    BloopException,
-    ConstraintViolation,
-    TableMismatch,
-)
+from bloop.exceptions import BloopException, ConstraintViolation, TableMismatch
 from bloop.models import Column
-from bloop.session import SessionWrapper, expected_table_description, BATCH_GET_ITEM_CHUNK_SIZE
+from bloop.session import (
+    BATCH_GET_ITEM_CHUNK_SIZE,
+    SessionWrapper,
+    expected_table_description,
+)
 from bloop.types import String
 from bloop.util import ordered
 

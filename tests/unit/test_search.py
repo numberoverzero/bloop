@@ -1,14 +1,27 @@
 import collections
+
 import pytest
-from bloop.exceptions import ConstraintViolation, InvalidFilterCondition, InvalidKeyCondition, UnknownSearchMode
+from bloop.exceptions import (
+    ConstraintViolation,
+    InvalidFilterCondition,
+    InvalidKeyCondition,
+    UnknownSearchMode,
+)
 from bloop.search import (
-    Search, Scan, Query, SearchIterator,
-    SearchModelIterator, ScanIterator,
-    QueryIterator, PreparedSearch, search_repr
+    PreparedSearch,
+    Query,
+    QueryIterator,
+    Scan,
+    ScanIterator,
+    Search,
+    SearchIterator,
+    SearchModelIterator,
+    search_repr,
 )
 from bloop.util import Sentinel
 
 from ..helpers.models import ComplexModel, User
+
 
 proceed = Sentinel("proceed")
 

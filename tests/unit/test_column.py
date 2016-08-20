@@ -1,10 +1,12 @@
 import operator
+
 import pytest
 from bloop.condition import AttributeExists, BeginsWith, Between, Contains, In
 from bloop.models import Column
 from bloop.types import Integer
 
 from ..helpers.models import User
+
 
 operations = [
     (operator.ne, "!="),

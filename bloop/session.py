@@ -1,9 +1,12 @@
 import collections
+
 import botocore.exceptions
 
 from .exceptions import BloopException, ConstraintViolation, TableMismatch
 from .util import Sentinel, ordered
 from .validation import validate_search_mode
+
+
 ready = Sentinel("ready")
 
 __all__ = ["SessionWrapper"]

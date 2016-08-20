@@ -1,5 +1,7 @@
-import blinker
 import weakref
+
+import blinker
+
 
 __all__ = [
     "Sentinel",

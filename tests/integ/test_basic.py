@@ -1,6 +1,12 @@
 """Basic scenarios, symmetric tests"""
 import pytest
-from bloop import BaseModel, Column, GlobalSecondaryIndex, Integer, MissingObjects
+from bloop import (
+    BaseModel,
+    Column,
+    GlobalSecondaryIndex,
+    Integer,
+    MissingObjects,
+)
 
 from .models import User
 

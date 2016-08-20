@@ -2,9 +2,9 @@ import pytest
 from bloop.session import (
     create_table_request,
     expected_table_description,
+    ready,
     sanitized_table_description,
     simple_table_status,
-    ready
 )
 from bloop.util import ordered
 

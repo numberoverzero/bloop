@@ -8,7 +8,13 @@ from .exceptions import (
     TableMismatch,
     UnboundModel,
 )
-from .models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex, model_created
+from .models import (
+    BaseModel,
+    Column,
+    GlobalSecondaryIndex,
+    LocalSecondaryIndex,
+    model_created,
+)
 from .types import (
     UUID,
     Binary,
@@ -22,6 +28,7 @@ from .types import (
     String,
     TypedMap,
 )
+
 
 __all__ = [
     "AbstractModelError", "BaseModel", "Boolean", "Binary", "BloopException", "Column",

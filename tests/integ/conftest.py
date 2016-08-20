@@ -1,13 +1,14 @@
-import blinker
-import boto3
 import itertools
-import pytest
 import random
 import string
 
+import blinker
+import boto3
+import pytest
 from bloop import Engine, before_create_table
 
 from .models import User
+
 
 session = boto3.Session(region_name="us-west-2")
 

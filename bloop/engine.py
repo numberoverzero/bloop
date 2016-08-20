@@ -7,8 +7,9 @@ from .models import Index
 from .search import Query, Scan
 from .session import SessionWrapper
 from .tracking import clear, is_model_validated, sync
-from .util import missing, walk_subclasses, signal, unpack_from_dynamodb
-from .validation import validate_not_abstract, fail_unknown, validate_is_model
+from .util import missing, signal, unpack_from_dynamodb, walk_subclasses
+from .validation import fail_unknown, validate_is_model, validate_not_abstract
+
 
 __all__ = ["Engine", "before_create_table", "model_bound", "model_validated"]
 

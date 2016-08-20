@@ -4,6 +4,7 @@ from bloop.condition import AttributeExists, BeginsWith, Between, Contains, In
 from bloop.models import Column
 from bloop.types import Integer
 
+from ..helpers.models import User
 
 operations = [
     (operator.ne, "!="),
@@ -95,3 +96,28 @@ def test_dynamo_name():
     column = Column(Integer, name="foo")
     column.model_name = "bar"
     assert column.dynamo_name == "foo"
+
+
+def test_repr():
+    column = Column(Integer, name="f")
+    column.model = User
+    column.model_name = "foo"
+    assert repr(column) == "<Column[User.foo]>"
+
+    column.hash_key = True
+    assert repr(column) == "<Column[User.foo=hash]>"
+
+    column.hash_key = False
+    column.range_key = True
+    assert repr(column) == "<Column[User.foo=range]>"
+
+
+def test_repr_path():
+    column = Column(Integer, name="f")
+    column.model = User
+    column.model_name = "foo"
+
+    assert repr(column[3]["foo"]["bar"][2][1]) == "<Column[User.foo[3].foo.bar[2][1]]>"
+
+    column.hash_key = True
+    assert repr(column[3]["foo"]["bar"][2][1]) == "<Column[User.foo[3].foo.bar[2][1]=hash]>"

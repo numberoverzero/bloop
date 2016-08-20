@@ -67,6 +67,11 @@ def test_sentinel_uniqueness():
     assert sentinel is same_sentinel
 
 
+def test_sentinel_repr():
+    foo = Sentinel("foo")
+    assert repr(foo) == "<Sentinel[foo]>"
+
+
 def test_unpack_no_engine(unpack_kwargs):
     del unpack_kwargs["engine"]
     del unpack_kwargs["context"]["engine"]

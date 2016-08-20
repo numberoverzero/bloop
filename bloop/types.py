@@ -46,10 +46,15 @@ class Type(declare.TypeDefinition):
     def dynamo_dump(self, value, *, context, **kwargs):
         raise NotImplementedError
 
-    def __repr__(self, *a, **kw):  # pragma: no cover
+    def __repr__(self):
+        # Render class python types by name
+        python_type = self.python_type
+        if isinstance(python_type, type):
+            python_type = python_type.__name__
+
         return "<{}[{}:{}]>".format(
             self.__class__.__name__,
-            self.backing_type, self.python_type
+            self.backing_type, python_type
         )
 
 

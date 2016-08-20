@@ -41,7 +41,7 @@ class Search:
         self.consistent = consistent
         self.forward = forward
 
-    def __repr__(self):  # pragma: no cover
+    def __repr__(self):
         return search_repr(self.__class__, self.model, self.index)
 
     def prepare(self):
@@ -178,7 +178,7 @@ class PreparedSearch:
         rendered = render(self.engine, filter=self.filter, select=projected, key=self.key)
         request.update(rendered)
 
-    def __repr__(self):  # pragma: no cover
+    def __repr__(self):
         return search_repr(self.__class__, self.model, self.index)
 
     def __iter__(self):
@@ -237,7 +237,7 @@ class SearchIterator:
         exhausted_buffer = self._exhausted and len(self.buffer) == 0
         return reached_limit or exhausted_buffer
 
-    def __repr__(self):  # pragma: no cover
+    def __repr__(self):
         return search_repr(self.__class__, self.model, self.index)
 
     def __iter__(self):

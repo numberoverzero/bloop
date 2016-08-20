@@ -2,6 +2,7 @@
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 
 from .exceptions import InvalidComparisonOperator
+from .util import printable_column_name
 
 __all__ = [
     "And", "AttributeExists", "BeginsWith", "Between", "Comparison",
@@ -36,22 +37,6 @@ def iter_columns(condition):
             continue
         else:  # AttributeExists, BeginsWith, Between, Comparison, Contains, In
             yield condition.column
-
-
-def printable_name(column, path):  # pragma: no cover
-    """Provided for debug output when rendering conditions"""
-    model_name = column.model.__name__
-    name = "{}.{}".format(model_name, column.model_name)
-    if path:
-        pieces = []
-        for segment in path:
-            if isinstance(segment, str):
-                fmt = '["{!r}"]'
-            else:
-                fmt = '[{!r}]'
-            pieces.append(fmt.format(segment))
-        name += "".join(pieces)
-    return name
 
 
 class _BaseCondition:
@@ -106,8 +91,8 @@ class Condition(_BaseCondition):
     def __len__(self):
         return 0
 
-    def __repr__(self):  # pragma: no cover
-        return "(<empty condition>)"
+    def __repr__(self):
+        return "<empty condition>"
 
     def __eq__(self, other):
         return isinstance(other, Condition)
@@ -124,7 +109,7 @@ class _MultiCondition(_BaseCondition):
     def __init__(self, *conditions):
         self.conditions = list(conditions)
 
-    def __repr__(self):  # pragma: no cover
+    def __repr__(self):
         joiner = " | " if self.uname == "OR" else " & "
         conditions = joiner.join(repr(c) for c in self.conditions)
         # Renders as "((condition) | )" to indicate a single-value multi
@@ -182,8 +167,8 @@ class Not(_BaseCondition):
     def __init__(self, condition):
         self.condition = condition
 
-    def __repr__(self):  # pragma: no cover
-        return "~{!r}".format(self.condition)
+    def __repr__(self):
+        return "(~{!r})".format(self.condition)
 
     def __len__(self):
         return len(self.condition)
@@ -212,9 +197,9 @@ class Comparison(_BaseCondition):
         self.value = value
         self.path = path
 
-    def __repr__(self):  # pragma: no cover
+    def __repr__(self):
         return "({} {} {!r})".format(
-            printable_name(self.column, self.path),
+            printable_column_name(self.column, self.path),
             self.comparator,
             self.value)
 
@@ -245,10 +230,10 @@ class AttributeExists(_BaseCondition):
         self.negate = negate
         self.path = path
 
-    def __repr__(self):  # pragma: no cover
-        return "{}exists({})".format(
+    def __repr__(self):
+        return "({}exists {})".format(
             "not_" if self.negate else "",
-            printable_name(self.column, self.path))
+            printable_column_name(self.column, self.path))
 
     def __eq__(self, other):
         if not isinstance(other, AttributeExists):
@@ -274,9 +259,9 @@ class BeginsWith(_BaseCondition):
         self.value = value
         self.path = path
 
-    def __repr__(self):  # pragma: no cover
-        return "begins_with({}, {!r})".format(
-            printable_name(self.column, self.path),
+    def __repr__(self):
+        return "({} begins with {!r})".format(
+            printable_column_name(self.column, self.path),
             self.value)
 
     def __eq__(self, other):
@@ -304,9 +289,9 @@ class Contains(_BaseCondition):
         self.value = value
         self.path = path
 
-    def __repr__(self):  # pragma: no cover
-        return "contains({}, {!r})".format(
-            printable_name(self.column, self.path),
+    def __repr__(self):
+        return "({} contains {!r})".format(
+            printable_column_name(self.column, self.path),
             self.value)
 
     def __eq__(self, other):
@@ -335,9 +320,9 @@ class Between(_BaseCondition):
         self.upper = upper
         self.path = path
 
-    def __repr__(self):  # pragma: no cover
-        return "between({}, {!r}, {!r})".format(
-            printable_name(self.column, self.path),
+    def __repr__(self):
+        return "({} between [{!r}, {!r}])".format(
+            printable_column_name(self.column, self.path),
             self.lower, self.upper)
 
     def __eq__(self, other):
@@ -368,9 +353,9 @@ class In(_BaseCondition):
         self.values = values
         self.path = path
 
-    def __repr__(self):  # pragma: no cover
-        return "in({}, {!r})".format(
-            printable_name(self.column, self.path),
+    def __repr__(self):
+        return "({} in {!r})".format(
+            printable_column_name(self.column, self.path),
             self.values)
 
     def __eq__(self, other):

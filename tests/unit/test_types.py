@@ -348,3 +348,16 @@ def test_typedmap(engine):
     }
     assert typedef.dynamo_dump(loaded, context={"engine": engine}) == dumped
     assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
+
+
+def test_repr():
+    typedef = Type()
+    assert repr(typedef) == "<Type[None:None]>"
+
+    # Not all python types will be classes
+    typedef.backing_type = "foo"
+    typedef.python_type = 3
+    assert repr(typedef) == "<Type[foo:3]>"
+
+    set_typedef = Set(Integer)
+    assert repr(set_typedef) == "<Set[NS:Set]>"

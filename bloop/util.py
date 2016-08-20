@@ -17,6 +17,20 @@ __signals = blinker.Namespace()
 signal = __signals.signal
 
 
+def printable_column_name(column, path):
+    """Provided for debug output when rendering conditions"""
+    model_name = column.model.__name__
+    name = "{}.{}".format(model_name, column.model_name)
+    pieces = [name]
+    if path:
+        for segment in (path or []):
+            if isinstance(segment, str):
+                pieces.append(segment)
+            else:
+                pieces[-1] += "[{}]".format(segment)
+    return ".".join(pieces)
+
+
 def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, context=None, **kwargs):
     """Push values by dynamo_name into an object"""
     context = context or {"engine": engine}
@@ -93,7 +107,7 @@ class Sentinel:
     def __init__(self, name):
         self.name = name
 
-    def __repr__(self):  # pragma: no cover
-        return "<Sentinel({})>".format(self.name)
+    def __repr__(self):
+        return "<Sentinel[{}]>".format(self.name)
 
 missing = Sentinel("missing")

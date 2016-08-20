@@ -1,6 +1,8 @@
 import pytest
-from bloop.models import BaseModel, Column, Index, LocalSecondaryIndex
+from bloop.models import BaseModel, Column, Index, GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.types import String
+
+from ..helpers.models import User
 
 
 def test_dynamo_name():
@@ -73,3 +75,30 @@ def test_lsi_delegates_throughput():
     lsi.read_units = "lsi.read_units"
     assert lsi.write_units == meta.write_units
     assert lsi.read_units == meta.read_units
+
+
+def test_repr_index():
+    index = Index(projection="all", name="f")
+    index.model = User
+    index.model_name = "by_foo"
+    assert repr(index) == "<Index[User.by_foo=all]>"
+
+    index.projection = "keys"
+    assert repr(index) == "<Index[User.by_foo=keys]>"
+
+    index.projection = "include"
+    assert repr(index) == "<Index[User.by_foo=include]>"
+
+
+def test_repr_lsi():
+    index = LocalSecondaryIndex(projection="all", range_key="key", name="f")
+    index.model = User
+    index.model_name = "by_foo"
+    assert repr(index) == "<LSI[User.by_foo=all]>"
+
+
+def test_repr_gsi():
+    index = GlobalSecondaryIndex(projection="all", hash_key="key", name="f")
+    index.model = User
+    index.model_name = "by_foo"
+    assert repr(index) == "<GSI[User.by_foo=all]>"

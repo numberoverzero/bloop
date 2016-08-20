@@ -1,7 +1,11 @@
 import collections
 import pytest
 from bloop.exceptions import ConstraintViolation, InvalidFilterCondition, InvalidKeyCondition, UnknownSearchMode
-from bloop.search import Search, SearchIterator, ScanIterator, QueryIterator, search_repr
+from bloop.search import (
+    Search, Scan, Query, SearchIterator,
+    SearchModelIterator, ScanIterator,
+    QueryIterator, PreparedSearch, search_repr
+)
 from bloop.util import Sentinel
 
 from ..helpers.models import ComplexModel, User
@@ -250,6 +254,26 @@ def test_search_repr():
         (True, True, "<Class[Model.by_gsi]>"),
     ]:
         assert search_repr(cls, has_model and model, has_index and index) == expected
+
+
+def test_reprs():
+    assert repr(Search(model=User, index=None)) == "<Search[User]>"
+    assert repr(Scan(model=User, index=User.by_email)) == "<Scan[User.by_email]>"
+    assert repr(Query(model=None, index=None)) == "<Query[None]>"
+    prepared_search = PreparedSearch()
+    prepared_search.model = None
+    prepared_search.index = User.by_email
+    assert repr(prepared_search) == "<PreparedSearch[None.by_email]>"
+
+    def iterator(cls, model, index):
+        return cls(
+            engine=None, session=None, model=model,
+            index=index, limit=None, request=None, projected=None)
+
+    assert repr(iterator(SearchIterator, User, None)) == "<SearchIterator[User]>"
+    assert repr(iterator(SearchModelIterator, User, User.by_email)) == "<SearchModelIterator[User.by_email]>"
+    assert repr(iterator(QueryIterator, None, None)) == "<QueryIterator[None]>"
+    assert repr(iterator(ScanIterator, None, User.by_email)) == "<ScanIterator[None.by_email]>"
 
 
 def test_iterator_returns_self(simple_iter):

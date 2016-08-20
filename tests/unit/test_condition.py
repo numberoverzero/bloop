@@ -2,7 +2,19 @@ import operator
 import uuid
 
 import pytest
-from bloop.condition import And, Comparison, Condition, Not, Or, iter_columns
+from bloop.condition import (
+    And,
+    AttributeExists,
+    BeginsWith,
+    Between,
+    Comparison,
+    Condition,
+    Contains,
+    In,
+    Not,
+    Or,
+    iter_columns
+)
 from bloop.expressions import ConditionRenderer, render
 from bloop.models import BaseModel, Column
 from bloop.types import UUID, Integer, TypedMap
@@ -293,3 +305,81 @@ def test_complex_iter_columns():
         ComplexModel.email
     }
     assert set(iter_columns(cycle)) == expected
+
+
+def test_condition_repr():
+    assert repr(Condition()) == "<empty condition>"
+
+
+def test_and_repr():
+    empty = Condition()
+
+    assert repr(And(empty)) == "({} &)".format(repr(empty))
+    assert repr(And(empty, empty)) == "({0} & {0})".format(repr(empty))
+
+
+def test_or_repr():
+    empty = Condition()
+
+    assert repr(Or(empty)) == "({} |)".format(repr(empty))
+    assert repr(Or(empty, empty)) == "({0} | {0})".format(repr(empty))
+
+
+def test_not_repr():
+    empty = Condition()
+
+    assert repr(Not(empty)) == "(~{})".format(repr(empty))
+
+
+def test_comparison_repr():
+    operators = ["==", "!=", "<", ">", "<=", ">="]
+    value = "foo"
+    column = User.age
+
+    for op in operators:
+        assert repr(Comparison(column, op, value)) == "(User.age {} 'foo')".format(op)
+
+
+def test_attribute_exists_repr():
+    column = User.age
+
+    assert repr(AttributeExists(column, False)) == "(exists User.age)"
+    assert repr(AttributeExists(column, True)) == "(not_exists User.age)"
+
+
+def test_begins_with_repr():
+    value = "foo"
+    column = User.age
+
+    assert repr(BeginsWith(column, value)) == "(User.age begins with 'foo')"
+
+
+def test_contains_repr():
+    value = "foo"
+    column = User.age
+
+    assert repr(Contains(column, value)) == "(User.age contains 'foo')"
+
+
+def test_between_repr():
+    lower = "3"
+    higher = 3
+    column = User.age
+
+    assert repr(Between(column, lower, higher)) == "(User.age between ['3', 3])"
+
+
+def test_in_repr():
+    values = ["foo", 3]
+    column = User.age
+
+    assert repr(In(column, values)) == "(User.age in ['foo', 3])"
+
+
+def test_path_repr():
+    column = User.age
+    path = ["foo", 3, "bar", "baz", 2, 1]
+
+    condition = Comparison(column, ">", 0, path=path)
+
+    assert repr(condition) == "(User.age.foo[3].bar.baz[2][1] > 0)"

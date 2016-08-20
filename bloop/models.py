@@ -11,7 +11,7 @@ from .condition import (
 )
 from .exceptions import InvalidIndex, InvalidModel
 from .tracking import mark
-from .util import missing, signal, unpack_from_dynamodb
+from .util import missing, signal, unpack_from_dynamodb, printable_column_name
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex", "Index", "model_created"]
 
@@ -78,7 +78,7 @@ class ModelMetaclass(declare.ModelMetaclass):
         model_created.send(model=model)
         return model
 
-    def __repr__(cls):  # pragma: no cover
+    def __repr__(cls):
         return "<Model[{}]>".format(cls.__name__)
 
 
@@ -198,7 +198,7 @@ class Index(declare.Field):
         # projected_columns will be set up in `_bind`
         self.projection, self.projected_columns = validate_projection(projection)
 
-    def __repr__(self):  # pragma: no cover
+    def __repr__(self):
         if isinstance(self, LocalSecondaryIndex):
             cls_name = "LSI"
         elif isinstance(self, GlobalSecondaryIndex):
@@ -355,6 +355,9 @@ class _ComparisonMixin:
     def __getitem__(self, path):
         return _ComparisonMixin(obj=self.__obj, path=self.path + [path])
 
+    def __repr__(self):
+        return self.__obj.__repr__(path=self.path)
+
 
 class Column(declare.Field, _ComparisonMixin):
     def __init__(self, typedef, hash_key=None, range_key=None,
@@ -365,7 +368,7 @@ class Column(declare.Field, _ComparisonMixin):
         kwargs['typedef'] = typedef
         super().__init__(**kwargs)
 
-    def __repr__(self):  # pragma: no cover
+    def __repr__(self, path=None):
         if self.hash_key:
             extra = "=hash"
         elif self.range_key:
@@ -376,11 +379,7 @@ class Column(declare.Field, _ComparisonMixin):
         # <Column[Pin.url]>
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
-        return "<Column[{}.{}{}]>".format(
-            self.model.__name__,
-            getattr(self, "model_name"),
-            extra
-        )
+        return "<Column[{}{}]>".format(printable_column_name(self, path), extra)
 
     @property
     def dynamo_name(self):

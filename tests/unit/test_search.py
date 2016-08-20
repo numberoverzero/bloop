@@ -1,6 +1,6 @@
 import collections
 import pytest
-from bloop.exceptions import ConstraintViolation, InvalidKeyCondition, UnknownSearchMode
+from bloop.exceptions import ConstraintViolation, InvalidFilterCondition, InvalidKeyCondition, UnknownSearchMode
 from bloop.search import Search, SearchIterator, ScanIterator, QueryIterator, search_repr
 from bloop.util import Sentinel
 
@@ -142,6 +142,56 @@ def test_prepare_key_good_condition(valid_search):
     valid_search.key = ComplexModel.name == "bar"
     prepared = valid_search.prepare()
     assert prepared.key is valid_search.key
+
+
+def test_prepare_count_projection(valid_search):
+    valid_search.projection = "count"
+    prepared = valid_search.prepare()
+    assert prepared._available_columns == valid_search.model.Meta.columns
+    assert prepared._projected_columns is None
+    assert prepared._projection_mode == "count"
+
+
+def test_prepare_specific_projection(valid_search):
+    # Even "all" is performed through specific
+    valid_search.projection = "all"
+    valid_search.index = ComplexModel.by_joined
+    valid_search.strict = True
+
+    prepared = valid_search.prepare()
+    assert prepared._available_columns == ComplexModel.by_joined.projected_columns
+    assert prepared._projected_columns == ComplexModel.by_joined.projected_columns
+    assert prepared._projection_mode == "specific"
+
+
+def test_prepare_no_filter(valid_search):
+    valid_search.filter = None
+    prepared = valid_search.prepare()
+    assert prepared.filter is None
+
+
+def test_prepare_valid_filter(valid_search):
+    condition = ComplexModel.email == "now"
+    valid_search.filter = condition
+    prepared = valid_search.prepare()
+    assert prepared.filter is condition
+
+
+def test_prepare_invalid_filter(valid_search):
+    # Can't include a key column in a query filter
+    condition = ComplexModel.name > "hello"
+    valid_search.filter = condition
+
+    with pytest.raises(InvalidFilterCondition):
+        valid_search.prepare()
+
+
+def test_prepare_constraints(valid_search):
+    valid_search.limit = 456
+    valid_search.forward = False
+    prepared = valid_search.prepare()
+    assert prepared.limit == 456
+    assert prepared.forward is False
 
 
 def test_search_repr():

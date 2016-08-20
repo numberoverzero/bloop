@@ -1,17 +1,15 @@
 import arrow
 import uuid
 from bloop import (
-    Column, DateTime, Engine, GlobalSecondaryIndex,
-    Integer, String, UUID, new_base)
+    BaseModel, Column, DateTime, Engine,
+    GlobalSecondaryIndex, Integer, String, UUID)
+
 
 # ================================================
 # Model setup
 # ================================================
 
-Base = new_base()
-
-
-class Account(Base):
+class Account(BaseModel):
     class Meta:
         read_units = 5
         write_units = 2
@@ -24,7 +22,7 @@ class Account(Base):
         write_units=1, read_units=5)
 
 
-class Tweet(Base):
+class Tweet(BaseModel):
     class Meta:
         write_units = 10
     account = Column(UUID, hash_key=True)
@@ -37,7 +35,7 @@ class Tweet(Base):
         hash_key='date', projection='keys')
 
 engine = Engine()
-engine.bind(base=Base)
+engine.bind(BaseModel)
 
 
 # ================================================

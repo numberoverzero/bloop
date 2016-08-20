@@ -1,21 +1,20 @@
-from unittest.mock import Mock
-
+import boto3
 import pytest
-from bloop import Client, Engine
 
-from ..helpers.models import BaseModel
-
-
-@pytest.fixture
-def engine():
-    engine = Engine()
-    engine.client = Mock(spec=Client)
-    engine.bind(base=BaseModel)
-    return engine
+from unittest.mock import Mock
+from bloop import Engine, BaseModel
+from bloop.session import SessionWrapper
 
 
 @pytest.fixture
-def atomic(engine):
-    atomic = Engine(client=engine.client, type_engine=engine.type_engine, **engine.config)
-    atomic.config["atomic"] = True
-    return atomic
+def session():
+    return Mock(spec=SessionWrapper)
+
+
+@pytest.fixture
+def engine(session):
+    _engine = Engine(session=Mock(spec=boto3.Session))
+    # Immediately replace that session wrapper
+    _engine.session = session
+    _engine.bind(base=BaseModel)
+    return _engine

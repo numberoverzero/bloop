@@ -30,11 +30,11 @@ First, define and bind our model:
     import uuid
 
     from bloop import (
-        Column, Engine, GlobalSecondaryIndex,
-        String, UUID, new_base)
+        BaseModel, Column, Engine,
+        GlobalSecondaryIndex, String, UUID)
 
 
-    class Account(new_base()):
+    class Account(BaseModel):
         id = Column(UUID, hash_key=True)
         name = Column(String)
         email = Column(String)
@@ -58,8 +58,9 @@ Save an instance, load by key, and get the first query result:
     engine.load(same_account)
 
 
-    q = engine.query(Account.by_email)
-    q.key = Account.email == "foo@bar.com"
+    q = engine.query(
+        Account.by_email,
+        key=Account.email == "foo@bar.com")
 
     also_same_account = q.first()
 

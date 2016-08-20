@@ -3,15 +3,14 @@ import decimal
 import random
 import uuid
 from bloop import (
-    Column, DateTime, Engine, Float, Integer, Map,
-    String, TypedMap, UUID, new_base)
+    BaseModel, Column, DateTime, Engine, Float,
+    Integer, Map, String, TypedMap, UUID)
 
 
 # ================================================
 # Model setup
 # ================================================
 
-Base = new_base()
 Product = Map(**{
     'Name': String,
     'Rating': Float,
@@ -24,12 +23,12 @@ Product = Map(**{
 })
 
 
-class Item(Base):
+class Item(BaseModel):
     id = Column(UUID, hash_key=True)
     data = Column(Product)
 
 engine = Engine()
-engine.bind(base=Base)
+engine.bind(BaseModel)
 
 
 # ================================================

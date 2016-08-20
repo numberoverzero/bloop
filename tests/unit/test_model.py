@@ -2,9 +2,7 @@ import uuid
 
 import arrow
 import pytest
-from bloop.column import Column
-from bloop.index import GlobalSecondaryIndex, LocalSecondaryIndex
-from bloop.model import new_base
+from bloop.models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.types import UUID, Boolean, DateTime, String
 
 from ..helpers.models import User
@@ -21,7 +19,7 @@ def test_load_default_init(engine):
     """The default model loader uses the model's __init__ method"""
     init_called = False
 
-    class Blob(new_base()):
+    class Blob(BaseModel):
         def __init__(self, **kwargs):
             nonlocal init_called
             init_called = True
@@ -87,13 +85,13 @@ def test_load_dump_none(engine):
 
 def test_meta_read_write_units():
     """If `read_units` or `write_units` is missing from a model's Meta, it defaults to 1"""
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(UUID, hash_key=True)
 
     assert Model.Meta.write_units == 1
     assert Model.Meta.read_units == 1
 
-    class Other(new_base()):
+    class Other(BaseModel):
         class Meta:
             read_units = 2
             write_units = 3
@@ -109,65 +107,37 @@ def test_meta_indexes_columns():
     assert User.by_email in set(User.Meta.indexes)
 
 
-def test_meta_keys():
-    """Various combinations of hash and range keys (some impossible)"""
-    def hash_column():
-        return Column(UUID, hash_key=True)
-
-    def range_column():
-        return Column(UUID, range_key=True)
-
-    class HashOnly(new_base()):
-        h = hash_column()
-
-    class RangeOnly(new_base()):
-        r = range_column()
-
-    class Neither(new_base()):
-        pass
-
-    class Both(new_base()):
-        h = hash_column()
-        r = range_column()
-
-    expect = [
-        (HashOnly, (HashOnly.h, None)),
-        (RangeOnly, (None, RangeOnly.r)),
-        (Neither, (None, None)),
-        (Both, (Both.h, Both.r))
-    ]
-
-    for (model, (hash_key, range_key)) in expect:
-        assert model.Meta.hash_key is hash_key
-        assert model.Meta.range_key is range_key
-
-
-def test_model_extra_keys():
+def test_invalid_model_keys():
     with pytest.raises(ValueError):
-        class DoubleHash(new_base()):
+        class DoubleHash(BaseModel):
+            hash1 = Column(UUID, hash_key=True)
+            hash2 = Column(UUID, hash_key=True)
+
+    with pytest.raises(ValueError):
+        class DoubleRange(BaseModel):
             id = Column(UUID, hash_key=True)
-            other = Column(UUID, hash_key=True)
+            range1 = Column(UUID, range_key=True)
+            range2 = Column(UUID, range_key=True)
 
     with pytest.raises(ValueError):
-        class DoubleRange(new_base()):
-            id = Column(UUID, range_key=True)
+        class NoHash(BaseModel):
             other = Column(UUID, range_key=True)
 
     with pytest.raises(ValueError):
-        class SharedHashRange(new_base()):
-            foo = Column(UUID, hash_key=True, range_key=True)
+        class SharedHashRange(BaseModel):
+            both = Column(UUID, hash_key=True, range_key=True)
 
 
 def test_invalid_local_index():
     with pytest.raises(ValueError):
-        class InvalidIndex(new_base()):
+        class InvalidIndex(BaseModel):
             id = Column(UUID, hash_key=True)
             index = LocalSecondaryIndex(range_key="id", projection="keys")
 
 
 def test_index_keys():
     """Make sure index hash and range keys are objects, not strings"""
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(UUID, hash_key=True)
         other = Column(DateTime, range_key=True)
         another = Column(UUID)
@@ -186,7 +156,7 @@ def test_index_keys():
 def test_local_index_no_range_key():
     """A table range_key is required to specify a LocalSecondaryIndex"""
     with pytest.raises(ValueError):
-        class Model(new_base()):
+        class Model(BaseModel):
             id = Column(UUID, hash_key=True)
             another = Column(UUID)
             by_another = LocalSecondaryIndex(range_key="another", projection="keys")
@@ -195,7 +165,7 @@ def test_local_index_no_range_key():
 def test_index_projections():
     """Make sure index projections are calculated to include table keys"""
 
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(UUID, hash_key=True)
         other = Column(UUID, range_key=True)
         another = Column(UUID)
@@ -214,29 +184,29 @@ def test_index_projections():
     no_boolean = set(Model.Meta.columns)
     no_boolean.remove(Model.boolean)
 
-    assert Model.g_all.projection == "ALL"
-    assert Model.g_all.projection_attributes == set(Model.Meta.columns)
-    assert Model.g_key.projection == "KEYS_ONLY"
-    assert Model.g_key.projection_attributes == uuids
-    assert Model.g_inc.projection == "INCLUDE"
-    assert Model.g_inc.projection_attributes == no_boolean
+    assert Model.g_all.projection == "all"
+    assert Model.g_all.projected_columns == set(Model.Meta.columns)
+    assert Model.g_key.projection == "keys"
+    assert Model.g_key.projected_columns == uuids
+    assert Model.g_inc.projection == "include"
+    assert Model.g_inc.projected_columns == no_boolean
 
-    assert Model.l_all.projection == "ALL"
-    assert Model.l_all.projection_attributes == set(Model.Meta.columns)
-    assert Model.l_key.projection == "KEYS_ONLY"
-    assert Model.l_key.projection_attributes == uuids
-    assert Model.l_inc.projection == "INCLUDE"
-    assert Model.l_inc.projection_attributes == no_boolean
+    assert Model.l_all.projection == "all"
+    assert Model.l_all.projected_columns == set(Model.Meta.columns)
+    assert Model.l_key.projection == "keys"
+    assert Model.l_key.projected_columns == uuids
+    assert Model.l_inc.projection == "include"
+    assert Model.l_inc.projected_columns == no_boolean
 
 
 def test_meta_table_name():
     """If table_name is missing from a model's Meta, use the model's __name__"""
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(UUID, hash_key=True)
 
     assert Model.Meta.table_name == "Model"
 
-    class Other(new_base()):
+    class Other(BaseModel):
         class Meta:
             table_name = "table_name"
             write_units = 3
@@ -246,12 +216,10 @@ def test_meta_table_name():
 
 
 def test_abstract_not_inherited():
-    base = new_base()
+    class Concrete(BaseModel):
+        id = Column(UUID, hash_key=True)
 
-    class Concrete(base):
-        pass
-
-    assert base.Meta.abstract
+    assert BaseModel.Meta.abstract
     assert not Concrete.Meta.abstract
 
 

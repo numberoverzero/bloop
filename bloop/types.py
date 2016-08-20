@@ -41,15 +41,16 @@ class Type(declare.TypeDefinition):
         return {self.backing_type: value}
 
     def dynamo_load(self, value, *, context, **kwargs):
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def dynamo_dump(self, value, *, context, **kwargs):
-        raise NotImplementedError()
+        raise NotImplementedError
 
     def __repr__(self, *a, **kw):  # pragma: no cover
-        return "{}(python_type={}, backing_type={})".format(
-            self.__class__.__name__, self.python_type, self.backing_type)
-    __str__ = __repr__
+        return "<{}[{}:{}]>".format(
+            self.__class__.__name__,
+            self.backing_type, self.python_type
+        )
 
 
 class String(Type):
@@ -138,7 +139,7 @@ class Float(Type):
             return None
         n = str(DYNAMODB_CONTEXT.create_decimal(value))
         if any(filter(lambda x: x in n, ("Infinity", "NaN"))):
-            raise TypeError("Infinity and NaN not supported")
+            raise TypeError("{!r} does not support Infinity and NaN.".format(self))
         return n
 
 
@@ -208,15 +209,11 @@ class Set(Type):
     """Adapter for sets of objects"""
     python_type = collections.abc.Set
 
-    def __init__(self, typedef=None):
-        # Default None allows the TypeEngine to call without args,
-        # and still provide a helpful error message for a required param
-        if typedef is None:
-            raise TypeError("Sets requires a type")
+    def __init__(self, typedef):
         self.typedef = type_instance(typedef)
-        if typedef.backing_type not in {"N", "S", "B"}:
-            raise TypeError("Set's typedef must be backed by one of N/S/B but was '{}'".format(typedef.backing_type))
         self.backing_type = typedef.backing_type + "S"
+        if self.backing_type not in {"NS", "SS", "BS"}:
+            raise TypeError("{!r} is not a valid set type.".format(self.backing_type))
         super().__init__()
 
     def _register(self, engine):
@@ -250,11 +247,7 @@ class List(Type):
     python_type = collections.abc.Iterable
     backing_type = LIST
 
-    def __init__(self, typedef=None):
-        # Default None allows the TypeEngine to call without args,
-        # and still provide a helpful error message for a required param
-        if typedef is None:
-            raise TypeError("List requires a type")
+    def __init__(self, typedef):
         self.typedef = type_instance(typedef)
         super().__init__()
 
@@ -291,11 +284,7 @@ class TypedMap(Type):
     python_type = collections.abc.Mapping
     backing_type = MAP
 
-    def __init__(self, typedef=None):
-        # Default None allows the TypeEngine to call without args,
-        # and still provide a helpful error message for a required param
-        if typedef is None:
-            raise TypeError("TypedMap requires a type")
+    def __init__(self, typedef):
         self.typedef = type_instance(typedef)
         super().__init__()
 
@@ -325,8 +314,8 @@ class TypedMap(Type):
         filtered = filter(
             lambda item: item[1] is not None,
             ((
-                 key, dump(typedef, value, context=context, **kwargs)
-             ) for key, value in values.items()))
+                key, dump(typedef, value, context=context, **kwargs)
+            ) for key, value in values.items()))
         return dict(filtered) or None
 
 
@@ -366,6 +355,6 @@ class Map(Type):
         filtered = filter(
             lambda item: item[1] is not None,
             ((
-                 key, dump(typedef, get(key, None), context=context, **kwargs)
-             ) for key, typedef in self.types.items()))
+                key, dump(typedef, get(key, None), context=context, **kwargs)
+            ) for key, typedef in self.types.items()))
         return dict(filtered) or None

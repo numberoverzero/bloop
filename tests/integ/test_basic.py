@@ -1,6 +1,6 @@
 """Basic scenarios, symmetric tests"""
 import pytest
-from bloop import NotModified
+from bloop import BaseModel, Column, GlobalSecondaryIndex, Integer, MissingObjects
 
 from .models import User
 
@@ -23,6 +23,17 @@ def test_crud(engine):
 
     engine.delete(user)
 
-    with pytest.raises(NotModified) as excinfo:
+    with pytest.raises(MissingObjects) as excinfo:
         engine.load(same_user)
-    assert same_user in excinfo.value.objects
+    assert [same_user] == excinfo.value.objects
+
+
+def test_projection_overlap(engine):
+    class Model(BaseModel):
+        hash = Column(Integer, hash_key=True)
+        range = Column(Integer, range_key=True)
+        other = Column(Integer)
+
+        by_other = GlobalSecondaryIndex(projection=["other", "range"], hash_key="other")
+    # by_other's projected attributes overlap with the model and its own keys
+    engine.bind(Model)

@@ -1,8 +1,7 @@
 import random
 import string
 
-from bloop import Column, String, new_base
-BaseModel = new_base()
+from bloop import BaseModel, Column, String
 
 
 class User(BaseModel):

@@ -30,14 +30,13 @@ Define some models:
 .. code-block:: python
 
     from bloop import (
-        Column, DateTime, Engine, GlobalSecondaryIndex,
-        Integer, String, UUID, new_base)
+        BaseModel, Column, DateTime, Engine,
+        GlobalSecondaryIndex, Integer, String, UUID)
 
-    Base = new_base()
     engine = Engine()
 
 
-    class Account(Base):
+    class Account(BaseModel):
         class Meta:
             read_units = 5
             write_units = 2
@@ -50,7 +49,7 @@ Define some models:
             write_units=1, read_units=5)
 
 
-    class Tweet(Base):
+    class Tweet(BaseModel):
         class Meta:
             write_units = 10
         account = Column(UUID, hash_key=True)
@@ -62,7 +61,7 @@ Define some models:
         by_date = GlobalSecondaryIndex(
             hash_key='date', projection='keys')
 
-    engine.bind(base=Base)
+    engine.bind(BaseModel)
 
 
 Create an instance:
@@ -90,15 +89,16 @@ Query or scan by column values:
     email = 'foo@bar.com'
     yesterday = arrow.now().replace(days=-1)
 
-    acct_query = engine.query(Account.by_email)
-    acct_query.key = Account.email == email
+    acct_query = engine.query(
+        Account.by_email,
+        key=Account.email == email)
     account = acct_query.first()
 
-    tweet_query = engine.query(Tweet)
-    tweet_query.key = Tweet.account == account.id
-    tweet_query.filter = Tweet.date >= yesterday
+    tweet_query = engine.query(
+        Tweet, key=Tweet.account == account.id,
+        filter=Tweet.date >= yesterday)
 
-    for tweet in tweet_query.build():
+    for tweet in tweet_query:
         print(tweet.content)
 
 

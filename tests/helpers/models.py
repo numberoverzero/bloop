@@ -1,20 +1,19 @@
 from bloop import (
+    BaseModel,
     UUID,
     Column,
     Condition,
     DateTime,
     Float,
     GlobalSecondaryIndex,
+    LocalSecondaryIndex,
     Integer,
     List,
-    LocalSecondaryIndex,
     Map,
     Set,
     String,
-    TypedMap,
-    new_base,
+    TypedMap
 )
-
 
 DocumentType = Map(**{
     'Rating': Float(),
@@ -27,7 +26,6 @@ DocumentType = Map(**{
     'Id': UUID,
     'Updated': DateTime
 })
-BaseModel = new_base()
 
 
 class Document(BaseModel):

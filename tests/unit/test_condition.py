@@ -1,13 +1,13 @@
+import operator
 import uuid
 
 import pytest
-from bloop.column import Column
-from bloop.condition import And, Comparison, Condition, Not, Or
+from bloop.condition import And, Comparison, Condition, Not, Or, iter_columns
 from bloop.expressions import ConditionRenderer, render
-from bloop.model import new_base
+from bloop.models import BaseModel, Column
 from bloop.types import UUID, Integer, TypedMap
 
-from ..helpers.models import Document, DocumentType, User, conditions
+from ..helpers.models import ComplexModel, Document, DocumentType, User, conditions
 
 
 def test_duplicate_name_refs(engine):
@@ -21,8 +21,37 @@ def test_no_refs(engine):
     when name/value refs are missing, ExpressionAttributeNames/Values
     aren't populated """
     condition = And()
-    expected = {"ConditionExpression": "()"}
+    expected = {}
     assert render(engine, condition=condition) == expected
+
+
+@pytest.mark.parametrize("op", [operator.and_, operator.or_])
+@pytest.mark.parametrize("empty_cls", [Condition, Or, And])
+def test_basic_simplification(op, empty_cls):
+    condition = Comparison(User.name, "==", "foo")
+    same = op(condition, empty_cls())
+    assert same is condition
+
+
+@pytest.mark.parametrize("cls", [Condition, Or, And])
+def test_negate_empty_conditions(cls):
+    empty = cls()
+    assert ~empty is empty
+
+
+@pytest.mark.parametrize("cls, op", [(And, operator.and_), (Or, operator.or_)])
+@pytest.mark.parametrize("empty_cls", [Condition, Or, And])
+def test_shortcut_multi_appends(cls, op, empty_cls):
+    # And() & None -> same And
+    # Or() & None -> same Or
+    obj = cls()
+    same = op(obj, empty_cls())
+    assert same is obj
+
+
+def test_double_negate():
+    condition = Comparison(User.name, "==", "foo")
+    assert ~~condition is condition
 
 
 def test_condition_ops():
@@ -181,7 +210,7 @@ def test_path_comparator(engine):
 
 def test_typedmap_path_comparator(engine):
     """ TypedMap should defer to the value typedef for conditions """
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(Integer, hash_key=True)
         data = Column(TypedMap(UUID))
     engine.bind(base=Model)
@@ -198,7 +227,7 @@ def test_typedmap_path_comparator(engine):
 
 def test_name_ref_with_path(engine):
     """ Columns with custom names with literal periods render correctly """
-    class Model(new_base()):
+    class Model(BaseModel):
         id = Column(Integer, hash_key=True, name='this.is.id')
         data = Column(DocumentType)
     engine.bind(base=Model)
@@ -235,3 +264,32 @@ def test_equality(condition):
             assert condition == other
         else:
             assert condition != other
+
+
+def test_complex_iter_columns():
+    """Includes cycles, empty conditions, Not, MultiConditions"""
+
+    first_comp = ComplexModel.name == "foo"
+    second_comp = ComplexModel.date == "bar"
+    third_comp = ComplexModel.email == "baz"
+
+    negate = Not(third_comp)
+    empty = Condition()
+
+    both = first_comp & second_comp
+    either = Or(negate, empty)
+
+    # cycle = (
+    #   (1 & 2) &
+    #   (~ | _) &
+    #   cycle
+    # )
+    cycle = And(both, either)
+    cycle.conditions.append(cycle)
+
+    expected = {
+        ComplexModel.name,
+        ComplexModel.date,
+        ComplexModel.email
+    }
+    assert set(iter_columns(cycle)) == expected

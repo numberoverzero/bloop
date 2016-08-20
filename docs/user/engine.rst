@@ -8,9 +8,8 @@ Reusing the model from :ref:`define-models`:
 .. code-block:: python
 
     from bloop import (
-        Boolean, Column, DateTime, String, UUID,
-        GlobalSecondaryIndex, new_base)
-    BaseModel = new_base()
+        BaseModel, Boolean, Column, DateTime, String,
+        UUID, GlobalSecondaryIndex)
 
     class User(BaseModel):
         id = Column(UUID, hash_key=True)
@@ -65,7 +64,7 @@ Load
 
 .. code-block:: python
 
-    Engine.load(*objs, consistent: Optional[bool]=None) -> None
+    Engine.load(*objs, consistent: bool=False) -> None
 
 .. attribute:: objs
     :noindex:
@@ -76,14 +75,14 @@ Load
     :noindex:
 
     Whether or not `strongly consistent reads`__ (which consume 2x read units) should be used.
-    Defaults to ``engine.config["consistent"]``
+    Defaults to False.
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
 
 You can load instances of different models at the same time.  Bloop will automatically split requests into the
 appropriate chunks for BatchGetItems and then inject the results into the corresponding objects.
 
-Raises ``NotModified`` if any items fail to load.  The ``objects`` attribute holds the set of objects not loaded.
+Raises ``MissingObjects`` if any items fail to load.  The ``objects`` attribute holds the set of objects not loaded.
 
 .. _save-delete-interface:
 
@@ -117,7 +116,7 @@ Save and Delete share the same interface; they both conditionally modify the sta
     :noindex:
 
     Whether or not to use an atomic condition for this operation.  When True, DynamoDB and the local state must match
-    to perform the operation (in addition to any other condition).  Defaults to ``engine.config["atomic"]``
+    to perform the operation (in addition to any other condition).  Defaults to False.
 
 .. _save-delete-conditions:
 

@@ -1,27 +1,20 @@
+import boto3
 import declare
 
-from .client import Client
-from .exceptions import AbstractModelException, NotModified, UnboundModel
+from .exceptions import AbstractModelError, InvalidModel, MissingKey, MissingObjects, UnboundModel, UnknownType
 from .expressions import render
-from .filter import Filter
-from .index import Index
-from .model import ModelMetaclass
-from .tracking import clear, is_model_verified, sync, verify_model
-from .util import walk_subclasses, signal
+from .models import Index, ModelMetaclass
+from .search import Query, Scan
+from .session import SessionWrapper
+from .tracking import clear, is_model_validated, sync
+from .util import missing, walk_subclasses, signal, unpack_from_dynamodb
 
-
-__all__ = ["Engine", "before_bind_model", "before_create_table"]
-
-MISSING = object()
-DEFAULT_CONFIG = {
-    "atomic": False,
-    "consistent": False,
-    "strict": True
-}
+__all__ = ["Engine", "before_create_table", "model_bound", "model_validated"]
 
 # Signals!
-before_bind_model = signal("before_bind_model")
 before_create_table = signal("before_create_table")
+model_bound = signal("model_bound")
+model_validated = signal("model_validated")
 
 
 def value_of(column):
@@ -47,77 +40,58 @@ def dump_key(engine, obj):
     """
     key = {}
     for key_column in obj.Meta.keys:
-        key_value = getattr(obj, key_column.model_name, MISSING)
-        if key_value is MISSING:
-            raise ValueError("Missing required hash/range key '{}'".format(key_column.model_name))
+        key_value = getattr(obj, key_column.model_name, missing)
+        if key_value is missing:
+            raise MissingKey("{!r} is missing values for its keys.".format(obj))
         key_value = engine._dump(key_column.typedef, key_value)
         key[key_column.dynamo_name] = key_value
     return key
 
 
-def config(engine, key, value):
-    """Return a given config value unless it's None.
+def raise_on_abstract(*objs, cls=False):
+    for obj in objs:
+        if obj.Meta.abstract:
+            cls = obj if cls else obj.__class__
+            raise AbstractModelError("{!r} is abstract.".format(cls.__name__))
 
-    In that case, fall back to the engine's config value.
-    """
-    if value is None:
-        return engine.config[key]
-    return value
+
+def raise_on_unknown(model, from_declare):
+    # Best-effort check for a more helpful message
+    if isinstance(model, ModelMetaclass):
+        msg = "{!r} is not bound.  Did you forget to call engine.bind?"
+        raise UnboundModel(msg.format(model.__name__)) from from_declare
+    else:
+        msg = "{!r} is not a registered Type."
+        obj = model.__name__ if hasattr(model, "__name__") else model
+        raise UnknownType(msg.format(obj)) from from_declare
 
 
 class Engine:
-    client = None
-
-    def __init__(self, client=None, type_engine=None, **config):
+    def __init__(self, session=None, type_engine=None):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = type_engine or declare.TypeEngine.unique()
-
-        self.client = client
-        self.config = dict(DEFAULT_CONFIG)
-        self.config.update(config)
+        self.session = SessionWrapper(session or boto3)
 
     def _dump(self, model, obj, context=None, **kwargs):
-        """Return a dict of the obj in DynamoDB format"""
+        context = context or {"engine": self}
         try:
-            context = context or {"engine": self}
             return context["engine"].type_engine.dump(model, obj, context=context, **kwargs)
-        except declare.DeclareException:
-            # Best-effort check for a more helpful message
-            if isinstance(model, ModelMetaclass):
-                raise UnboundModel("load", model, obj)
-            else:
-                raise ValueError("Failed to dump unknown model {}".format(model))
+        except declare.DeclareException as from_declare:
+            raise_on_unknown(model, from_declare)
 
     def _load(self, model, value, context=None, **kwargs):
-        try:
-            context = context or {"engine": self}
-            return context["engine"].type_engine.load(model, value, context=context, **kwargs)
-        except declare.DeclareException:
-            # Best-effort check for a more helpful message
-            if isinstance(model, ModelMetaclass):
-                raise UnboundModel("load", model, None)
-            else:
-                raise ValueError("Failed to load unknown model {}".format(model))
-
-    def _update(self, obj, attrs, expected, context=None, **kwargs):
-        """Push values by dynamo_name into an object"""
         context = context or {"engine": self}
-        load = context["engine"]._load
-        for column in expected:
-            value = attrs.get(column.dynamo_name, None)
-            value = load(column.typedef, value, context=context, **kwargs)
-            setattr(obj, column.model_name, value)
+        try:
+            return context["engine"].type_engine.load(model, value, context=context, **kwargs)
+        except declare.DeclareException as from_declare:
+            raise_on_unknown(model, from_declare)
 
     def bind(self, base):
         """Create tables for all models subclassing base"""
-        # If not manually configured, use a default bloop.Client
-        # with the default boto3.client("dynamodb")
-        self.client = self.client or Client()
-
         # Make sure we're looking at models
         if not isinstance(base, ModelMetaclass):
-            raise ValueError("base must derive from bloop.new_base()")
+            raise InvalidModel("The base class must subclass BaseModel.")
 
         # whether the model's typedefs should be registered, and
         # whether the model should be eligible for validation
@@ -127,56 +101,50 @@ class Engine:
             return not abstract
 
         concrete = set(filter(is_concrete, walk_subclasses(base)))
-        unverified = concrete - set(filter(is_model_verified, concrete))
+        unvalidated = concrete - set(filter(is_model_validated, concrete))
 
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
-        for model in unverified:
+        for model in unvalidated:
             before_create_table.send(self, model=model)
-            self.client.create_table(model)
+            self.session.create_table(model)
 
         for model in concrete:
-            if model in unverified:
-                self.client.validate_table(model)
+            if model in unvalidated:
+                self.session.validate_table(model)
             # Model won't need to be verified the
             # next time its BaseModel is bound to an engine
-            verify_model(model)
+            model_validated.send(self, model=model)
 
-            before_bind_model.send(self, model=model)
             self.type_engine.register(model)
-            for column in model.Meta.columns:
-                self.type_engine.register(column.typedef)
             self.type_engine.bind(context={"engine": self})
+            model_bound.send(self, model=model)
 
-    def delete(self, *objs, condition=None, atomic=None):
+    def delete(self, *objs, condition=None, atomic=False):
         objs = set(objs)
-        for obj in objs:
-            if obj.Meta.abstract:
-                raise AbstractModelException(obj)
+        raise_on_abstract(*objs)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
-            if config(self, "atomic", atomic):
-                rendered = render(self, atomic=obj, condition=condition)
-            else:
-                rendered = render(self, condition=condition)
+            atomic = atomic and obj or None
+            rendered = render(self, atomic=atomic, condition=condition)
             item.update(rendered)
 
-            self.client.delete_item(item)
+            self.session.delete_item(item)
             clear(obj)
 
-    def load(self, *objs, consistent=None):
+    def load(self, *objs, consistent=False):
         """Populate objects from dynamodb, optionally using consistent reads.
 
-        If any objects are not found, raises NotModified with the attribute
+        If any objects are not found, raises MissingObjects with the attribute
         `objects` containing a list of the objects that were not loaded.
 
         Example
         -------
-        class HashOnly(bloop.new_base()):
+        class HashOnly(bloop.BaseModel):
             user_id = Column(NumberType, hash_key=True)
 
-        class HashAndRange(bloop.new_base()):
+        class HashAndRange(bloop.BaseModel):
             user_id = Column(NumberType, hash_key=True)
             game_title = Column(StringType, range_key=True)
 
@@ -189,13 +157,8 @@ class Engine:
         # Load multiple instances
         engine.load([hash_only, hash_and_range])
         """
-        # For an in-depth breakdown of the loading algorithm,
-        # see docs/dev/internal.rst::Loading
-        consistent = config(self, "consistent", consistent)
         objs = set(objs)
-        for obj in objs:
-            if obj.Meta.abstract:
-                raise AbstractModelException(obj)
+        raise_on_abstract(*objs)
 
         table_index, object_index, request = {}, {}, {}
 
@@ -214,16 +177,17 @@ class Engine:
                 object_index[table_name][index] = set()
             object_index[table_name][index].add(obj)
 
-        response = self.client.batch_get_items(request)
+        response = self.session.load_items(request)
 
-        for table_name, blobs in response.items():
-            for blob in blobs:
+        for table_name, list_of_attrs in response.items():
+            for attrs in list_of_attrs:
                 key_shape = table_index[table_name]
-                key = extract_key(key_shape, blob)
+                key = extract_key(key_shape, attrs)
                 index = index_for(key)
 
                 for obj in object_index[table_name].pop(index):
-                    self._update(obj, blob, obj.Meta.columns)
+                    unpack_from_dynamodb(
+                        attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
                     sync(obj, self)
                 if not object_index[table_name]:
                     object_index.pop(table_name)
@@ -233,48 +197,40 @@ class Engine:
             for index in object_index.values():
                 for index_set in index.values():
                     not_loaded.update(index_set)
-            raise NotModified("load", not_loaded)
+            raise MissingObjects("Failed to load some objects.", objects=not_loaded)
 
-    def query(self, obj, consistent=None):
-        if isinstance(obj, Index):
-            model, index = obj.model, obj
-            select = "projected"
+    def query(self, model_or_index, key=None, filter=None, projection="all", limit=None, strict=True,
+              consistent=False, forward=True, **kwargs):
+        if isinstance(model_or_index, Index):
+            model, index = model_or_index.model, model_or_index
         else:
-            model, index = obj, None
-            select = "all"
-        if model.Meta.abstract:
-            raise AbstractModelException(model)
+            model, index = model_or_index, None
+        raise_on_abstract(model, cls=True)
+        q = Query(
+            engine=self, session=self.session, model=model, index=index, key=key, filter=filter,
+            projection=projection, limit=limit, strict=strict, consistent=consistent, forward=forward)
+        return iter(q.prepare())
 
-        return Filter(
-            engine=self, mode="query", model=model, index=index, strict=self.config["strict"], select=select,
-            consistent=config(self, "consistent", consistent))
-
-    def save(self, *objs, condition=None, atomic=None):
+    def save(self, *objs, condition=None, atomic=False):
         objs = set(objs)
-        for obj in objs:
-            if obj.Meta.abstract:
-                raise AbstractModelException(obj)
+        raise_on_abstract(*objs)
         for obj in objs:
             item = {"TableName": obj.Meta.table_name, "Key": dump_key(self, obj)}
 
-            if config(self, "atomic", atomic):
-                rendered = render(self, atomic=obj, condition=condition, update=obj)
-            else:
-                rendered = render(self, condition=condition, update=obj)
+            atomic = atomic and obj or None
+            rendered = render(self, atomic=atomic, condition=condition, update=obj)
             item.update(rendered)
 
-            self.client.update_item(item)
+            self.session.save_item(item)
             sync(obj, self)
 
-    def scan(self, obj, consistent=None):
-        if isinstance(obj, Index):
-            model, index = obj.model, obj
-            select = "projected"
+    def scan(self, model_or_index, filter=None, projection="all", limit=None, strict=True, consistent=False, **kwargs):
+        if isinstance(model_or_index, Index):
+            model, index = model_or_index.model, model_or_index
         else:
-            model, index = obj, None
-            select = "all"
-        if model.Meta.abstract:
-            raise AbstractModelException(model)
-        return Filter(
-            engine=self, mode="scan", model=model, index=index, strict=self.config["strict"], select=select,
-            consistent=config(self, "consistent", consistent))
+            model, index = model_or_index, None
+        raise_on_abstract(model, cls=True)
+        s = Scan(
+            engine=self, session=self.session, model=model, index=index, filter=filter,
+            projection=projection, limit=limit, strict=strict, consistent=consistent)
+        return iter(s.prepare())

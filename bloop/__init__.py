@@ -1,17 +1,14 @@
-from .client import Client
-from .column import Column
 from .condition import Condition
-from .engine import Engine, before_bind_model, before_create_table
+from .engine import Engine, before_create_table, model_bound
 from .exceptions import (
-    AbstractModelException,
+    AbstractModelError,
     BloopException,
     ConstraintViolation,
-    NotModified,
+    MissingObjects,
     TableMismatch,
     UnboundModel,
 )
-from .index import GlobalSecondaryIndex, LocalSecondaryIndex
-from .model import model_created, new_base
+from .models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex, model_created
 from .types import (
     UUID,
     Binary,
@@ -26,11 +23,10 @@ from .types import (
     TypedMap,
 )
 
-
 __all__ = [
-    "AbstractModelException", "Boolean", "Binary", "BloopException", "Client", "Column", "Condition",
-    "ConstraintViolation", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer", "List",
-    "LocalSecondaryIndex", "Map", "NotModified", "Set", "String", "TableMismatch", "TypedMap",
-    "UnboundModel", "UUID", "before_bind_model", "before_create_table", "model_created", "new_base"
+    "AbstractModelError", "BaseModel", "Boolean", "Binary", "BloopException", "Column",
+    "Condition", "ConstraintViolation", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer",
+    "List", "LocalSecondaryIndex", "Map", "MissingObjects", "Set", "String", "TableMismatch", "TypedMap",
+    "UnboundModel", "UUID", "before_create_table", "model_bound", "model_created"
 ]
 __version__ = "0.9.12"

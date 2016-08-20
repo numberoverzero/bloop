@@ -165,13 +165,13 @@ def test_datetime():
 def test_float():
     typedef = Float()
     d = decimal.Decimal
-    symmetric_test(typedef, (1.5, "1.5"), (d(4)/d(3), "1.333333333333333333333333333"))
+    symmetric_test(typedef, (1.5, "1.5"), (d(4) / d(3), "1.333333333333333333333333333"))
 
 
 @pytest.mark.parametrize(
     "value, raises",
     [
-        (decimal.Decimal(4/3), decimal.Inexact),
+        (decimal.Decimal(4 / 3), decimal.Inexact),
         (decimal.Decimal(10) ** 900, decimal.Overflow),
         (decimal.Decimal(0.9) ** 9000, decimal.Underflow),
         ("Infinity", TypeError),
@@ -232,9 +232,8 @@ def test_set_type_instance():
 def test_set_illegal_backing_type():
     """The backing type for a set MUST be one of S/N/B, not BOOL"""
     for typedef in [Boolean, Set(Integer)]:
-        with pytest.raises(TypeError) as excinfo:
+        with pytest.raises(TypeError):
             Set(typedef)
-        assert "Set's typedef must be backed by" in str(excinfo.value)
 
 
 def test_set_registered():
@@ -269,13 +268,6 @@ def test_list(engine):
     dumped = typedef.dynamo_dump(loaded, context={"engine": engine})
     assert dumped == expected
     assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
-
-
-@pytest.mark.parametrize("typedef", [List, Set, TypedMap])
-def test_required_subtypes(typedef):
-    """Typed containers require an inner type"""
-    with pytest.raises(TypeError):
-        typedef()
 
 
 def test_map_dump(engine):

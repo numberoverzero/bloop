@@ -1,92 +1,61 @@
-"""
-Exceptions raised during normal use of bloop which can be programatically
-responded to.
-
-There are no exceptions for things like specifying an invalid
-key when constructing a Query, for example, because there is no way to
-automatically recover from that failure.
-
-"""
-
-__all__ = [
-    "AbstractModelException", "BloopException", "ConstraintViolation",
-    "NotModified", "TableMismatch", "UnboundModel"]
-
-_CONSTRAINT_FAILURE = "Failed to meet required condition during {}"
-_NOT_MODIFIED = "Failed to modify some obects during {}"
-_TABLE_MISMATCH = "Existing table for model {} does not match expected"
-_UNBOUND = "Failed to {} unbound model.  Did you forget to call engine.bind()?"
-_ABSTRACT = "Cannot perform operation on abstract model {}"
-
-
 class BloopException(Exception):
-    """Base exception for blanket catching"""
-    pass
-
-
-class AbstractModelException(BloopException):
-    """Raised when an operation is attempted on an abstract model"""
-    def __init__(self, model):
-        super().__init__(_ABSTRACT.format(model))
-        self.model = model
+    """An unexpected exception occurred."""
 
 
 class ConstraintViolation(BloopException):
-    """Raised when a condition is not met.
-
-     This is thrown when an explicit condition passed to load/save/delete fails, an atomic operation fails,
-     or an implicit query/scan condition fails (one/first)
-
-    Attributes:
-        obj (dict): The dict that was sent to dynamodb and failed some
-            conditional operation
-
-    """
-    def __init__(self, operation, obj):
-        super().__init__(_CONSTRAINT_FAILURE.format(operation), obj)
-        self.obj = obj
+    """A required condition was not met."""
 
 
-class NotModified(BloopException):
-    """Raised when some objects are not loaded, saved, or deleted.
-
-    Attributes:
-        objects (list): the objects not modified
-
-    """
-    def __init__(self, operation, objects):
-        super().__init__(_NOT_MODIFIED.format(operation), objects)
-        self.objects = list(objects)
+class MissingObjects(BloopException):
+    """Some objects were not found."""
+    def __init__(self, *args, objects=None):
+        super().__init__(*args)
+        self.objects = list(objects) if objects else []
 
 
 class TableMismatch(BloopException):
-    """Raised when binding a model to an existing table with the wrong schema.
-
-    Attributes:
-        model (:class:`bloop.model.BaseModel`):
-            The model that was trying to bind
-        expected (dict): The expected schema for the table
-        actual (dict): The actual schema of the table
-    """
-    def __init__(self, model, expected, actual):
-        super().__init__(_TABLE_MISMATCH.format(model), expected, actual)
-        self.model = model
-        self.expected = expected
-        self.actual = actual
+    """The expected and actual tables for this Model do not match."""
 
 
-class UnboundModel(BloopException):
-    """Raised when loading or dumping on a model before binding it to an engine
+class AbstractModelError(BloopException, ValueError):
+    """There is no way to load or save an abstract Model."""
 
-    Attributes:
-        model (:class:`bloop.model.BaseModel`):
-            The model of the object being loaded, or dumped
-        obj (object or None): The instance of the model that was being dumped,
-            or loaded into.  If a new instance of the model was being created,
-            this will be None
 
-    """
-    def __init__(self, operation, model, obj):
-        super().__init__(_UNBOUND.format(operation), model, obj)
-        self.model = model
-        self.obj = obj
+class UnboundModel(BloopException, ValueError):
+    """This Model has not been bound to the Engine."""
+
+
+class UnknownType(BloopException, ValueError):
+    """This Type has not been registered with the type engine."""
+
+
+class UnknownSearchMode(BloopException, ValueError):
+    """Search mode must be 'scan' or 'query'."""
+
+
+class MissingKey(BloopException, ValueError):
+    """The instance must provide values for its key columns."""
+
+
+class InvalidModel(BloopException, ValueError):
+    """This is not a valid Model."""
+
+
+class InvalidIndex(BloopException, ValueError):
+    """This is not a valid Index."""
+
+
+class InvalidComparisonOperator(BloopException, ValueError):
+    """This is not a valid Comparison operator."""
+
+
+class InvalidKeyCondition(BloopException, ValueError):
+    """This is not a valid key condition for the Model and Index."""
+
+
+class InvalidFilterCondition(BloopException, ValueError):
+    """This is not a valid filter condition for the Model and Index."""
+
+
+class InvalidProjection(BloopException, ValueError):
+    """This is not a valid projection option for the Model and Index."""

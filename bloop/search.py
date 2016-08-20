@@ -1,7 +1,8 @@
 import collections
 
 from .exceptions import ConstraintViolation
-from .models import available_columns_for
+from .expressions import render
+from .models import GlobalSecondaryIndex, available_columns_for
 from .tracking import sync
 from .util import unpack_from_dynamodb
 from .validation import validate_filter_condition, validate_key_condition, validate_search_projection
@@ -98,24 +99,24 @@ class PreparedSearch:
         self.engine = None
         self.session = None
         self.mode = None
+        self._request = None
 
         self.model = None
         self.index = None
-        self.strict = None
         self.consistent = None
 
         self.key = None
 
-        self._projection_mode = None
-        self._projected_columns = None
+        self.strict = None
         self._available_columns = None
+        self._projected_columns = None
+        self._projection_mode = None
 
         self.filter = None
 
         self.limit = None
         self.forward = None
 
-        self._request = None
         self._iterator_cls = None
 
     def prepare(
@@ -135,6 +136,7 @@ class PreparedSearch:
         self.engine = engine
         self.session = session
         self.mode = mode
+        self._request = ScanIterator if mode == "scan" else QueryIterator
 
     def prepare_model(self, model, index, consistent):
         self.model = model
@@ -169,9 +171,26 @@ class PreparedSearch:
         self.forward = forward
 
     def prepare_request(self):
-        # TODO
-        # request = self._request = {}
-        pass
+        request = self._request = {}
+        request["TableName"] = self.model.Meta.table_name
+        request["ConsistentRead"] = self.consistent
+
+        if self.mode != "scan":
+            request["ScanIndexForward"] = self.forward
+
+        if self.index:
+            request["IndexName"] = self.index.dynamo_name
+            # GSI isn't strongly consistent
+            if isinstance(self.index, GlobalSecondaryIndex):
+                del request["ConsistentRead"]
+
+        if self.mode == "count":
+            request["Select"] = "COUNT"
+        else:
+            request["Select"] = "SPECIFIC_ATTRIBUTES"
+
+        rendered = render(self.engine, filter=self.filter, select=self._projected_columns, key=self.key)
+        request.update(rendered)
 
     def __repr__(self):  # pragma: no cover
         return search_repr(self.__class__, self.model, self.index)

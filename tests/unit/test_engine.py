@@ -532,7 +532,7 @@ def test_delete_atomic_condition(engine, session):
     sync(user, engine)
 
     expected = {
-        "ConditionExpression": "((#n0 = :v1) AND ((#n2 = :v3) AND (#n4 = :v5)))",
+        "ConditionExpression": "((#n0 = :v1) AND (#n2 = :v3) AND (#n4 = :v5))",
         "ExpressionAttributeValues": {
             ":v1": {"S": "foo"},
             ":v3": {"S": "foo@bar.com"},

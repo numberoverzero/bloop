@@ -109,6 +109,7 @@ def test_multi_chains_flatten():
     name = User.name == "foo"
     email = User.email != "bar"
 
+    # Flatten left -> right:  (a & b) & c -> a & b & c
     and_condition = Condition()
     or_condition = Condition()
     for c in [age, name, email]:
@@ -116,6 +117,15 @@ def test_multi_chains_flatten():
         or_condition |= c
     assert and_condition == And(age, name, email)
     assert or_condition == Or(age, name, email)
+
+    # Flatten right -> left:  a & (b & c) -> a & b & c
+    and_condition = Condition()
+    or_condition = Condition()
+    for c in [age, name, email]:
+        and_condition = c & and_condition
+        or_condition = c | or_condition
+    assert and_condition == And(email, name, age)
+    assert or_condition == Or(email, name, age)
 
 
 def test_not(engine):

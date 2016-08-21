@@ -1,4 +1,3 @@
-from .condition import Condition
 from .tracking import get_marked, get_snapshot
 
 
@@ -13,12 +12,16 @@ def render(engine, filter=None, select=None, key=None, atomic=None, condition=No
         renderer.projection_expression(select)
     if key is not None:
         renderer.key_expression(key)
-    if (atomic is not None) or (condition is not None):
-        condition = condition or Condition()
-        condition &= get_snapshot(atomic) if atomic else Condition()
-        renderer.condition_expression(condition)
-    if update is not None:
-        renderer.update_expression(update)
+    if condition and atomic:
+        condition_expression = condition & get_snapshot(atomic)
+    elif atomic:
+        condition_expression = get_snapshot(atomic)
+    elif condition:
+        condition_expression = condition
+    else:
+        condition_expression = None
+    renderer.condition_expression(condition_expression)
+    renderer.update_expression(update)
     return renderer.rendered
 
 
@@ -78,6 +81,8 @@ class ConditionRenderer:
         return ref
 
     def condition_expression(self, condition):
+        if not condition:
+            return
         self.expressions["ConditionExpression"] = condition.render(self)
 
     def filter_expression(self, condition):
@@ -90,6 +95,8 @@ class ConditionRenderer:
         self.expressions["ProjectionExpression"] = ", ".join(map(self.name_ref, columns))
 
     def update_expression(self, obj):
+        if obj is None:
+            return
         updates = {
             "set": [],
             "remove": []}

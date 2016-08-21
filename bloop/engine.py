@@ -6,7 +6,6 @@ from .expressions import render
 from .models import Index
 from .search import Query, Scan
 from .session import SessionWrapper
-from .tracking import clear, is_model_validated, sync
 from .util import missing, signal, unpack_from_dynamodb, walk_subclasses
 from .validation import fail_unknown, validate_is_model, validate_not_abstract
 
@@ -17,6 +16,10 @@ __all__ = ["Engine", "before_create_table", "model_bound", "model_validated"]
 before_create_table = signal("before_create_table")
 model_bound = signal("model_bound")
 model_validated = signal("model_validated")
+
+object_loaded = signal("object_loaded")
+object_saved = signal("object_saved")
+object_deleted = signal("object_deleted")
 
 
 def value_of(column):
@@ -76,28 +79,17 @@ class Engine:
         # Make sure we're looking at models
         validate_is_model(base)
 
-        # whether the model's typedefs should be registered, and
-        # whether the model should be eligible for validation
-        def is_concrete(model):
-            # Models that aren't explicitly abstract should be bound
-            abstract = model.Meta.abstract
-            return not abstract
-
-        concrete = set(filter(is_concrete, walk_subclasses(base)))
-        unvalidated = concrete - set(filter(is_model_validated, concrete))
+        concrete = set(filter(lambda m: not m.Meta.abstract, walk_subclasses(base)))
 
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
-        for model in unvalidated:
+        for model in concrete:
             before_create_table.send(self, model=model)
             self.session.create_table(model)
 
         for model in concrete:
-            if model in unvalidated:
-                self.session.validate_table(model)
-            # Model won't need to be verified the
-            # next time its BaseModel is bound to an engine
+            self.session.validate_table(model)
             model_validated.send(self, model=model)
 
             self.type_engine.register(model)
@@ -114,7 +106,7 @@ class Engine:
             item.update(rendered)
 
             self.session.delete_item(item)
-            clear(obj)
+            object_deleted.send(self, obj=obj)
 
     def load(self, *objs, consistent=False):
         """Populate objects from dynamodb, optionally using consistent reads.
@@ -171,7 +163,7 @@ class Engine:
                 for obj in object_index[table_name].pop(index):
                     unpack_from_dynamodb(
                         attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
-                    sync(obj, self)
+                    object_loaded.send(self, obj=obj)
                 if not object_index[table_name]:
                     object_index.pop(table_name)
 
@@ -205,7 +197,7 @@ class Engine:
             item.update(rendered)
 
             self.session.save_item(item)
-            sync(obj, self)
+            object_saved.send(self, obj=obj)
 
     def scan(self, model_or_index, filter=None, projection="all", limit=None, strict=True, consistent=False, **kwargs):
         if isinstance(model_or_index, Index):

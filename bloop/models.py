@@ -11,7 +11,6 @@ from .condition import (
     In,
 )
 from .exceptions import InvalidIndex, InvalidModel
-from .tracking import mark
 from .util import missing, printable_column_name, signal, unpack_from_dynamodb
 
 
@@ -19,6 +18,7 @@ __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex",
 
 # Signals!
 model_created = signal("model_created")
+object_modified = signal("object_modified")
 
 
 def available_columns_for(model, index, strict):
@@ -392,7 +392,7 @@ class Column(declare.Field, _ComparisonMixin):
     def set(self, obj, value):
         super().set(obj, value)
         # Notify the tracking engine that this value was intentionally mutated
-        mark(obj, self)
+        object_modified.send(self, obj=obj, column=self, value=value)
 
     def delete(self, obj):
         try:
@@ -400,4 +400,4 @@ class Column(declare.Field, _ComparisonMixin):
         finally:
             # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
             # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
-            mark(obj, self)
+            object_modified.send(self, obj=obj, column=self, value=None)

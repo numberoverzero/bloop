@@ -3,8 +3,7 @@ import collections
 from .exceptions import ConstraintViolation
 from .expressions import render
 from .models import GlobalSecondaryIndex, available_columns_for
-from .tracking import sync
-from .util import unpack_from_dynamodb
+from .util import signal, unpack_from_dynamodb
 from .validation import (
     validate_filter_condition,
     validate_key_condition,
@@ -12,7 +11,7 @@ from .validation import (
     validate_search_projection,
 )
 
-
+object_loaded = signal("object_loaded")
 __all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanIterator", "QueryIterator"]
 
 
@@ -284,7 +283,7 @@ class SearchModelIterator(SearchIterator):
             expected=self.projected,
             model=self.model,
             engine=self.engine)
-        sync(obj, self.engine)
+        object_loaded.send(self.engine, obj=self)
         return obj
 
 

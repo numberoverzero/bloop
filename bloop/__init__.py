@@ -28,7 +28,8 @@ from .types import (
     String,
     TypedMap,
 )
-
+# Hook up tracking signals
+from . import tracking  # noqa
 
 __all__ = [
     "AbstractModelError", "BaseModel", "Boolean", "Binary", "BloopException", "Column",

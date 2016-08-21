@@ -8,7 +8,11 @@ from bloop.models import Column
 from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,
     SessionWrapper,
+    create_table_request,
     expected_table_description,
+    ready,
+    sanitized_table_description,
+    simple_table_status,
 )
 from bloop.types import String
 from bloop.util import ordered
@@ -39,6 +43,9 @@ def client_error(code):
             "Message": "FooMessage"}}
     operation_name = "OperationName"
     return botocore.exceptions.ClientError(error_response, operation_name)
+
+
+# LOAD ITEMS =============================================================================================== LOAD ITEMS
 
 
 def test_batch_get_raises(session, dynamodb_client):
@@ -212,6 +219,12 @@ def test_batch_get_unprocessed(session, dynamodb_client):
     assert response == expected_response
 
 
+# END LOAD ITEMS ======================================================================================= END LOAD ITEMS
+
+
+# CREATE TABLE =========================================================================================== CREATE TABLE
+
+
 def test_create_table(session, dynamodb_client):
     expected = {
         "LocalSecondaryIndexes": [
@@ -286,6 +299,12 @@ def test_create_already_exists(session, dynamodb_client):
     assert dynamodb_client.create_table.call_count == 1
 
 
+# END CREATE TABLE =================================================================================== END CREATE TABLE
+
+
+# DELETE ITEM ============================================================================================= DELETE ITEM
+
+
 def test_delete_item(session, dynamodb_client):
     request = {"foo": "bar"}
     session.delete_item(request)
@@ -311,6 +330,12 @@ def test_delete_item_condition_failed(session, dynamodb_client):
     dynamodb_client.delete_item.assert_called_once_with(**request)
 
 
+# END DELETE ITEM ===================================================================================== END DELETE ITEM
+
+
+# SAVE ITEM ================================================================================================= SAVE ITEM
+
+
 def test_save_item(session, dynamodb_client):
     request = {"foo": "bar"}
     session.save_item(request)
@@ -334,6 +359,12 @@ def test_save_item_condition_failed(session, dynamodb_client):
     with pytest.raises(ConstraintViolation):
         session.save_item(request)
     dynamodb_client.update_item.assert_called_once_with(**request)
+
+
+# END SAVE ITEM ========================================================================================= END SAVE ITEM
+
+
+# QUERY SCAN SEARCH ================================================================================= QUERY SCAN SEARCH
 
 
 @pytest.mark.parametrize("response, expected", [
@@ -367,6 +398,9 @@ def test_search_unknown(session):
     with pytest.raises(ValueError) as excinfo:
         session.search_items(mode="foo", request={})
     assert "foo" in str(excinfo.value)
+
+
+# VALIDATION HELPERS =============================================================================== VALIDATION HELPERS
 
 
 def test_validate_compares_tables(session, dynamodb_client):
@@ -439,3 +473,134 @@ def test_validate_raises(session, dynamodb_client):
     with pytest.raises(BloopException) as excinfo:
         session.validate_table(User)
     assert excinfo.value.__cause__ is cause
+
+
+# END VALIDATION HELPERS ======================================================================= END VALIDATION HELPERS
+
+
+# TABLE HELPERS ========================================================================================= TABLE HELPERS
+
+
+def assert_unordered(obj, other):
+    assert ordered(obj) == ordered(other)
+
+
+def test_create_simple():
+    expected = {
+        'AttributeDefinitions': [
+            {'AttributeName': 'id', 'AttributeType': 'S'}],
+        'KeySchema': [{'AttributeName': 'id', 'KeyType': 'HASH'}],
+        'ProvisionedThroughput': {
+            'ReadCapacityUnits': 1,
+            'WriteCapacityUnits': 1},
+        'TableName': 'Simple'}
+    assert_unordered(create_table_request(SimpleModel), expected)
+
+
+def test_create_complex():
+    expected = {
+        'AttributeDefinitions': [
+            {'AttributeType': 'S', 'AttributeName': 'date'},
+            {'AttributeType': 'S', 'AttributeName': 'email'},
+            {'AttributeType': 'S', 'AttributeName': 'joined'},
+            {'AttributeType': 'S', 'AttributeName': 'name'}],
+        'GlobalSecondaryIndexes': [{
+            'IndexName': 'by_email',
+            'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}],
+            'Projection': {'ProjectionType': 'ALL'},
+            'ProvisionedThroughput': {
+                'ReadCapacityUnits': 4, 'WriteCapacityUnits': 5}}],
+        'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'name'},
+                      {'KeyType': 'RANGE', 'AttributeName': 'date'}],
+        'LocalSecondaryIndexes': [{
+            'IndexName': 'by_joined',
+            'KeySchema': [
+                {'KeyType': 'HASH', 'AttributeName': 'name'},
+                {'KeyType': 'RANGE', 'AttributeName': 'joined'}],
+            'Projection': {
+                'NonKeyAttributes': ['joined', 'email', 'date', 'name'],
+                'ProjectionType': 'INCLUDE'}}],
+        'ProvisionedThroughput': {
+            'ReadCapacityUnits': 3, 'WriteCapacityUnits': 2},
+        'TableName': 'CustomTableName'}
+    assert_unordered(create_table_request(ComplexModel), expected)
+
+
+def test_expected_description():
+    # Eventually expected_table_description will probably diverge from create_table
+    # This will guard against (or coverage should show) if there's drift
+    create = create_table_request(ComplexModel)
+    expected = expected_table_description(ComplexModel)
+    assert_unordered(create, expected)
+
+
+def test_sanitize_drop_empty_lists():
+    expected = expected_table_description(ComplexModel)
+    # Start from the same base, but inject an unnecessary NonKeyAttributes
+    description = expected_table_description(ComplexModel)
+    index = description["GlobalSecondaryIndexes"][0]
+    index["Projection"]["NonKeyAttributes"] = []
+
+    assert_unordered(expected, sanitized_table_description(description))
+
+
+def test_sanitize_drop_empty_indexes():
+    expected = expected_table_description(SimpleModel)
+    # Start from the same base, but inject an unnecessary NonKeyAttributes
+    description = expected_table_description(SimpleModel)
+    description["GlobalSecondaryIndexes"] = []
+
+    assert_unordered(expected, sanitized_table_description(description))
+
+
+def test_sanitize_expected():
+    expected = expected_table_description(User)
+    # Add some extra fields
+    description = {
+        'AttributeDefinitions': [
+            {'AttributeType': 'S', 'AttributeName': 'email'},
+            {'AttributeType': 'S', 'AttributeName': 'id'}],
+        'CreationDateTime': 'EXTRA_FIELD',
+        'ItemCount': 'EXTRA_FIELD',
+        'KeySchema': [{'AttributeName': 'id', 'KeyType': 'HASH'}],
+        'GlobalSecondaryIndexes': [{
+            'IndexArn': 'EXTRA_FIELD',
+            'IndexName': 'by_email',
+            'IndexSizeBytes': 'EXTRA_FIELD',
+            'IndexStatus': 'EXTRA_FIELD',
+            'KeySchema': [{'AttributeName': 'email', 'KeyType': 'HASH'}],
+            'Projection': {'ProjectionType': 'ALL'},
+            'ProvisionedThroughput': {
+                'NumberOfDecreasesToday': 'EXTRA_FIELD',
+                'ReadCapacityUnits': 1,
+                'WriteCapacityUnits': 1}}],
+        'ProvisionedThroughput': {
+            'LastDecreaseDateTime': 'EXTRA_FIELD',
+            'LastIncreaseDateTime': 'EXTRA_FIELD',
+            'NumberOfDecreasesToday': 'EXTRA_FIELD',
+            'ReadCapacityUnits': 1,
+            'WriteCapacityUnits': 1},
+        'TableArn': 'EXTRA_FIELD',
+        'TableName': 'User',
+        'TableSizeBytes': 'EXTRA_FIELD',
+        'TableStatus': 'EXTRA_FIELD'}
+    sanitized = sanitized_table_description(description)
+    assert_unordered(expected, sanitized)
+
+
+@pytest.mark.parametrize("table_status, gsi_status, expected_status", [
+    ("ACTIVE", "ACTIVE", ready),
+    ("ACTIVE", None, ready),
+    ("ACTIVE", "BUSY", None),
+    ("BUSY", "ACTIVE", None),
+    ("BUSY", "BUSY", None)
+])
+def test_simple_status(table_status, gsi_status, expected_status):
+    """Status is busy because table isn't ACTIVE, no GSIs"""
+    description = {"TableStatus": table_status}
+    if gsi_status is not None:
+        description["GlobalSecondaryIndexes"] = [{"IndexStatus": gsi_status}]
+    assert simple_table_status(description) == expected_status
+
+
+# END TABLE HELPERS ================================================================================= END TABLE HELPERS

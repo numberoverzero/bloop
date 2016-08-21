@@ -26,6 +26,9 @@ operations = [
 ]
 
 
+# BASE MODEL =============================================================================================== BASE MODEL
+
+
 def test_default_model_init():
     """Missing attributes are set to `None`"""
     user = User(id=uuid.uuid4(), email="user@domain.com")
@@ -241,7 +244,7 @@ def test_abstract_not_inherited():
     assert not Concrete.Meta.abstract
 
 
-def test_str(engine):
+def test_model_str(engine):
     """Different strings for None and missing"""
     new_user = User()
     loaded_empty_user = engine._load(User, None)
@@ -252,7 +255,10 @@ def test_str(engine):
     assert str(loaded_empty_user) == "User(age=None, email=None, id=None, joined=None, name=None)"
 
 
-# COLUMN TESTS =========================================================================================== COLUMN TESTS
+# END BASE MODEL ======================================================================================= END BASE MODEL
+
+
+# COLUMN ======================================================================================================= COLUMN
 
 
 def test_column_equals_alias_exists():
@@ -361,10 +367,10 @@ def test_column_repr_path():
     column.hash_key = True
     assert repr(column[3]["foo"]["bar"][2][1]) == "<Column[User.foo[3].foo.bar[2][1]=hash]>"
 
-# END COLUMN TESTS =================================================================================== END COLUMN TESTS
+# END COLUMN =============================================================================================== END COLUMN
 
 
-# INDEX TESTS ============================================================================================= INDEX TESTS
+# INDEX ========================================================================================================= INDEX
 
 
 def test_index_dynamo_name():
@@ -466,4 +472,4 @@ def test_gsi_repr():
     assert repr(index) == "<GSI[User.by_foo=all]>"
 
 
-# END INDEX TESTS ===================================================================================== END INDEX TESTS
+# END INDEX ================================================================================================= END INDEX

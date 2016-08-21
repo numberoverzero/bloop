@@ -2,7 +2,7 @@ import collections.abc
 
 import declare
 
-from .condition import (
+from .conditions import (
     AttributeExists,
     BeginsWith,
     Between,

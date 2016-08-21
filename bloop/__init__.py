@@ -1,4 +1,4 @@
-from .condition import Condition
+from .conditions import Condition
 from .engine import Engine, before_create_table, model_bound
 from .exceptions import (
     AbstractModelError,

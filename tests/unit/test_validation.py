@@ -1,7 +1,7 @@
 import functools
 
 import pytest
-from bloop.condition import (
+from bloop.conditions import (
     And,
     AttributeExists,
     BeginsWith,

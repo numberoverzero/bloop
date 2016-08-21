@@ -1,6 +1,6 @@
 import declare
 
-from .condition import And, BeginsWith, Between, Comparison, iter_columns
+from .conditions import And, BeginsWith, Between, Comparison, iter_columns
 from .exceptions import (
     AbstractModelError,
     InvalidFilterCondition,

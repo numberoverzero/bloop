@@ -2,9 +2,8 @@ import collections
 
 import botocore.exceptions
 
-from .exceptions import BloopException, ConstraintViolation, TableMismatch
+from .exceptions import BloopException, ConstraintViolation, TableMismatch, UnknownSearchMode
 from .util import Sentinel, ordered
-from .validation import validate_search_mode
 
 
 ready = Sentinel("ready")
@@ -62,6 +61,11 @@ class SessionWrapper:
             status = simple_table_status(description)
         if not compare_tables(description, model):
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
+
+
+def validate_search_mode(mode):
+    if mode not in {"query", "scan"}:
+        raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
 
 
 def handle_constraint_violation(error):

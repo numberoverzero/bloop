@@ -26,7 +26,7 @@ from bloop.models import (
     LocalSecondaryIndex,
 )
 from bloop.types import Integer
-from bloop.validation import (
+from bloop.search import (
     validate_filter_condition,
     validate_key_condition,
     validate_search_projection,

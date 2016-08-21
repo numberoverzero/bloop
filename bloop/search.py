@@ -1,15 +1,18 @@
 import collections
 
-from .exceptions import ConstraintViolation
-from .expressions import render
-from .models import GlobalSecondaryIndex, available_columns_for
-from .util import signal, unpack_from_dynamodb
-from .validation import (
-    validate_filter_condition,
-    validate_key_condition,
-    validate_search_mode,
-    validate_search_projection,
+import declare
+
+from .conditions import And, BeginsWith, Between, Comparison, iter_columns
+from .exceptions import (
+    ConstraintViolation,
+    InvalidFilterCondition,
+    InvalidKeyCondition,
+    InvalidProjection,
+    UnknownSearchMode
 )
+from .expressions import render
+from .models import Column, GlobalSecondaryIndex, available_columns_for
+from .util import printable_column_name, printable_query, signal, unpack_from_dynamodb
 
 object_loaded = signal("object_loaded")
 __all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanIterator", "QueryIterator"]
@@ -26,6 +29,132 @@ def search_repr(cls, model, index):
             return "<{}[None.{}]>".format(cls.__name__, index.model_name)
         else:
             return "<{}[None]>".format(cls.__name__)
+
+
+def validate_search_mode(mode):
+    if mode not in {"query", "scan"}:
+        raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
+
+
+def validate_key_condition(model, index, key):
+    # Model will always be provided, but Index has priority
+    query_on = index or model.Meta
+
+    # `Model_or_Index.hash_key == value`
+    # Valid for both (hash,) and (hash, range)
+    if check_hash_key(query_on, key):
+        return
+
+    # Failed.  Without a range key, the check above is the only valid key condition.
+    if query_on.range_key is None:
+        fail_bad_hash(query_on)
+
+    # If the model or index has a range key, the condition can
+    # still be (hash key condition AND range key condition)
+
+    if not isinstance(key, And):
+        # Too many options to fit into a useful error message.
+        fail_bad_range(query_on)
+
+    # This intentionally disallows an AND with just one hash key condition.
+    # Otherwise we get into unpacking arbitrarily nested conditions.
+    if len(key) != 2:
+        fail_bad_range(query_on)
+    first_key, second_key = key.conditions
+
+    # Only two options left -- just try both.
+    if check_hash_key(query_on, first_key) and check_range_key(query_on, second_key):
+        return
+    if check_range_key(query_on, first_key) and check_hash_key(query_on, second_key):
+        return
+
+    # Nothing else is valid.
+    fail_bad_range(query_on)
+
+
+def validate_search_projection(model, index, strict, projection):
+    if not projection:
+        raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
+    if projection == "count":
+        return None
+
+    available_columns = available_columns_for(model, index, strict)
+
+    if projection == "all":
+        return available_columns
+
+    # Keep original around for error messages
+    original_projection = projection
+
+    # model_name -> Column
+    if all(isinstance(p, str) for p in projection):
+        by_model_name = declare.index(model.Meta.columns, "model_name")
+        # This could be a list comprehension, but then the
+        # user gets a KeyError when they passed a list.  So,
+        # do each individually and throw a useful exception.
+        converted_projection = []
+        for p in projection:
+            try:
+                converted_projection.append(by_model_name[p])
+            except KeyError:
+                raise InvalidProjection("{!r} is not a column of {!r}.".format(p, model))
+        projection = converted_projection
+
+    # Could have been str/Column mix, or just not Columns.
+    if not all(isinstance(p, Column) for p in projection):
+        raise InvalidProjection(
+            "{!r} is not valid: it must be only Columns or only their model names.".format(original_projection))
+
+    # Must be subset of the available columns
+    if set(projection) <= available_columns:
+        return projection
+
+    raise InvalidProjection(
+        "{!r} includes columns that are not available for {!r}.".format(
+            original_projection, printable_query(index or model.Meta)))
+
+
+def validate_filter_condition(condition, available_columns, column_blacklist):
+    if condition is None:
+        return
+
+    for column in iter_columns(condition):
+        # All of the columns in the condition must be in the available columns
+        if column not in available_columns:
+            raise InvalidFilterCondition(
+                "{!r} is not available for the projection.".format(column))
+        # If this is a query, the condition can't contain the hash or range keys.
+        # Those are passed in as the column_blacklist.
+        if column in column_blacklist:
+            raise InvalidFilterCondition("{!r} can not be included in the filter condition.".format(column))
+
+
+def check_hash_key(query_on, key):
+    """Only allows Comparison("==") against query_on.hash_key"""
+    return (
+        isinstance(key, Comparison) and
+        (key.comparator == "==") and
+        (key.column is query_on.hash_key)
+    )
+
+
+def check_range_key(query_on, key):
+    """BeginsWith, Between, or any Comparison except '!=' against query_on.range_key"""
+    return (
+        isinstance(key, (BeginsWith, Between)) or
+        (isinstance(key, Comparison) and key.comparator != "!=")
+    ) and key.column is query_on.range_key
+
+
+def fail_bad_hash(query_on):
+    msg = "The key condition for a Query on {!r} must be `{} == value`."
+    raise InvalidKeyCondition(msg.format(
+        printable_query(query_on), printable_column_name(query_on.hash_key)))
+
+
+def fail_bad_range(query_on):
+    msg = "Invalid key condition for a Query on {!r}."
+    raise InvalidKeyCondition(msg.format(printable_query(query_on)))
 
 
 class Search:

@@ -24,13 +24,13 @@ def test_crud(engine):
     same_user.profile = "second"
     engine.save(same_user)
 
-    engine.load(user)
+    engine.load(user, consistent=True)
     assert user.profile == same_user.profile
 
     engine.delete(user)
 
     with pytest.raises(MissingObjects) as excinfo:
-        engine.load(same_user)
+        engine.load(same_user, consistent=True)
     assert [same_user] == excinfo.value.objects
 
 

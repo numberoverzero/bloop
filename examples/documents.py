@@ -1,10 +1,20 @@
-import arrow
 import decimal
 import random
 import uuid
+
+import arrow
 from bloop import (
-    BaseModel, Column, DateTime, Engine, Float,
-    Integer, Map, String, TypedMap, UUID)
+    UUID,
+    BaseModel,
+    Column,
+    DateTime,
+    Engine,
+    Float,
+    Integer,
+    Map,
+    String,
+    TypedMap,
+)
 
 
 # ================================================

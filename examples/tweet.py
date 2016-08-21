@@ -1,8 +1,16 @@
-import arrow
 import uuid
+
+import arrow
 from bloop import (
-    BaseModel, Column, DateTime, Engine,
-    GlobalSecondaryIndex, Integer, String, UUID)
+    UUID,
+    BaseModel,
+    Column,
+    DateTime,
+    Engine,
+    GlobalSecondaryIndex,
+    Integer,
+    String,
+)
 
 
 # ================================================

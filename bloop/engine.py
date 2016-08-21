@@ -1,7 +1,14 @@
 import boto3
 import declare
 
-from .exceptions import AbstractModelError, InvalidModel, MissingKey, MissingObjects, UnboundModel, UnknownType
+from .exceptions import (
+    AbstractModelError,
+    InvalidModel,
+    MissingKey,
+    MissingObjects,
+    UnboundModel,
+    UnknownType,
+)
 from .expressions import render
 from .models import Index, ModelMetaclass
 from .search import Query, Scan

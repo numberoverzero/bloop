@@ -8,11 +8,17 @@ from .exceptions import (
     InvalidFilterCondition,
     InvalidKeyCondition,
     InvalidProjection,
-    UnknownSearchMode
+    UnknownSearchMode,
 )
 from .expressions import render
 from .models import Column, GlobalSecondaryIndex, available_columns_for
-from .util import printable_column_name, printable_query, signal, unpack_from_dynamodb
+from .util import (
+    printable_column_name,
+    printable_query,
+    signal,
+    unpack_from_dynamodb,
+)
+
 
 object_loaded = signal("object_loaded")
 __all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanIterator", "QueryIterator"]

@@ -2,7 +2,12 @@ import collections
 
 import botocore.exceptions
 
-from .exceptions import BloopException, ConstraintViolation, TableMismatch, UnknownSearchMode
+from .exceptions import (
+    BloopException,
+    ConstraintViolation,
+    TableMismatch,
+    UnknownSearchMode,
+)
 from .util import Sentinel, ordered
 
 

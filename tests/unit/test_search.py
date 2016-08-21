@@ -20,13 +20,13 @@ from bloop.exceptions import (
     InvalidFilterCondition,
     InvalidKeyCondition,
     InvalidProjection,
-    UnknownSearchMode
+    UnknownSearchMode,
 )
 from bloop.models import (
     BaseModel,
     Column,
     GlobalSecondaryIndex,
-    LocalSecondaryIndex
+    LocalSecondaryIndex,
 )
 from bloop.search import (
     PreparedSearch,
@@ -40,7 +40,7 @@ from bloop.search import (
     search_repr,
     validate_filter_condition,
     validate_key_condition,
-    validate_search_projection
+    validate_search_projection,
 )
 from bloop.types import Integer
 from bloop.util import Sentinel

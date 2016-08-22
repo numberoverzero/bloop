@@ -46,7 +46,7 @@ def validate_key_condition(model, index, key):
     # Model will always be provided, but Index has priority
     query_on = index or model.Meta
 
-    # `Model_or_Index.hash_key == value`
+    # (model or index).hash_key == value
     # Valid for both (hash,) and (hash, range)
     if check_hash_key(query_on, key):
         return

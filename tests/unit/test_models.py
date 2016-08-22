@@ -4,6 +4,7 @@ import uuid
 import arrow
 import pytest
 from bloop.conditions import AttributeExists, BeginsWith, Between, Contains, In
+from bloop.exceptions import InvalidIndex, InvalidModel
 from bloop.models import (
     BaseModel,
     Column,
@@ -129,29 +130,29 @@ def test_meta_indexes_columns():
 
 
 def test_invalid_model_keys():
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidModel):
         class DoubleHash(BaseModel):
             hash1 = Column(UUID, hash_key=True)
             hash2 = Column(UUID, hash_key=True)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidModel):
         class DoubleRange(BaseModel):
             id = Column(UUID, hash_key=True)
             range1 = Column(UUID, range_key=True)
             range2 = Column(UUID, range_key=True)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidModel):
         class NoHash(BaseModel):
             other = Column(UUID, range_key=True)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidModel):
         class SharedHashRange(BaseModel):
             both = Column(UUID, hash_key=True, range_key=True)
 
 
 def test_invalid_local_index():
-    with pytest.raises(ValueError):
-        class InvalidIndex(BaseModel):
+    with pytest.raises(InvalidIndex):
+        class InvalidLSI(BaseModel):
             id = Column(UUID, hash_key=True)
             index = LocalSecondaryIndex(range_key="id", projection="keys")
 
@@ -176,7 +177,7 @@ def test_index_keys():
 
 def test_local_index_no_range_key():
     """A table range_key is required to specify a LocalSecondaryIndex"""
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         class Model(BaseModel):
             id = Column(UUID, hash_key=True)
             another = Column(UUID)
@@ -395,14 +396,36 @@ def test_index_dynamo_name():
     assert index.dynamo_name == "foo"
 
 
+def test_index_binds_model_names():
+    """When a Model is created, the Index is bound and model names are resolved into columns."""
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+        foo = Column(Integer)
+        bar = Column(Integer)
+        baz = Column(Integer)
+
+        by_foo = GlobalSecondaryIndex(projection=["foo"], hash_key=bar, range_key="baz")
+        by_bar = GlobalSecondaryIndex(projection=[foo], hash_key="bar", range_key=baz)
+
+    # hash key must be a string or column
+    bad_index = Index(projection="all", hash_key=object())
+    with pytest.raises(InvalidIndex):
+        bad_index._bind(Model)
+    bad_index = Index(projection="all", hash_key="foo", range_key=object())
+    with pytest.raises(InvalidIndex):
+        bad_index._bind(Model)
+
+
 def test_index_projection_validation():
-    """should be all, keys, or a list of column model names"""
-    with pytest.raises(ValueError):
+    """should be all, keys, a list of columns, or a list of column model names"""
+    with pytest.raises(InvalidIndex):
         Index(projection="foo")
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         Index(projection=object())
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         Index(projection=["only strings", 1, None])
+    with pytest.raises(InvalidIndex):
+        Index(projection=["foo", User.joined])
 
     index = Index(projection="all")
     assert index.projection["mode"] == "all"
@@ -419,18 +442,23 @@ def test_index_projection_validation():
     assert index.projection["included"] == ["foo", "bar"]
     assert index.projection["available"] is None
 
+    index = Index(projection=[User.age, User.email])
+    assert index.projection["mode"] == "include"
+    assert index.projection["included"] == [User.age, User.email]
+    assert index.projection["available"] is None
+
 
 def test_lsi_specifies_hash_key():
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         LocalSecondaryIndex(hash_key="blah", range_key="foo", projection="keys")
 
 
 def test_lsi_init_throughput():
     """Can't set throughput when creating an LSI"""
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         LocalSecondaryIndex(range_key="range", projection="keys", write_units=1)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         LocalSecondaryIndex(range_key="range", projection="keys", read_units=1)
 
 

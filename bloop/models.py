@@ -45,15 +45,22 @@ def validate_projection(projection):
         validated_projection["mode"] = projection
     elif isinstance(projection, collections.abc.Iterable):
         projection = list(projection)
-        all_names = all(isinstance(item, str) for item in projection)
-        if not all_names:
+        # These checks aren't done together; that would allow a mix
+        # of column instances and column names.  There aren't any cases
+        # where a mix is required, over picking a style.  Much more likely,
+        # the user is trying to do something odd and doesn't understand what
+        # the index projection means.
+        if (
+                all(isinstance(p, str) for p in projection) or
+                all(isinstance(p, Column) for p in projection)):
+            validated_projection["mode"] = "include"
+            validated_projection["included"] = projection
+        else:
             raise InvalidIndex(
-                "Index projection must be a list of strings when selecting specific Columns.")
-        validated_projection["mode"] = "include"
-        validated_projection["included"] = projection
+                "Index projection must be a list of strings or Columns to select specific Columns.")
     else:
         raise InvalidIndex(
-            "Index projection must be 'all', 'keys', or a list of Column names.")
+            "Index projection must be 'all', 'keys', or a list of Columns or Column names.")
     return validated_projection
 
 
@@ -239,9 +246,15 @@ class Index(declare.Field):
 
         # Index by model_name so we can replace hash_key, range_key with the proper `bloop.Column` object
         columns = declare.index(model.Meta.columns, "model_name")
-        self.hash_key = columns[self.hash_key]
+        if isinstance(self.hash_key, str):
+            self.hash_key = columns[self.hash_key]
+        if not isinstance(self.hash_key, Column):
+            raise InvalidIndex("Index hash key must be a Column or Column model name.")
         if self.range_key:
-            self.range_key = columns[self.range_key]
+            if isinstance(self.range_key, str):
+                self.range_key = columns[self.range_key]
+            if not isinstance(self.range_key, Column):
+                raise InvalidIndex("Index range key (if provided) must be a Column or Column model name.")
 
         self.keys = {self.hash_key}
         if self.range_key:
@@ -256,7 +269,11 @@ class Index(declare.Field):
         elif self.projection["mode"] == "all":
             self.projection["included"] = model.Meta.columns
         elif self.projection["mode"] == "include":  # pragma: no branch
-            projection = set(columns[name] for name in self.projection["included"])
+            # model_name -> Column
+            if all(isinstance(p, str) for p in self.projection["included"]):
+                projection = set(columns[name] for name in self.projection["included"])
+            else:
+                projection = set(self.projection["included"])
             projection.update(projection_keys)
             self.projection["included"] = projection
 

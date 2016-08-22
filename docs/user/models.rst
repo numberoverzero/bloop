@@ -188,7 +188,8 @@ Indexes
     LocalSecondaryIndex(
         projection: Union[str, List[str]],
         range_key: str,
-        name: Optional[str]=None)
+        name: Optional[str]=None,
+        strict: bool=True)
 
 .. attribute:: projection
     :noindex:
@@ -223,6 +224,18 @@ Indexes
     :noindex:
 
     The provisioned write units for the index.  LSIs share the model's write units.  Defaults to 1.
+
+.. attribute:: strict
+    :noindex:
+
+    Whether or not queries and scans against the LSI will be allowed to access the full set of columns,
+    even when they are not projected into the LSI.  When this is True, bloop will prevent you from making
+    calls that incur additional reads against the table.  If you query or scan a Local Secondary Index
+    that has ``strict=False`` and include columns in the projection or filter expressions that are not
+    part of the LSI, DynamoDB will incur an additional read against the table in order to return all columns.
+
+    It is highly recommended to keep this enabled.  Defaults to True.
+
 
 Specific column projections always include key columns.  A query against the following ``User`` index would
 return objects that include all columns except ``created_on`` (since ``id`` and ``email`` are the model

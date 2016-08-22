@@ -103,7 +103,6 @@ Scan and Query have very similar interfaces:
         filter=None,
         projection: Union[str, List[str]]="all",
         limit: Optional[int]=None,
-        strict: bool=True,
         consistent: bool=False,
         forward: bool=True, **kwargs) -> bloop.QueryIterator
 
@@ -112,7 +111,6 @@ Scan and Query have very similar interfaces:
         filter=None,
         projection: Union[str, List[str]]="all",
         limit: Optional[int]=None,
-        strict: bool=True,
         consistent: bool=False, **kwargs) -> bloop.ScanIterator
 
 .. attribute:: model_or_index
@@ -167,17 +165,6 @@ Scan and Query have very similar interfaces:
     object, it will not return any more (even if the internal buffer is not empty).  Defaults to None.
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
-
-.. _property-strict:
-
-.. attribute:: strict
-    :noindex:
-
-    Whether or not a query or scan is prevented from incurring additional reads against the table.
-    If you query or scan a Local Secondary Index without strict set to True,
-    DynamoDB will incur an additional read against the table in order to return all columns.
-
-    It is highly recommended to keep this enabled.  Defaults to True.
 
 .. _property-consistent:
 

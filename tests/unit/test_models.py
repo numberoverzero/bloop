@@ -205,19 +205,29 @@ def test_index_projections():
     no_boolean = set(Model.Meta.columns)
     no_boolean.remove(Model.boolean)
 
-    assert Model.g_all.projection == "all"
-    assert Model.g_all.projected_columns == set(Model.Meta.columns)
-    assert Model.g_key.projection == "keys"
-    assert Model.g_key.projected_columns == uuids
-    assert Model.g_inc.projection == "include"
-    assert Model.g_inc.projected_columns == no_boolean
+    assert Model.g_all.projection["mode"] == "all"
+    assert Model.g_all.projection["included"] == Model.Meta.columns
+    assert Model.g_all.projection["available"] == Model.Meta.columns
 
-    assert Model.l_all.projection == "all"
-    assert Model.l_all.projected_columns == set(Model.Meta.columns)
-    assert Model.l_key.projection == "keys"
-    assert Model.l_key.projected_columns == uuids
-    assert Model.l_inc.projection == "include"
-    assert Model.l_inc.projected_columns == no_boolean
+    assert Model.g_key.projection["mode"] == "keys"
+    assert Model.g_key.projection["included"] == uuids
+    assert Model.g_key.projection["available"] == uuids
+
+    assert Model.g_inc.projection["mode"] == "include"
+    assert Model.g_inc.projection["included"] == no_boolean
+    assert Model.g_inc.projection["available"] == no_boolean
+
+    assert Model.l_all.projection["mode"] == "all"
+    assert Model.l_all.projection["included"] == Model.Meta.columns
+    assert Model.l_all.projection["available"] == Model.Meta.columns
+
+    assert Model.l_key.projection["mode"] == "keys"
+    assert Model.l_key.projection["included"] == uuids
+    assert Model.l_key.projection["available"] == uuids
+
+    assert Model.l_inc.projection["mode"] == "include"
+    assert Model.l_inc.projection["included"] == no_boolean
+    assert Model.l_inc.projection["available"] == no_boolean
 
 
 def test_meta_table_name():
@@ -395,16 +405,19 @@ def test_index_projection_validation():
         Index(projection=["only strings", 1, None])
 
     index = Index(projection="all")
-    assert index.projection == "all"
-    assert index.projected_columns is None
+    assert index.projection["mode"] == "all"
+    assert index.projection["included"] is None
+    assert index.projection["available"] is None
 
     index = Index(projection="keys")
-    assert index.projection == "keys"
-    assert index.projected_columns is None
+    assert index.projection["mode"] == "keys"
+    assert index.projection["included"] is None
+    assert index.projection["available"] is None
 
     index = Index(projection=["foo", "bar"])
-    assert index.projection == "include"
-    assert index.projected_columns == ["foo", "bar"]
+    assert index.projection["mode"] == "include"
+    assert index.projection["included"] == ["foo", "bar"]
+    assert index.projection["available"] is None
 
 
 def test_lsi_specifies_hash_key():
@@ -445,17 +458,14 @@ def test_lsi_delegates_throughput():
     assert lsi.read_units == meta.read_units
 
 
-def test_index_repr():
-    index = Index(projection="all", name="f")
+@pytest.mark.parametrize("projection", ["all", "keys", ["foo"]])
+def test_index_repr(projection):
+    index = Index(projection=projection, name="f")
     index.model = User
     index.model_name = "by_foo"
-    assert repr(index) == "<Index[User.by_foo=all]>"
-
-    index.projection = "keys"
-    assert repr(index) == "<Index[User.by_foo=keys]>"
-
-    index.projection = "include"
-    assert repr(index) == "<Index[User.by_foo=include]>"
+    if isinstance(projection, list):
+        projection = "include"
+    assert repr(index) == "<Index[User.by_foo={}]>".format(projection)
 
 
 def test_lsi_repr():

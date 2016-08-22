@@ -252,17 +252,20 @@ class Index(declare.Field):
         projection_keys = set.union(model.Meta.keys, self.keys)
 
         if self.projection["mode"] == "keys":
-            self.projection["included"] = self.projection["available"] = projection_keys
+            self.projection["included"] = projection_keys
         elif self.projection["mode"] == "all":
-            self.projection["included"] = self.projection["available"] = model.Meta.columns
+            self.projection["included"] = model.Meta.columns
         elif self.projection["mode"] == "include":  # pragma: no branch
             projection = set(columns[name] for name in self.projection["included"])
             projection.update(projection_keys)
             self.projection["included"] = projection
-            if self.projection["strict"]:
-                self.projection["available"] = projection
-            else:
-                self.projection["available"] = model.Meta.columns
+
+        # Strict has the same availability as the included columns,
+        # while non-strict has access to the full range of columns
+        if self.projection["strict"]:
+            self.projection["available"] = self.projection["included"]
+        else:
+            self.projection["available"] = model.Meta.columns
 
     # TODO: disallow set/get/del for an index; these don't store values.  Raise AttributeError.
 

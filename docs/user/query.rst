@@ -101,7 +101,7 @@ Scan and Query have very similar interfaces:
         model_or_index: Union[bloop.BaseModel, bloop.Index],
         key=None,
         filter=None,
-        projection: Union[str, List[str]]="all",
+        projection: Union[str, List[str], List[Column]]="all",
         limit: Optional[int]=None,
         consistent: bool=False,
         forward: bool=True, **kwargs) -> bloop.QueryIterator
@@ -109,7 +109,7 @@ Scan and Query have very similar interfaces:
     Engine.scan(
         model_or_index: Union[bloop.BaseModel, bloop.Index],
         filter=None,
-        projection: Union[str, List[str]]="all",
+        projection: Union[str, List[str], List[Column]]="all",
         limit: Optional[int]=None,
         consistent: bool=False, **kwargs) -> bloop.ScanIterator
 
@@ -153,7 +153,7 @@ Scan and Query have very similar interfaces:
 .. attribute:: projection
     :noindex:
 
-    The columns to load.  One of ``"all"``, ``"count"``, or a list of columns.
+    The columns to load.  One of ``"all"``, ``"count"``, a list of Columns, or a list of Column model names.
     When select is "count", no objects will be returned, but the ``count`` and ``scanned`` properties
     will be set on the result iterator (see below).  Defaults to "all".
 

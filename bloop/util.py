@@ -19,7 +19,15 @@ __signals = blinker.Namespace()
 signal = __signals.signal
 
 
-def printable_column_name(column, path):
+def printable_query(query_on):
+    # Model.Meta -> Model
+    if getattr(query_on, "__name__", "") == "Meta":
+        return query_on.model
+    # Index -> Index
+    return query_on
+
+
+def printable_column_name(column, path=None):
     """Provided for debug output when rendering conditions"""
     model_name = column.model.__name__
     name = "{}.{}".format(model_name, column.model_name)

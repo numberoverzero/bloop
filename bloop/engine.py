@@ -1,13 +1,19 @@
 import boto3
 import declare
 
-from .exceptions import MissingKey, MissingObjects
+from .exceptions import (
+    AbstractModelError,
+    InvalidModel,
+    MissingKey,
+    MissingObjects,
+    UnboundModel,
+    UnknownType,
+)
 from .expressions import render
-from .models import Index
+from .models import Index, ModelMetaclass
 from .search import Query, Scan
 from .session import SessionWrapper
 from .util import missing, signal, unpack_from_dynamodb, walk_subclasses
-from .validation import fail_unknown, validate_is_model, validate_not_abstract
 
 
 __all__ = ["Engine", "before_create_table", "model_bound", "model_validated"]
@@ -51,6 +57,30 @@ def dump_key(engine, obj):
         key_value = engine._dump(key_column.typedef, key_value)
         key[key_column.dynamo_name] = key_value
     return key
+
+
+def validate_not_abstract(*objs):
+    for obj in objs:
+        if obj.Meta.abstract:
+            cls = obj if isinstance(obj, type) else obj.__class__
+            raise AbstractModelError("{!r} is abstract.".format(cls.__name__))
+
+
+def validate_is_model(model):
+    if not isinstance(model, ModelMetaclass):
+        cls = model if isinstance(model, type) else model.__class__
+        raise InvalidModel("{!r} does not subclass BaseModel.".format(cls.__name__))
+
+
+def fail_unknown(model, from_declare):
+    # Best-effort check for a more helpful message
+    if isinstance(model, ModelMetaclass):
+        msg = "{!r} is not bound.  Did you forget to call engine.bind?"
+        raise UnboundModel(msg.format(model.__name__)) from from_declare
+    else:
+        msg = "{!r} is not a registered Type."
+        obj = model.__name__ if hasattr(model, "__name__") else model
+        raise UnknownType(msg.format(obj)) from from_declare
 
 
 class Engine:

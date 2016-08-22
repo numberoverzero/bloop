@@ -1,16 +1,32 @@
+import operator
 import uuid
 
 import arrow
 import pytest
+from bloop.conditions import AttributeExists, BeginsWith, Between, Contains, In
 from bloop.models import (
     BaseModel,
     Column,
     GlobalSecondaryIndex,
+    Index,
     LocalSecondaryIndex,
 )
-from bloop.types import UUID, Boolean, DateTime, String
+from bloop.types import UUID, Boolean, DateTime, Integer, String
 
 from ..helpers.models import User
+
+
+operations = [
+    (operator.ne, "!="),
+    (operator.eq, "=="),
+    (operator.lt, "<"),
+    (operator.le, "<="),
+    (operator.gt, ">"),
+    (operator.ge, ">=")
+]
+
+
+# BASE MODEL =============================================================================================== BASE MODEL
 
 
 def test_default_model_init():
@@ -228,7 +244,7 @@ def test_abstract_not_inherited():
     assert not Concrete.Meta.abstract
 
 
-def test_str(engine):
+def test_model_str(engine):
     """Different strings for None and missing"""
     new_user = User()
     loaded_empty_user = engine._load(User, None)
@@ -237,3 +253,223 @@ def test_str(engine):
     assert str(new_user) == "User()"
     # Values set to None
     assert str(loaded_empty_user) == "User(age=None, email=None, id=None, joined=None, name=None)"
+
+
+# END BASE MODEL ======================================================================================= END BASE MODEL
+
+
+# COLUMN ======================================================================================================= COLUMN
+
+
+def test_column_equals_alias_exists():
+    """
+    == and != should map to attribute_not_exists and attribute_exists
+    when compared to None
+    """
+    column = Column(Integer)
+
+    condition = column.is_(None)
+    assert isinstance(condition, AttributeExists)
+    assert condition.column is column
+    assert condition.negate is True
+
+    condition = column.is_not(None)
+    assert isinstance(condition, AttributeExists)
+    assert condition.column is column
+    assert condition.negate is False
+
+
+@pytest.mark.parametrize("op_func, op_name", operations, ids=repr)
+def test_column_comparison(op_func, op_name):
+    column = Column(Integer)
+    value = object()
+
+    condition = op_func(column, value)
+    assert condition.comparator == op_name
+    assert condition.column is column
+    assert condition.value is value
+
+
+def test_column_between():
+    lower, upper = object(), object()
+    column = Column(Integer)
+    condition = column.between(lower, upper)
+
+    assert isinstance(condition, Between)
+    assert condition.column is column
+    assert condition.lower is lower
+    assert condition.upper is upper
+
+
+def test_column_in():
+    values = [object() for _ in range(3)]
+    column = Column(Integer)
+    condition = column.in_(values)
+
+    assert isinstance(condition, In)
+    assert condition.column is column
+    assert condition.values == values
+
+
+def test_column_begins_with():
+    value = object
+    column = Column(Integer)
+    condition = column.begins_with(value)
+
+    assert isinstance(condition, BeginsWith)
+    assert condition.column is column
+    assert condition.value == value
+
+
+def test_column_contains():
+    value = object
+    column = Column(Integer)
+    condition = column.contains(value)
+
+    assert isinstance(condition, Contains)
+    assert condition.column is column
+    assert condition.value == value
+
+
+def test_column_dynamo_name():
+    """ Returns model name unless dynamo name is specified """
+    column = Column(Integer)
+    # Normally set when a class is defined
+    column.model_name = "foo"
+    assert column.dynamo_name == "foo"
+
+    column = Column(Integer, name="foo")
+    column.model_name = "bar"
+    assert column.dynamo_name == "foo"
+
+
+def test_column_repr():
+    column = Column(Integer, name="f")
+    column.model = User
+    column.model_name = "foo"
+    assert repr(column) == "<Column[User.foo]>"
+
+    column.hash_key = True
+    assert repr(column) == "<Column[User.foo=hash]>"
+
+    column.hash_key = False
+    column.range_key = True
+    assert repr(column) == "<Column[User.foo=range]>"
+
+
+def test_column_repr_path():
+    column = Column(Integer, name="f")
+    column.model = User
+    column.model_name = "foo"
+
+    assert repr(column[3]["foo"]["bar"][2][1]) == "<Column[User.foo[3].foo.bar[2][1]]>"
+
+    column.hash_key = True
+    assert repr(column[3]["foo"]["bar"][2][1]) == "<Column[User.foo[3].foo.bar[2][1]=hash]>"
+
+# END COLUMN =============================================================================================== END COLUMN
+
+
+# INDEX ========================================================================================================= INDEX
+
+
+def test_index_dynamo_name():
+    """returns model name unless dynamo name is specified"""
+    index = Index(projection="keys")
+    # Normally set when a class is defined
+    index.model_name = "foo"
+    assert index.dynamo_name == "foo"
+
+    index = Index(name="foo", projection="keys")
+    index.model_name = "bar"
+    assert index.dynamo_name == "foo"
+
+
+def test_index_projection_validation():
+    """should be all, keys, or a list of column model names"""
+    with pytest.raises(ValueError):
+        Index(projection="foo")
+    with pytest.raises(ValueError):
+        Index(projection=object())
+    with pytest.raises(ValueError):
+        Index(projection=["only strings", 1, None])
+
+    index = Index(projection="all")
+    assert index.projection == "all"
+    assert index.projected_columns is None
+
+    index = Index(projection="keys")
+    assert index.projection == "keys"
+    assert index.projected_columns is None
+
+    index = Index(projection=["foo", "bar"])
+    assert index.projection == "include"
+    assert index.projected_columns == ["foo", "bar"]
+
+
+def test_lsi_specifies_hash_key():
+    with pytest.raises(ValueError):
+        LocalSecondaryIndex(hash_key="blah", range_key="foo", projection="keys")
+
+
+def test_lsi_init_throughput():
+    """Can't set throughput when creating an LSI"""
+    with pytest.raises(ValueError):
+        LocalSecondaryIndex(range_key="range", projection="keys", write_units=1)
+
+    with pytest.raises(ValueError):
+        LocalSecondaryIndex(range_key="range", projection="keys", read_units=1)
+
+
+def test_lsi_delegates_throughput():
+    """LSI read_units, write_units delegate to model.Meta"""
+    class Model(BaseModel):
+        name = Column(String, hash_key=True)
+        other = Column(String, range_key=True)
+        joined = Column(String)
+        by_joined = LocalSecondaryIndex(range_key="joined", projection="keys")
+
+    meta = Model.Meta
+    lsi = Model.by_joined
+
+    # Getters pass through
+    meta.write_units = "meta.write_units"
+    meta.read_units = "meta.read_units"
+    assert lsi.write_units == meta.write_units
+    assert lsi.read_units == meta.read_units
+
+    # Setters pass through
+    lsi.write_units = "lsi.write_units"
+    lsi.read_units = "lsi.read_units"
+    assert lsi.write_units == meta.write_units
+    assert lsi.read_units == meta.read_units
+
+
+def test_index_repr():
+    index = Index(projection="all", name="f")
+    index.model = User
+    index.model_name = "by_foo"
+    assert repr(index) == "<Index[User.by_foo=all]>"
+
+    index.projection = "keys"
+    assert repr(index) == "<Index[User.by_foo=keys]>"
+
+    index.projection = "include"
+    assert repr(index) == "<Index[User.by_foo=include]>"
+
+
+def test_lsi_repr():
+    index = LocalSecondaryIndex(projection="all", range_key="key", name="f")
+    index.model = User
+    index.model_name = "by_foo"
+    assert repr(index) == "<LSI[User.by_foo=all]>"
+
+
+def test_gsi_repr():
+    index = GlobalSecondaryIndex(projection="all", hash_key="key", name="f")
+    index.model = User
+    index.model_name = "by_foo"
+    assert repr(index) == "<GSI[User.by_foo=all]>"
+
+
+# END INDEX ================================================================================================= END INDEX

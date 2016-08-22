@@ -1,5 +1,6 @@
-from .condition import Condition
+from .conditions import Condition
 from .util import WeakDefaultDictionary, signal
+
 
 # Tracks the state of instances of models:
 # 1) Are any columns marked for including in an update?

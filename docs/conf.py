@@ -1,6 +1,8 @@
 import sys
+
 import alabaster
 import pkg_resources
+
 
 extensions = [
     'alabaster',

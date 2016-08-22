@@ -1,4 +1,5 @@
-from .condition import Condition
+from . import tracking  # noqa
+from .conditions import Condition
 from .engine import Engine, before_create_table, model_bound
 from .exceptions import (
     AbstractModelError,
@@ -28,8 +29,9 @@ from .types import (
     String,
     TypedMap,
 )
+
+
 # Hook up tracking signals
-from . import tracking  # noqa
 
 __all__ = [
     "AbstractModelError", "BaseModel", "Boolean", "Binary", "BloopException", "Column",

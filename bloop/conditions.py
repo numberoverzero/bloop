@@ -44,22 +44,26 @@ class _BaseCondition:
     dumped = False
 
     def __and__(self, other):
-        # And with empty condition is the original condition
         if other:
-            return And(self, other)
+            # This lets And handle folding if other is also an And
+            return And(self) & other
         return self
+
     __iand__ = __and__
 
     def __or__(self, other):
         if other:
-            return Or(self, other)
+            # This lets Or handle folding if other is also an Or
+            return Or(self) | other
         return self
+
     __ior__ = __or__
 
     def __invert__(self):
         if self:
             return Not(self)
         return self
+
     __neg__ = __invert__
 
     def __len__(self):
@@ -79,14 +83,17 @@ class Condition(_BaseCondition):
     """
     def __and__(self, other):
         return other
+
     __iand__ = __and__
 
     def __or__(self, other):
         return other
+
     __ior__ = __or__
 
     def __invert__(self):
         return self
+
     __neg__ = __invert__
 
     def __len__(self):
@@ -148,8 +155,11 @@ class And(_MultiCondition):
 
     def __and__(self, other):
         if other:
-            self.conditions.append(other)
+            if isinstance(other, And):
+                return And(*self.conditions, *other.conditions)
+            return And(*self.conditions, other)
         return self
+
     __iand__ = __and__
 
 
@@ -159,8 +169,11 @@ class Or(_MultiCondition):
 
     def __or__(self, other):
         if other:
-            self.conditions.append(other)
+            if isinstance(other, Or):
+                return Or(*self.conditions, *other.conditions)
+            return Or(*self.conditions, other)
         return self
+
     __ior__ = __or__
 
 

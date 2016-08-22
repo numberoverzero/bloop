@@ -4,6 +4,7 @@ import uuid
 import arrow
 import pytest
 from bloop.conditions import AttributeExists, BeginsWith, Between, Contains, In
+from bloop.exceptions import InvalidIndex, InvalidModel
 from bloop.models import (
     BaseModel,
     Column,
@@ -129,29 +130,29 @@ def test_meta_indexes_columns():
 
 
 def test_invalid_model_keys():
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidModel):
         class DoubleHash(BaseModel):
             hash1 = Column(UUID, hash_key=True)
             hash2 = Column(UUID, hash_key=True)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidModel):
         class DoubleRange(BaseModel):
             id = Column(UUID, hash_key=True)
             range1 = Column(UUID, range_key=True)
             range2 = Column(UUID, range_key=True)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidModel):
         class NoHash(BaseModel):
             other = Column(UUID, range_key=True)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidModel):
         class SharedHashRange(BaseModel):
             both = Column(UUID, hash_key=True, range_key=True)
 
 
 def test_invalid_local_index():
-    with pytest.raises(ValueError):
-        class InvalidIndex(BaseModel):
+    with pytest.raises(InvalidIndex):
+        class InvalidLSI(BaseModel):
             id = Column(UUID, hash_key=True)
             index = LocalSecondaryIndex(range_key="id", projection="keys")
 
@@ -176,7 +177,7 @@ def test_index_keys():
 
 def test_local_index_no_range_key():
     """A table range_key is required to specify a LocalSecondaryIndex"""
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         class Model(BaseModel):
             id = Column(UUID, hash_key=True)
             another = Column(UUID)
@@ -205,19 +206,29 @@ def test_index_projections():
     no_boolean = set(Model.Meta.columns)
     no_boolean.remove(Model.boolean)
 
-    assert Model.g_all.projection == "all"
-    assert Model.g_all.projected_columns == set(Model.Meta.columns)
-    assert Model.g_key.projection == "keys"
-    assert Model.g_key.projected_columns == uuids
-    assert Model.g_inc.projection == "include"
-    assert Model.g_inc.projected_columns == no_boolean
+    assert Model.g_all.projection["mode"] == "all"
+    assert Model.g_all.projection["included"] == Model.Meta.columns
+    assert Model.g_all.projection["available"] == Model.Meta.columns
 
-    assert Model.l_all.projection == "all"
-    assert Model.l_all.projected_columns == set(Model.Meta.columns)
-    assert Model.l_key.projection == "keys"
-    assert Model.l_key.projected_columns == uuids
-    assert Model.l_inc.projection == "include"
-    assert Model.l_inc.projected_columns == no_boolean
+    assert Model.g_key.projection["mode"] == "keys"
+    assert Model.g_key.projection["included"] == uuids
+    assert Model.g_key.projection["available"] == uuids
+
+    assert Model.g_inc.projection["mode"] == "include"
+    assert Model.g_inc.projection["included"] == no_boolean
+    assert Model.g_inc.projection["available"] == no_boolean
+
+    assert Model.l_all.projection["mode"] == "all"
+    assert Model.l_all.projection["included"] == Model.Meta.columns
+    assert Model.l_all.projection["available"] == Model.Meta.columns
+
+    assert Model.l_key.projection["mode"] == "keys"
+    assert Model.l_key.projection["included"] == uuids
+    assert Model.l_key.projection["available"] == uuids
+
+    assert Model.l_inc.projection["mode"] == "include"
+    assert Model.l_inc.projection["included"] == no_boolean
+    assert Model.l_inc.projection["available"] == no_boolean
 
 
 def test_meta_table_name():
@@ -385,39 +396,69 @@ def test_index_dynamo_name():
     assert index.dynamo_name == "foo"
 
 
+def test_index_binds_model_names():
+    """When a Model is created, the Index is bound and model names are resolved into columns."""
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+        foo = Column(Integer)
+        bar = Column(Integer)
+        baz = Column(Integer)
+
+        by_foo = GlobalSecondaryIndex(projection=["foo"], hash_key=bar, range_key="baz")
+        by_bar = GlobalSecondaryIndex(projection=[foo], hash_key="bar", range_key=baz)
+
+    # hash key must be a string or column
+    bad_index = Index(projection="all", hash_key=object())
+    with pytest.raises(InvalidIndex):
+        bad_index._bind(Model)
+    bad_index = Index(projection="all", hash_key="foo", range_key=object())
+    with pytest.raises(InvalidIndex):
+        bad_index._bind(Model)
+
+
 def test_index_projection_validation():
-    """should be all, keys, or a list of column model names"""
-    with pytest.raises(ValueError):
+    """should be all, keys, a list of columns, or a list of column model names"""
+    with pytest.raises(InvalidIndex):
         Index(projection="foo")
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         Index(projection=object())
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         Index(projection=["only strings", 1, None])
+    with pytest.raises(InvalidIndex):
+        Index(projection=["foo", User.joined])
 
     index = Index(projection="all")
-    assert index.projection == "all"
-    assert index.projected_columns is None
+    assert index.projection["mode"] == "all"
+    assert index.projection["included"] is None
+    assert index.projection["available"] is None
 
     index = Index(projection="keys")
-    assert index.projection == "keys"
-    assert index.projected_columns is None
+    assert index.projection["mode"] == "keys"
+    assert index.projection["included"] is None
+    assert index.projection["available"] is None
 
     index = Index(projection=["foo", "bar"])
-    assert index.projection == "include"
-    assert index.projected_columns == ["foo", "bar"]
+    assert index.projection["mode"] == "include"
+    assert index.projection["included"] == ["foo", "bar"]
+    assert index.projection["available"] is None
+
+    index = Index(projection=[User.age, User.email])
+    assert index.projection["mode"] == "include"
+    assert index.projection["included"] == [User.age, User.email]
+    assert index.projection["available"] is None
 
 
 def test_lsi_specifies_hash_key():
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         LocalSecondaryIndex(hash_key="blah", range_key="foo", projection="keys")
 
 
 def test_lsi_init_throughput():
     """Can't set throughput when creating an LSI"""
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         LocalSecondaryIndex(range_key="range", projection="keys", write_units=1)
 
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidIndex):
         LocalSecondaryIndex(range_key="range", projection="keys", read_units=1)
 
 
@@ -445,17 +486,14 @@ def test_lsi_delegates_throughput():
     assert lsi.read_units == meta.read_units
 
 
-def test_index_repr():
-    index = Index(projection="all", name="f")
+@pytest.mark.parametrize("projection", ["all", "keys", ["foo"]])
+def test_index_repr(projection):
+    index = Index(projection=projection, name="f")
     index.model = User
     index.model_name = "by_foo"
-    assert repr(index) == "<Index[User.by_foo=all]>"
-
-    index.projection = "keys"
-    assert repr(index) == "<Index[User.by_foo=keys]>"
-
-    index.projection = "include"
-    assert repr(index) == "<Index[User.by_foo=include]>"
+    if isinstance(projection, list):
+        projection = "include"
+    assert repr(index) == "<Index[User.by_foo={}]>".format(projection)
 
 
 def test_lsi_repr():

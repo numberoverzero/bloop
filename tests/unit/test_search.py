@@ -61,7 +61,7 @@ bad_range_conditions = all_conditions - {BeginsWith, Between}
 
 
 def model_for(has_model_range=False, has_index=False, has_index_range=False,
-              index_type="gsi", index_projection="all"):
+              index_type="gsi", index_projection="all", strict=True):
     """Not all permutations are possible.  Impossible selections will always self-correct.
 
     For instance, has_model_range=False, has_index=True, index_type="gsi" can't happen.
@@ -87,12 +87,15 @@ def model_for(has_model_range=False, has_index=False, has_index_range=False,
             index_range_ = Column(Integer)
             by_index_ = LocalSecondaryIndex(
                 projection=index_projection,
-                range_key="index_range"
+                range_key="index_range",
+                strict=strict
             )
 
     class TestModel(BaseModel):
         # Included in an "all" projection, not "keys"
         not_projected = Column(Integer)
+        # Included in "include" projections
+        inc = Column(Integer)
 
         model_hash = Column(Integer, hash_key=True)
         model_range = model_range_
@@ -102,20 +105,30 @@ def model_for(has_model_range=False, has_index=False, has_index_range=False,
 
     return TestModel, by_index_
 
+# LSIs always require a model range key, and index range key.
+lsi_for = functools.partial(model_for, has_model_range=True, has_index=True, has_index_range=True, index_type="lsi")
+gsi_for = functools.partial(model_for, has_index=True, index_type="gsi")
+
 # permutations with a range key
 range_permutations = [
     # Model - hash and range
     model_for(has_model_range=True, has_index=False),
 
-    # LSIs always require a model range key and index range key.
-    model_for(has_model_range=True, has_index=True, has_index_range=True, index_type="lsi", index_projection="all"),
-    model_for(has_model_range=True, has_index=True, has_index_range=True, index_type="lsi", index_projection="keys"),
+    # LSIs care about strictness
+    lsi_for(index_projection="all"),
+    lsi_for(index_projection="all", strict=False),
+    lsi_for(index_projection="keys"),
+    lsi_for(index_projection="keys", strict=False),
+    lsi_for(index_projection=["inc"]),
+    lsi_for(index_projection=["inc"], strict=False),
 
     # GSIs with index range key; with and without model range key
-    model_for(has_model_range=False, has_index=True, has_index_range=True, index_type="gsi", index_projection="all"),
-    model_for(has_model_range=False, has_index=True, has_index_range=True, index_type="gsi", index_projection="keys"),
-    model_for(has_model_range=True, has_index=True, has_index_range=True, index_type="gsi", index_projection="all"),
-    model_for(has_model_range=True, has_index=True, has_index_range=True, index_type="gsi", index_projection="keys"),
+    gsi_for(has_model_range=False, has_index_range=True, index_projection="all"),
+    gsi_for(has_model_range=False, has_index_range=True, index_projection="keys"),
+    gsi_for(has_model_range=False, has_index_range=True, index_projection=["inc"]),
+    gsi_for(has_model_range=True, has_index_range=True, index_projection="all"),
+    gsi_for(has_model_range=True, has_index_range=True, index_projection="keys"),
+    gsi_for(has_model_range=True, has_index_range=True, index_projection=["inc"]),
 ]
 
 all_permutations = [
@@ -125,10 +138,12 @@ all_permutations = [
     # LSIs included above, always require a model range key and index range key
 
     # GSIs without an index range key; with and without model range key
-    model_for(has_model_range=False, has_index=True, has_index_range=False, index_type="gsi", index_projection="all"),
-    model_for(has_model_range=False, has_index=True, has_index_range=False, index_type="gsi", index_projection="keys"),
-    model_for(has_model_range=True, has_index=True, has_index_range=False, index_type="gsi", index_projection="all"),
-    model_for(has_model_range=True, has_index=True, has_index_range=False, index_type="gsi", index_projection="keys"),
+    gsi_for(has_model_range=False, has_index_range=False, index_projection="all"),
+    gsi_for(has_model_range=False, has_index_range=False, index_projection="keys"),
+    gsi_for(has_model_range=False, has_index_range=False, index_projection=["inc"]),
+    gsi_for(has_model_range=True, has_index_range=False, index_projection="all"),
+    gsi_for(has_model_range=True, has_index_range=False, index_projection="keys"),
+    gsi_for(has_model_range=True, has_index_range=False, index_projection=["inc"]),
 ] + range_permutations
 
 
@@ -271,7 +286,7 @@ def simple_iter(engine, session):
 def valid_search(engine, session):
     search = Search(
         engine=engine, session=session, model=ComplexModel, index=None, key=ComplexModel.name == "foo",
-        filter=None, projection="all", limit=None, strict=False, consistent=True, forward=False)
+        filter=None, projection="all", limit=None, consistent=True, forward=False)
     search.mode = "query"
     return search
 
@@ -356,55 +371,46 @@ def test_and_bad_range_key(model, index, range_condition_lambda):
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
-@pytest.mark.parametrize("strict", [False, True])
-@pytest.mark.parametrize("empty_projection", [None, list()])
-def test_search_projection_is_required(model, index, strict, empty_projection):
+def test_search_projection_is_required(model, index):
     """Test a missing projection, and an empty list of column names"""
     with pytest.raises(InvalidProjection):
-        validate_search_projection(model, index, strict, projection=empty_projection)
+        validate_search_projection(model, index, projection=None)
+    with pytest.raises(InvalidProjection):
+        validate_search_projection(model, index, projection=list())
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
-@pytest.mark.parametrize("strict", [False, True])
-def test_search_projection_is_count(model, index, strict):
-    assert validate_search_projection(model, index, strict, projection="count") is None
+def test_search_projection_is_count(model, index):
+    assert validate_search_projection(model, index, projection="count") is None
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
-@pytest.mark.parametrize("strict", [False, True])
-def test_search_projection_all(model, index, strict):
-    projected = validate_search_projection(model, index, strict, projection="all")
-
-    if not index:
-        # Model searches don't care about strict
-        expected = model.Meta.columns
-    else:
-        # GSI all doesn't care about strict
-        if isinstance(index, GlobalSecondaryIndex):
-            expected = index.projected_columns
-        else:
-            # LSI strict is only the index projection
-            if strict:
-                expected = index.projected_columns
-            # Grab it all
-            else:
-                expected = model.Meta.columns
-
+def test_search_projection_all(model, index):
+    projected = validate_search_projection(model, index, projection="all")
+    expected = (index or model.Meta).projection["included"]
     assert projected == expected
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
-@pytest.mark.parametrize("strict", [False, True])
-@pytest.mark.parametrize("bad_column", ["unknown", None])
-def test_search_projection_unknown_column(model, index, strict, bad_column):
+def test_search_projection_unknown_column(model, index):
     with pytest.raises(InvalidProjection):
-        validate_search_projection(model, index, strict, projection=["model_hash", bad_column])
+        validate_search_projection(model, index, projection=["model_hash", "unknown"])
+    with pytest.raises(InvalidProjection):
+        validate_search_projection(model, index, projection=["model_hash", None])
+
+
+def test_search_projection_converts_strings():
+    """This doesn't need the full matrix of model/index combinations.
+
+    Simply checks that the user can pass strings and get columns"""
+    model, index = model_for()
+    projection = ["model_hash"]
+    expected = [model.model_hash]
+    assert validate_search_projection(model, index, projection) == expected
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
-@pytest.mark.parametrize("strict", [False, True])
-@pytest.mark.parametrize("as_strings", [False, True])
-def test_search_projection_includes_non_projected_column(model, index, strict, as_strings):
+def test_search_projection_includes_non_projected_column(model, index):
     """Specific column names exist.
 
     Table, non-strict LSI, and indexes that project all columns will succeed; the rest fail."""
@@ -412,25 +418,22 @@ def test_search_projection_includes_non_projected_column(model, index, strict, a
     # Table searches always include all columns
     if index is None:
         should_succeed = True
-    elif isinstance(index, LocalSecondaryIndex) and strict is False:
+    elif isinstance(index, LocalSecondaryIndex) and index.projection["strict"] is False:
         should_succeed = True
-    elif index.projection == "all":
+    elif index.projection["mode"] == "all":
         should_succeed = True
 
-    if as_strings:
-        projection = ["model_hash", "not_projected"]
-    else:
-        projection = [model.model_hash, model.not_projected]
+    projection = [model.model_hash, model.not_projected]
 
     if should_succeed:
         projected = validate_search_projection(
-            model, index, strict, projection=projection)
+            model, index, projection=projection)
         assert projected == [model.model_hash, model.not_projected]
 
     else:
         with pytest.raises(InvalidProjection):
             validate_search_projection(
-                model, index, strict, projection=projection)
+                model, index, projection=projection)
 
 
 def test_validate_no_filter():
@@ -513,7 +516,6 @@ def test_prepare_key_good_condition(valid_search):
 def test_prepare_count_projection(valid_search):
     valid_search.projection = "count"
     prepared = valid_search.prepare()
-    assert prepared._available_columns == valid_search.model.Meta.columns
     assert prepared._projected_columns is None
     assert prepared._projection_mode == "count"
 
@@ -525,8 +527,7 @@ def test_prepare_specific_projection(valid_search):
     valid_search.strict = True
 
     prepared = valid_search.prepare()
-    assert prepared._available_columns == ComplexModel.by_joined.projected_columns
-    assert prepared._projected_columns == ComplexModel.by_joined.projected_columns
+    assert prepared._projected_columns == ComplexModel.by_joined.projection["included"]
     assert prepared._projection_mode == "specific"
 
 
@@ -763,7 +764,7 @@ def test_next_states(simple_iter, session):
 
 
 @pytest.mark.parametrize("chain", [[1], [0, 1], [1, 0], [2, 0]])
-def test_first_success(simple_iter, engine, session, chain):
+def test_first_success(simple_iter, session, chain):
     iterator = simple_iter()
     item_count = sum(chain)
     session.search_items.side_effect = build_responses(chain, items=list(range(item_count)))
@@ -775,7 +776,7 @@ def test_first_success(simple_iter, engine, session, chain):
 
 
 @pytest.mark.parametrize("chain", [[0], [0, 0]])
-def test_first_failure(simple_iter, engine, session, chain):
+def test_first_failure(simple_iter, session, chain):
     iterator = simple_iter()
     session.search_items.side_effect = build_responses(chain)
 
@@ -785,7 +786,7 @@ def test_first_failure(simple_iter, engine, session, chain):
 
 
 @pytest.mark.parametrize("chain", [[1], [0, 1], [1, 0]])
-def test_one_success(simple_iter, engine, session, chain):
+def test_one_success(simple_iter, session, chain):
     iterator = simple_iter()
     one = Sentinel("one")
     session.search_items.side_effect = build_responses(chain, items=[one])
@@ -797,7 +798,7 @@ def test_one_success(simple_iter, engine, session, chain):
 
 
 @pytest.mark.parametrize("chain", [[0], [0, 0], [2], [2, 0], [1, 1], [0, 2]])
-def test_one_failure(simple_iter, engine, session, chain):
+def test_one_failure(simple_iter, session, chain):
     iterator = simple_iter()
     session.search_items.side_effect = build_responses(chain)
 
@@ -809,7 +810,7 @@ def test_one_failure(simple_iter, engine, session, chain):
 
 
 @pytest.mark.parametrize("cls", [ScanIterator, QueryIterator])
-def test_model_iterator_unpacks(simple_iter, engine, session, cls):
+def test_model_iterator_unpacks(simple_iter, session, cls):
     iterator = simple_iter(cls=cls)
     iterator.projected = {User.name, User.joined}
 

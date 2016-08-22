@@ -178,7 +178,7 @@ Indexes
 .. code-block:: python
 
     GlobalSecondaryIndex(
-        projection: Union[str, List[str]],
+        projection: Union[str, List[str], List[Column]],
         hash_key: str,
         range_key: Optional[str]=None,
         name: Optional[str]=None,
@@ -186,15 +186,17 @@ Indexes
         write_units: Optional[int]=1)
 
     LocalSecondaryIndex(
-        projection: Union[str, List[str]],
+        projection: Union[str, List[str], List[Column]],
         range_key: str,
-        name: Optional[str]=None)
+        name: Optional[str]=None,
+        strict: bool=True)
 
 .. attribute:: projection
     :noindex:
 
-    The columns to project into this Index.  Must be one of ``"all"``, ``"keys"``, or a list of column names.
-    The index and model hash and range keys are always included in the projection.
+    The columns to project into this Index.  The index and model hash and range keys are always included
+    in the projection.  Must be one of ``"all"``, ``"keys"``, a list of Column objects, or a list of
+    Column model names.
 
 .. attribute:: hash_key
     :noindex:
@@ -224,6 +226,18 @@ Indexes
 
     The provisioned write units for the index.  LSIs share the model's write units.  Defaults to 1.
 
+.. attribute:: strict
+    :noindex:
+
+    Whether or not queries and scans against the LSI will be allowed to access the full set of columns,
+    even when they are not projected into the LSI.  When this is True, bloop will prevent you from making
+    calls that incur additional reads against the table.  If you query or scan a Local Secondary Index
+    that has ``strict=False`` and include columns in the projection or filter expressions that are not
+    part of the LSI, DynamoDB will incur an additional read against the table in order to return all columns.
+
+    It is highly recommended to keep this enabled.  Defaults to True.
+
+
 Specific column projections always include key columns.  A query against the following ``User`` index would
 return objects that include all columns except ``created_on`` (since ``id`` and ``email`` are the model
 and index hash keys).
@@ -231,7 +245,7 @@ and index hash keys).
 .. code-block:: python
 
     by_email = GlobalSecondaryIndex(
-            projection=["verified", "profile"],
+            projection=[User.verified, User.profile],
             hash_key="email")
 
 .. seealso::

@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 import botocore.exceptions
 import pytest
-from bloop.exceptions import BloopException, ConstraintViolation, TableMismatch
+from bloop.exceptions import BloopException, ConstraintViolation, TableMismatch, UnknownSearchMode
 from bloop.models import Column
 from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,
@@ -395,7 +395,7 @@ def test_query_scan_raise(session, dynamodb_client):
 
 
 def test_search_unknown(session):
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(UnknownSearchMode) as excinfo:
         session.search_items(mode="foo", request={})
     assert "foo" in str(excinfo.value)
 

@@ -8,6 +8,8 @@ import pytest
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
     AbstractModelError,
+    InvalidModel,
+    MissingKey,
     MissingObjects,
     UnboundModel,
     UnknownType,
@@ -291,7 +293,7 @@ def test_load_dump_unknown(engine):
 def test_load_missing_key(engine):
     """Trying to load objects with missing hash and range keys raises"""
     user = User(age=2)
-    with pytest.raises(ValueError):
+    with pytest.raises(MissingKey):
         engine.load(user)
 
     complex_models = [
@@ -300,7 +302,7 @@ def test_load_missing_key(engine):
         ComplexModel(date="no hash")
     ]
     for model in complex_models:
-        with pytest.raises(ValueError):
+        with pytest.raises(MissingKey):
             engine.load(model)
 
 
@@ -569,7 +571,7 @@ def test_scan(engine):
 
 def test_bind_non_model(engine):
     """Can't bind things that don't subclass BaseModel"""
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidModel):
         engine.bind(object())
 
 

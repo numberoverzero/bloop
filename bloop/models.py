@@ -21,14 +21,6 @@ model_created = signal("model_created")
 object_modified = signal("object_modified")
 
 
-def available_columns_for(model, index, strict):
-    if not index or (not strict and isinstance(index, LocalSecondaryIndex)):
-        return model.Meta.columns
-    # GSI or strict LSI
-    else:
-        return index.projected_columns
-
-
 def loaded_columns(obj):
     """Yields each (model_name, value) tuple for all columns in an object that aren't missing"""
     for column in sorted(obj.Meta.columns, key=lambda c: c.model_name):
@@ -38,22 +30,38 @@ def loaded_columns(obj):
 
 
 def validate_projection(projection):
-    # String check first since it is also an Iterable
+    validated_projection = {
+        "mode": None,
+        "included": None,
+        "available": None,
+        "strict": True
+    }
+
+    # String check first since it is also an Iterable.
+    # Without this, the following will make "unknown" a list
     if isinstance(projection, str):
         if projection not in ("keys", "all"):
             raise InvalidIndex("{!r} is not a valid Index projection.".format(projection))
-        projection, projected_columns = projection, None
+        validated_projection["mode"] = projection
     elif isinstance(projection, collections.abc.Iterable):
         projection = list(projection)
-        all_names = all(isinstance(item, str) for item in projection)
-        if not all_names:
+        # These checks aren't done together; that would allow a mix
+        # of column instances and column names.  There aren't any cases
+        # where a mix is required, over picking a style.  Much more likely,
+        # the user is trying to do something odd and doesn't understand what
+        # the index projection means.
+        if (
+                all(isinstance(p, str) for p in projection) or
+                all(isinstance(p, Column) for p in projection)):
+            validated_projection["mode"] = "include"
+            validated_projection["included"] = projection
+        else:
             raise InvalidIndex(
-                "Index projection must be a list of strings when selecting specific Columns.")
-        projection, projected_columns = "include", projection
+                "Index projection must be a list of strings or Columns to select specific Columns.")
     else:
         raise InvalidIndex(
-            "Index projection must be 'all', 'keys', or a list of Column names.")
-    return projection, projected_columns
+            "Index projection must be 'all', 'keys', or a list of Columns or Column names.")
+    return validated_projection
 
 
 class ModelMetaclass(declare.ModelMetaclass):
@@ -127,6 +135,16 @@ def setup_columns(meta):
     for column in meta.columns:
         column.model = meta.model
 
+    # API consistency with an Index, so (index or model.Meta) can be
+    # used interchangeably to get the available columns from that
+    # object.
+    meta.projection = {
+        "mode": "all",
+        "included": meta.columns,
+        "available": meta.columns,
+        "strict": True
+    }
+
 
 def setup_indexes(meta):
     """Filter indexes from fields, compute projection for each index"""
@@ -197,8 +215,7 @@ class Index(declare.Field):
         self._dynamo_name = name
         super().__init__(**kwargs)
 
-        # projected_columns will be set up in `_bind`
-        self.projection, self.projected_columns = validate_projection(projection)
+        self.projection = validate_projection(projection)
 
     def __repr__(self):
         if isinstance(self, LocalSecondaryIndex):
@@ -214,7 +231,7 @@ class Index(declare.Field):
         return "<{}[{}.{}={}]>".format(
             cls_name,
             self.model.__name__, self.model_name,
-            self.projection
+            self.projection["mode"]
         )
 
     @property
@@ -229,9 +246,15 @@ class Index(declare.Field):
 
         # Index by model_name so we can replace hash_key, range_key with the proper `bloop.Column` object
         columns = declare.index(model.Meta.columns, "model_name")
-        self.hash_key = columns[self.hash_key]
+        if isinstance(self.hash_key, str):
+            self.hash_key = columns[self.hash_key]
+        if not isinstance(self.hash_key, Column):
+            raise InvalidIndex("Index hash key must be a Column or Column model name.")
         if self.range_key:
-            self.range_key = columns[self.range_key]
+            if isinstance(self.range_key, str):
+                self.range_key = columns[self.range_key]
+            if not isinstance(self.range_key, Column):
+                raise InvalidIndex("Index range key (if provided) must be a Column or Column model name.")
 
         self.keys = {self.hash_key}
         if self.range_key:
@@ -239,15 +262,27 @@ class Index(declare.Field):
 
         # Compute and the projected columns
         # All projections include model + index keys
-        projected = set.union(model.Meta.keys, self.keys)
+        projection_keys = set.union(model.Meta.keys, self.keys)
 
-        # nothing to do when projection is "keys"
-        if self.projection == "all":
-            projected.update(model.Meta.columns)
-        if self.projection == "include":
-            projected.update(columns[name] for name in self.projected_columns)
+        if self.projection["mode"] == "keys":
+            self.projection["included"] = projection_keys
+        elif self.projection["mode"] == "all":
+            self.projection["included"] = model.Meta.columns
+        elif self.projection["mode"] == "include":  # pragma: no branch
+            # model_name -> Column
+            if all(isinstance(p, str) for p in self.projection["included"]):
+                projection = set(columns[name] for name in self.projection["included"])
+            else:
+                projection = set(self.projection["included"])
+            projection.update(projection_keys)
+            self.projection["included"] = projection
 
-        self.projected_columns = projected
+        # Strict has the same availability as the included columns,
+        # while non-strict has access to the full range of columns
+        if self.projection["strict"]:
+            self.projection["available"] = self.projection["included"]
+        else:
+            self.projection["available"] = model.Meta.columns
 
     # TODO: disallow set/get/del for an index; these don't store values.  Raise AttributeError.
 
@@ -261,13 +296,14 @@ class GlobalSecondaryIndex(Index):
 
 class LocalSecondaryIndex(Index):
     """ LSIs don't have individual read/write units """
-    def __init__(self, *, projection, range_key, name=None, **kwargs):
+    def __init__(self, *, projection, range_key, name=None, strict=True, **kwargs):
         # Hash key MUST be the table hash; do not specify
         if "hash_key" in kwargs:
             raise InvalidIndex("An LSI shares its hash key with the Model.")
         if ("write_units" in kwargs) or ("read_units" in kwargs):
             raise InvalidIndex("An LSI shares its provisioned throughput with the Model.")
         super().__init__(range_key=range_key, name=name, projection=projection, **kwargs)
+        self.projection["strict"] = strict
 
     def _bind(self, model):
         """Raise if the model doesn't have a range key"""

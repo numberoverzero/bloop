@@ -15,6 +15,7 @@ from bloop.conditions import (
     Or,
     iter_columns,
 )
+from bloop.exceptions import InvalidComparisonOperator
 from bloop.expressions import ConditionRenderer, render
 from bloop.models import BaseModel, Column
 from bloop.types import UUID, Integer, TypedMap
@@ -139,7 +140,7 @@ def test_not(engine):
 
 
 def test_invalid_comparator():
-    with pytest.raises(ValueError):
+    with pytest.raises(InvalidComparisonOperator):
         Comparison(User.age, "not-a-comparator", 5)
 
 

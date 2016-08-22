@@ -204,7 +204,7 @@ class Engine:
                     not_loaded.update(index_set)
             raise MissingObjects("Failed to load some objects.", objects=not_loaded)
 
-    def query(self, model_or_index, key=None, filter=None, projection="all", limit=None, strict=True,
+    def query(self, model_or_index, key=None, filter=None, projection="all", limit=None,
               consistent=False, forward=True, **kwargs):
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
@@ -213,7 +213,7 @@ class Engine:
         validate_not_abstract(model)
         q = Query(
             engine=self, session=self.session, model=model, index=index, key=key, filter=filter,
-            projection=projection, limit=limit, strict=strict, consistent=consistent, forward=forward)
+            projection=projection, limit=limit, consistent=consistent, forward=forward)
         return iter(q.prepare())
 
     def save(self, *objs, condition=None, atomic=False):
@@ -229,7 +229,7 @@ class Engine:
             self.session.save_item(item)
             object_saved.send(self, obj=obj)
 
-    def scan(self, model_or_index, filter=None, projection="all", limit=None, strict=True, consistent=False, **kwargs):
+    def scan(self, model_or_index, filter=None, projection="all", limit=None, consistent=False, **kwargs):
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
         else:
@@ -237,5 +237,5 @@ class Engine:
         validate_not_abstract(model)
         s = Scan(
             engine=self, session=self.session, model=model, index=index, filter=filter,
-            projection=projection, limit=limit, strict=strict, consistent=consistent)
+            projection=projection, limit=limit, consistent=consistent)
         return iter(s.prepare())

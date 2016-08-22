@@ -204,13 +204,13 @@ def index_projection(index):
         "all": "ALL",
         "keys": "KEYS_ONLY",
         "include": "INCLUDE"
-    }[index.projection]
+    }[index.projection["mode"]]
 
     projection = {"ProjectionType": projection_type}
-    if index.projection == "include":
+    if index.projection["mode"] == "include":
         projection["NonKeyAttributes"] = [
             column.dynamo_name
-            for column in index.projected_columns
+            for column in index.projection["included"]
         ]
     return projection
 

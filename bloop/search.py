@@ -11,7 +11,7 @@ from .exceptions import (
     UnknownSearchMode,
 )
 from .expressions import render
-from .models import Column, GlobalSecondaryIndex, available_columns_for
+from .models import Column, GlobalSecondaryIndex
 from .util import (
     printable_column_name,
     printable_query,
@@ -46,7 +46,7 @@ def validate_key_condition(model, index, key):
     # Model will always be provided, but Index has priority
     query_on = index or model.Meta
 
-    # `Model_or_Index.hash_key == value`
+    # (model or index).hash_key == value
     # Valid for both (hash,) and (hash, range)
     if check_hash_key(query_on, key):
         return
@@ -78,16 +78,14 @@ def validate_key_condition(model, index, key):
     fail_bad_range(query_on)
 
 
-def validate_search_projection(model, index, strict, projection):
+def validate_search_projection(model, index, projection):
     if not projection:
         raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
     if projection == "count":
         return None
 
-    available_columns = available_columns_for(model, index, strict)
-
     if projection == "all":
-        return available_columns
+        return (index or model.Meta).projection["included"]
 
     # Keep original around for error messages
     original_projection = projection
@@ -111,8 +109,8 @@ def validate_search_projection(model, index, strict, projection):
         raise InvalidProjection(
             "{!r} is not valid: it must be only Columns or only their model names.".format(original_projection))
 
-    # Must be subset of the available columns
-    if set(projection) <= available_columns:
+    # Can the full available columns support this projection?
+    if set(projection) <= (index or model.Meta).projection["available"]:
         return projection
 
     raise InvalidProjection(
@@ -168,7 +166,7 @@ class Search:
 
     def __init__(
             self, engine=None, session=None, model=None, index=None, key=None, filter=None,
-            projection=None, limit=None, strict=True, consistent=False, forward=True):
+            projection=None, limit=None, consistent=False, forward=True):
         self.engine = engine
         self.session = session
         self.model = model
@@ -177,7 +175,6 @@ class Search:
         self.filter = filter
         self.projection = projection
         self.limit = limit
-        self.strict = strict
         self.consistent = consistent
         self.forward = forward
 
@@ -196,7 +193,6 @@ class Search:
             filter=self.filter,
             projection=self.projection,
             limit=self.limit,
-            strict=self.strict,
             consistent=self.consistent,
             forward=self.forward
         )
@@ -224,8 +220,6 @@ class PreparedSearch:
 
         self.key = None
 
-        self.strict = None
-        self._available_columns = None
         self._projected_columns = None
         self._projection_mode = None
 
@@ -238,12 +232,12 @@ class PreparedSearch:
 
     def prepare(
             self, engine=None, mode=None, session=None, model=None, index=None, key=None,
-            filter=None, projection=None, limit=None, strict=None, consistent=None, forward=None):
+            filter=None, projection=None, limit=None, consistent=None, forward=None):
 
         self.prepare_session(engine, session, mode)
         self.prepare_model(model, index, consistent)
         self.prepare_key(key)
-        self.prepare_projection(projection, strict)
+        self.prepare_projection(projection)
         self.prepare_filter(filter)
         self.prepare_constraints(limit, forward)
 
@@ -267,10 +261,8 @@ class PreparedSearch:
         self.key = key
         validate_key_condition(self.model, self.index, self.key)
 
-    def prepare_projection(self, projection, strict):
-        self.strict = strict
-        self._available_columns = available_columns_for(self.model, self.index, self.strict)
-        self._projected_columns = validate_search_projection(self.model, self.index, self.strict, projection)
+    def prepare_projection(self, projection):
+        self._projected_columns = validate_search_projection(self.model, self.index, projection)
 
         if self._projected_columns is None:
             self._projection_mode = "count"
@@ -287,7 +279,8 @@ class PreparedSearch:
             column_blacklist = (self.index or self.model.Meta).keys
         else:
             column_blacklist = set()
-        validate_filter_condition(self.filter, self._available_columns, column_blacklist)
+        available_columns = (self.index or self.model.Meta).projection["available"]
+        validate_filter_condition(self.filter, available_columns, column_blacklist)
 
     def prepare_constraints(self, limit, forward):
         self.limit = limit

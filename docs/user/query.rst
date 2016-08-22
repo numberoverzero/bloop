@@ -101,18 +101,16 @@ Scan and Query have very similar interfaces:
         model_or_index: Union[bloop.BaseModel, bloop.Index],
         key=None,
         filter=None,
-        projection: Union[str, List[str]]="all",
+        projection: Union[str, List[str], List[Column]]="all",
         limit: Optional[int]=None,
-        strict: bool=True,
         consistent: bool=False,
         forward: bool=True, **kwargs) -> bloop.QueryIterator
 
     Engine.scan(
         model_or_index: Union[bloop.BaseModel, bloop.Index],
         filter=None,
-        projection: Union[str, List[str]]="all",
+        projection: Union[str, List[str], List[Column]]="all",
         limit: Optional[int]=None,
-        strict: bool=True,
         consistent: bool=False, **kwargs) -> bloop.ScanIterator
 
 .. attribute:: model_or_index
@@ -155,7 +153,7 @@ Scan and Query have very similar interfaces:
 .. attribute:: projection
     :noindex:
 
-    The columns to load.  One of ``"all"``, ``"count"``, or a list of columns.
+    The columns to load.  One of ``"all"``, ``"count"``, a list of Columns, or a list of Column model names.
     When select is "count", no objects will be returned, but the ``count`` and ``scanned`` properties
     will be set on the result iterator (see below).  Defaults to "all".
 
@@ -167,17 +165,6 @@ Scan and Query have very similar interfaces:
     object, it will not return any more (even if the internal buffer is not empty).  Defaults to None.
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
-
-.. _property-strict:
-
-.. attribute:: strict
-    :noindex:
-
-    Whether or not a query or scan is prevented from incurring additional reads against the table.
-    If you query or scan a Local Secondary Index without strict set to True,
-    DynamoDB will incur an additional read against the table in order to return all columns.
-
-    It is highly recommended to keep this enabled.  Defaults to True.
 
 .. _property-consistent:
 

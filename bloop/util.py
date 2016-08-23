@@ -1,3 +1,4 @@
+import collections.abc
 import weakref
 
 import blinker
@@ -28,11 +29,16 @@ def ordered(obj):
     """
     Return sorted version of nested dicts/lists for comparing.
 
+    Modified from:
     http://stackoverflow.com/a/25851972
     """
-    if isinstance(obj, dict):
+    if isinstance(obj, collections.abc.Mapping):
         return sorted((k, ordered(v)) for k, v in obj.items())
-    if isinstance(obj, list):
+    # Special case str since it's a collections.abc.Iterable,
+    # and causes infinite recursion
+    elif isinstance(obj, str):
+        return obj
+    elif isinstance(obj, collections.abc.Iterable):
         return sorted(ordered(x) for x in obj)
     else:
         return obj

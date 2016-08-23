@@ -19,21 +19,21 @@ __signals_connected = False
 if not __signals_connected:  # pragma: no branch
     __signals_connected = True
 
+    @object_deleted.connect
+    def on_object_deleted(_, obj, **kwargs):
+        clear(obj)
+
     @object_loaded.connect
     def on_object_loaded(engine, obj, **kwargs):
         sync(obj, engine)
 
-    @object_saved.connect
-    def on_object_saved(engine, obj, **kwargs):
-        sync(engine, obj)
-
-    @object_deleted.connect
-    def on_object_deleted(engine, obj, **kwargs):
-        clear(obj)
-
     @object_modified.connect
     def on_object_modified(_, obj, column, **kwargs):
         mark(obj, column)
+
+    @object_saved.connect
+    def on_object_saved(engine, obj, **kwargs):
+        sync(obj, engine)
 
 
 def clear(obj):

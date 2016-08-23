@@ -3,7 +3,12 @@ from unittest.mock import Mock
 
 import botocore.exceptions
 import pytest
-from bloop.exceptions import BloopException, ConstraintViolation, TableMismatch, UnknownSearchMode
+from bloop.exceptions import (
+    BloopException,
+    ConstraintViolation,
+    TableMismatch,
+    UnknownSearchMode,
+)
 from bloop.models import Column
 from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,

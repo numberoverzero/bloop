@@ -11,6 +11,8 @@ from bloop.models import (
     GlobalSecondaryIndex,
     Index,
     LocalSecondaryIndex,
+    model_created,
+    object_modified
 )
 from bloop.types import UUID, Boolean, DateTime, Integer, String
 
@@ -42,8 +44,11 @@ def test_load_default_init(engine):
     init_called = False
 
     class Blob(BaseModel):
-        def __init__(self, **kwargs):
+        def __init__(self, *args, **kwargs):
             nonlocal init_called
+            # No args, kwargs provided to custom init function
+            assert not args
+            assert not kwargs
             init_called = True
             super().__init__(**kwargs)
         id = Column(String, hash_key=True)
@@ -59,11 +64,12 @@ def test_load_default_init(engine):
     }
 
     loaded_blob = engine._load(Blob, blob)
+
+    assert init_called
+
     assert loaded_blob.id == "foo"
     assert loaded_blob.data == "data"
     assert not hasattr(loaded_blob, "extra_field")
-    # No args, kwargs provided to custom init function
-    assert init_called
 
 
 def test_load_dump(engine):
@@ -201,6 +207,7 @@ def test_index_projections():
         l_all = LocalSecondaryIndex(range_key="another", projection="all")
         l_key = LocalSecondaryIndex(range_key="another", projection="keys")
         l_inc = LocalSecondaryIndex(range_key="another", projection=["date"])
+        l_not_strict = LocalSecondaryIndex(range_key="another", projection=["date"], strict=False)
 
     uuids = {Model.id, Model.other, Model.another}
     no_boolean = set(Model.Meta.columns)
@@ -229,6 +236,10 @@ def test_index_projections():
     assert Model.l_inc.projection["mode"] == "include"
     assert Model.l_inc.projection["included"] == no_boolean
     assert Model.l_inc.projection["available"] == no_boolean
+
+    assert Model.l_not_strict.projection["mode"] == "include"
+    assert Model.l_not_strict.projection["included"] == no_boolean
+    assert Model.l_not_strict.projection["available"] == Model.Meta.columns
 
 
 def test_meta_table_name():
@@ -264,6 +275,24 @@ def test_model_str(engine):
     assert str(new_user) == "User()"
     # Values set to None
     assert str(loaded_empty_user) == "User(age=None, email=None, id=None, joined=None, name=None)"
+
+
+def test_created_signal():
+    """Emitted when a model is defined"""
+    new_model = None
+
+    @model_created.connect
+    def verify_called(_, *, model):
+        nonlocal new_model
+        new_model = model
+
+    # Should invoke verify_called by defining this model
+    class SomeModel(BaseModel):
+        # class is still being defined
+        assert new_model is None
+        id = Column(Integer, hash_key=True)
+
+    assert new_model is SomeModel
 
 
 # END BASE MODEL ======================================================================================= END BASE MODEL
@@ -377,6 +406,66 @@ def test_column_repr_path():
 
     column.hash_key = True
     assert repr(column[3]["foo"]["bar"][2][1]) == "<Column[User.foo[3].foo.bar[2][1]=hash]>"
+
+
+def test_modified_signal():
+    """setting or deleting a column value fires an object_modified signal"""
+    user = User()
+
+    @object_modified.connect
+    def verify_expected(_, *, obj, column, value):
+        nonlocal called
+        called = True
+        assert obj is expected["obj"]
+        assert column is expected["column"]
+        assert value is expected["value"]
+
+    # Set should send the new value
+    called = False
+    expected = {
+        "obj": user,
+        "column": User.age,
+        "value": 10
+    }
+
+    user.age = 10
+    assert called
+
+    # Reset for delete test
+    called = False
+    expected = {
+        "obj": user,
+        "column": User.age,
+        "value": None
+    }
+
+    del user.age
+    assert called
+
+    # Delete sends even if the attribute wasn't set before
+    called = False
+    expected = {
+        "obj": user,
+        "column": User.email,
+        "value": None
+    }
+
+    # Raises because there's no value for email
+    with pytest.raises(AttributeError):
+        del user.email
+    assert called
+
+    # Setting to None looks exactly the same as deleting (since they're effectively identical)
+    called = False
+    expected = {
+        "obj": user,
+        "column": User.id,
+        "value": None
+    }
+
+    user.id = None
+    assert called
+
 
 # END COLUMN =============================================================================================== END COLUMN
 

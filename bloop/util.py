@@ -49,12 +49,11 @@ def printable_column_name(column, path=None):
     model_name = column.model.__name__
     name = "{}.{}".format(model_name, column.model_name)
     pieces = [name]
-    if path:
-        for segment in (path or []):
-            if isinstance(segment, str):
-                pieces.append(segment)
-            else:
-                pieces[-1] += "[{}]".format(segment)
+    for segment in (path or []):
+        if isinstance(segment, str):
+            pieces.append(segment)
+        else:
+            pieces[-1] += "[{}]".format(segment)
     return ".".join(pieces)
 
 

@@ -6,6 +6,8 @@ from bloop.util import (
     Sentinel,
     WeakDefaultDictionary,
     ordered,
+    printable_column_name,
+    printable_query,
     unpack_from_dynamodb,
     walk_subclasses,
 )
@@ -68,6 +70,25 @@ def test_ordered_mapping(mapping):
 def test_ordered_recursion(obj, expected):
     """Mappings and iterables inside each other are sorted and flattened"""
     assert ordered(obj) == expected
+
+
+def test_printable_column_no_path():
+    """Model.column"""
+    assert printable_column_name(User.email) == "User.email"
+
+
+def test_printable_column_mixed_path():
+    """Model.column[3].foo[1]"""
+    assert printable_column_name(User.id, path=[3, "foo", "bar", 0, 1]) == "User.id[3].foo.bar[0][1]"
+
+
+@pytest.mark.parametrize("query_on, expected", [
+    (User.Meta, User),
+    (User.by_email, User.by_email)
+])
+def test_printable_query(query_on, expected):
+    """Unpacks Model.Meta into Model, Index into Index for consistent attribute lookup"""
+    assert printable_query(query_on) is expected
 
 
 def test_unpack_no_engine(unpack_kwargs):

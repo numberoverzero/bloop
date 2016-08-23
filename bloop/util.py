@@ -8,10 +8,15 @@ __all__ = [
     "WeakDefaultDictionary",
     "missing",
     "ordered",
+    "printable_column_name",
+    "printable_query",
     "signal",
     "walk_subclasses",
     "unpack_from_dynamodb"
 ]
+
+# De-dupe dict for Sentinel
+_symbols = {}
 
 # Isolate to avoid collisions with other modules
 # Don't expose the namespace.
@@ -19,12 +24,18 @@ __signals = blinker.Namespace()
 signal = __signals.signal
 
 
-def printable_query(query_on):
-    # Model.Meta -> Model
-    if getattr(query_on, "__name__", "") == "Meta":
-        return query_on.model
-    # Index -> Index
-    return query_on
+def ordered(obj):
+    """
+    Return sorted version of nested dicts/lists for comparing.
+
+    http://stackoverflow.com/a/25851972
+    """
+    if isinstance(obj, dict):
+        return sorted((k, ordered(v)) for k, v in obj.items())
+    if isinstance(obj, list):
+        return sorted(ordered(x) for x in obj)
+    else:
+        return obj
 
 
 def printable_column_name(column, path=None):
@@ -39,6 +50,14 @@ def printable_column_name(column, path=None):
             else:
                 pieces[-1] += "[{}]".format(segment)
     return ".".join(pieces)
+
+
+def printable_query(query_on):
+    # Model.Meta -> Model
+    if getattr(query_on, "__name__", "") == "Meta":
+        return query_on.model
+    # Index -> Index
+    return query_on
 
 
 def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, context=None, **kwargs):
@@ -62,20 +81,6 @@ def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, 
     return obj
 
 
-def ordered(obj):
-    """
-    Return sorted version of nested dicts/lists for comparing.
-
-    http://stackoverflow.com/a/25851972
-    """
-    if isinstance(obj, dict):
-        return sorted((k, ordered(v)) for k, v in obj.items())
-    if isinstance(obj, list):
-        return sorted(ordered(x) for x in obj)
-    else:
-        return obj
-
-
 def walk_subclasses(cls):
     classes = {cls}
     visited = set()
@@ -86,6 +91,21 @@ def walk_subclasses(cls):
             classes.update(cls.__subclasses__())
             visited.add(cls)
             yield cls
+
+
+class Sentinel:
+    def __new__(cls, name, *args, **kwargs):
+        name = name.lower()
+        sentinel = _symbols.get(name, None)
+        if sentinel is None:
+            sentinel = _symbols[name] = super().__new__(cls)
+        return sentinel
+
+    def __init__(self, name):
+        self.name = name
+
+    def __repr__(self):
+        return "<Sentinel[{}]>".format(self.name)
 
 
 class WeakDefaultDictionary(weakref.WeakKeyDictionary):
@@ -102,22 +122,5 @@ class WeakDefaultDictionary(weakref.WeakKeyDictionary):
     def __missing__(self, key):
         self[key] = value = self.default_factory()
         return value
-
-_symbols = {}
-
-
-class Sentinel:
-    def __new__(cls, name, *args, **kwargs):
-        name = name.lower()
-        sentinel = _symbols.get(name, None)
-        if sentinel is None:
-            sentinel = _symbols[name] = super().__new__(cls)
-        return sentinel
-
-    def __init__(self, name):
-        self.name = name
-
-    def __repr__(self):
-        return "<Sentinel[{}]>".format(self.name)
 
 missing = Sentinel("missing")

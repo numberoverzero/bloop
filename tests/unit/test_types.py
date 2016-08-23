@@ -12,6 +12,7 @@ from bloop.types import (
     Float,
     Integer,
     List,
+    Map,
     Set,
     String,
     Type,
@@ -270,6 +271,14 @@ def test_list(engine):
     assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
 
 
+@pytest.mark.parametrize("key", [object(), None, 3, True])
+def test_list_path(key):
+    """To support paths in condition expressions, __getitem__ must return another Type.  List only has one Type."""
+    inner = UUID()
+    typedef = List(inner)
+    assert typedef[key] is inner
+
+
 def test_map_dump(engine):
     """Map handles nested maps and custom types"""
     now = arrow.now().to('utc')
@@ -329,6 +338,23 @@ def test_map_load(engine):
     assert loaded == expected
 
 
+def test_map_path():
+    """To support paths in condition expressions, __getitem__ must return another Type.
+
+    Unlike List, Map can return a different Type for each of its keys."""
+    foo_type = UUID()
+    bar_type = Integer()
+    bool_type = Boolean()
+    typedef = Map(**{
+        "foo": foo_type,
+        "bar": bar_type,
+        "bool": bool_type,
+    })
+    assert typedef["foo"] is foo_type
+    assert typedef["bar"] is bar_type
+    assert typedef["bool"] is bool_type
+
+
 def test_typedmap(engine):
     """TypedMap handles arbitrary keys and values"""
     typedef = TypedMap(DateTime)
@@ -348,6 +374,14 @@ def test_typedmap(engine):
     }
     assert typedef.dynamo_dump(loaded, context={"engine": engine}) == dumped
     assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
+
+
+@pytest.mark.parametrize("key", [object(), None, 3, True])
+def test_typedmap_path(key):
+    """To support paths in condition expressions, __getitem__ must return another Type.  TypedMap only has one Type."""
+    inner = UUID()
+    typedef = TypedMap(inner)
+    assert typedef[key] is inner
 
 
 def test_repr():

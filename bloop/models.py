@@ -9,8 +9,8 @@ from .util import missing, printable_column_name, signal, unpack_from_dynamodb
 
 __all__ = [
     "BaseModel", "Column",
-    "GlobalSecondaryIndex", "LocalSecondaryIndex", "Index", "ModelMetaclass",
-    "model_created", "object_modified"]
+    "GlobalSecondaryIndex", "LocalSecondaryIndex",
+    "model_created"]
 
 # Signals!
 model_created = signal("model_created")

@@ -20,7 +20,7 @@ from .util import (
 
 
 object_loaded = signal("object_loaded")
-__all__ = ["Search", "PreparedSearch", "SearchIterator", "Scan", "Query", "ScanIterator", "QueryIterator"]
+__all__ = ["Scan", "Query", "ScanIterator", "QueryIterator"]
 
 
 def search_repr(cls, model, index):

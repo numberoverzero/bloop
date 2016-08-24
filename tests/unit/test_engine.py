@@ -5,6 +5,7 @@ import arrow
 import boto3
 import declare
 import pytest
+from bloop.conditions import get_snapshot, sync
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
     AbstractModelError,
@@ -16,7 +17,6 @@ from bloop.exceptions import (
 )
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper
-from bloop.tracking import get_snapshot, sync
 from bloop.types import DateTime, Integer, String
 from bloop.util import ordered
 

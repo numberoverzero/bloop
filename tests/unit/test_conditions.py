@@ -1,5 +1,4 @@
 import operator
-import uuid
 
 import pytest
 from bloop.conditions import (
@@ -24,7 +23,7 @@ from bloop.conditions import (
 )
 from bloop.exceptions import InvalidComparisonOperator
 from bloop.models import BaseModel, Column
-from bloop.types import UUID, Integer, TypedMap
+from bloop.types import Integer
 
 from ..helpers.models import (
     ComplexModel,
@@ -258,23 +257,6 @@ def test_path_comparator(engine):
             ':v2': {'N': '0.5'}, ':v6': {'N': '1'}, ':v7': {'N': '2'}, ':v8': {'N': '3'}},
         'ExpressionAttributeNames': {
             '#n0': 'data', '#n1': 'Rating', '#n3': 'Description', '#n4': 'Body', '#n5': 'Stock'}}
-    assert render(engine, condition=condition) == expected
-
-
-def test_typedmap_path_comparator(engine):
-    """ TypedMap should defer to the value typedef for conditions """
-    class Model(BaseModel):
-        id = Column(Integer, hash_key=True)
-        data = Column(TypedMap(UUID))
-    engine.bind(base=Model)
-
-    uid = uuid.uuid4()
-    condition = Model.data['foo'].is_(uid)
-
-    expected = {
-        'ConditionExpression': '(#n0.#n1 = :v2)',
-        'ExpressionAttributeNames': {'#n0': 'data', '#n1': 'foo'},
-        'ExpressionAttributeValues': {':v2': {'S': str(uid)}}}
     assert render(engine, condition=condition) == expected
 
 

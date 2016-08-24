@@ -12,8 +12,8 @@ from bloop import (
     Float,
     Integer,
     Map,
+    Set,
     String,
-    TypedMap,
 )
 
 
@@ -29,7 +29,7 @@ Product = Map(**{
         'Title': String,
         'Body': String
     }),
-    'Sellers': TypedMap(Integer)
+    'Sellers': Set(Integer)
 })
 
 
@@ -54,11 +54,11 @@ item.data = {
         'Title': 'item-title',
         'Body': 'item-body',
     },
-    'Sellers': {}
+    'Sellers': set()
 }
 
 for i in range(4):
-    seller_name = 'seller-{}'.format(i)
-    item.data['Sellers'][seller_name] = random.randint(0, 100)
+    seller_id = 'seller-{}'.format(i)
+    item.data['Sellers'].add(seller_id)
 
 engine.save(item)

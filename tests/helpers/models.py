@@ -12,7 +12,6 @@ from bloop import (
     Map,
     Set,
     String,
-    TypedMap,
 )
 
 
@@ -69,7 +68,6 @@ class VectorModel(BaseModel):
     name = Column(String, hash_key=True)
     list_str = Column(List(String))
     set_str = Column(Set(String))
-    typed_map_str = Column(TypedMap(String))
     map_nested = Column(Map(**{
         "str": String,
         "map": Map(**{

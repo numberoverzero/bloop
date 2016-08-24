@@ -16,7 +16,6 @@ from bloop.types import (
     Set,
     String,
     Type,
-    TypedMap,
 )
 
 from ..helpers.models import DocumentType
@@ -86,8 +85,7 @@ def test_none_scalar_types(typedef):
         "Stock": None,
         "Description": {"Heading": None, "Body": None, "Specifications": None},
         "Id": None,
-        "Updated": None}),
-    (TypedMap(UUID), dict())
+        "Updated": None})
 ])
 def test_load_none_vector_types(engine, typedef, default):
     """multi-value types return empty containers when given None"""
@@ -102,7 +100,6 @@ def test_load_none_vector_types(engine, typedef, default):
 @pytest.mark.parametrize("typedef, nones", [
     (Set(String), ([None], [], None)),
     (List(String), ([None], [], None)),
-    (TypedMap(String), ({"k": None}, {}, None)),
     (DocumentType, ({"Rating": None}, {}, None))
 ])
 def test_dump_none_vector_types(engine, typedef, nones):
@@ -119,7 +116,6 @@ def test_dump_none_vector_types(engine, typedef, nones):
 @pytest.mark.parametrize("typedef, values, expected", [
     (Set(String), [None, "hello"], [{"S": "hello"}]),
     (List(String), ["foo", None], [{"S": "foo"}]),
-    (TypedMap(String), {"omit": None, "include": "v"}, {"include": {"S": "v"}}),
     (DocumentType, {"Rating": 3.0, "Stock": None}, {"Rating": {"N": "3"}})
 ])
 def test_dump_partial_none(engine, typedef, values, expected):
@@ -353,35 +349,6 @@ def test_map_path():
     assert typedef["foo"] is foo_type
     assert typedef["bar"] is bar_type
     assert typedef["bool"] is bool_type
-
-
-def test_typedmap(engine):
-    """TypedMap handles arbitrary keys and values"""
-    typedef = TypedMap(DateTime)
-
-    engine.type_engine.register(typedef)
-    engine.type_engine.bind()
-
-    now = arrow.now().to('utc')
-    later = now.replace(seconds=30)
-    loaded = {
-        'now': now,
-        'later': later
-    }
-    dumped = {
-        'now': {'S': now.isoformat()},
-        'later': {'S': later.isoformat()}
-    }
-    assert typedef.dynamo_dump(loaded, context={"engine": engine}) == dumped
-    assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
-
-
-@pytest.mark.parametrize("key", [object(), None, 3, True])
-def test_typedmap_path(key):
-    """To support paths in condition expressions, __getitem__ must return another Type.  TypedMap only has one Type."""
-    inner = UUID()
-    typedef = TypedMap(inner)
-    assert typedef[key] is inner
 
 
 def test_repr():

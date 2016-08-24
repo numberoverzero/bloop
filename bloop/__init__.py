@@ -30,13 +30,12 @@ from .types import (
     Map,
     Set,
     String,
-    TypedMap,
 )
 
 __all__ = [
     "BaseModel", "Boolean", "Binary", "BloopException", "Column",
     "Condition", "ConstraintViolation", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer",
-    "List", "LocalSecondaryIndex", "Map", "MissingObjects", "Set", "String", "TableMismatch", "TypedMap",
+    "List", "LocalSecondaryIndex", "Map", "MissingObjects", "Set", "String", "TableMismatch",
     "UUID", "before_create_table", "model_bound", "model_created",
     "object_deleted", "object_loaded", "object_modified", "object_saved"
 ]

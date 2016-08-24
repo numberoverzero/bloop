@@ -125,31 +125,18 @@ use.  Therefore, any types that can hold an arbitrary group of inner values must
 unambiguously load all inner values.  Set and List only support a single type, so they can be specified with eg.
 ``Set(DateTime)``.
 
-DynamoDB's ``Map`` can have arbitrary keys with different types per key.  No single type can allow both,
-while still preserving type information.  Instead, Bloop provides two Map types that cover common uses for Maps:
+DynamoDB's ``Map`` can have keys with different types per key, but must identify all of the keys it will use:
 
-* ``TypedMap`` is a single typed dict with any number of keys:
+.. code-block:: python
 
-  .. code-block:: python
+    class Model:
+        item = Column(Map(**{
+            "name": String,
+            "rating": Float,
+            "stock": Integer}))
 
-      class Model:
-        scores = Column(TypedMap(Integer))
-
-      obj = Model()
-      obj.scores = {"amanda": 94, "tom": 90}
-
-* ``Map`` is a dict where each key must specify its type:
-
-  .. code-block:: python
-
-      class Model:
-          item = Column(Map(**{
-              "name": String,
-              "rating": Float,
-              "stock": Integer}))
-
-      obj = Model()
-      obj.item = {
+    obj = Model()
+    obj.item = {
         "name": "Pogs",
         "rating": 0.7,
         "stock": 1e9}
@@ -213,38 +200,6 @@ Unlike Set, a List's inner type can be anything, including other Lists, Sets, an
     # Both valid
     List(UUID)
     List(Set(DateTime))
-
-------------
-``TypedMap``
-------------
-
-TypedMap is one of two built-in Map types.  This type allows any number of keys, but values must be the same type.
-
-.. code-block:: python
-
-    class TypedMap(bloop.Type):
-        backing_type = "M"
-        python_type = collections.abc.Mapping
-
-        def __init__(self, typedef):
-            ...
-
-.. attribute:: typedef
-    :noindex:
-
-    The type for values in this dict.
-
-This is useful when all of your data is the same type, but you don't know what keys may be used.  The inner
-type can be anything, like ``TypedMap(Set(UUID))``.
-
-.. code-block:: python
-
-    Tags = TypedMap(String)
-    class User(...):
-        tags = Column(Tags)
-
-    user.tags["#wat"] = "destroyallsoftware/talks/wat"
-    user.tags["#bigdata"] = "twitter/garybernhardt/600783770925420546"
 
 -------
 ``Map``

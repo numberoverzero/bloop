@@ -658,7 +658,6 @@ def test_load_missing_vector_types(engine, session):
 
     assert obj.list_str == list()
     assert obj.set_str == set()
-    assert obj.typed_map_str == dict()
     assert obj.map_nested == {
         "str": None,
         "map": {

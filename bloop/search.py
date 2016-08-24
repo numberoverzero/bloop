@@ -2,7 +2,7 @@ import collections
 
 import declare
 
-from .conditions import And, BeginsWith, Between, Comparison, iter_columns
+from .conditions import And, BeginsWith, Between, Comparison, iter_columns, render
 from .exceptions import (
     ConstraintViolation,
     InvalidFilterCondition,
@@ -10,7 +10,6 @@ from .exceptions import (
     InvalidProjection,
     UnknownSearchMode,
 )
-from .expressions import render
 from .models import Column, GlobalSecondaryIndex
 from .util import (
     printable_column_name,

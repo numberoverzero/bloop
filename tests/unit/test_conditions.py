@@ -9,6 +9,7 @@ from bloop.conditions import (
     Between,
     Comparison,
     Condition,
+    ConditionRenderer,
     Contains,
     In,
     Not,
@@ -19,9 +20,9 @@ from bloop.conditions import (
     object_deleted,
     object_loaded,
     object_saved,
+    render
 )
 from bloop.exceptions import InvalidComparisonOperator
-from bloop.expressions import ConditionRenderer, render
 from bloop.models import BaseModel, Column
 from bloop.types import UUID, Integer, TypedMap
 

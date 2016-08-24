@@ -9,7 +9,7 @@ from .exceptions import (
     UnboundModel,
     UnknownType,
 )
-from .expressions import render
+from .conditions import render
 from .models import Index, ModelMetaclass
 from .search import Query, Scan
 from .session import SessionWrapper

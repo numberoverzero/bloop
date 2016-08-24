@@ -19,7 +19,6 @@ from bloop.conditions import (
     object_deleted,
     object_loaded,
     object_saved,
-    sync,
 )
 from bloop.exceptions import InvalidComparisonOperator
 from bloop.expressions import ConditionRenderer, render
@@ -426,7 +425,7 @@ def test_on_deleted(engine):
     assert get_snapshot(user) == empty_user_condition
 
     # It doesn't matter if the object had non-empty values saved from a previous sync
-    sync(user, engine)
+    object_saved.send(engine, obj=user)
     assert get_snapshot(user) == (
         User.age.is_({"N": "3"}) &
         User.name.is_({"S": "foo"})

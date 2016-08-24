@@ -5,8 +5,7 @@ import arrow
 import boto3
 import declare
 import pytest
-from bloop.conditions import get_snapshot, sync
-from bloop.engine import Engine, dump_key
+from bloop.engine import Engine, dump_key, object_saved
 from bloop.exceptions import (
     AbstractModelError,
     InvalidModel,
@@ -306,32 +305,6 @@ def test_load_missing_key(engine):
             engine.load(model)
 
 
-def test_load_snapshots(engine, session):
-    """Loading builds a snapshot for future atomic operations"""
-    user = User(id=uuid.uuid4())
-
-    # In the case of missing data, load may not return fields
-    # (or in the case of multi-view tables, non-mapped data)
-    session.load_items.return_value = {
-        "User": [{
-            "age": {"N": 5},
-            "id": {"S": str(user.id)},
-            "extra_field": {"untyped data": "not parsed"}}]
-    }
-    engine.load(user)
-
-    # Cached snapshots are in dumped form
-    expected_condition = (
-        (User.age == {"N": "5"}) &
-        (User.email.is_(None)) &
-        (User.id == {"S": str(user.id)}) &
-        (User.joined.is_(None)) &
-        (User.name.is_(None))
-    )
-    actual_condition = get_snapshot(user)
-    assert actual_condition == expected_condition
-
-
 def test_save_twice(engine, session):
     """Save sends full local values, not just deltas from last save"""
     user = User(id=uuid.uuid4(), age=5)
@@ -394,8 +367,8 @@ def test_save_atomic_new(engine, session):
 
 def test_save_atomic_condition(engine, session):
     user = User(id=uuid.uuid4())
-    # Pretend the id was already persisted in dynamo
-    sync(user, engine)
+    # Tell the tracking system the user's id was saved to DynamoDB
+    object_saved.send(engine, obj=user)
     # Mutate a field; part of the update but not an expected condition
     user.name = "new_foo"
     # Condition on the mutated field with a different value
@@ -482,8 +455,8 @@ def test_delete_multiple_condition(engine, session):
 def test_delete_atomic(engine, session):
     user = User(id=uuid.uuid4())
 
-    # Manually snapshot so we think age is persisted
-    sync(user, engine)
+    # Tell the tracking system the user's id was saved to DynamoDB
+    object_saved.send(engine, obj=user)
 
     expected = {
         "ConditionExpression": "(#n0 = :v1)",
@@ -530,8 +503,8 @@ def test_delete_atomic_condition(engine, session):
     user_id = uuid.uuid4()
     user = User(id=user_id, email="foo@bar.com")
 
-    # Manually snapshot so we think age is persisted
-    sync(user, engine)
+    # Tell the tracking system the user's id and email were saved to DynamoDB
+    object_saved.send(engine, obj=user)
 
     expected = {
         "ConditionExpression": "((#n0 = :v1) AND (#n2 = :v3) AND (#n4 = :v5))",

@@ -346,7 +346,7 @@ class Column(declare.Field, ComparisonMixin):
         # <Column[Pin.url]>
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
-        return "<Column[{}{}]>".format(printable_column_name(self, path), extra)
+        return "<Column[{}.{}{}]>".format(self.model.__name__, printable_column_name(self, path), extra)
 
     @property
     def dynamo_name(self):

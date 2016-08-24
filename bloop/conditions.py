@@ -39,7 +39,177 @@ def iter_columns(condition):
             yield condition.column
 
 
-class _BaseCondition:
+class NewCondition:
+    def __init__(self, *values, operation=None, column=None, path=None):
+        self.operation = operation
+        self.column = column
+        self.values = list(values)
+        self.path = path or []
+
+    def __len__(self):
+        if not self.operation:
+            return 0
+        elif self.operation in ("and", "or"):
+            return sum(map(len, self.values))
+        elif self.operation == "not":
+            # Guard against not without a value
+            return bool(self.values) and len(self.values[0])
+        else:
+            return 1
+
+    def __invert__(self):
+        if self.operation == "not":
+            if not self.values:
+                return NewCondition()
+            return self.values[0]
+        return NewCondition(self.values[0], operation="not")
+
+    __neg__ = __invert__
+
+    def __and__(self, other):
+        # ()_1 & ()_2 -> ()_1
+        if not (self or other):
+            return self
+
+        # (a > 2) & () -> (a > 2)
+        elif not other:
+            return self
+        # () & (b < 3) -> (b < 3)
+        elif not self:
+            return other
+
+        # (a & b) & (c & d) -> (a & b & c & d)
+        elif self.operation == other.operation == "and":
+            return NewCondition(*self.values, *other.values, operation="and")
+        # (a & b) & (c > 2) -> (a & b & (c > 2))
+        elif self.operation == "and":
+            return NewCondition(other, *self.values, operation="and")
+        # (a > 2) & (b & c) -> ((a > 2) & b & c)
+        elif other.operation == "and":
+            return NewCondition(self, *other.values, operation="and")
+        # (a > 2) & (b < 3) -> ((a > 2) & (b < 3))
+        else:
+            return NewCondition(self, other, operation="and")
+
+    def __iand__(self, other):
+        # x &= () -> x
+        if not other:
+            return self
+        # (a & b) &= (c & d) -> (a & b & c & d)
+        elif self.operation == "and" and other.operation == "and":
+            self.values.extend(other.values)
+            return self
+        # (a & b) &= (c > 2) -> (a & b & (c > 2))
+        elif self.operation == "and":
+            self.values.append(other)
+            return self
+        # (a > 2) &= (b < 3) -> ((a > 2) & (b < 3))
+        else:
+            return NewCondition(self, other, operation="and")
+
+    def __or__(self, other):
+        # ()_1 | ()_2 -> ()_1
+        if not (self or other):
+            return self
+
+        # (a > 2) | () -> (a > 2)
+        elif not other:
+            return self
+        # () | (b < 3) -> (b < 3)
+        elif not self:
+            return other
+
+        # (a | b) | (c | d) -> (a | b | c | d)
+        elif self.operation == other.operation == "or":
+            return NewCondition(*self.values, *other.values, operation="or")
+        # (a | b) | (c > 2) -> (a | b | (c > 2))
+        elif self.operation == "or":
+            return NewCondition(other, *self.values, operation="or")
+        # (a > 2) | (b | c) -> ((a > 2) | b | c)
+        elif other.operation == "or":
+            return NewCondition(self, *other.values, operation="or")
+        # (a > 2) | (b < 3) -> ((a > 2) | (b < 3))
+        else:
+            return NewCondition(self, other, operation="or")
+
+    def __ior__(self, other):
+        # x |= () -> x
+        if not other:
+            return self
+        # (a | b) |= (c | d) -> (a | b | c | d)
+        elif self.operation == "or" and other.operation == "or":
+            self.values.extend(other.values)
+            return self
+        # (a | b) |= (c > 2) -> (a | b | (c > 2))
+        elif self.operation == "or":
+            self.values.append(other)
+            return self
+        # (a > 2) |= (b < 3) -> ((a > 2) | (b < 3))
+        else:
+            return NewCondition(self, other, operation="or")
+
+    def __repr__(self):
+        if self.operation in ("and", "or"):
+            joiner = " | " if self.operation == "or" else " & "
+            if not self.values:
+                return "({})".format(joiner)
+            elif len(self.values) == 1:
+                return "({!r} {})".format(self.values[0], joiner.strip())
+            else:
+                "({})".format(joiner.join(repr(c) for c in self.values))
+        elif self.operation == "not":
+            if not self.values:
+                return "(~)"
+            else:
+                return "(~{!r})".format(self.values[0])
+        elif self.column is None:
+            return "()"
+        elif self.operation in ["<", "<=", ">=", ">", "==", "!="]:
+            return "({!r} {} {!r})".format(self.column, self.operation, self.values[0])
+        elif self.operation in ["attribute_exists", "attribute_not_exists"]:
+            return "{}({!r})".format(self.operation, self.column)
+        elif self.operation in ["begins_with", "contains"]:
+            return "{}({!r}, {!r})".format(self.operation, self.column, self.values[0])
+        elif self.operation == "between":
+            if not self.values:
+                return "({!r} between [,]".format(self.column)
+            elif len(self.values) == 1:
+                return "({!r} between [{!r},]".format(self.column, self.values[0])
+            else:
+                return "({!r} between [{!r}, {!r}])".format(self.column, self.values[0], self.values[1])
+        elif self.operation == "in":
+            return "({!r} in {!r})".format(self.column, self.values)
+        else:
+            raise ValueError("Unknown operation {!r}".format(self.operation))
+
+    def __eq__(self, other):
+        if (
+                (self.operation != other.operation) or
+                (self.column is not other.column) or
+                (self.path != other.path)):
+            return False
+        # Can't use a straight list == list because
+        # values could contain columns, which will break equality.
+        # Can't use 'is' either, since it won't work for non-column
+        # objects.
+        if len(self.values) != len(other.values):
+            return False
+        for s, o in zip(self.values, other.values):
+            # Both NewComparisonMixin, use `is`
+            if isinstance(s, NewComparisonMixin) and isinstance(o, NewComparisonMixin):
+                if s is not o:
+                    return False
+            # This would mean only one was a NewComparisonMixin
+            elif isinstance(s, NewComparisonMixin) or isinstance(o, NewComparisonMixin):
+                return False
+            # Neither are NewComparisonMixin, use `==`
+            if s != o:
+                return False
+
+    __hash__ = object.__hash__
+
+
+class BaseCondition:
     dumped = False
 
     def __and__(self, other):
@@ -69,7 +239,7 @@ class _BaseCondition:
         return 1
 
 
-class Condition(_BaseCondition):
+class Condition(BaseCondition):
     """Empty condition for iteratively building up conditions.
 
     Example:
@@ -103,13 +273,13 @@ class Condition(_BaseCondition):
 
     def __eq__(self, other):
         return isinstance(other, Condition)
-    __hash__ = _BaseCondition.__hash__
+    __hash__ = BaseCondition.__hash__
 
     def render(self, renderer):
         return None
 
 
-class _MultiCondition(_BaseCondition):
+class _MultiCondition(BaseCondition):
     name = None
     uname = None
 
@@ -138,12 +308,13 @@ class _MultiCondition(_BaseCondition):
             if mine != theirs:
                 return False
         return True
-    __hash__ = _BaseCondition.__hash__
+    __hash__ = BaseCondition.__hash__
 
     def render(self, renderer):
         if len(self.conditions) == 1:
             return self.conditions[0].render(renderer)
         rendered_conditions = (c.render(renderer) for c in self.conditions)
+        # (foo AND bar AND baz)
         conjunction = " {} ".format(self.uname)
         return "(" + conjunction.join(rendered_conditions) + ")"
 
@@ -176,7 +347,7 @@ class Or(_MultiCondition):
     __ior__ = __or__
 
 
-class Not(_BaseCondition):
+class Not(BaseCondition):
     def __init__(self, condition):
         self.condition = condition
 
@@ -190,7 +361,7 @@ class Not(_BaseCondition):
         if not isinstance(other, Not):
             return False
         return self.condition == other.condition
-    __hash__ = _BaseCondition.__hash__
+    __hash__ = BaseCondition.__hash__
 
     def __invert__(self):
         return self.condition
@@ -199,7 +370,7 @@ class Not(_BaseCondition):
         return "(NOT {})".format(self.condition.render(renderer))
 
 
-class Comparison(_BaseCondition):
+class Comparison(BaseCondition):
 
     def __init__(self, column, operator, value, path=None):
         if operator not in comparison_aliases:
@@ -211,8 +382,8 @@ class Comparison(_BaseCondition):
         self.path = path
 
     def __repr__(self):
-        return "({} {} {!r})".format(
-            printable_column_name(self.column, self.path),
+        return "({}.{} {} {!r})".format(
+            self.column.model.__name__, printable_column_name(self.column, self.path),
             self.comparator,
             self.value)
 
@@ -226,7 +397,7 @@ class Comparison(_BaseCondition):
             if getattr(self, attr) != getattr(other, attr):
                 return False
         return True
-    __hash__ = _BaseCondition.__hash__
+    __hash__ = BaseCondition.__hash__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
@@ -237,16 +408,16 @@ class Comparison(_BaseCondition):
         return "({} {} {})".format(nref, comparator, vref)
 
 
-class AttributeExists(_BaseCondition):
+class AttributeExists(BaseCondition):
     def __init__(self, column, negate, path=None):
         self.column = column
         self.negate = negate
         self.path = path
 
     def __repr__(self):
-        return "({}exists {})".format(
+        return "({}exists {}.{})".format(
             "not_" if self.negate else "",
-            printable_column_name(self.column, self.path))
+            self.column.model.__name__, printable_column_name(self.column, self.path))
 
     def __eq__(self, other):
         if not isinstance(other, AttributeExists):
@@ -258,7 +429,7 @@ class AttributeExists(_BaseCondition):
             if getattr(self, attr) != getattr(other, attr):
                 return False
         return True
-    __hash__ = _BaseCondition.__hash__
+    __hash__ = BaseCondition.__hash__
 
     def render(self, renderer):
         name = "attribute_not_exists" if self.negate else "attribute_exists"
@@ -266,15 +437,15 @@ class AttributeExists(_BaseCondition):
         return "({}({}))".format(name, nref)
 
 
-class BeginsWith(_BaseCondition):
+class BeginsWith(BaseCondition):
     def __init__(self, column, value, path=None):
         self.column = column
         self.value = value
         self.path = path
 
     def __repr__(self):
-        return "({} begins with {!r})".format(
-            printable_column_name(self.column, self.path),
+        return "({}.{} begins with {!r})".format(
+            self.column.model.__name__, printable_column_name(self.column, self.path),
             self.value)
 
     def __eq__(self, other):
@@ -287,7 +458,7 @@ class BeginsWith(_BaseCondition):
             if getattr(self, attr) != getattr(other, attr):
                 return False
         return True
-    __hash__ = _BaseCondition.__hash__
+    __hash__ = BaseCondition.__hash__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
@@ -296,15 +467,15 @@ class BeginsWith(_BaseCondition):
         return "(begins_with({}, {}))".format(nref, vref)
 
 
-class Contains(_BaseCondition):
+class Contains(BaseCondition):
     def __init__(self, column, value, path=None):
         self.column = column
         self.value = value
         self.path = path
 
     def __repr__(self):
-        return "({} contains {!r})".format(
-            printable_column_name(self.column, self.path),
+        return "({}.{} contains {!r})".format(
+            self.column.model.__name__, printable_column_name(self.column, self.path),
             self.value)
 
     def __eq__(self, other):
@@ -317,7 +488,7 @@ class Contains(_BaseCondition):
             if getattr(self, attr) != getattr(other, attr):
                 return False
         return True
-    __hash__ = _BaseCondition.__hash__
+    __hash__ = BaseCondition.__hash__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
@@ -326,7 +497,7 @@ class Contains(_BaseCondition):
         return "(contains({}, {}))".format(nref, vref)
 
 
-class Between(_BaseCondition):
+class Between(BaseCondition):
     def __init__(self, column, lower, upper, path=None):
         self.column = column
         self.lower = lower
@@ -334,8 +505,8 @@ class Between(_BaseCondition):
         self.path = path
 
     def __repr__(self):
-        return "({} between [{!r}, {!r}])".format(
-            printable_column_name(self.column, self.path),
+        return "({}.{} between [{!r}, {!r}])".format(
+            self.column.model.__name__, printable_column_name(self.column, self.path),
             self.lower, self.upper)
 
     def __eq__(self, other):
@@ -348,7 +519,7 @@ class Between(_BaseCondition):
             if getattr(self, attr) != getattr(other, attr):
                 return False
         return True
-    __hash__ = _BaseCondition.__hash__
+    __hash__ = BaseCondition.__hash__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
@@ -360,15 +531,15 @@ class Between(_BaseCondition):
             nref, vref_lower, vref_upper)
 
 
-class In(_BaseCondition):
+class In(BaseCondition):
     def __init__(self, column, values, path=None):
         self.column = column
         self.values = values
         self.path = path
 
     def __repr__(self):
-        return "({} in {!r})".format(
-            printable_column_name(self.column, self.path),
+        return "({}.{} in {!r})".format(
+            self.column.model.__name__, printable_column_name(self.column, self.path),
             self.values)
 
     def __eq__(self, other):
@@ -381,7 +552,7 @@ class In(_BaseCondition):
             if getattr(self, attr) != getattr(other, attr):
                 return False
         return True
-    __hash__ = _BaseCondition.__hash__
+    __hash__ = BaseCondition.__hash__
 
     def render(self, renderer):
         nref = renderer.name_ref(self.column, path=self.path)
@@ -676,3 +847,63 @@ class ComparisonMixin:
 
     def __repr__(self):
         return self.__obj.__repr__(path=self.path)
+
+
+class NewComparisonMixin:
+    def __init__(self, proxied=None, path=None):
+        self.__path = path or []
+        self.__proxied = self if proxied is None else proxied
+
+    def __hash__(self):
+        return super().__hash__()
+
+    def __repr__(self):
+        if self.__proxied is self:
+            return "<ComparisonMixin>"
+        return repr(self.__proxied)
+
+    def __getattr__(self, item):
+        if self.__proxied is self:
+            raise AttributeError
+        return getattr(self.__proxied, item)
+
+    def __getitem__(self, path):
+        return NewComparisonMixin(proxied=self.__proxied, path=self.__path + [path])
+
+    def __eq__(self, value):
+        if value is None:
+            return NewCondition(operation="attribute_not_exists", column=self.__proxied, path=self.__path)
+        return NewCondition(value, operation="==", column=self.__proxied, path=self.__path)
+
+    def __ne__(self, value):
+        if value is None:
+            return NewCondition(operation="attribute_exists", column=self.__proxied, path=self.__path)
+        return NewCondition(value, operation="!=", column=self.__proxied, path=self.__path)
+
+    def __lt__(self, value):
+        return NewCondition(value, operation="<", column=self.__proxied, path=self.__path)
+
+    def __gt__(self, value):
+        return NewCondition(value, operation=">", column=self.__proxied, path=self.__path)
+
+    def __le__(self, value):
+        return NewCondition(value, operation="<=", column=self.__proxied, path=self.__path)
+
+    def __ge__(self, value):
+        return NewCondition(value, operation=">=", column=self.__proxied, path=self.__path)
+
+    def begins_with(self, value):
+        return NewCondition(value, operation="begins_with", column=self.__proxied, path=self.__path)
+
+    def between(self, lower, upper):
+        return NewCondition(lower, upper, operation="between", column=self.__proxied, path=self.__path)
+
+    def contains(self, value):
+        return NewCondition(value, operation="contains", column=self.__proxied, path=self.__path)
+
+    def in_(self, values):
+        return NewCondition(*values, operation="in", column=self.__proxied, path=self.__path)
+
+    is_ = __eq__
+
+    is_not = __ne__

@@ -35,10 +35,10 @@ def ordered(obj):
 
 
 def printable_column_name(column, path=None):
-    """Provided for debug output when rendering conditions"""
-    model_name = column.model.__name__
-    name = "{}.{}".format(model_name, column.model_name)
-    pieces = [name]
+    """Provided for debug output when rendering conditions.
+
+    User.name[3]["foo"][0]["bar"] -> name[3].foo[0].bar"""
+    pieces = [column.model_name]
     for segment in (path or []):
         if isinstance(segment, str):
             pieces.append(segment)

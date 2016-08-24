@@ -150,9 +150,9 @@ def check_range_key(query_on, key):
 
 
 def fail_bad_hash(query_on):
-    msg = "The key condition for a Query on {!r} must be `{} == value`."
+    msg = "The key condition for a Query on {!r} must be `{}.{} == value`."
     raise InvalidKeyCondition(msg.format(
-        printable_query(query_on), printable_column_name(query_on.hash_key)))
+        printable_query(query_on), query_on.model.__name__, printable_column_name(query_on.hash_key)))
 
 
 def fail_bad_range(query_on):

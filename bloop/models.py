@@ -2,14 +2,7 @@ import collections.abc
 
 import declare
 
-from .conditions import (
-    AttributeExists,
-    BeginsWith,
-    Between,
-    Comparison,
-    Contains,
-    In,
-)
+from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel
 from .util import missing, printable_column_name, signal, unpack_from_dynamodb
 
@@ -333,74 +326,7 @@ class LocalSecondaryIndex(Index):
         self.model.Meta.write_units = value
 
 
-class _ComparisonMixin:
-    def __init__(self, *, path=None, obj=None, **kwargs):
-        self.path = path or []
-        # By default the object points to itself; subclasses and recursive
-        # structures (for instance, __getitem__) can specify the original
-        # object to maintain constant time access to the underlying object.
-        self.__obj = obj or self
-        super().__init__(**kwargs)
-
-    def __hash__(self):
-        # With single inheritance this looks stupid, but as a Mixin this
-        # ensures we kick hashing back to the other base class so things
-        # don't get fucked up, like `set()`.
-
-        # While the docs recommend using `__hash__ = some_parent.__hash__`,
-        # that won't work here - we don't know the parent when the mixin is
-        # defined.
-        # https://docs.python.org/3.1/reference/datamodel.html#object.__hash__
-        return super().__hash__()
-
-    def __eq__(self, value):
-        # Special case - None should use function attribute_not_exists
-        if value is None:
-            return AttributeExists(self.__obj, negate=True, path=self.path)
-        return Comparison(self.__obj, "==", value, path=self.path)
-    is_ = __eq__
-
-    def __ne__(self, value):
-        # Special case - None should use function attribute_exists
-        if value is None:
-            return AttributeExists(self.__obj, negate=False, path=self.path)
-        return Comparison(self.__obj, "!=", value, path=self.path)
-    is_not = __ne__
-
-    def __lt__(self, value):
-        return Comparison(self.__obj, "<", value, path=self.path)
-
-    def __gt__(self, value):
-        return Comparison(self.__obj, ">", value, path=self.path)
-
-    def __le__(self, value):
-        return Comparison(self.__obj, "<=", value, path=self.path)
-
-    def __ge__(self, value):
-        return Comparison(self.__obj, ">=", value, path=self.path)
-
-    def between(self, lower, upper):
-        """ lower <= column.value <= upper """
-        return Between(self.__obj, lower, upper, path=self.path)
-
-    def in_(self, values):
-        """ column.value in [3, 4, 5] """
-        return In(self.__obj, values, path=self.path)
-
-    def begins_with(self, value):
-        return BeginsWith(self.__obj, value, path=self.path)
-
-    def contains(self, value):
-        return Contains(self.__obj, value, path=self.path)
-
-    def __getitem__(self, path):
-        return _ComparisonMixin(obj=self.__obj, path=self.path + [path])
-
-    def __repr__(self):
-        return self.__obj.__repr__(path=self.path)
-
-
-class Column(declare.Field, _ComparisonMixin):
+class Column(declare.Field, ComparisonMixin):
     def __init__(self, typedef, hash_key=None, range_key=None,
                  name=None, **kwargs):
         self.hash_key = hash_key

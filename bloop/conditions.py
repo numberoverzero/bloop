@@ -17,6 +17,18 @@ comparison_aliases = {
     ">=": ">=",
 }
 
+allowed_operations = {
+    *(comparison_aliases.keys()),
+    "and",
+    "begins_with",
+    "between",
+    "contains",
+    "in",
+    "not",
+    "or",
+    None
+}
+
 
 def iter_columns(condition):
     """Yield all columns in the condition; handles nesting and cycles"""
@@ -40,61 +52,71 @@ def iter_columns(condition):
 
 
 class NewCondition:
-    def __init__(self, *values, operation=None, column=None, path=None):
+    def __init__(self, operation, values=None, column=None, path=None):
         self.operation = operation
         self.column = column
-        self.values = list(values)
+        self.values = list(values or [])
         self.path = path or []
+        if operation not in allowed_operations:
+            raise InvalidComparisonOperator("Unknown operation {!r}".format(operation))
+
+    @classmethod
+    def empty(cls):
+        return NewCondition(None)
 
     def __len__(self):
         if not self.operation:
             return 0
         elif self.operation in ("and", "or"):
-            return sum(map(len, self.values))
+            return sum(1 for _ in iter_conditions(self))
         elif self.operation == "not":
-            # Guard against not without a value
+            # Guard against a not without a value
             return bool(self.values) and len(self.values[0])
         else:
             return 1
 
     def __invert__(self):
+        if not self.operation:
+            return self
         if self.operation == "not":
             if not self.values:
-                return NewCondition()
+                return NewCondition.empty()
+            # Cancel the negation
             return self.values[0]
-        return NewCondition(self.values[0], operation="not")
+        # return not(self)
+        return NewCondition("not", values=[self])
 
     __neg__ = __invert__
 
     def __and__(self, other):
         # ()_1 & ()_2 -> ()_1
-        if not (self or other):
-            return self
-
+        # or
         # (a > 2) & () -> (a > 2)
-        elif not other:
+        if not other:
             return self
         # () & (b < 3) -> (b < 3)
         elif not self:
             return other
-
         # (a & b) & (c & d) -> (a & b & c & d)
         elif self.operation == other.operation == "and":
-            return NewCondition(*self.values, *other.values, operation="and")
+            return NewCondition("and", values=self.values + other.values)
         # (a & b) & (c > 2) -> (a & b & (c > 2))
         elif self.operation == "and":
-            return NewCondition(other, *self.values, operation="and")
+            return NewCondition("and", values=self.values + [other])
         # (a > 2) & (b & c) -> ((a > 2) & b & c)
         elif other.operation == "and":
-            return NewCondition(self, *other.values, operation="and")
+            return NewCondition("and", values=[self] + other.values)
         # (a > 2) & (b < 3) -> ((a > 2) & (b < 3))
         else:
-            return NewCondition(self, other, operation="and")
+            return NewCondition("and", values=[self, other])
 
     def __iand__(self, other):
         # x &= () -> x
         if not other:
             return self
+        # () &= x -> x
+        elif not self:
+            return other
         # (a & b) &= (c & d) -> (a & b & c & d)
         elif self.operation == "and" and other.operation == "and":
             self.values.extend(other.values)
@@ -103,39 +125,42 @@ class NewCondition:
         elif self.operation == "and":
             self.values.append(other)
             return self
+        # (a > 2) &= (c & d) -> ((a > 2) & c & d)
+        elif other.operation == "and":
+            return NewCondition("and", values=[self] + other.values)
         # (a > 2) &= (b < 3) -> ((a > 2) & (b < 3))
         else:
-            return NewCondition(self, other, operation="and")
+            return NewCondition("and", values=[self, other])
 
     def __or__(self, other):
         # ()_1 | ()_2 -> ()_1
-        if not (self or other):
-            return self
-
+        # or
         # (a > 2) | () -> (a > 2)
-        elif not other:
+        if not other:
             return self
         # () | (b < 3) -> (b < 3)
         elif not self:
             return other
-
         # (a | b) | (c | d) -> (a | b | c | d)
         elif self.operation == other.operation == "or":
-            return NewCondition(*self.values, *other.values, operation="or")
+            return NewCondition("or", values=self.values + other.values)
         # (a | b) | (c > 2) -> (a | b | (c > 2))
         elif self.operation == "or":
-            return NewCondition(other, *self.values, operation="or")
+            return NewCondition("or", values=self.values + [other])
         # (a > 2) | (b | c) -> ((a > 2) | b | c)
         elif other.operation == "or":
-            return NewCondition(self, *other.values, operation="or")
+            return NewCondition("or", values=[self] + other.values)
         # (a > 2) | (b < 3) -> ((a > 2) | (b < 3))
         else:
-            return NewCondition(self, other, operation="or")
+            return NewCondition("or", values=[self, other])
 
     def __ior__(self, other):
         # x |= () -> x
         if not other:
             return self
+        # () |= x -> x
+        elif not self:
+            return other
         # (a | b) |= (c | d) -> (a | b | c | d)
         elif self.operation == "or" and other.operation == "or":
             self.values.extend(other.values)
@@ -144,9 +169,12 @@ class NewCondition:
         elif self.operation == "or":
             self.values.append(other)
             return self
+        # (a > 2) |= (c | d) -> ((a > 2) | c | d)
+        elif other.operation == "or":
+            return NewCondition("or", values=[self] + other.values)
         # (a > 2) |= (b < 3) -> ((a > 2) | (b < 3))
         else:
-            return NewCondition(self, other, operation="or")
+            return NewCondition("or", values=[self, other])
 
     def __repr__(self):
         if self.operation in ("and", "or"):
@@ -162,12 +190,8 @@ class NewCondition:
                 return "(~)"
             else:
                 return "(~{!r})".format(self.values[0])
-        elif self.column is None:
-            return "()"
         elif self.operation in ["<", "<=", ">=", ">", "==", "!="]:
             return "({!r} {} {!r})".format(self.column, self.operation, self.values[0])
-        elif self.operation in ["attribute_exists", "attribute_not_exists"]:
-            return "{}({!r})".format(self.operation, self.column)
         elif self.operation in ["begins_with", "contains"]:
             return "{}({!r}, {!r})".format(self.operation, self.column, self.values[0])
         elif self.operation == "between":
@@ -205,8 +229,32 @@ class NewCondition:
             # Neither are NewComparisonMixin, use `==`
             if s != o:
                 return False
+        return True
 
     __hash__ = object.__hash__
+
+
+def iter_conditions(condition: NewCondition):
+    """Yield all conditions WITHIN the given condition.
+
+    If there are no conditions within this condition (any condition besides and, or, not; or any of those without
+    an inner value) then this will not yield those conditions."""
+    conditions = set()
+    visited = set()
+    # Has to be split out, since we don't want to visit the root (for cyclic conditions)
+    # but we don't want to yield it (if it's non-cyclic) because this only yields inner conditions
+    if condition.operation in {"and", "or"}:
+        conditions.update(condition.values)
+    if condition.operation == "not":
+        conditions.add(condition.values[0])
+    while conditions:
+        condition = conditions.pop()
+        if condition in visited:
+            continue
+        visited.add(condition)
+        yield condition
+        if condition.operation in {"and", "or", "not"}:
+            conditions.update(condition.values)
 
 
 class BaseCondition:
@@ -850,15 +898,16 @@ class ComparisonMixin:
 
 
 class NewComparisonMixin:
-    def __init__(self, proxied=None, path=None):
+    def __init__(self, *args, proxied=None, path=None, **kwargs):
         self.__path = path or []
         self.__proxied = self if proxied is None else proxied
+        super().__init__(**args, **kwargs)
 
     def __hash__(self):
         return super().__hash__()
 
     def __repr__(self):
-        if self.__proxied is self:
+        if type(self.__proxied) is NewComparisonMixin:
             return "<ComparisonMixin>"
         return repr(self.__proxied)
 

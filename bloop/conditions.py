@@ -16,9 +16,10 @@ comparison_aliases = {
     "<=": "<=",
     ">=": ">=",
 }
+comparisons = list(comparison_aliases.keys())
 
 allowed_operations = {
-    *(comparison_aliases.keys()),
+    *comparisons,
     "and",
     "begins_with",
     "between",
@@ -184,33 +185,40 @@ class NewCondition:
             elif len(self.values) == 1:
                 return "({!r} {})".format(self.values[0], joiner.strip())
             else:
-                "({})".format(joiner.join(repr(c) for c in self.values))
+                return "({})".format(joiner.join(repr(c) for c in self.values))
         elif self.operation == "not":
             if not self.values:
                 return "(~)"
             else:
                 return "(~{!r})".format(self.values[0])
-        elif self.operation in ["<", "<=", ">=", ">", "==", "!="]:
+        elif self.operation in comparisons:
             return "({!r} {} {!r})".format(self.column, self.operation, self.values[0])
         elif self.operation in ["begins_with", "contains"]:
             return "{}({!r}, {!r})".format(self.operation, self.column, self.values[0])
         elif self.operation == "between":
             if not self.values:
-                return "({!r} between [,]".format(self.column)
+                return "({!r} between [,])".format(self.column)
             elif len(self.values) == 1:
-                return "({!r} between [{!r},]".format(self.column, self.values[0])
+                return "({!r} between [{!r},])".format(self.column, self.values[0])
             else:
                 return "({!r} between [{!r}, {!r}])".format(self.column, self.values[0], self.values[1])
         elif self.operation == "in":
             return "({!r} in {!r})".format(self.column, self.values)
+        elif self.operation is None:
+            return "()"
         else:
-            raise ValueError("Unknown operation {!r}".format(self.operation))
+            raise InvalidComparisonOperator("Unknown operation {!r}".format(self.operation))
 
     def __eq__(self, other):
-        if (
-                (self.operation != other.operation) or
-                (self.column is not other.column) or
-                (self.path != other.path)):
+        if self is other:
+            return True
+        try:
+            if (
+                    (self.operation != other.operation) or
+                    (self.column is not other.column) or
+                    (self.path != other.path)):
+                return False
+        except AttributeError:
             return False
         # Can't use a straight list == list because
         # values could contain columns, which will break equality.
@@ -227,7 +235,7 @@ class NewCondition:
             elif isinstance(s, NewComparisonMixin) or isinstance(o, NewComparisonMixin):
                 return False
             # Neither are NewComparisonMixin, use `==`
-            if s != o:
+            elif s != o:  # pragma: no branch
                 return False
         return True
 
@@ -613,6 +621,8 @@ class In(BaseCondition):
         return "({} IN ({}))".format(nref, values)
 
 
+# CONDITION TRACKING ============================================================================== CONDITION TRACKING
+
 # Tracks the state of instances of models:
 # 1) Are any columns marked for including in an update?
 # 2) Latest snapshot for atomic operations
@@ -632,7 +642,7 @@ if not __signals_connected:  # pragma: no branch
 
     @object_deleted.connect
     def on_object_deleted(_, obj, **kwargs):
-        clear(obj)
+        _obj_tracking[obj].pop("snapshot", None)
 
     @object_loaded.connect
     def on_object_loaded(engine, obj, **kwargs):
@@ -640,38 +650,21 @@ if not __signals_connected:  # pragma: no branch
 
     @object_modified.connect
     def on_object_modified(_, obj, column, **kwargs):
-        mark(obj, column)
+        # Mark a column for a given object as being modified in any way.
+        # Any marked columns will be pushed (possibly as DELETES) in
+        # future UpdateItem calls that include the object.
+        _obj_tracking[obj]["marked"].add(column)
 
     @object_saved.connect
     def on_object_saved(engine, obj, **kwargs):
         sync(obj, engine)
 
 
-def clear(obj):
-    """Store a snapshot of an entirely empty object.
-
-    Usually called after deleting an object.
-    """
-    snapshot = Condition()
-    for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
-        snapshot &= column.is_(None)
-    _obj_tracking[obj]["snapshot"] = snapshot
-
-
-def mark(obj, column):
-    """
-    Mark a column for a given object as being modified in any way.
-    Any marked columns will be pushed (possibly as DELETES) in
-    future UpdateItem calls that include the object.
-    """
-    _obj_tracking[obj]["marked"].add(column)
-
-
 def sync(obj, engine):
     """Mark the object as having been persisted at least once.
 
     Store the latest snapshot of all marked values."""
-    snapshot = Condition()
+    snapshot = NewCondition.empty()
     # Only expect values (or lack of a value) for columns that have been explicitly set
     for column in sorted(_obj_tracking[obj]["marked"], key=lambda col: col.dynamo_name):
         value = getattr(obj, column.model_name, None)
@@ -687,20 +680,25 @@ def sync(obj, engine):
 
 def get_snapshot(obj):
     # Cached value
-    condition = _obj_tracking[obj]["snapshot"]
-    if condition is not None:
-        return condition
+    snapshot = _obj_tracking[obj].get("snapshot", None)
+    if snapshot is not None:
+        return snapshot
 
     # If the object has never been synced, create and cache
     # a condition that expects every column to be empty
-    clear(obj)
-    return _obj_tracking[obj]["snapshot"]
+    snapshot = NewCondition.empty()
+    for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
+        snapshot &= column.is_(None)
+    _obj_tracking[obj]["snapshot"] = snapshot
+    return snapshot
 
 
 def get_marked(obj):
     """Returns the set of marked columns for an object"""
     return set(_obj_tracking[obj]["marked"])
 
+
+# END CONDITION TRACKING ====================================================================== END CONDITION TRACKING
 
 def render(engine, filter=None, select=None, key=None, atomic=None, condition=None, update=None):
     renderer = ConditionRenderer(engine)
@@ -901,10 +899,7 @@ class NewComparisonMixin:
     def __init__(self, *args, proxied=None, path=None, **kwargs):
         self.__path = path or []
         self.__proxied = self if proxied is None else proxied
-        super().__init__(**args, **kwargs)
-
-    def __hash__(self):
-        return super().__hash__()
+        super().__init__(*args, **kwargs)
 
     def __repr__(self):
         if type(self.__proxied) is NewComparisonMixin:
@@ -922,36 +917,36 @@ class NewComparisonMixin:
     def __eq__(self, value):
         if value is None:
             return NewCondition(operation="attribute_not_exists", column=self.__proxied, path=self.__path)
-        return NewCondition(value, operation="==", column=self.__proxied, path=self.__path)
+        return NewCondition(operation="==", values=[value], column=self.__proxied, path=self.__path)
 
     def __ne__(self, value):
         if value is None:
             return NewCondition(operation="attribute_exists", column=self.__proxied, path=self.__path)
-        return NewCondition(value, operation="!=", column=self.__proxied, path=self.__path)
+        return NewCondition(operation="!=", values=[value], column=self.__proxied, path=self.__path)
 
     def __lt__(self, value):
-        return NewCondition(value, operation="<", column=self.__proxied, path=self.__path)
+        return NewCondition(operation="<", values=[value], column=self.__proxied, path=self.__path)
 
     def __gt__(self, value):
-        return NewCondition(value, operation=">", column=self.__proxied, path=self.__path)
+        return NewCondition(operation=">", values=[value], column=self.__proxied, path=self.__path)
 
     def __le__(self, value):
-        return NewCondition(value, operation="<=", column=self.__proxied, path=self.__path)
+        return NewCondition(operation="<=", values=[value], column=self.__proxied, path=self.__path)
 
     def __ge__(self, value):
-        return NewCondition(value, operation=">=", column=self.__proxied, path=self.__path)
+        return NewCondition(operation=">=", values=[value], column=self.__proxied, path=self.__path)
 
     def begins_with(self, value):
-        return NewCondition(value, operation="begins_with", column=self.__proxied, path=self.__path)
+        return NewCondition(operation="begins_with", values=[value], column=self.__proxied, path=self.__path)
 
     def between(self, lower, upper):
-        return NewCondition(lower, upper, operation="between", column=self.__proxied, path=self.__path)
+        return NewCondition(operation="between", values=[lower, upper], column=self.__proxied, path=self.__path)
 
     def contains(self, value):
-        return NewCondition(value, operation="contains", column=self.__proxied, path=self.__path)
+        return NewCondition(operation="contains", values=[value], column=self.__proxied, path=self.__path)
 
     def in_(self, values):
-        return NewCondition(*values, operation="in", column=self.__proxied, path=self.__path)
+        return NewCondition(operation="in", values=values, column=self.__proxied, path=self.__path)
 
     is_ = __eq__
 

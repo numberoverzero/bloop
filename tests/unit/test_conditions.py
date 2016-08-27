@@ -2,9 +2,16 @@ import pytest
 from bloop.conditions import (
     NewComparisonMixin,
     NewCondition,
-    iter_conditions
+    get_marked,
+    get_snapshot,
+    iter_conditions,
+    object_deleted,
+    object_loaded,
+    object_saved
 )
 from bloop.exceptions import InvalidComparisonOperator
+
+from ..helpers.models import User
 
 
 class MockColumn(NewComparisonMixin):
@@ -15,7 +22,8 @@ class MockColumn(NewComparisonMixin):
 
     def __repr__(self):
         return self.name
-column = MockColumn
+c = MockColumn("c")
+d = MockColumn("d")
 
 
 def conditions_for(*operations):
@@ -433,4 +441,212 @@ def test_ior_basic():
     assert b.operation == "or"
     assert b.values == [original_b, original_a]
 
+
+# NEW CONDITION REPR ============================================================================== NEW CONDITION REPR
+
+
+@pytest.mark.parametrize("condition, expected", [
+    # and
+    (NewCondition("and"), "( & )"),
+    (NewCondition("and", ["foo"]), "('foo' &)"),
+    (NewCondition("and", ["a", "b", "c"]), "('a' & 'b' & 'c')"),
+
+    # or
+    (NewCondition("or"), "( | )"),
+    (NewCondition("or", ["foo"]), "('foo' |)"),
+    (NewCondition("or", ["a", "b", "c"]), "('a' | 'b' | 'c')"),
+
+    # not
+    (NewCondition("not"), "(~)"),
+    (NewCondition("not", ["a", "b"]), "(~'a')"),
+
+    # comparisons
+    (NewCondition("<", [3], column=c), "(c < 3)"),
+    (NewCondition(">", [3], column=c), "(c > 3)"),
+    (NewCondition("<=", [3], column=c), "(c <= 3)"),
+    (NewCondition(">=", [3], column=c), "(c >= 3)"),
+    (NewCondition("==", [3], column=c), "(c == 3)"),
+    (NewCondition("!=", [3], column=c), "(c != 3)"),
+
+    # begins_with, contains
+    (NewCondition("begins_with", [2], column=c), "begins_with(c, 2)"),
+    (NewCondition("contains", [2], column=c), "contains(c, 2)"),
+
+    # between
+    (NewCondition("between", column=c), "(c between [,])"),
+    (NewCondition("between", [2], column=c), "(c between [2,])"),
+    (NewCondition("between", [2, 3], column=c), "(c between [2, 3])"),
+
+    # in
+    (NewCondition("in", column=c), "(c in [])"),
+    (NewCondition("in", [2, 3], column=c), "(c in [2, 3])"),
+
+    # empty
+    (NewCondition.empty(), "()")
+])
+def test_repr(condition, expected):
+    assert repr(condition) == expected
+
+
+def test_invalid_repr():
+    condition = NewCondition.empty()
+    condition.operation = "foo"
+    with pytest.raises(InvalidComparisonOperator):
+        repr(condition)
+
+
+# NEW CONDITION EQUALITY ====================================================================== NEW CONDITION EQUALITY
+
+
+def test_eq_empty():
+    empty = NewCondition.empty()
+    assert empty == empty
+
+    also_empty = NewCondition.empty()
+    assert empty is not also_empty
+    assert empty == also_empty
+
+
+def test_eq_wrong_type():
+    """AttributeError returns False"""
+    assert not (NewCondition.empty() == object())
+
+
+@pytest.mark.parametrize("other", [
+    NewCondition("==", list("xy"), column=c, path=["wrong", "path"]),
+    NewCondition("!=", list("xy"), column=c, path=["foo", "bar"]),
+    NewCondition("==", list("xy"), column=None, path=["foo", "bar"]),
+    NewCondition("==", list("xyz"), column=c, path=["foo", "bar"]),
+    NewCondition("==", list("yx"), column=c, path=["foo", "bar"]),
+])
+def test_eq_one_wrong_field(other):
+    """All four of operation, value, column, and path must match"""
+    self = NewCondition("==", list("xy"), column=c, path=["foo", "bar"])
+    assert not (self == other)
+
+
+@pytest.mark.parametrize("other", [
+    NewCondition("==", [c]),
+    NewCondition("==", ["x"]),
+    NewCondition("==", [c, c]),
+    NewCondition("==", ["x", "x"]),
+    NewCondition("==", ["x", c]),
+    NewCondition("==", [d, "x"]),
+])
+def test_eq_values_mismatch(other):
+    condition = NewCondition("==", [c, "x"])
+    assert not (condition == other)
+
+
 # END NEW CONDITION ================================================================================ END NEW CONDITION
+
+
+# TRACKING SIGNALS ================================================================================== TRACKING SIGNALS
+
+
+# Columns are sorted by model name
+empty_user_condition = (
+    User.age.is_(None) &
+    User.email.is_(None) &
+    User.id.is_(None) &
+    User.joined.is_(None) &
+    User.name.is_(None)
+)
+
+
+def test_on_deleted(engine):
+    """When an object is deleted, the snapshot expects all columns to be empty"""
+    user = User(age=3, name="foo")
+    object_deleted.send(engine, obj=user)
+    assert get_snapshot(user) == empty_user_condition
+
+    # It doesn't matter if the object had non-empty values saved from a previous sync
+    object_saved.send(engine, obj=user)
+    assert get_snapshot(user) == (
+        User.age.is_({"N": "3"}) &
+        User.name.is_({"S": "foo"})
+    )
+
+    # The deleted signal still clears everything
+    object_deleted.send(engine, obj=user)
+    assert get_snapshot(user) == empty_user_condition
+
+    # But the current values aren't replaced
+    assert user.age == 3
+    assert user.name == "foo"
+
+
+def test_on_loaded_partial(engine):
+    """When an object is loaded, the state after loading is snapshotted for future atomic calls"""
+    # Creating an instance doesn't snapshot anything
+    user = User(age=3, name="foo")
+    assert get_snapshot(user) == empty_user_condition
+
+    # Pretend the user was just loaded.  Because only
+    # age and name are marked, they will be the only
+    # columns included in the snapshot.  A normal load
+    # would set the other values to None, and the
+    # snapshot would expect those.
+    object_loaded.send(engine, obj=user)
+
+    # Values are stored dumped.  Since the dumped flag isn't checked as
+    # part of equality testing, we can simply construct the dumped
+    # representations to compare.
+    assert get_snapshot(user) == (
+        User.age.is_({"N": "3"}) &
+        User.name.is_({"S": "foo"})
+    )
+
+
+def test_on_loaded_full(engine):
+    """Same as the partial test, but with explicit Nones to simulate a real engine.load"""
+    user = User(age=3, email=None, id=None, joined=None, name="foo")
+    object_loaded.send(engine, obj=user)
+    assert get_snapshot(user) == (
+        User.age.is_({"N": "3"}) &
+        User.email.is_(None) &
+        User.id.is_(None) &
+        User.joined.is_(None) &
+        User.name.is_({"S": "foo"})
+    )
+
+
+def test_on_modified():
+    """When an object's values are set or deleted, those columns are marked for tracking"""
+
+    # Creating an instance doesn't mark anything
+    user = User()
+    assert get_marked(user) == set()
+
+    user.id = "foo"
+    assert get_marked(user) == {User.id}
+
+    # Deleting the value does not clear it from the set of marked columns
+    del user.id
+    assert get_marked(user) == {User.id}
+
+    # Even when the delete fails, the column is marked.
+    # We're tracking intention, not state change.
+    with pytest.raises(AttributeError):
+        del user.age
+    assert get_marked(user) == {User.id, User.age}
+
+
+def test_on_saved(engine):
+    """Saving is equivalent to loading w.r.t. tracking.
+
+    The state after saving is snapshotted for future atomic operations."""
+    user = User(name="foo", age=3)
+    object_saved.send(engine, obj=user)
+
+    # Since "name" and "age" were the only marked columns saved to DynamoDB,
+    # they are the only columns that must match for an atomic save.  The
+    # state of the other columns wasn't specified, so it's not safe to
+    # assume the intended value (missing vs empty)
+    assert get_snapshot(user) == (
+        User.age.is_({"N": "3"}) &
+        User.name.is_({"S": "foo"})
+    )
+
+
+# END TRACKING SIGNALS ========================================================================== END TRACKING SIGNALS

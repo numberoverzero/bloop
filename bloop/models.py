@@ -335,6 +335,8 @@ class Column(declare.Field, ComparisonMixin):
         kwargs['typedef'] = typedef
         super().__init__(**kwargs)
 
+    __hash__ = object.__hash__
+
     def __repr__(self, path=None):
         if self.hash_key:
             extra = "=hash"

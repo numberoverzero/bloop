@@ -57,7 +57,7 @@ class NewCondition:
         self.operation = operation
         self.column = column
         self.values = list(values or [])
-        self.path = path or []
+        self.path = list(path or [])
         if operation not in allowed_operations:
             raise InvalidComparisonOperator("Unknown operation {!r}".format(operation))
 
@@ -915,13 +915,9 @@ class NewComparisonMixin:
         return NewComparisonMixin(proxied=self.__proxied, path=self.__path + [path])
 
     def __eq__(self, value):
-        if value is None:
-            return NewCondition(operation="attribute_not_exists", column=self.__proxied, path=self.__path)
         return NewCondition(operation="==", values=[value], column=self.__proxied, path=self.__path)
 
     def __ne__(self, value):
-        if value is None:
-            return NewCondition(operation="attribute_exists", column=self.__proxied, path=self.__path)
         return NewCondition(operation="!=", values=[value], column=self.__proxied, path=self.__path)
 
     def __lt__(self, value):

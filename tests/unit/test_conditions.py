@@ -1,4 +1,6 @@
+import operator
 import pytest
+
 from bloop.conditions import (
     NewComparisonMixin,
     NewCondition,
@@ -650,3 +652,106 @@ def test_on_saved(engine):
 
 
 # END TRACKING SIGNALS ========================================================================== END TRACKING SIGNALS
+
+
+# NEW COMPARISON MIXIN ========================================================================== NEW COMPARISON MIXIN
+
+
+def test_mixin_repr():
+    """repr without non-proxy objects"""
+    self = NewComparisonMixin()
+    assert repr(self) == "<ComparisonMixin>"
+
+    inner_is_mixin = NewComparisonMixin(proxied=MockColumn("foobar"))
+    assert repr(inner_is_mixin) == "foobar"
+
+
+def test_mixin_getattr_delegates():
+    """getattr points to the proxied object (unless it's self)"""
+    self = NewComparisonMixin()
+    # Can't delegate, proxied object is self (infinite recursion)
+    with pytest.raises(AttributeError):
+        getattr(self, "foo")
+
+    class Foo:
+        getattr_calls = 0
+
+        def __getattr__(self, item):
+            self.getattr_calls += 1
+            return "foo"
+
+    obj = Foo()
+    proxy = NewComparisonMixin(proxied=obj)
+    assert proxy.whatever == "foo"
+
+    assert obj.getattr_calls == 1
+    assert proxy.getattr_calls == 1
+
+
+def test_mixin_path_chaining():
+    """No depth limit to the chained path"""
+    self = NewComparisonMixin()
+
+    for i in range(10):
+        self = self[i]
+        self = self[str(i)]
+
+    # Render to condition to inspect the path attribute
+    condition = self.is_(None)
+    assert len(condition.path) == 20
+
+
+@pytest.mark.parametrize("op, expected", [
+    (operator.eq, "=="),
+    (operator.ne, "!="),
+    (operator.lt, "<"),
+    (operator.gt, ">"),
+    (operator.le, "<="),
+    (operator.ge, ">="),
+])
+def test_mixin_magic_comparisons(op, expected):
+    """==, !=, <, >, <=, >= create condition objects with the corresponding operation"""
+    condition = op(c, 3)
+    assert condition.operation == expected
+    assert condition.column is c
+    assert condition.values == [3]
+
+
+def test_mixin_begins_with():
+    condition = c.begins_with(3)
+    assert condition.operation == "begins_with"
+    assert condition.column is c
+    assert condition.values == [3]
+
+
+def test_mixin_between():
+    condition = c.between(3, 4)
+    assert condition.operation == "between"
+    assert condition.column is c
+    assert condition.values == [3, 4]
+
+
+def test_mixin_contains():
+    condition = c.contains(3)
+    assert condition.operation == "contains"
+    assert condition.column is c
+    assert condition.values == [3]
+
+
+def test_mixin_in_():
+    condition = c.in_([3, 4])
+    assert condition.operation == "in"
+    assert condition.column is c
+    assert condition.values == [3, 4]
+
+
+def test_mixin_is_():
+    condition = c.is_(3)
+    assert condition.operation == "=="
+    assert condition.column is c
+    assert condition.values == [3]
+
+    condition = c.is_not(3)
+    assert condition.operation == "!="
+    assert condition.column is c
+    assert condition.values == [3]

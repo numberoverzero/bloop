@@ -76,7 +76,7 @@ def sync(obj, engine):
     """Mark the object as having been persisted at least once.
 
     Store the latest snapshot of all marked values."""
-    snapshot = NewCondition.empty()
+    snapshot = NewBaseCondition.empty()
     # Only expect values (or lack of a value) for columns that have been explicitly set
     for column in sorted(_obj_tracking[obj]["marked"], key=lambda col: col.dynamo_name):
         value = getattr(obj, column.model_name, None)
@@ -98,7 +98,7 @@ def get_snapshot(obj):
 
     # If the object has never been synced, create and cache
     # a condition that expects every column to be empty
-    snapshot = NewCondition.empty()
+    snapshot = NewBaseCondition.empty()
     for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
         snapshot &= column.is_(None)
     _obj_tracking[obj]["snapshot"] = snapshot
@@ -113,8 +113,8 @@ def get_marked(obj):
 # END CONDITION TRACKING ====================================================================== END CONDITION TRACKING
 
 
-class NewCondition:
-    def __init__(self, operation, values=None, column=None, path=None):
+class NewBaseCondition:
+    def __init__(self, operation, *, column=None, path=None, values=None):
         self.operation = operation
         self.column = column
         self.values = list(values or [])
@@ -124,7 +124,7 @@ class NewCondition:
 
     @classmethod
     def empty(cls):
-        return NewCondition(None)
+        return NewBaseCondition(None)
 
     def __len__(self):
         if not self.operation:
@@ -142,11 +142,11 @@ class NewCondition:
             return self
         if self.operation == "not":
             if not self.values:
-                return NewCondition.empty()
+                return NewBaseCondition.empty()
             # Cancel the negation
             return self.values[0]
         # return not(self)
-        return NewCondition("not", values=[self])
+        return NewBaseCondition("not", values=[self])
 
     __neg__ = __invert__
 
@@ -161,16 +161,16 @@ class NewCondition:
             return other
         # (a & b) & (c & d) -> (a & b & c & d)
         elif self.operation == other.operation == "and":
-            return NewCondition("and", values=self.values + other.values)
+            return NewBaseCondition("and", values=self.values + other.values)
         # (a & b) & (c > 2) -> (a & b & (c > 2))
         elif self.operation == "and":
-            return NewCondition("and", values=self.values + [other])
+            return NewBaseCondition("and", values=self.values + [other])
         # (a > 2) & (b & c) -> ((a > 2) & b & c)
         elif other.operation == "and":
-            return NewCondition("and", values=[self] + other.values)
+            return NewBaseCondition("and", values=[self] + other.values)
         # (a > 2) & (b < 3) -> ((a > 2) & (b < 3))
         else:
-            return NewCondition("and", values=[self, other])
+            return NewBaseCondition("and", values=[self, other])
 
     def __iand__(self, other):
         # x &= () -> x
@@ -189,10 +189,10 @@ class NewCondition:
             return self
         # (a > 2) &= (c & d) -> ((a > 2) & c & d)
         elif other.operation == "and":
-            return NewCondition("and", values=[self] + other.values)
+            return NewBaseCondition("and", values=[self] + other.values)
         # (a > 2) &= (b < 3) -> ((a > 2) & (b < 3))
         else:
-            return NewCondition("and", values=[self, other])
+            return NewBaseCondition("and", values=[self, other])
 
     def __or__(self, other):
         # ()_1 | ()_2 -> ()_1
@@ -205,16 +205,16 @@ class NewCondition:
             return other
         # (a | b) | (c | d) -> (a | b | c | d)
         elif self.operation == other.operation == "or":
-            return NewCondition("or", values=self.values + other.values)
+            return NewBaseCondition("or", values=self.values + other.values)
         # (a | b) | (c > 2) -> (a | b | (c > 2))
         elif self.operation == "or":
-            return NewCondition("or", values=self.values + [other])
+            return NewBaseCondition("or", values=self.values + [other])
         # (a > 2) | (b | c) -> ((a > 2) | b | c)
         elif other.operation == "or":
-            return NewCondition("or", values=[self] + other.values)
+            return NewBaseCondition("or", values=[self] + other.values)
         # (a > 2) | (b < 3) -> ((a > 2) | (b < 3))
         else:
-            return NewCondition("or", values=[self, other])
+            return NewBaseCondition("or", values=[self, other])
 
     def __ior__(self, other):
         # x |= () -> x
@@ -233,10 +233,10 @@ class NewCondition:
             return self
         # (a > 2) |= (c | d) -> ((a > 2) | c | d)
         elif other.operation == "or":
-            return NewCondition("or", values=[self] + other.values)
+            return NewBaseCondition("or", values=[self] + other.values)
         # (a > 2) |= (b < 3) -> ((a > 2) | (b < 3))
         else:
-            return NewCondition("or", values=[self, other])
+            return NewBaseCondition("or", values=[self, other])
 
     def __repr__(self):
         if self.operation in ("and", "or"):
@@ -303,6 +303,47 @@ class NewCondition:
     __hash__ = object.__hash__
 
 
+class AndCondition(NewBaseCondition):
+    def __init__(self, values=None):
+        super().__init__("and", values=values)
+
+
+class OrCondition(NewBaseCondition):
+    def __init__(self, values=None):
+        super().__init__("or", values=values)
+
+
+class NotCondition(NewBaseCondition):
+    def __init__(self, value=None):
+        values = [value] if value is not None else []
+        super().__init__("not", values=values)
+
+
+class ComparisonCondition(NewBaseCondition):
+    def __init__(self, operation, column, value, path=None):
+        super().__init__(operation=operation, column=column, values=[value], path=path)
+
+
+class BeginsWithCondition(NewBaseCondition):
+    def __init__(self, column, value, path=None):
+        super().__init__("begins_with", column=column, values=[value], path=path)
+
+
+class BetweenCondition(NewBaseCondition):
+    def __init__(self, column, lower, upper, path=None):
+        super().__init__("between", column=column, values=[lower, upper], path=path)
+
+
+class ContainsCondition(NewBaseCondition):
+    def __init__(self, column, value, path=None):
+        super().__init__("contains", column=column, values=[value], path=path)
+
+
+class InCondition(NewBaseCondition):
+    def __init__(self, column, values, path=None):
+        super().__init__("in", column=column, values=values, path=path)
+
+
 class NewComparisonMixin:
     def __init__(self, *args, proxied=None, path=None, **kwargs):
         self.__path = path or []
@@ -323,34 +364,34 @@ class NewComparisonMixin:
         return NewComparisonMixin(proxied=self.__proxied, path=self.__path + [path])
 
     def __eq__(self, value):
-        return NewCondition(operation="==", values=[value], column=self.__proxied, path=self.__path)
+        return ComparisonCondition(operation="==", column=self.__proxied, value=value, path=self.__path)
 
     def __ne__(self, value):
-        return NewCondition(operation="!=", values=[value], column=self.__proxied, path=self.__path)
+        return ComparisonCondition(operation="!=", column=self.__proxied, value=value, path=self.__path)
 
     def __lt__(self, value):
-        return NewCondition(operation="<", values=[value], column=self.__proxied, path=self.__path)
+        return ComparisonCondition(operation="<", column=self.__proxied, value=value, path=self.__path)
 
     def __gt__(self, value):
-        return NewCondition(operation=">", values=[value], column=self.__proxied, path=self.__path)
+        return ComparisonCondition(operation=">", column=self.__proxied, value=value, path=self.__path)
 
     def __le__(self, value):
-        return NewCondition(operation="<=", values=[value], column=self.__proxied, path=self.__path)
+        return ComparisonCondition(operation="<=", column=self.__proxied, value=value, path=self.__path)
 
     def __ge__(self, value):
-        return NewCondition(operation=">=", values=[value], column=self.__proxied, path=self.__path)
+        return ComparisonCondition(operation=">=", column=self.__proxied, value=value, path=self.__path)
 
     def begins_with(self, value):
-        return NewCondition(operation="begins_with", values=[value], column=self.__proxied, path=self.__path)
+        return BeginsWithCondition(column=self.__proxied, value=value, path=self.__path)
 
     def between(self, lower, upper):
-        return NewCondition(operation="between", values=[lower, upper], column=self.__proxied, path=self.__path)
+        return BetweenCondition(column=self.__proxied, lower=lower, upper=upper, path=self.__path)
 
     def contains(self, value):
-        return NewCondition(operation="contains", values=[value], column=self.__proxied, path=self.__path)
+        return ContainsCondition(column=self.__proxied, value=value, path=self.__path)
 
-    def in_(self, values):
-        return NewCondition(operation="in", values=values, column=self.__proxied, path=self.__path)
+    def in_(self, *values):
+        return InCondition(column=self.__proxied, values=values, path=self.__path)
 
     is_ = __eq__
 
@@ -361,7 +402,7 @@ def path_for(value: NewComparisonMixin) -> Optional[List[str]]:
     return value.__path
 
 
-def iter_conditions(condition: NewCondition):
+def iter_conditions(condition: NewBaseCondition):
     """Yield all conditions WITHIN the given condition.
 
     If there are no conditions within this condition (any condition besides and, or, not; or any of those without
@@ -392,7 +433,7 @@ def render(engine, filter=None, projection=None, key=None, atomic=None, conditio
         renderer.projection_expression(projection)
     if key is not None:
         renderer.key_expression(key)
-    condition = condition or NewCondition.empty()
+    condition = condition or NewBaseCondition.empty()
     if atomic:
         condition &= get_snapshot(atomic)
     if condition:
@@ -521,7 +562,7 @@ class ConditionRenderer:
 # TODO ========================================================================================================== TODO
 
 
-def render_condition(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+def render_condition(condition: NewBaseCondition, renderer: ConditionRenderer) -> Optional[str]:
     if condition.operation in {"and", "or"}:
         render_func = render_and_or
     elif condition.operation == "not":
@@ -543,7 +584,7 @@ def render_condition(condition: NewCondition, renderer: ConditionRenderer) -> Op
     return render_func(condition, renderer)
 
 
-def render_and_or(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+def render_and_or(condition: NewBaseCondition, renderer: ConditionRenderer) -> Optional[str]:
     rendered_conditions = [render_condition(c, renderer) for c in condition.values]
     if not rendered_conditions:
         raise InvalidCondition("Invalid Condition: <{!r}> does not contain any Conditions.".format(condition))
@@ -554,7 +595,7 @@ def render_and_or(condition: NewCondition, renderer: ConditionRenderer) -> Optio
     return "({})".format(joiner.join(rendered_conditions))
 
 
-def render_not(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+def render_not(condition: NewBaseCondition, renderer: ConditionRenderer) -> Optional[str]:
     if not condition.values:
         raise InvalidCondition("Invalid Condition: 'not' condition does not contain an inner Condition.")
     rendered_condition = render_condition(condition.values[0], renderer)
@@ -563,7 +604,7 @@ def render_not(condition: NewCondition, renderer: ConditionRenderer) -> Optional
     return "(NOT {})".format(rendered_condition)
 
 
-def render_comparison(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+def render_comparison(condition: NewBaseCondition, renderer: ConditionRenderer) -> Optional[str]:
     if not condition.column or not condition.values:
         raise InvalidCondition("Comparison <{!r}> is missing column or value.".format(condition))
     # (column name > value)
@@ -588,7 +629,7 @@ def render_comparison(condition: NewCondition, renderer: ConditionRenderer) -> O
         return "({} {} {})".format(column_ref, comparison_aliases[condition.operation], value_ref)
 
 
-def render_begins_with(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+def render_begins_with(condition: NewBaseCondition, renderer: ConditionRenderer) -> Optional[str]:
     if not condition.column or not condition.values:
         raise InvalidCondition("Condition <{!r}> is missing column or value.".format(condition))
     column_ref = renderer.any_ref(column=condition.column, path=condition.path)
@@ -600,7 +641,7 @@ def render_begins_with(condition: NewCondition, renderer: ConditionRenderer) -> 
     return "(begins_with({}, {}))".format(column_ref, value_ref)
 
 
-def render_between(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+def render_between(condition: NewBaseCondition, renderer: ConditionRenderer) -> Optional[str]:
     if not condition.column or not condition.values:
         raise InvalidCondition("Condition <{!r}> is missing column or value".format(condition))
     column_ref = renderer.any_ref(column=condition.column, path=condition.path)
@@ -615,7 +656,7 @@ def render_between(condition: NewCondition, renderer: ConditionRenderer) -> Opti
     return "({} BETWEEN {} AND {})".format(column_ref, lower_ref, upper_ref)
 
 
-def render_contains(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+def render_contains(condition: NewBaseCondition, renderer: ConditionRenderer) -> Optional[str]:
     if not condition.column or not condition.values:
         raise InvalidCondition("Condition <{!r}> is missing column or value.".format(condition))
     column_ref = renderer.any_ref(column=condition.column, path=condition.path)
@@ -627,7 +668,7 @@ def render_contains(condition: NewCondition, renderer: ConditionRenderer) -> Opt
     return "(contains({}, {}))".format(column_ref, value_ref)
 
 
-def render_in(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+def render_in(condition: NewBaseCondition, renderer: ConditionRenderer) -> Optional[str]:
     if not condition.column or not condition.values:
         raise InvalidCondition("Condition <{!r}> is missing column or value".format(condition))
     value_refs = []

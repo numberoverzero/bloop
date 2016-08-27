@@ -3,7 +3,7 @@ import pytest
 
 from bloop.conditions import (
     NewComparisonMixin,
-    NewCondition,
+    NewBaseCondition,
     get_marked,
     get_snapshot,
     iter_conditions,
@@ -29,7 +29,7 @@ d = MockColumn("d")
 
 
 def conditions_for(*operations):
-    return [NewCondition(operation) for operation in operations]
+    return [NewBaseCondition(operation) for operation in operations]
 
 
 def non_meta_conditions():
@@ -44,7 +44,7 @@ def meta_conditions():
 
 
 def empty_conditions():
-    return [NewCondition.empty(), *meta_conditions()]
+    return [NewBaseCondition.empty(), *meta_conditions()]
 
 
 # NEW CONDITION ======================================================================================== NEW CONDITION
@@ -52,15 +52,15 @@ def empty_conditions():
 
 def test_unknown_operator():
     with pytest.raises(InvalidComparisonOperator):
-        NewCondition(operation="unknown")
+        NewBaseCondition(operation="unknown")
 
 
 def test_none_operator_allowed():
-    assert NewCondition.empty().operation is None
+    assert NewBaseCondition.empty().operation is None
 
 
 @pytest.mark.parametrize("condition", [
-    NewCondition.empty(),
+    NewBaseCondition.empty(),
     *meta_conditions()
 ])
 def test_len_empty(condition):
@@ -81,7 +81,7 @@ def test_iter_non_meta(condition):
 @pytest.mark.parametrize("condition", meta_conditions())
 def test_iter_non_cyclic_meta(condition):
     """Yield the single inner condition for each of these meta conditions"""
-    inner = NewCondition("==")
+    inner = NewBaseCondition("==")
     condition.values.append(inner)
 
     expected = [inner]
@@ -97,10 +97,10 @@ def test_iter_cyclic():
     # a      b
     #      /   \
     #     c   root
-    root = NewCondition("and")
-    a = NewCondition("<")
-    b = NewCondition("or")
-    c = NewCondition(">")
+    root = NewBaseCondition("and")
+    a = NewBaseCondition("<")
+    b = NewBaseCondition("or")
+    c = NewBaseCondition(">")
     root.values.extend([a, b])
     b.values.extend([c, root])
 
@@ -121,10 +121,10 @@ def test_len_meta(condition):
     assert len(condition) == 0
 
     # add a single inner condition
-    condition.values.append(NewCondition(">"))
+    condition.values.append(NewBaseCondition(">"))
     assert len(condition) == 1
 
-    condition.values.extend(NewCondition("<") for _ in range(30))
+    condition.values.extend(NewBaseCondition("<") for _ in range(30))
     if condition.operation == "not":
         assert len(condition) == 1
     else:
@@ -139,10 +139,10 @@ def test_len_cyclic():
     # a      b
     #      /   \
     #     c   root
-    root = NewCondition("and")
-    a = NewCondition("<")
-    b = NewCondition("or")
-    c = NewCondition(">")
+    root = NewBaseCondition("and")
+    a = NewBaseCondition("<")
+    b = NewBaseCondition("or")
+    c = NewBaseCondition(">")
     root.values.extend([a, b])
     b.values.extend([c, root])
 
@@ -151,9 +151,9 @@ def test_len_cyclic():
 
 def test_len_unpack_not():
     """Even though not(not(x)) -> x shouldn't exist, its length should be 1"""
-    condition = NewCondition("not")
-    outer = NewCondition("not")
-    inner = NewCondition("begins_with")
+    condition = NewBaseCondition("not")
+    outer = NewBaseCondition("not")
+    inner = NewBaseCondition("begins_with")
     condition.values.append(outer)
     outer.values.append(inner)
     assert len(outer) == 1
@@ -172,19 +172,19 @@ def test_invert_wraps(condition):
 
 def test_invert_empty():
     """~() -> ()"""
-    empty = NewCondition.empty()
+    empty = NewBaseCondition.empty()
     assert (~empty) is empty
 
 
 def test_invert_simplifies():
     """~~x -> x"""
-    condition = NewCondition(">")
+    condition = NewBaseCondition(">")
     assert (~~condition) is condition
 
 
 def test_invert_empty_not():
     """~not() -> ()"""
-    condition = NewCondition("not")
+    condition = NewBaseCondition("not")
     assert (~condition).operation is None
 
 
@@ -198,8 +198,8 @@ def test_and_empty_conditions(empty):
     x & () -> x
     () & x -> x
     """
-    also_empty = NewCondition.empty()
-    not_empty = NewCondition(">")
+    also_empty = NewBaseCondition.empty()
+    not_empty = NewBaseCondition(">")
 
     assert (empty & not_empty) is not_empty
     assert (not_empty & empty) is not_empty
@@ -209,9 +209,9 @@ def test_and_empty_conditions(empty):
 
 def test_and_both_and():
     """(a & b) & (c & d) -> (a & b & c & d)"""
-    a, b, c, d = [NewCondition(">") for _ in range(4)]
-    left = NewCondition("and", [a, b])
-    right = NewCondition("and", [c, d])
+    a, b, c, d = [NewBaseCondition(">") for _ in range(4)]
+    left = NewBaseCondition("and", values=[a, b])
+    right = NewBaseCondition("and", values=[c, d])
 
     assert (left & right).operation == "and"
 
@@ -225,8 +225,8 @@ def test_and_simplifies(other):
     (a & b) & (c > 2) -> (a & b & (c > 2))
     (a > 2) & (b & c) -> ((a > 2) & b & c)
     """
-    a, b, = [NewCondition(">"), NewCondition("<")]
-    and_condition = NewCondition("and", [a, b])
+    a, b, = [NewBaseCondition(">"), NewBaseCondition("<")]
+    and_condition = NewBaseCondition("and", values=[a, b])
 
     assert (and_condition & other).operation == "and"
 
@@ -235,8 +235,8 @@ def test_and_simplifies(other):
 
 
 def test_and_basic():
-    a = NewCondition(">")
-    b = NewCondition("<")
+    a = NewBaseCondition(">")
+    b = NewBaseCondition("<")
 
     assert (a & b).operation == "and"
     assert (a & b).values == [a, b]
@@ -246,8 +246,8 @@ def test_and_basic():
 @pytest.mark.parametrize("empty", empty_conditions())
 def test_iand_empty_conditions(empty):
     """Similar to and, empty values don't change the non-empty values.  LHS always wins if both empty."""
-    also_empty = NewCondition.empty()
-    not_empty = NewCondition(">")
+    also_empty = NewBaseCondition.empty()
+    not_empty = NewBaseCondition(">")
 
     # None of the following modify the object
 
@@ -270,9 +270,9 @@ def test_iand_empty_conditions(empty):
 
 def test_iand_both_and():
     """other's conditions are appended to self's conditions"""
-    a, b, c, d = [NewCondition(">") for _ in range(4)]
-    left = NewCondition("and", [a, b])
-    right = NewCondition("and", [c, d])
+    a, b, c, d = [NewBaseCondition(">") for _ in range(4)]
+    left = NewBaseCondition("and", values=[a, b])
+    right = NewBaseCondition("and", values=[c, d])
 
     original_left = left
     left &= right
@@ -284,8 +284,8 @@ def test_iand_both_and():
 @pytest.mark.parametrize("other", non_meta_conditions())
 def test_iand_simplifies(other):
     """Similar to and, other value is pushed into the and (on LHS) or front of a new and (on RHS)"""
-    a, b, = [NewCondition(">"), NewCondition("<")]
-    and_condition = NewCondition("and", [a, b])
+    a, b, = [NewBaseCondition(">"), NewBaseCondition("<")]
+    and_condition = NewBaseCondition("and", values=[a, b])
 
     original_other = other
     other &= and_condition
@@ -299,8 +299,8 @@ def test_iand_simplifies(other):
 
 
 def test_iand_basic():
-    a = NewCondition(">")
-    b = NewCondition("<")
+    a = NewBaseCondition(">")
+    b = NewBaseCondition("<")
 
     original_a = a
     original_b = b
@@ -326,8 +326,8 @@ def test_or_empty_conditions(empty):
     x | () -> x
     () | x -> x
     """
-    also_empty = NewCondition.empty()
-    not_empty = NewCondition(">")
+    also_empty = NewBaseCondition.empty()
+    not_empty = NewBaseCondition(">")
 
     assert (empty | not_empty) is not_empty
     assert (not_empty | empty) is not_empty
@@ -337,9 +337,9 @@ def test_or_empty_conditions(empty):
 
 def test_or_both_or():
     """(a | b) | (c | d) -> (a | b | c | d)"""
-    a, b, c, d = [NewCondition(">") for _ in range(4)]
-    left = NewCondition("or", [a, b])
-    right = NewCondition("or", [c, d])
+    a, b, c, d = [NewBaseCondition(">") for _ in range(4)]
+    left = NewBaseCondition("or", values=[a, b])
+    right = NewBaseCondition("or", values=[c, d])
 
     assert (left | right).operation == "or"
 
@@ -353,8 +353,8 @@ def test_or_simplifies(other):
     (a | b) | (c > 2) -> (a | b | (c > 2))
     (a > 2) | (b | c) -> ((a > 2) | b | c)
     """
-    a, b, = [NewCondition(">"), NewCondition("<")]
-    or_condition = NewCondition("or", [a, b])
+    a, b, = [NewBaseCondition(">"), NewBaseCondition("<")]
+    or_condition = NewBaseCondition("or", values=[a, b])
 
     assert (or_condition | other).operation == "or"
 
@@ -363,8 +363,8 @@ def test_or_simplifies(other):
 
 
 def test_or_basic():
-    a = NewCondition(">")
-    b = NewCondition("<")
+    a = NewBaseCondition(">")
+    b = NewBaseCondition("<")
 
     assert (a | b).operation == "or"
     assert (a | b).values == [a, b]
@@ -374,8 +374,8 @@ def test_or_basic():
 @pytest.mark.parametrize("empty", empty_conditions())
 def test_ior_empty_conditions(empty):
     """Similar to or, empty values don't change the non-empty values.  LHS always wins if both empty."""
-    also_empty = NewCondition.empty()
-    not_empty = NewCondition(">")
+    also_empty = NewBaseCondition.empty()
+    not_empty = NewBaseCondition(">")
 
     # None of the following modify the object
 
@@ -398,9 +398,9 @@ def test_ior_empty_conditions(empty):
 
 def test_ior_both_or():
     """other's conditions are appended to self's conditions"""
-    a, b, c, d = [NewCondition(">") for _ in range(4)]
-    left = NewCondition("or", [a, b])
-    right = NewCondition("or", [c, d])
+    a, b, c, d = [NewBaseCondition(">") for _ in range(4)]
+    left = NewBaseCondition("or", values=[a, b])
+    right = NewBaseCondition("or", values=[c, d])
 
     original_left = left
     left |= right
@@ -412,8 +412,8 @@ def test_ior_both_or():
 @pytest.mark.parametrize("other", non_meta_conditions())
 def test_ior_simplifies(other):
     """Similar to or, other value is pushed into the or (on LHS) or front of a new or (on RHS)"""
-    a, b, = [NewCondition(">"), NewCondition("<")]
-    or_condition = NewCondition("or", [a, b])
+    a, b, = [NewBaseCondition(">"), NewBaseCondition("<")]
+    or_condition = NewBaseCondition("or", values=[a, b])
 
     original_other = other
     other |= or_condition
@@ -427,8 +427,8 @@ def test_ior_simplifies(other):
 
 
 def test_ior_basic():
-    a = NewCondition(">")
-    b = NewCondition("<")
+    a = NewBaseCondition(">")
+    b = NewBaseCondition("<")
 
     original_a = a
     original_b = b
@@ -449,49 +449,49 @@ def test_ior_basic():
 
 @pytest.mark.parametrize("condition, expected", [
     # and
-    (NewCondition("and"), "( & )"),
-    (NewCondition("and", ["foo"]), "('foo' &)"),
-    (NewCondition("and", ["a", "b", "c"]), "('a' & 'b' & 'c')"),
+    (NewBaseCondition("and"), "( & )"),
+    (NewBaseCondition("and", values=["foo"]), "('foo' &)"),
+    (NewBaseCondition("and", values=["a", "b", "c"]), "('a' & 'b' & 'c')"),
 
     # or
-    (NewCondition("or"), "( | )"),
-    (NewCondition("or", ["foo"]), "('foo' |)"),
-    (NewCondition("or", ["a", "b", "c"]), "('a' | 'b' | 'c')"),
+    (NewBaseCondition("or"), "( | )"),
+    (NewBaseCondition("or", values=["foo"]), "('foo' |)"),
+    (NewBaseCondition("or", values=["a", "b", "c"]), "('a' | 'b' | 'c')"),
 
     # not
-    (NewCondition("not"), "(~)"),
-    (NewCondition("not", ["a", "b"]), "(~'a')"),
+    (NewBaseCondition("not"), "(~)"),
+    (NewBaseCondition("not", values=["a", "b"]), "(~'a')"),
 
     # comparisons
-    (NewCondition("<", [3], column=c), "(c < 3)"),
-    (NewCondition(">", [3], column=c), "(c > 3)"),
-    (NewCondition("<=", [3], column=c), "(c <= 3)"),
-    (NewCondition(">=", [3], column=c), "(c >= 3)"),
-    (NewCondition("==", [3], column=c), "(c == 3)"),
-    (NewCondition("!=", [3], column=c), "(c != 3)"),
+    (NewBaseCondition("<", values=[3], column=c), "(c < 3)"),
+    (NewBaseCondition(">", values=[3], column=c), "(c > 3)"),
+    (NewBaseCondition("<=", values=[3], column=c), "(c <= 3)"),
+    (NewBaseCondition(">=", values=[3], column=c), "(c >= 3)"),
+    (NewBaseCondition("==", values=[3], column=c), "(c == 3)"),
+    (NewBaseCondition("!=", values=[3], column=c), "(c != 3)"),
 
     # begins_with, contains
-    (NewCondition("begins_with", [2], column=c), "begins_with(c, 2)"),
-    (NewCondition("contains", [2], column=c), "contains(c, 2)"),
+    (NewBaseCondition("begins_with", values=[2], column=c), "begins_with(c, 2)"),
+    (NewBaseCondition("contains", values=[2], column=c), "contains(c, 2)"),
 
     # between
-    (NewCondition("between", column=c), "(c between [,])"),
-    (NewCondition("between", [2], column=c), "(c between [2,])"),
-    (NewCondition("between", [2, 3], column=c), "(c between [2, 3])"),
+    (NewBaseCondition("between", column=c), "(c between [,])"),
+    (NewBaseCondition("between", values=[2], column=c), "(c between [2,])"),
+    (NewBaseCondition("between", values=[2, 3], column=c), "(c between [2, 3])"),
 
     # in
-    (NewCondition("in", column=c), "(c in [])"),
-    (NewCondition("in", [2, 3], column=c), "(c in [2, 3])"),
+    (NewBaseCondition("in", column=c), "(c in [])"),
+    (NewBaseCondition("in", values=[2, 3], column=c), "(c in [2, 3])"),
 
     # empty
-    (NewCondition.empty(), "()")
+    (NewBaseCondition.empty(), "()")
 ])
 def test_repr(condition, expected):
     assert repr(condition) == expected
 
 
 def test_invalid_repr():
-    condition = NewCondition.empty()
+    condition = NewBaseCondition.empty()
     condition.operation = "foo"
     with pytest.raises(InvalidComparisonOperator):
         repr(condition)
@@ -501,42 +501,42 @@ def test_invalid_repr():
 
 
 def test_eq_empty():
-    empty = NewCondition.empty()
+    empty = NewBaseCondition.empty()
     assert empty == empty
 
-    also_empty = NewCondition.empty()
+    also_empty = NewBaseCondition.empty()
     assert empty is not also_empty
     assert empty == also_empty
 
 
 def test_eq_wrong_type():
     """AttributeError returns False"""
-    assert not (NewCondition.empty() == object())
+    assert not (NewBaseCondition.empty() == object())
 
 
 @pytest.mark.parametrize("other", [
-    NewCondition("==", list("xy"), column=c, path=["wrong", "path"]),
-    NewCondition("!=", list("xy"), column=c, path=["foo", "bar"]),
-    NewCondition("==", list("xy"), column=None, path=["foo", "bar"]),
-    NewCondition("==", list("xyz"), column=c, path=["foo", "bar"]),
-    NewCondition("==", list("yx"), column=c, path=["foo", "bar"]),
+    NewBaseCondition("==", values=list("xy"), column=c, path=["wrong", "path"]),
+    NewBaseCondition("!=", values=list("xy"), column=c, path=["foo", "bar"]),
+    NewBaseCondition("==", values=list("xy"), column=None, path=["foo", "bar"]),
+    NewBaseCondition("==", values=list("xyz"), column=c, path=["foo", "bar"]),
+    NewBaseCondition("==", values=list("yx"), column=c, path=["foo", "bar"]),
 ])
 def test_eq_one_wrong_field(other):
     """All four of operation, value, column, and path must match"""
-    self = NewCondition("==", list("xy"), column=c, path=["foo", "bar"])
+    self = NewBaseCondition("==", values=list("xy"), column=c, path=["foo", "bar"])
     assert not (self == other)
 
 
 @pytest.mark.parametrize("other", [
-    NewCondition("==", [c]),
-    NewCondition("==", ["x"]),
-    NewCondition("==", [c, c]),
-    NewCondition("==", ["x", "x"]),
-    NewCondition("==", ["x", c]),
-    NewCondition("==", [d, "x"]),
+    NewBaseCondition("==", values=[c]),
+    NewBaseCondition("==", values=["x"]),
+    NewBaseCondition("==", values=[c, c]),
+    NewBaseCondition("==", values=["x", "x"]),
+    NewBaseCondition("==", values=["x", c]),
+    NewBaseCondition("==", values=[d, "x"]),
 ])
 def test_eq_values_mismatch(other):
-    condition = NewCondition("==", [c, "x"])
+    condition = NewBaseCondition("==", values=[c, "x"])
     assert not (condition == other)
 
 
@@ -739,7 +739,7 @@ def test_mixin_contains():
 
 
 def test_mixin_in_():
-    condition = c.in_([3, 4])
+    condition = c.in_(3, 4)
     assert condition.operation == "in"
     assert condition.column is c
     assert condition.values == [3, 4]

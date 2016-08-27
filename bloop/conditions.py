@@ -1,7 +1,8 @@
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
+from typing import Optional, List
 
-from .exceptions import InvalidComparisonOperator
+from .exceptions import InvalidComparisonOperator, InvalidCondition
 from .util import WeakDefaultDictionary, printable_column_name, signal
 
 
@@ -356,6 +357,10 @@ class NewComparisonMixin:
     is_not = __ne__
 
 
+def path_for(value: NewComparisonMixin) -> Optional[List[str]]:
+    return value.__path
+
+
 def iter_conditions(condition: NewCondition):
     """Yield all conditions WITHIN the given condition.
 
@@ -451,6 +456,16 @@ class ConditionRenderer:
         self.attr_values[ref] = value
         return ref
 
+    def any_ref(self, column=None, path=None, value=None):
+        """Name ref if value is None.  Value ref if value is provided; value may be a column with path"""
+        raise NotImplemented
+
+    def pop_refs(self, *ref):
+        """Decrement the usage of each ref by 1.
+
+        If the count is 0, pop the ref from attr_names or attr_values"""
+        raise NotImplemented
+
     def condition_expression(self, condition):
         if not condition:
             return
@@ -501,6 +516,129 @@ class ConditionRenderer:
         if self.attr_values:
             expressions["ExpressionAttributeValues"] = self.attr_values
         return expressions
+
+
+# TODO ========================================================================================================== TODO
+
+
+def render_condition(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+    if condition.operation in {"and", "or"}:
+        render_func = render_and_or
+    elif condition.operation == "not":
+        render_func = render_not
+    elif condition in comparisons:
+        render_func = render_comparison
+    elif condition.operation == "begins_with":
+        render_func = render_begins_with
+    elif condition.operation == "between":
+        render_func = render_between
+    elif condition.operation == "contains":
+        render_func = render_contains
+    elif condition.operation == "in":
+        render_func = render_in
+    elif condition.operation is None:
+        render_func = lambda c, r: None
+    else:
+        raise InvalidComparisonOperator("Unknown operation {!r}".format(condition.operation))
+    return render_func(condition, renderer)
+
+
+def render_and_or(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+    rendered_conditions = [render_condition(c, renderer) for c in condition.values]
+    if not rendered_conditions:
+        raise InvalidCondition("Invalid Condition: <{!r}> does not contain any Conditions.".format(condition))
+    if len(rendered_conditions) == 1:
+        return rendered_conditions[0]
+    # " AND " " OR "
+    joiner = " {} ".format(condition.operation.upper())
+    return "({})".format(joiner.join(rendered_conditions))
+
+
+def render_not(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+    if not condition.values:
+        raise InvalidCondition("Invalid Condition: 'not' condition does not contain an inner Condition.")
+    rendered_condition = render_condition(condition.values[0], renderer)
+    if rendered_condition is None:
+        raise InvalidCondition("Invalid Condition: 'not' condition does not contain an inner Condition.")
+    return "(NOT {})".format(rendered_condition)
+
+
+def render_comparison(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+    if not condition.column or not condition.values:
+        raise InvalidCondition("Comparison <{!r}> is missing column or value.".format(condition))
+    # (column name > value)
+    # (#n1 = :v2)
+    # (#n0 >= #n1)
+    column_ref = renderer.any_ref(column=condition.column, path=condition.path)
+    value_ref, value = renderer.any_ref(column=condition.column, path=condition.path, value=condition.values[0])
+    # Could be attribute_exists/attribute_not_exists
+    if value is None and condition.operation in ("==", "!="):
+        # Won't be sending this value, so pop it from the renderer
+        renderer.pop_refs(value_ref)
+        if condition.operation == "==":
+            return "(attribute_not_exists({}))".format(column_ref)
+        else:
+            return "(attribute_exists({}))".format(column_ref)
+    # No other comparison can be against None
+    elif value is None:
+        # Try to revert the renderer to a valid state
+        renderer.pop_refs(column_ref, value_ref)
+        raise InvalidCondition("Comparison <{!r}> is against the value None.".format(condition))
+    else:
+        return "({} {} {})".format(column_ref, comparison_aliases[condition.operation], value_ref)
+
+
+def render_begins_with(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+    if not condition.column or not condition.values:
+        raise InvalidCondition("Condition <{!r}> is missing column or value.".format(condition))
+    column_ref = renderer.any_ref(column=condition.column, path=condition.path)
+    value_ref, value = renderer.any_ref(column=condition.column, path=condition.path, value=condition.values[0])
+    if value is None:
+        # Try to revert the renderer to a valid state
+        renderer.pop_refs(column_ref, value_ref)
+        raise InvalidCondition("Condition <{!r}> is against the value None.".format(condition))
+    return "(begins_with({}, {}))".format(column_ref, value_ref)
+
+
+def render_between(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+    if not condition.column or not condition.values:
+        raise InvalidCondition("Condition <{!r}> is missing column or value".format(condition))
+    column_ref = renderer.any_ref(column=condition.column, path=condition.path)
+    lower_ref, lower_value = renderer.any_ref(
+        column=condition.column, path=condition.path, value=condition.values[0])
+    upper_ref, upper_value = renderer.any_ref(
+        column=condition.column, path=condition.path, value=condition.values[1])
+    if lower_value is None or upper_value is None:
+        # Try to revert the renderer to a valid state
+        renderer.pop_refs(column_ref, lower_ref, upper_ref)
+        raise InvalidCondition("Condition <{!r}> includes the value None".format(condition))
+    return "({} BETWEEN {} AND {})".format(column_ref, lower_ref, upper_ref)
+
+
+def render_contains(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+    if not condition.column or not condition.values:
+        raise InvalidCondition("Condition <{!r}> is missing column or value.".format(condition))
+    column_ref = renderer.any_ref(column=condition.column, path=condition.path)
+    value_ref, value = renderer.any_ref(column=condition.column, path=condition.path, value=condition.values[0])
+    if value is None:
+        # Try to revert the renderer to a valid state
+        renderer.pop_refs(column_ref, value_ref)
+        raise InvalidCondition("Condition <{!r}> is against the value None.".format(condition))
+    return "(contains({}, {}))".format(column_ref, value_ref)
+
+
+def render_in(condition: NewCondition, renderer: ConditionRenderer) -> Optional[str]:
+    if not condition.column or not condition.values:
+        raise InvalidCondition("Condition <{!r}> is missing column or value".format(condition))
+    value_refs = []
+    for value in condition.values:
+        value_ref, value = renderer.any_ref(column=condition.column, path=condition.path, value=value)
+        value_refs.append(value_ref)
+        if value is None:
+            renderer.pop_refs(*value_refs)
+            raise InvalidCondition("Condition <{!r}> includes the value None.".format(condition))
+    column_ref = renderer.any_ref(column=condition.column, path=condition.path)
+    return "({} IN ({}))".format(column_ref, ", ".join(value_refs))
 
 
 # TODO Rewrite to use iter_conditions for condition refactor

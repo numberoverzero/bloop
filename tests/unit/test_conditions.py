@@ -511,13 +511,6 @@ def test_repr(condition, expected):
     assert repr(condition) == expected
 
 
-def test_invalid_repr():
-    condition = NewCondition()
-    condition.operation = "foo"
-    with pytest.raises(InvalidComparisonOperator):
-        repr(condition)
-
-
 # NEW CONDITION EQUALITY ====================================================================== NEW CONDITION EQUALITY
 
 

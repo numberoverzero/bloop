@@ -112,6 +112,9 @@ class NewBaseCondition:
     def __len__(self):
         raise NotImplementedError
 
+    def __repr__(self):
+        raise NotImplementedError
+
     def __invert__(self):
         if self.operation is None:
             return self
@@ -213,30 +216,6 @@ class NewBaseCondition:
         else:
             return OrCondition(self, other)
 
-    def __repr__(self):
-        if self.operation in ("and", "or"):
-            joiner = " | " if self.operation == "or" else " & "
-            if not self.values:
-                return "({})".format(joiner)
-            elif len(self.values) == 1:
-                return "({!r} {})".format(self.values[0], joiner.strip())
-            else:
-                return "({})".format(joiner.join(repr(c) for c in self.values))
-        elif self.operation == "not":
-            return "(~{!r})".format(self.values[0])
-        elif self.operation in comparisons:
-            return "({!r} {} {!r})".format(self.column, self.operation, self.values[0])
-        elif self.operation in ["begins_with", "contains"]:
-            return "{}({!r}, {!r})".format(self.operation, self.column, self.values[0])
-        elif self.operation == "between":
-            return "({!r} between [{!r}, {!r}])".format(self.column, self.values[0], self.values[1])
-        elif self.operation == "in":
-            return "({!r} in {!r})".format(self.column, self.values)
-        elif self.operation is None:
-            return "()"
-        else:
-            raise InvalidComparisonOperator("Unknown operation {!r}".format(self.operation))
-
     def __eq__(self, other):
         if self is other:
             return True
@@ -277,6 +256,9 @@ class NewCondition(NewBaseCondition):
     def __len__(self):
         return 0
 
+    def __repr__(self):
+        return "()"
+
 
 class AndCondition(NewBaseCondition):
     def __init__(self, *values):
@@ -284,6 +266,15 @@ class AndCondition(NewBaseCondition):
 
     def __len__(self):
         return sum(1 for _ in iter_conditions(self))
+
+    def __repr__(self):
+        joiner = " & "
+        if not self.values:
+            return "({})".format(joiner)
+        elif len(self.values) == 1:
+            return "({!r} {})".format(self.values[0], joiner.strip())
+        else:
+            return "({})".format(joiner.join(repr(c) for c in self.values))
 
 
 class OrCondition(NewBaseCondition):
@@ -293,6 +284,15 @@ class OrCondition(NewBaseCondition):
     def __len__(self):
         return sum(1 for _ in iter_conditions(self))
 
+    def __repr__(self):
+        joiner = " | "
+        if not self.values:
+            return "({})".format(joiner)
+        elif len(self.values) == 1:
+            return "({!r} {})".format(self.values[0], joiner.strip())
+        else:
+            return "({})".format(joiner.join(repr(c) for c in self.values))
+
 
 class NotCondition(NewBaseCondition):
     def __init__(self, value):
@@ -300,6 +300,9 @@ class NotCondition(NewBaseCondition):
 
     def __len__(self):
         return len(self.values[0])
+
+    def __repr__(self):
+        return "(~{!r})".format(self.values[0])
 
 
 class ComparisonCondition(NewBaseCondition):
@@ -309,6 +312,9 @@ class ComparisonCondition(NewBaseCondition):
     def __len__(self):
         return 1
 
+    def __repr__(self):
+        return "({!r} {} {!r})".format(self.column, self.operation, self.values[0])
+
 
 class BeginsWithCondition(NewBaseCondition):
     def __init__(self, column, value, path=None):
@@ -316,6 +322,9 @@ class BeginsWithCondition(NewBaseCondition):
 
     def __len__(self):
         return 1
+
+    def __repr__(self):
+        return "begins_with({!r}, {!r})".format(self.column, self.values[0])
 
 
 class BetweenCondition(NewBaseCondition):
@@ -325,6 +334,9 @@ class BetweenCondition(NewBaseCondition):
     def __len__(self):
         return 1
 
+    def __repr__(self):
+        return "({!r} between [{!r}, {!r}])".format(self.column, self.values[0], self.values[1])
+
 
 class ContainsCondition(NewBaseCondition):
     def __init__(self, column, value, path=None):
@@ -333,6 +345,9 @@ class ContainsCondition(NewBaseCondition):
     def __len__(self):
         return 1
 
+    def __repr__(self):
+        return "contains({!r}, {!r})".format(self.column, self.values[0])
+
 
 class InCondition(NewBaseCondition):
     def __init__(self, column, values, path=None):
@@ -340,6 +355,9 @@ class InCondition(NewBaseCondition):
 
     def __len__(self):
         return 1
+
+    def __repr__(self):
+        return "({!r} in {!r})".format(self.column, self.values)
 
 
 class NewComparisonMixin:

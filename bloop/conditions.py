@@ -379,12 +379,12 @@ def iter_conditions(condition: NewCondition):
             conditions.update(condition.values)
 
 
-def render(engine, filter=None, select=None, key=None, atomic=None, condition=None, update=None):
+def render(engine, filter=None, projection=None, key=None, atomic=None, condition=None, update=None):
     renderer = ConditionRenderer(engine)
     if filter is not None:
         renderer.filter_expression(filter)
-    if select is not None:
-        renderer.projection_expression(select)
+    if projection is not None:
+        renderer.projection_expression(projection)
     if key is not None:
         renderer.key_expression(key)
     condition = condition or NewCondition.empty()

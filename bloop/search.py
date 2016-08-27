@@ -306,7 +306,7 @@ class PreparedSearch:
             request["Select"] = "SPECIFIC_ATTRIBUTES"
             projected = self._projected_columns
 
-        rendered = render(self.engine, filter=self.filter, select=projected, key=self.key)
+        rendered = render(self.engine, filter=self.filter, projection=projected, key=self.key)
         request.update(rendered)
 
     def __repr__(self):

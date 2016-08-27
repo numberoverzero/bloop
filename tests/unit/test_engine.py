@@ -353,14 +353,14 @@ def test_save_atomic_new(engine, session):
     user = User(id=uuid.uuid4())
     expected = {
         "ExpressionAttributeNames": {
-            "#n0": "age", "#n3": "j", "#n1": "email",
-            "#n4": "name", "#n2": "id"},
+            "#n0": "age", "#n6": "j", "#n2": "email",
+            "#n8": "name", "#n4": "id"},
         "Key": {"id": {"S": str(user.id)}},
         "TableName": "User",
         "ConditionExpression": (
-            "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1)) "
-            "AND (attribute_not_exists(#n2)) AND (attribute_not_exists(#n3))"
-            " AND (attribute_not_exists(#n4)))")}
+            "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n2)) "
+            "AND (attribute_not_exists(#n4)) AND (attribute_not_exists(#n6))"
+            " AND (attribute_not_exists(#n8)))")}
     engine.save(user, atomic=True)
     session.save_item.assert_called_once_with(expected)
 
@@ -474,13 +474,13 @@ def test_delete_atomic_new(engine, session):
     expected = {
         "TableName": "User",
         "ExpressionAttributeNames": {
-            "#n2": "id", "#n0": "age", "#n4": "name",
-            "#n3": "j", "#n1": "email"},
+            "#n4": "id", "#n0": "age", "#n8": "name",
+            "#n6": "j", "#n2": "email"},
         "Key": {"id": {"S": str(user.id)}},
         "ConditionExpression": (
-            "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n1)) "
-            "AND (attribute_not_exists(#n2)) AND (attribute_not_exists(#n3))"
-            " AND (attribute_not_exists(#n4)))")}
+            "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n2)) "
+            "AND (attribute_not_exists(#n4)) AND (attribute_not_exists(#n6))"
+            " AND (attribute_not_exists(#n8)))")}
     engine.delete(user, atomic=True)
     session.delete_item.assert_called_once_with(expected)
 
@@ -672,13 +672,13 @@ def test_update_missing_vector_types(engine, session):
     obj = VectorModel(name="foo", list_str=list(), map_nested={"str": "bar"})
 
     expected = {
-        "ExpressionAttributeNames": {"#n1": "map_nested", "#n0": "list_str"},
-        "ExpressionAttributeValues": {":v2": {"M": {"str": {"S": "bar"}}}},
+        "ExpressionAttributeNames": {"#n2": "map_nested", "#n0": "list_str"},
+        "ExpressionAttributeValues": {":v3": {"M": {"str": {"S": "bar"}}}},
         "Key": {"name": {"S": "foo"}},
         "TableName": "VectorModel",
         # Map is set, but only with the key that has a value.
         # list is deleted, since it has no values.
-        "UpdateExpression": "SET #n1=:v2 REMOVE #n0",
+        "UpdateExpression": "SET #n2=:v3 REMOVE #n0",
     }
 
     engine.save(obj)

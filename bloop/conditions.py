@@ -1,8 +1,11 @@
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
+import collections
+
+from typing import Any, NamedTuple
 
 from .exceptions import InvalidCondition
-from .util import WeakDefaultDictionary, printable_column_name, signal
+from .util import WeakDefaultDictionary, printable_column_name, missing, signal
 
 
 __all__ = ["Condition", "object_deleted", "object_loaded", "object_modified", "object_saved", "render"]
@@ -121,33 +124,45 @@ def render(engine, filter=None, projection=None, key=None, atomic=None, conditio
     return renderer.rendered
 
 
-# TODO refactor
-class ConditionRenderer:
+Reference = NamedTuple("Reference", [("name", str), ("type", str), ("value", Any)])
+
+
+def is_empty(ref: Reference):
+    """True if ref is a value ref with None value"""
+    return ref.type == "value" and ref.value is None
+
+
+class RefTracker:
     def __init__(self, engine):
-        self.engine = engine
-        self.expressions = {}
+        self._ref_index = 0
+        self.counts = collections.defaultdict(lambda: 0)
         self.attr_values = {}
         self.attr_names = {}
-        # Reverse index names so we can re-use ExpressionAttributeNames.
-        # We don't do the same for ExpressionAttributeValues since they are
-        # dicts of {"TYPE": "VALUE"} and would take more space and time to use
-        # as keys, as well as less frequently being re-used than names.
+        # Index ref -> attr name for de-duplication
         self.name_attr_index = {}
-        self.__ref_index = 0
+        self.engine = engine
+
+    @property
+    def ref_index(self):
+        """Prevent the ref index from *ever* decreasing and causing a collision."""
+        current = self._ref_index
+        self._ref_index += 1
+        return current
 
     def _name_ref(self, name):
         # Small optimization to request size for duplicate name refs
-        existing_ref = self.name_attr_index.get(name, None)
-        if existing_ref:
-            return existing_ref
+        ref = self.name_attr_index.get(name, None)
+        if ref:
+            self.counts[ref] += 1
+            return ref
 
-        ref = "#n{}".format(self.__ref_index)
-        self.__ref_index += 1
+        ref = "#n{}".format(self.ref_index)
         self.attr_names[ref] = name
         self.name_attr_index[name] = ref
+        self.counts[ref] += 1
         return ref
 
-    def name_ref(self, column, path=None):
+    def _path_ref(self, column, path=None):
         pieces = [column.dynamo_name]
         pieces.extend(path or [])
         str_pieces = []
@@ -160,14 +175,10 @@ class ConditionRenderer:
                 str_pieces.append(self._name_ref(piece))
         return ".".join(str_pieces)
 
-    def value_ref(self, column, value, *, dumped=False, path=None):
-        """
-        Dumped controls whether the value is already in a dynamo format (True),
-        or needs to be dumped through the engine (False).
-        """
-        ref = ":v{}".format(self.__ref_index)
-        self.__ref_index += 1
+    def _value_ref(self, column, value, *, dumped=False, path=None):
+        ref = ":v{}".format(self.ref_index)
 
+        # Need to dump this value
         if not dumped:
             typedef = column.typedef
             for segment in (path or []):
@@ -175,17 +186,58 @@ class ConditionRenderer:
             value = self.engine._dump(typedef, value)
 
         self.attr_values[ref] = value
-        return ref
+        self.counts[ref] += 1
+        return ref, value
 
-    def any_ref(self, column=None, path=None, value=None):
-        """Name ref if value is None.  Value ref if value is provided; value may be a column with path"""
-        raise NotImplementedError
+    def any_ref(self, column=None, path=None, value=missing, dumped=False) -> Reference:
+        """Returns {"type": Union["name", "value"], "ref": str, "value": Optional[Any]}"""
+        # Can't use None since it's a legal value for comparisons (attribute_not_exists)
+        if value is missing:
+            # Simple path ref to the column.
+            name = self._path_ref(column=column, path=path)
+            ref_type = "name"
+            value = None
+        elif isinstance(value, ComparisonMixin):
+            # value is also a column!  Also a path ref.
+            name = self._path_ref(column=value._proxied, path=value._path)
+            ref_type = "name"
+            value = None
+        else:
+            # Simple value ref.
+            name, value = self._value_ref(column=column, value=value, dumped=dumped, path=path)
+            ref_type = "value"
+        return Reference(name=name, type=ref_type, value=value)
 
-    def pop_refs(self, *ref):
+    def pop_refs(self, *refs: Reference):
         """Decrement the usage of each ref by 1.
 
-        If the count is 0, pop the ref from attr_names or attr_values"""
-        raise NotImplementedError
+        If this was the last use of the ref, pop it from attr_names or attr_values"""
+        for ref in refs:
+            name = ref.name
+            count = self.counts[name]
+            # Not tracking this ref, nothing to do
+            if count < 1:
+                continue
+            # Someone else is using this ref, so decrement and continue
+            elif count > 1:
+                self.counts[name] -= 1
+            # Last reference, time to remove it from an index (or two)
+            else:  # count == 1
+                if ref.type == "value":
+                    del self.attr_values[name]
+                else:  # type == "name"
+                    # Grab the name to clean up the reverse lookup
+                    path_segment = self.attr_names[name]
+                    del self.attr_names[name]
+                    del self.name_attr_index[path_segment]
+
+
+# TODO refactor
+class ConditionRenderer:
+    def __init__(self, engine):
+        self.refs = RefTracker(engine)
+        self.engine = engine
+        self.expressions = {}
 
     def condition_expression(self, condition):
         if not condition:
@@ -199,7 +251,8 @@ class ConditionRenderer:
         self.expressions["KeyConditionExpression"] = condition.render(self)
 
     def projection_expression(self, columns):
-        self.expressions["ProjectionExpression"] = ", ".join(map(self.name_ref, columns))
+        ref_for = lambda c: self.refs.any_ref(column=c).name
+        self.expressions["ProjectionExpression"] = ", ".join(map(ref_for, columns))
 
     def update_expression(self, obj):
         if obj is None:
@@ -211,15 +264,15 @@ class ConditionRenderer:
                 # Don't include key columns in an UpdateExpression
                 filter(lambda c: c not in obj.Meta.keys, get_marked(obj)),
                 key=lambda c: c.dynamo_name):
-            nref = self.name_ref(column)
-            value = getattr(obj, column.model_name, None)
-            value = self.engine._dump(column.typedef, value)
-
-            if value is not None:
-                vref = self.value_ref(column, value, dumped=True)
-                updates["set"].append("{}={}".format(nref, vref))
+            name_ref = self.refs.any_ref(column=column)
+            value_ref = self.refs.any_ref(column=column, value=getattr(obj, column.model_name, None))
+            # Can't set to an empty value
+            if is_empty(value_ref):
+                self.refs.pop_refs(value_ref)
+                updates["remove"].append(name_ref.name)
+            # Setting this column to a value, or to another column's value
             else:
-                updates["remove"].append(nref)
+                updates["set"].append("{}={}".format(name_ref.name, value_ref.name))
 
         expression = ""
         if updates["set"]:
@@ -232,10 +285,10 @@ class ConditionRenderer:
     @property
     def rendered(self):
         expressions = {k: v for (k, v) in self.expressions.items() if v is not None}
-        if self.attr_names:
-            expressions["ExpressionAttributeNames"] = self.attr_names
-        if self.attr_values:
-            expressions["ExpressionAttributeValues"] = self.attr_values
+        if self.refs.attr_names:
+            expressions["ExpressionAttributeNames"] = self.refs.attr_names
+        if self.refs.attr_values:
+            expressions["ExpressionAttributeValues"] = self.refs.attr_values
         return expressions
 
 
@@ -270,8 +323,6 @@ class BaseCondition:
         if self.operation is None:
             return self
         if self.operation == "not":
-            if not self.values:
-                return Condition()
             # Cancel the negation
             return self.values[0]
         # return not(self)
@@ -409,7 +460,11 @@ class Condition(BaseCondition):
         return "()"
 
     def iter_columns(self):
-        raise StopIteration
+        # This isn't a simple `raise StopIteration` since this function *must*
+        # be a generator.  Without returning an iter, python requires the yield
+        # keyword to transform func -> generator.
+        # Without getting super hacky, return an iterator over nothing
+        return iter(())
 
     def render(self, renderer: ConditionRenderer):
         raise InvalidCondition("Condition is not renderable")
@@ -514,23 +569,27 @@ class ComparisonCondition(BaseCondition):
             yield self.values[0]
 
     def render(self, renderer: ConditionRenderer):
-        column_ref = renderer.any_ref(column=self.column, path=self.path)
-        value_ref, value = renderer.any_ref(column=self.column, path=self.path, value=self.values[0])
-        # Could be attribute_exists/attribute_not_exists
-        if value is None and self.operation in ("==", "!="):
-            # Won't be sending this value, so pop it from the renderer
-            renderer.pop_refs(value_ref)
-            if self.operation == "==":
-                return "(attribute_not_exists({}))".format(column_ref)
-            else:
-                return "(attribute_exists({}))".format(column_ref)
-        # No other comparison can be against None
-        elif value is None:
-            # Try to revert the renderer to a valid state
-            renderer.pop_refs(column_ref, value_ref)
-            raise InvalidCondition("Comparison <{!r}> is against the value None.".format(self))
-        else:
-            return "({} {} {})".format(column_ref, comparison_aliases[self.operation], value_ref)
+        column_ref = renderer.refs.any_ref(
+            column=self.column, path=self.path, dumped=self.dumped)
+        value_ref = renderer.refs.any_ref(
+            column=self.column, path=self.path, dumped=self.dumped, value=self.values[0])
+
+        # #n0 >= :v1
+        # Comparison against another column, or comparison against non-None value
+        if (value_ref.type == "name") or (value_ref.value is not None):
+            return "({} {} {})".format(column_ref.name, comparison_aliases[self.operation], value_ref.name)
+
+        # attribute_exists(#n0), attribute_not_exists(#n1)
+        # This is a value ref for ==, != against None
+        if self.operation in ("==", "!="):
+            renderer.refs.pop_refs(value_ref)
+            function = "attribute_not_exists" if self.operation == "==" else "attribute_exists"
+            return "({}({}))".format(function, column_ref.name)
+
+        # #n0 <= None
+        # This doesn't work; comparisons besides ==, != can't have a None value ref
+        renderer.refs.pop_refs(column_ref, value_ref)
+        raise InvalidCondition("Comparison <{!r}> is against the value None.".format(self))
 
 
 class BeginsWithCondition(BaseCondition):
@@ -551,13 +610,15 @@ class BeginsWithCondition(BaseCondition):
             yield self.values[0]
 
     def render(self, renderer: ConditionRenderer):
-        column_ref = renderer.any_ref(column=self.column, path=self.path)
-        value_ref, value = renderer.any_ref(column=self.column, path=self.path, value=self.values[0])
-        if value is None:
+        column_ref = renderer.refs.any_ref(
+            column=self.column, path=self.path, dumped=self.dumped)
+        value_ref = renderer.refs.any_ref(
+            column=self.column, path=self.path, dumped=self.dumped, value=self.values[0])
+        if is_empty(value_ref):
             # Try to revert the renderer to a valid state
-            renderer.pop_refs(column_ref, value_ref)
+            renderer.refs.pop_refs(column_ref, value_ref)
             raise InvalidCondition("Condition <{!r}> is against the value None.".format(self))
-        return "(begins_with({}, {}))".format(column_ref, value_ref)
+        return "(begins_with({}, {}))".format(column_ref.name, value_ref.name)
 
 
 class BetweenCondition(BaseCondition):
@@ -579,14 +640,17 @@ class BetweenCondition(BaseCondition):
                 yield value
 
     def render(self, renderer: ConditionRenderer):
-        column_ref = renderer.any_ref(column=self.column, path=self.path)
-        lower_ref, lower_value = renderer.any_ref(column=self.column, path=self.path, value=self.values[0])
-        upper_ref, upper_value = renderer.any_ref(column=self.column, path=self.path, value=self.values[1])
-        if lower_value is None or upper_value is None:
+        column_ref = renderer.refs.any_ref(
+            column=self.column, path=self.path, dumped=self.dumped)
+        lower_ref, = renderer.refs.any_ref(
+            column=self.column, path=self.path, dumped=self.dumped, value=self.values[0])
+        upper_ref, = renderer.refs.any_ref(
+            column=self.column, path=self.path, dumped=self.dumped, value=self.values[1])
+        if is_empty(lower_ref) or is_empty(upper_ref):
             # Try to revert the renderer to a valid state
-            renderer.pop_refs(column_ref, lower_ref, upper_ref)
+            renderer.refs.pop_refs(column_ref, lower_ref, upper_ref)
             raise InvalidCondition("Condition <{!r}> includes the value None.".format(self))
-        return "({} BETWEEN {} AND {})".format(column_ref, lower_ref, upper_ref)
+        return "({} BETWEEN {} AND {})".format(column_ref.name, lower_ref.name, upper_ref.name)
 
 
 class ContainsCondition(BaseCondition):
@@ -607,13 +671,15 @@ class ContainsCondition(BaseCondition):
             yield self.values[0]
 
     def render(self, renderer: ConditionRenderer):
-        column_ref = renderer.any_ref(column=self.column, path=self.path)
-        value_ref, value = renderer.any_ref(column=self.column, path=self.path, value=self.values[0])
-        if value is None:
+        column_ref = renderer.refs.any_ref(
+            column=self.column, path=self.path, dumped=self.dumped)
+        value_ref = renderer.refs.any_ref(
+            column=self.column, path=self.path, dumped=self.dumped, value=self.values[0])
+        if is_empty(value_ref):
             # Try to revert the renderer to a valid state
-            renderer.pop_refs(column_ref, value_ref)
+            renderer.refs.pop_refs(column_ref, value_ref)
             raise InvalidCondition("Condition <{!r}> is against the value None.".format(self))
-        return "(contains({}, {}))".format(column_ref, value_ref)
+        return "(contains({}, {}))".format(column_ref.name, value_ref.name)
 
 
 class InCondition(BaseCondition):
@@ -639,13 +705,15 @@ class InCondition(BaseCondition):
             raise InvalidCondition("Condition <{!r}> is missing values.".format(self))
         value_refs = []
         for value in self.values:
-            value_ref, value = renderer.any_ref(column=self.column, path=self.path, value=value)
+            value_ref = renderer.refs.any_ref(
+                column=self.column, path=self.path, dumped=self.dumped, value=value)
             value_refs.append(value_ref)
-            if value is None:
-                renderer.pop_refs(*value_refs)
+            if is_empty(value_ref):
+                renderer.refs.pop_refs(*value_refs)
                 raise InvalidCondition("Condition <{!r}> includes the value None.".format(self))
-        column_ref = renderer.any_ref(column=self.column, path=self.path)
-        return "({} IN ({}))".format(column_ref, ", ".join(value_refs))
+        column_ref = renderer.refs.any_ref(
+            column=self.column, path=self.path, dumped=self.dumped)
+        return "({} IN ({}))".format(column_ref.name, ", ".join(ref.name for ref in value_refs))
 
 
 # END CONDITIONS ====================================================================================== END CONDITIONS

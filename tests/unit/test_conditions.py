@@ -13,6 +13,7 @@ from bloop.conditions import (
     ComparisonCondition,
     ContainsCondition,
     InCondition,
+    InvalidCondition,
     get_marked,
     get_snapshot,
     iter_conditions,
@@ -93,6 +94,19 @@ def empty_conditions():
 # NEW CONDITION ======================================================================================== NEW CONDITION
 
 
+def test_abstract_base():
+    """BaseCondition requires 4 methods for subclasses"""
+    condition = BaseCondition(None)
+    with pytest.raises(NotImplementedError):
+        len(condition)
+    with pytest.raises(NotImplementedError):
+        repr(condition)
+    with pytest.raises(NotImplementedError):
+        condition.iter_columns()
+    with pytest.raises(NotImplementedError):
+        condition.render(None)
+
+
 def test_empty_condition():
     assert Condition().operation is None
 
@@ -100,6 +114,17 @@ def test_empty_condition():
 @pytest.mark.parametrize("condition", empty_conditions())
 def test_len_empty(condition):
     assert len(condition) == 0
+
+
+def test_iter_empty():
+    condition = Condition()
+    assert next(condition.iter_columns(), None) is None
+
+
+def test_render_empty():
+    condition = Condition()
+    with pytest.raises(InvalidCondition):
+        condition.render(None)
 
 
 @pytest.mark.parametrize("condition", non_meta_conditions())

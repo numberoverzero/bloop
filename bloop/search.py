@@ -2,7 +2,7 @@ import collections
 
 import declare
 
-from .conditions import NewBaseCondition, iter_columns, render
+from .conditions import BaseCondition, render
 from .exceptions import (
     ConstraintViolation,
     InvalidFilterCondition,
@@ -57,7 +57,7 @@ def validate_key_condition(model, index, key):
     # If the model or index has a range key, the condition can
     # still be (hash key condition AND range key condition)
 
-    if not isinstance(key, NewBaseCondition) or key.operation != "and":
+    if not isinstance(key, BaseCondition) or key.operation != "and":
         # Too many options to fit into a useful error message.
         fail_bad_range(query_on)
 
@@ -121,7 +121,7 @@ def validate_filter_condition(condition, available_columns, column_blacklist):
     if condition is None:
         return
 
-    for column in iter_columns(condition):
+    for column in condition.iter_columns():
         # All of the columns in the condition must be in the available columns
         if column not in available_columns:
             raise InvalidFilterCondition(
@@ -135,7 +135,7 @@ def validate_filter_condition(condition, available_columns, column_blacklist):
 def check_hash_key(query_on, key):
     """Only allows == against query_on.hash_key"""
     return (
-        isinstance(key, NewBaseCondition) and
+        isinstance(key, BaseCondition) and
         (key.operation == "==") and
         (key.column is query_on.hash_key)
     )
@@ -144,7 +144,7 @@ def check_hash_key(query_on, key):
 def check_range_key(query_on, key):
     """BeginsWith, Between, or any Comparison except '!=' against query_on.range_key"""
     return (
-        isinstance(key, NewBaseCondition) and
+        isinstance(key, BaseCondition) and
         key.operation in ("begins_with", "between", "<", ">", "<=", ">=", "==") and
         key.column is query_on.range_key
     )

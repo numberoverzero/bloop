@@ -2,9 +2,9 @@ import operator
 import pytest
 
 from bloop.conditions import (
-    NewComparisonMixin,
-    NewBaseCondition,
-    NewCondition,
+    ComparisonMixin,
+    BaseCondition,
+    Condition,
     AndCondition,
     OrCondition,
     NotCondition,
@@ -20,19 +20,21 @@ from bloop.conditions import (
     object_loaded,
     object_saved
 )
-from bloop.exceptions import InvalidComparisonOperator
 
 from ..helpers.models import User
 
 
-class MockColumn(NewComparisonMixin):
+class MockColumn(ComparisonMixin):
     """Has a repr for testing condition reprs"""
     def __init__(self, name):
-        self.name = name
+        self.model_name = name
+        # Mock model so this can render as M.name
+        self.model = type("M", tuple(), {})
         super().__init__()
 
-    def __repr__(self):
-        return self.name
+    def _repr_with_path(self, path):
+        return self.model_name
+
 c = MockColumn("c")
 d = MockColumn("d")
 
@@ -40,13 +42,14 @@ d = MockColumn("d")
 def condition_for(operation):
     return conditions_for(operation)[0]
 
+
 def conditions_for(*operations):
     column = MockColumn("c")
     value = 0
     values = [1, 2]
     conditions = []
     if None in operations:
-        conditions.append(NewCondition())
+        conditions.append(Condition())
     if "and" in operations:
         left = ComparisonCondition("==", column, value)
         right = ComparisonCondition("!=", column, value)
@@ -84,14 +87,14 @@ def meta_conditions():
 
 
 def empty_conditions():
-    return [NewCondition(), AndCondition(), OrCondition(), NotCondition(NewCondition())]
+    return [Condition(), AndCondition(), OrCondition(), NotCondition(Condition())]
 
 
 # NEW CONDITION ======================================================================================== NEW CONDITION
 
 
 def test_empty_condition():
-    assert NewCondition().operation is None
+    assert Condition().operation is None
 
 
 @pytest.mark.parametrize("condition", empty_conditions())
@@ -196,7 +199,7 @@ def test_invert_wraps(condition):
 
 def test_invert_empty():
     """~() -> ()"""
-    empty = NewCondition()
+    empty = Condition()
     assert (~empty) is empty
 
 
@@ -222,7 +225,7 @@ def test_and_empty_conditions(empty):
     x & () -> x
     () & x -> x
     """
-    also_empty = NewCondition()
+    also_empty = Condition()
     not_empty = condition_for(">")
 
     assert (empty & not_empty) is not_empty
@@ -270,7 +273,7 @@ def test_and_basic():
 @pytest.mark.parametrize("empty", empty_conditions())
 def test_iand_empty_conditions(empty):
     """Similar to and, empty values don't change the non-empty values.  LHS always wins if both empty."""
-    also_empty = NewCondition()
+    also_empty = Condition()
     not_empty = condition_for(">")
 
     # None of the following modify the object
@@ -350,7 +353,7 @@ def test_or_empty_conditions(empty):
     x | () -> x
     () | x -> x
     """
-    also_empty = NewCondition()
+    also_empty = Condition()
     not_empty = condition_for(">")
 
     assert (empty | not_empty) is not_empty
@@ -398,7 +401,7 @@ def test_or_basic():
 @pytest.mark.parametrize("empty", empty_conditions())
 def test_ior_empty_conditions(empty):
     """Similar to or, empty values don't change the non-empty values.  LHS always wins if both empty."""
-    also_empty = NewCondition()
+    also_empty = Condition()
     not_empty = condition_for(">")
 
     # None of the following modify the object
@@ -486,26 +489,27 @@ def test_ior_basic():
     (NotCondition("a"), "(~'a')"),
 
     # comparisons
-    (ComparisonCondition("<", column=c, value=3), "(c < 3)"),
-    (ComparisonCondition(">", column=c, value=3), "(c > 3)"),
-    (ComparisonCondition("<=", column=c, value=3), "(c <= 3)"),
-    (ComparisonCondition(">=", column=c, value=3), "(c >= 3)"),
-    (ComparisonCondition("==", column=c, value=3), "(c == 3)"),
-    (ComparisonCondition("!=", column=c, value=3), "(c != 3)"),
+    (ComparisonCondition("<", column=c, value=3), "(M.c < 3)"),
+    (ComparisonCondition(">", column=c, value=3), "(M.c > 3)"),
+    (ComparisonCondition("<=", column=c, value=3), "(M.c <= 3)"),
+    (ComparisonCondition(">=", column=c, value=3), "(M.c >= 3)"),
+    (ComparisonCondition("==", column=c, value=3), "(M.c == 3)"),
+    (ComparisonCondition("!=", column=c, value=3), "(M.c != 3)"),
 
     # begins_with, contains
-    (BeginsWithCondition(column=c, value=2), "begins_with(c, 2)"),
-    (ContainsCondition(column=c, value=2), "contains(c, 2)"),
+    (BeginsWithCondition(column=c, value=2), "begins_with(M.c, 2)"),
+    (ContainsCondition(column=c, value=2), "contains(M.c, 2)"),
 
     # between
-    (BetweenCondition(column=c, lower=2, upper=3), "(c between [2, 3])"),
+    (BetweenCondition(column=c, lower=2, upper=3), "(M.c between [2, 3])"),
 
     # in
-    (InCondition(column=c, values=[]), "(c in [])"),
-    (InCondition(column=c, values=[2, 3]), "(c in [2, 3])"),
+    (InCondition(column=c, values=[]), "(M.c in [])"),
+    (InCondition(column=c, values=[2, 3]), "(M.c in [2, 3])"),
+    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [d, 3])"),
 
     # empty
-    (NewCondition(), "()")
+    (Condition(), "()")
 ])
 def test_repr(condition, expected):
     assert repr(condition) == expected
@@ -515,42 +519,42 @@ def test_repr(condition, expected):
 
 
 def test_eq_empty():
-    empty = NewCondition()
+    empty = Condition()
     assert empty == empty
 
-    also_empty = NewCondition()
+    also_empty = Condition()
     assert empty is not also_empty
     assert empty == also_empty
 
 
 def test_eq_wrong_type():
     """AttributeError returns False"""
-    assert not (NewCondition() == object())
+    assert not (Condition() == object())
 
 
 @pytest.mark.parametrize("other", [
-    NewBaseCondition("op", values=list("xy"), column=c, path=["wrong", "path"]),
-    NewBaseCondition("??", values=list("xy"), column=c, path=["foo", "bar"]),
-    NewBaseCondition("op", values=list("xy"), column=None, path=["foo", "bar"]),
-    NewBaseCondition("op", values=list("xyz"), column=c, path=["foo", "bar"]),
-    NewBaseCondition("op", values=list("yx"), column=c, path=["foo", "bar"]),
+    BaseCondition("op", values=list("xy"), column=c, path=["wrong", "path"]),
+    BaseCondition("??", values=list("xy"), column=c, path=["foo", "bar"]),
+    BaseCondition("op", values=list("xy"), column=None, path=["foo", "bar"]),
+    BaseCondition("op", values=list("xyz"), column=c, path=["foo", "bar"]),
+    BaseCondition("op", values=list("yx"), column=c, path=["foo", "bar"]),
 ])
 def test_eq_one_wrong_field(other):
     """All four of operation, value, column, and path must match"""
-    self = NewBaseCondition("op", values=list("xy"), column=c, path=["foo", "bar"])
+    self = BaseCondition("op", values=list("xy"), column=c, path=["foo", "bar"])
     assert not (self == other)
 
 
 @pytest.mark.parametrize("other", [
-    NewBaseCondition("op", values=[c]),
-    NewBaseCondition("op", values=["x"]),
-    NewBaseCondition("op", values=[c, c]),
-    NewBaseCondition("op", values=["x", "x"]),
-    NewBaseCondition("op", values=["x", c]),
-    NewBaseCondition("op", values=[d, "x"]),
+    BaseCondition("op", values=[c]),
+    BaseCondition("op", values=["x"]),
+    BaseCondition("op", values=[c, c]),
+    BaseCondition("op", values=["x", "x"]),
+    BaseCondition("op", values=["x", c]),
+    BaseCondition("op", values=[d, "x"]),
 ])
 def test_eq_values_mismatch(other):
-    condition = NewBaseCondition("op", values=[c, "x"])
+    condition = BaseCondition("op", values=[c, "x"])
     assert not (condition == other)
 
 
@@ -673,16 +677,16 @@ def test_on_saved(engine):
 
 def test_mixin_repr():
     """repr without non-proxy objects"""
-    self = NewComparisonMixin()
+    self = ComparisonMixin()
     assert repr(self) == "<ComparisonMixin>"
 
-    inner_is_mixin = NewComparisonMixin(proxied=MockColumn("foobar"))
+    inner_is_mixin = ComparisonMixin(proxied=MockColumn("foobar"))
     assert repr(inner_is_mixin) == "foobar"
 
 
 def test_mixin_getattr_delegates():
     """getattr points to the proxied object (unless it's self)"""
-    self = NewComparisonMixin()
+    self = ComparisonMixin()
     # Can't delegate, proxied object is self (infinite recursion)
     with pytest.raises(AttributeError):
         getattr(self, "foo")
@@ -695,7 +699,7 @@ def test_mixin_getattr_delegates():
             return "foo"
 
     obj = Foo()
-    proxy = NewComparisonMixin(proxied=obj)
+    proxy = ComparisonMixin(proxied=obj)
     assert proxy.whatever == "foo"
 
     assert obj.getattr_calls == 1
@@ -704,7 +708,7 @@ def test_mixin_getattr_delegates():
 
 def test_mixin_path_chaining():
     """No depth limit to the chained path"""
-    self = NewComparisonMixin()
+    self = ComparisonMixin()
 
     for i in range(10):
         self = self[i]

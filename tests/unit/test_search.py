@@ -3,16 +3,15 @@ import functools
 
 import pytest
 from bloop.conditions import (
-    And,
-    AttributeExists,
-    BeginsWith,
-    Between,
-    Comparison,
+    AndCondition,
+    BeginsWithCondition,
+    BetweenCondition,
+    ComparisonCondition,
     Condition,
-    Contains,
-    In,
-    Not,
-    Or,
+    ContainsCondition,
+    InCondition,
+    NotCondition,
+    OrCondition,
     comparison_aliases,
 )
 from bloop.exceptions import (
@@ -52,12 +51,12 @@ proceed = Sentinel("proceed")
 
 
 all_conditions = {
-    And, AttributeExists, BeginsWith, Between,
-    Comparison, Condition, Contains, In, Not, Or}
-meta_conditions = {And, Or, Not}
-range_conditions = {BeginsWith, Between, Comparison}
+    AndCondition, BeginsWithCondition, BetweenCondition,
+    ComparisonCondition, Condition, ContainsCondition, InCondition, NotCondition, OrCondition}
+meta_conditions = {AndCondition, OrCondition, NotCondition}
+range_conditions = {BeginsWithCondition, BetweenCondition, ComparisonCondition}
 # Needed with an include != since all other comparisons are valid
-bad_range_conditions = all_conditions - {BeginsWith, Between}
+bad_range_conditions = all_conditions - {BeginsWithCondition, BetweenCondition}
 
 
 def model_for(has_model_range=False, has_index=False, has_index_range=False,
@@ -161,10 +160,10 @@ def comparisons_for(include=None, exclude=None):
 
     condition_lambdas = []
 
-    for operator in comparison_aliases:
-        if check(operator):
+    for operation in comparison_aliases:
+        if check(operation):
             condition_lambdas.append(
-                functools.partial(Comparison, operator=operator, value=value)
+                functools.partial(ComparisonCondition, operation=operation, value=value)
             )
     return condition_lambdas
 
@@ -174,29 +173,26 @@ def conditions_for(classes, include=None, exclude=None):
     value = "value"
     values = ["0", "1", "2"]
     condition_lambdas = []
-    if AttributeExists in classes:
-        condition_lambdas.append(lambda column: AttributeExists(column, negate=False))
-        condition_lambdas.append(lambda column: AttributeExists(column, negate=True))
-    if BeginsWith in classes:
-        condition_lambdas.append(lambda column: BeginsWith(column, value))
-    if Between in classes:
-        condition_lambdas.append(lambda column: Between(column, values[0], values[1]))
-    if Comparison in classes:
+    if BeginsWithCondition in classes:
+        condition_lambdas.append(lambda column: BeginsWithCondition(column, value))
+    if BetweenCondition in classes:
+        condition_lambdas.append(lambda column: BetweenCondition(column, values[0], values[1]))
+    if ComparisonCondition in classes:
         condition_lambdas.extend(comparisons_for(include=include, exclude=exclude))
     if Condition in classes:
         condition_lambdas.append(lambda column: Condition())
-    if Contains in classes:
-        condition_lambdas.append(lambda column: Contains(column, value))
-    if In in classes:
-        condition_lambdas.append(lambda column: In(column, values))
+    if ContainsCondition in classes:
+        condition_lambdas.append(lambda column: ContainsCondition(column, value))
+    if InCondition in classes:
+        condition_lambdas.append(lambda column: InCondition(column, values))
 
     # Meta Conditions
-    if And in classes:
-        condition_lambdas.append(lambda column: And(column == value, column != value))
-    if Or in classes:
-        condition_lambdas.append(lambda column: Or(column == value, column != value))
-    if Not in classes:
-        condition_lambdas.append(lambda column: Not(column == value))
+    if AndCondition in classes:
+        condition_lambdas.append(lambda column: AndCondition(column == value, column != value))
+    if OrCondition in classes:
+        condition_lambdas.append(lambda column: OrCondition(column == value, column != value))
+    if NotCondition in classes:
+        condition_lambdas.append(lambda column: NotCondition(column == value))
 
     return condition_lambdas
 
@@ -302,7 +298,7 @@ def test_single_hash_key_success(model, index):
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
-@pytest.mark.parametrize("key_lambda", conditions_for(all_conditions - {And}, exclude=["=="]))
+@pytest.mark.parametrize("key_lambda", conditions_for(all_conditions - {AndCondition}, exclude=["=="]))
 def test_single_key_failure(model, index, key_lambda):
     """No other single key condition (except AND) will succeed"""
     # Get the correct hash key so only the condition type is wrong
@@ -318,7 +314,7 @@ def test_single_key_failure(model, index, key_lambda):
 def test_and_not_two(model, index, count):
     """AND on hash+range fails if there aren't exactly 2 key conditions"""
     hash_key_column = (index or model.Meta).hash_key
-    key = And(*[hash_key_column == "value"] * count)
+    key = AndCondition(*[hash_key_column == "value"] * count)
     with pytest.raises(InvalidKeyCondition):
         validate_key_condition(model, index, key)
 
@@ -329,7 +325,7 @@ def test_and_both_same_key(model, index, key_name):
     """AND with 2 conditions, but both conditions are on the same key"""
     key_column = getattr(index or model.Meta, key_name)
     condition = key_column == "value"
-    key = And(condition, condition)
+    key = AndCondition(condition, condition)
     with pytest.raises(InvalidKeyCondition):
         validate_key_condition(model, index, key)
 
@@ -340,8 +336,8 @@ def test_hash_and_range_key_success(model, index, range_condition_lambda):
     """AND(hash, range) + AND(range, hash) for valid hash and range key conditions"""
     hash_condition = (index or model.Meta).hash_key == "value"
     range_condition = range_condition_lambda(column=(index or model.Meta).range_key)
-    validate_key_condition(model, index, And(hash_condition, range_condition))
-    validate_key_condition(model, index, And(range_condition, hash_condition))
+    validate_key_condition(model, index, AndCondition(hash_condition, range_condition))
+    validate_key_condition(model, index, AndCondition(range_condition, hash_condition))
 
 
 @pytest.mark.parametrize("model, index", range_permutations)
@@ -352,9 +348,9 @@ def test_and_bad_hash_key(model, index, range_condition_lambda):
     range_condition = range_condition_lambda(column=(index or model.Meta).range_key)
 
     with pytest.raises(InvalidKeyCondition):
-        validate_key_condition(model, index, And(hash_condition, range_condition))
+        validate_key_condition(model, index, AndCondition(hash_condition, range_condition))
     with pytest.raises(InvalidKeyCondition):
-        validate_key_condition(model, index, And(range_condition, hash_condition))
+        validate_key_condition(model, index, AndCondition(range_condition, hash_condition))
 
 
 @pytest.mark.parametrize("model, index", range_permutations)
@@ -365,9 +361,9 @@ def test_and_bad_range_key(model, index, range_condition_lambda):
     range_condition = range_condition_lambda(column=(index or model.Meta).range_key)
 
     with pytest.raises(InvalidKeyCondition):
-        validate_key_condition(model, index, And(hash_condition, range_condition))
+        validate_key_condition(model, index, AndCondition(hash_condition, range_condition))
     with pytest.raises(InvalidKeyCondition):
-        validate_key_condition(model, index, And(range_condition, hash_condition))
+        validate_key_condition(model, index, AndCondition(range_condition, hash_condition))
 
 
 @pytest.mark.parametrize("model, index", all_permutations)

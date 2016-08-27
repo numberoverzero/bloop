@@ -2,7 +2,7 @@ import collections.abc
 
 import declare
 
-from .conditions import ComparisonMixin
+from .conditions import NewComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel
 from .util import missing, printable_column_name, signal, unpack_from_dynamodb
 
@@ -326,7 +326,7 @@ class LocalSecondaryIndex(Index):
         self.model.Meta.write_units = value
 
 
-class Column(declare.Field, ComparisonMixin):
+class Column(declare.Field, NewComparisonMixin):
     def __init__(self, typedef, hash_key=None, range_key=None,
                  name=None, **kwargs):
         self.hash_key = hash_key

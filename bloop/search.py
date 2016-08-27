@@ -2,7 +2,7 @@ import collections
 
 import declare
 
-from .conditions import And, BeginsWith, Between, Comparison, iter_columns, render
+from .conditions import NewBaseCondition, iter_columns, render
 from .exceptions import (
     ConstraintViolation,
     InvalidFilterCondition,
@@ -57,7 +57,7 @@ def validate_key_condition(model, index, key):
     # If the model or index has a range key, the condition can
     # still be (hash key condition AND range key condition)
 
-    if not isinstance(key, And):
+    if not isinstance(key, NewBaseCondition) or key.operation != "and":
         # Too many options to fit into a useful error message.
         fail_bad_range(query_on)
 
@@ -65,7 +65,7 @@ def validate_key_condition(model, index, key):
     # Otherwise we get into unpacking arbitrarily nested conditions.
     if len(key) != 2:
         fail_bad_range(query_on)
-    first_key, second_key = key.conditions
+    first_key, second_key = key.values
 
     # Only two options left -- just try both.
     if check_hash_key(query_on, first_key) and check_range_key(query_on, second_key):
@@ -133,10 +133,10 @@ def validate_filter_condition(condition, available_columns, column_blacklist):
 
 
 def check_hash_key(query_on, key):
-    """Only allows Comparison("==") against query_on.hash_key"""
+    """Only allows == against query_on.hash_key"""
     return (
-        isinstance(key, Comparison) and
-        (key.comparator == "==") and
+        isinstance(key, NewBaseCondition) and
+        (key.operation == "==") and
         (key.column is query_on.hash_key)
     )
 
@@ -144,9 +144,10 @@ def check_hash_key(query_on, key):
 def check_range_key(query_on, key):
     """BeginsWith, Between, or any Comparison except '!=' against query_on.range_key"""
     return (
-        isinstance(key, (BeginsWith, Between)) or
-        (isinstance(key, Comparison) and key.comparator != "!=")
-    ) and key.column is query_on.range_key
+        isinstance(key, NewBaseCondition) and
+        key.operation in ("begins_with", "between", "<", ">", "<=", ">=", "==") and
+        key.column is query_on.range_key
+    )
 
 
 def fail_bad_hash(query_on):

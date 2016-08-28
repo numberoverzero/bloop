@@ -106,21 +106,13 @@ def get_marked(obj):
 # RENDERING ================================================================================================ RENDERING
 
 
-# TODO refactor
-def render(engine, filter=None, projection=None, key=None, atomic=None, condition=None, update=None):
+def render(engine, obj=None, filter=None, projection=None, key=None, atomic=None, condition=None, update=None):
     renderer = ConditionRenderer(engine)
-    if filter is not None:
-        renderer.filter_expression(filter)
-    if projection is not None:
-        renderer.projection_expression(projection)
-    if key is not None:
-        renderer.key_expression(key)
-    condition = condition or Condition()
-    if atomic:
-        condition &= get_snapshot(atomic)
-    if condition:
-        renderer.condition_expression(condition)
-    renderer.update_expression(update)
+    renderer.render(
+        obj=obj, condition=condition,
+        atomic=atomic, update=update,
+        filter=filter, projection=projection, key=key,
+    )
     return renderer.rendered
 
 
@@ -232,31 +224,44 @@ class RefTracker:
                     del self.name_attr_index[path_segment]
 
 
-# TODO refactor
 class ConditionRenderer:
     def __init__(self, engine):
         self.refs = RefTracker(engine)
         self.engine = engine
         self.expressions = {}
 
-    def condition_expression(self, condition):
-        if not condition:
-            return
+    def render(self, obj=None, condition=None, atomic=False, update=False, filter=None, projection=None, key=None):
+        if filter:
+            self.render_filter_expression(filter)
+
+        if projection:
+            self.render_projection_expression(projection)
+
+        if key:
+            self.render_key_expression(key)
+
+        # Condition requires a bit of work, because either one can be empty/false
+        condition = (condition or Condition()) & (get_snapshot(obj) if atomic else Condition())
+        if condition:
+            self.render_condition_expression(condition)
+
+        if update:
+            self.render_update_expression(obj)
+
+    def render_condition_expression(self, condition):
         self.expressions["ConditionExpression"] = condition.render(self)
 
-    def filter_expression(self, condition):
+    def render_filter_expression(self, condition):
         self.expressions["FilterExpression"] = condition.render(self)
 
-    def key_expression(self, condition):
+    def render_key_expression(self, condition):
         self.expressions["KeyConditionExpression"] = condition.render(self)
 
-    def projection_expression(self, columns):
-        ref_for = lambda c: self.refs.any_ref(column=c).name
-        self.expressions["ProjectionExpression"] = ", ".join(map(ref_for, columns))
+    def render_projection_expression(self, columns):
+        self.expressions["ProjectionExpression"] = ", ".join(map(
+            lambda c: self.refs.any_ref(column=c).name, columns))
 
-    def update_expression(self, obj):
-        if obj is None:
-            return
+    def render_update_expression(self, obj):
         updates = {
             "set": [],
             "remove": []}
@@ -311,9 +316,6 @@ class BaseCondition:
         raise NotImplementedError
 
     def __repr__(self):
-        raise NotImplementedError
-
-    def iter_columns(self):
         raise NotImplementedError
 
     def render(self, renderer: ConditionRenderer):
@@ -459,13 +461,6 @@ class Condition(BaseCondition):
     def __repr__(self):
         return "()"
 
-    def iter_columns(self):
-        # This isn't a simple `raise StopIteration` since this function *must*
-        # be a generator.  Without returning an iter, python requires the yield
-        # keyword to transform func -> generator.
-        # Without getting super hacky, return an iterator over nothing
-        return iter(())
-
     def render(self, renderer: ConditionRenderer):
         raise InvalidCondition("Condition is not renderable")
 
@@ -485,11 +480,6 @@ class AndCondition(BaseCondition):
             return "({!r} {})".format(self.values[0], joiner.strip())
         else:
             return "({})".format(joiner.join(repr(c) for c in self.values))
-
-    def iter_columns(self):
-        for condition in self.values:
-            for column in condition.iter_columns():
-                yield column
 
     def render(self, renderer: ConditionRenderer):
         rendered_conditions = [c.render(renderer) for c in self.values]
@@ -516,11 +506,6 @@ class OrCondition(BaseCondition):
         else:
             return "({})".format(joiner.join(repr(c) for c in self.values))
 
-    def iter_columns(self):
-        for condition in self.values:
-            for column in condition.iter_columns():
-                yield column
-
     def render(self, renderer: ConditionRenderer):
         rendered_conditions = [c.render(renderer) for c in self.values]
         if not rendered_conditions:
@@ -540,10 +525,6 @@ class NotCondition(BaseCondition):
     def __repr__(self):
         return "(~{!r})".format(self.values[0])
 
-    def iter_columns(self):
-        for column in self.values[0].iter_columns():
-            yield column
-
     def render(self, renderer: ConditionRenderer):
         rendered_condition = self.values[0].render(renderer)
         if rendered_condition is None:
@@ -562,11 +543,6 @@ class ComparisonCondition(BaseCondition):
         return "({}.{} {} {!r})".format(
             self.column.model.__name__, printable_column_name(self.column, self.path),
             self.operation, self.values[0])
-
-    def iter_columns(self):
-        yield self.column
-        if isinstance(self.values[0], ComparisonMixin):
-            yield self.values[0]
 
     def render(self, renderer: ConditionRenderer):
         column_ref = renderer.refs.any_ref(
@@ -604,11 +580,6 @@ class BeginsWithCondition(BaseCondition):
             self.column.model.__name__, printable_column_name(self.column, self.path),
             self.values[0])
 
-    def iter_columns(self):
-        yield self.column
-        if isinstance(self.values[0], ComparisonMixin):
-            yield self.values[0]
-
     def render(self, renderer: ConditionRenderer):
         column_ref = renderer.refs.any_ref(
             column=self.column, path=self.path, dumped=self.dumped)
@@ -632,12 +603,6 @@ class BetweenCondition(BaseCondition):
         return "({}.{} between [{!r}, {!r}])".format(
             self.column.model.__name__, printable_column_name(self.column, self.path),
             self.values[0], self.values[1])
-
-    def iter_columns(self):
-        yield self.column
-        for value in self.values:
-            if isinstance(value, ComparisonMixin):
-                yield value
 
     def render(self, renderer: ConditionRenderer):
         column_ref = renderer.refs.any_ref(
@@ -665,11 +630,6 @@ class ContainsCondition(BaseCondition):
             self.column.model.__name__, printable_column_name(self.column, self.path),
             self.values[0])
 
-    def iter_columns(self):
-        yield self.column
-        if isinstance(self.values[0], ComparisonMixin):
-            yield self.values[0]
-
     def render(self, renderer: ConditionRenderer):
         column_ref = renderer.refs.any_ref(
             column=self.column, path=self.path, dumped=self.dumped)
@@ -693,12 +653,6 @@ class InCondition(BaseCondition):
         return "({}.{} in {!r})".format(
             self.column.model.__name__, printable_column_name(self.column, self.path),
             self.values)
-
-    def iter_columns(self):
-        yield self.column
-        for value in self.values:
-            if isinstance(value, ComparisonMixin):
-                yield value
 
     def render(self, renderer: ConditionRenderer):
         if not self.values:
@@ -775,18 +729,19 @@ class ComparisonMixin:
 
 
 def iter_conditions(condition: BaseCondition):
-    """Yield all conditions WITHIN the given condition.
+    """Yield all conditions within the given condition.
 
-    If there are no conditions within this condition (any condition besides and, or, not; or any of those without
-    an inner value) then this will not yield those conditions."""
+    If the root condition is and/or/not, it is not yielded (unless a cyclic reference to it is found)."""
     conditions = list()
     visited = set()
     # Has to be split out, since we don't want to visit the root (for cyclic conditions)
     # but we don't want to yield it (if it's non-cyclic) because this only yields inner conditions
     if condition.operation in {"and", "or"}:
         conditions.extend(reversed(condition.values))
-    if condition.operation == "not":
+    elif condition.operation == "not":
         conditions.append(condition.values[0])
+    else:
+        conditions.append(condition)
     while conditions:
         condition = conditions.pop()
         if condition in visited:
@@ -795,3 +750,25 @@ def iter_conditions(condition: BaseCondition):
         yield condition
         if condition.operation in {"and", "or", "not"}:
             conditions.extend(reversed(condition.values))
+
+
+def iter_columns(condition: BaseCondition):
+    """Yield all columns in the condition or its inner conditions."""
+    # Like iter_conditions, this can't live in each condition without going possibly infinite on the
+    # recursion, or passing the visited set through every call.  That makes the signature ugly, so we
+    # take care of it here.  Luckily, it's pretty easy to leverage iter_conditions and just unpack the
+    # actual columns.
+    visited = set()
+    for condition in iter_conditions(condition):
+        if condition.operation in ("and", "or", "not"):
+            continue
+        # Non-meta conditions always have a column, and each of values has the potential to be a column.
+        # Comparison will only have a list of len 1, but it's simpler to just iterate values and check each
+        if condition.column not in visited:
+            visited.add(condition.column)
+            yield condition.column
+            for value in condition.values:
+                if isinstance(value, ComparisonMixin):
+                    if value not in visited:
+                        visited.add(value)
+                        yield value

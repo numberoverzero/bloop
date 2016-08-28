@@ -2,7 +2,7 @@ import collections
 
 import declare
 
-from .conditions import BaseCondition, render
+from .conditions import BaseCondition, iter_columns, render
 from .exceptions import (
     ConstraintViolation,
     InvalidFilterCondition,
@@ -121,7 +121,7 @@ def validate_filter_condition(condition, available_columns, column_blacklist):
     if condition is None:
         return
 
-    for column in condition.iter_columns():
+    for column in iter_columns(condition):
         # All of the columns in the condition must be in the available columns
         if column not in available_columns:
             raise InvalidFilterCondition(
@@ -307,8 +307,8 @@ class PreparedSearch:
             request["Select"] = "SPECIFIC_ATTRIBUTES"
             projected = self._projected_columns
 
-        rendered = render(self.engine, filter=self.filter, projection=projected, key=self.key)
-        request.update(rendered)
+        request.update(render(
+            self.engine, filter=self.filter, projection=projected, key=self.key))
 
     def __repr__(self):
         return search_repr(self.__class__, self.model, self.index)

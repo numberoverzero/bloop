@@ -16,6 +16,7 @@ from bloop.conditions import (
     InvalidCondition,
     get_marked,
     get_snapshot,
+    iter_columns,
     iter_conditions,
     object_deleted,
     object_loaded,
@@ -213,8 +214,6 @@ def test_abstract_base():
     with pytest.raises(NotImplementedError):
         repr(condition)
     with pytest.raises(NotImplementedError):
-        condition.iter_columns()
-    with pytest.raises(NotImplementedError):
         condition.render(None)
 
 
@@ -229,7 +228,8 @@ def test_len_empty(condition):
 
 def test_iter_empty():
     condition = Condition()
-    assert next(condition.iter_columns(), None) is None
+    assert set(iter_conditions(condition)) == {condition}
+    assert next(iter_columns(condition), None) is None
 
 
 def test_render_empty():
@@ -291,7 +291,7 @@ def test_len_unpack_not():
 @pytest.mark.parametrize("condition", non_meta_conditions())
 def test_iter_non_meta(condition):
     """These conditions aren't and/or/not, so they can't yield any inner conditions"""
-    assert next(iter_conditions(condition), None) is None
+    assert set(iter_conditions(condition)) == {condition}
 
 
 @pytest.mark.parametrize("condition", meta_conditions())

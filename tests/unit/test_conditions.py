@@ -47,12 +47,12 @@ c = MockColumn("c")
 d = MockColumn("d")
 
 
-def condition_for(operation):
-    return conditions_for(operation)[0]
+def condition_for(operation, column=None):
+    return conditions_for(operation, column=column)[0]
 
 
-def conditions_for(*operations):
-    column = MockColumn("c")
+def conditions_for(*operations, column=None):
+    column = column or MockColumn("c")
     value = 0
     values = [1, 2]
     conditions = []
@@ -83,15 +83,16 @@ def conditions_for(*operations):
     return conditions
 
 
-def non_meta_conditions():
+def non_meta_conditions(column=None):
     return conditions_for(
         "begins_with", "between", "contains", "in",
-        ">", "<", ">=", "<=", "==", "!="
+        ">", "<", ">=", "<=", "==", "!=",
+        column=column
     )
 
 
-def meta_conditions():
-    return conditions_for("and", "or", "not")
+def meta_conditions(column=None):
+    return conditions_for("and", "or", "not", column=column)
 
 
 def empty_conditions():
@@ -1217,6 +1218,33 @@ def test_iter_conditions_cyclic():
     expected = {root, a, b, c}
     actual = set(iter_conditions(root))
     assert actual == expected
+
+
+@pytest.mark.parametrize("condition", [*non_meta_conditions(column=User.age), *meta_conditions(column=User.age)])
+def test_iter_columns_single(condition):
+    assert set(iter_columns(condition)) == {User.age}
+
+
+def test_iter_columns_nested():
+    """Nested AND, OR, NOT are unpacked"""
+    a = User.age == 3
+    b = User.name == "foo"
+    c = User.email.in_(User.age, User.id, "bar")
+
+    # Here's the structure to create:
+    #    __root__
+    #   /   |    \
+    #  a  branch  \
+    #       |    leaf
+    #       b    /  \
+    #           c  root
+
+    branch = ~b
+    root = a & branch
+    leaf = c | root
+    root.values.append(leaf)
+
+    assert set(iter_columns(root)) == {User.age, User.name, User.email, User.id}
 
 
 # END ITERATORS ======================================================================================== END ITERATORS

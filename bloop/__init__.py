@@ -32,6 +32,7 @@ from .types import (
     String,
 )
 
+
 __all__ = [
     "BaseModel", "Boolean", "Binary", "BloopException", "Column",
     "Condition", "ConstraintViolation", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer",

@@ -1,11 +1,10 @@
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import collections
-
 from typing import Any, NamedTuple
 
 from .exceptions import InvalidCondition
-from .util import WeakDefaultDictionary, printable_column_name, missing, signal
+from .util import WeakDefaultDictionary, missing, printable_column_name, signal
 
 
 __all__ = ["Condition", "object_deleted", "object_loaded", "object_modified", "object_saved", "render"]

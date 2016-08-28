@@ -1,6 +1,7 @@
 import boto3
 import declare
 
+from .conditions import render
 from .exceptions import (
     AbstractModelError,
     InvalidModel,
@@ -9,7 +10,6 @@ from .exceptions import (
     UnboundModel,
     UnknownType,
 )
-from .conditions import render
 from .models import Index, ModelMetaclass
 from .search import Query, Scan
 from .session import SessionWrapper

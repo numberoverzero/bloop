@@ -11,7 +11,7 @@ from bloop.models import (
     Index,
     LocalSecondaryIndex,
     model_created,
-    object_modified
+    object_modified,
 )
 from bloop.types import UUID, Boolean, DateTime, Integer, String
 

@@ -2,7 +2,14 @@ from unittest.mock import Mock
 
 import boto3
 import pytest
-from bloop import BaseModel, Engine, object_deleted, object_loaded, object_modified, object_saved
+from bloop import (
+    BaseModel,
+    Engine,
+    object_deleted,
+    object_loaded,
+    object_modified,
+    object_saved,
+)
 from bloop.session import SessionWrapper
 
 

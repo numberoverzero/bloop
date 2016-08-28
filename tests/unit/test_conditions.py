@@ -1,29 +1,29 @@
 import operator
-import pytest
 
+import pytest
 from bloop.conditions import (
-    ConditionRenderer,
-    ComparisonMixin,
-    BaseCondition,
-    Condition,
     AndCondition,
-    OrCondition,
-    NotCondition,
-    Reference,
-    ReferenceTracker,
+    BaseCondition,
     BeginsWithCondition,
     BetweenCondition,
     ComparisonCondition,
+    ComparisonMixin,
+    Condition,
+    ConditionRenderer,
     ContainsCondition,
     InCondition,
     InvalidCondition,
+    NotCondition,
+    OrCondition,
+    Reference,
+    ReferenceTracker,
     get_marked,
     get_snapshot,
     iter_columns,
     iter_conditions,
     object_deleted,
     object_loaded,
-    object_saved
+    object_saved,
 )
 
 from ..helpers.models import Document, User

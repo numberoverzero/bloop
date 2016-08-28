@@ -582,40 +582,6 @@ def test_len_unpack_not():
     assert len(condition) == len(outer) == len(and_) == 2
 
 
-@pytest.mark.parametrize("condition", non_meta_conditions())
-def test_iter_non_meta(condition):
-    """These conditions aren't and/or/not, so they can't yield any inner conditions"""
-    assert set(iter_conditions(condition)) == {condition}
-
-
-@pytest.mark.parametrize("condition", meta_conditions())
-def test_iter_non_cyclic_meta(condition):
-    """Yield the inner conditions for each of these meta conditions"""
-    expected = condition.values
-    actual = list(iter_conditions(condition))
-    assert actual == expected
-
-
-def test_iter_cyclic():
-    """Cyclic conditions can be iterated safely"""
-    # Here's the structure to create:
-    #   root
-    #  /    \
-    # a      b
-    #      /   \
-    #     c   root
-    root = AndCondition()
-    a = ComparisonCondition("<", MockColumn("a"), 3)
-    b = OrCondition()
-    c = ComparisonCondition(">", MockColumn("c"), 3)
-    root.values.extend([a, b])
-    b.values.extend([c, root])
-
-    expected = {root, a, b, c}
-    actual = set(iter_conditions(root))
-    assert actual == expected
-
-
 @pytest.mark.parametrize("condition", conditions_for(
     "begins_with", "between", "contains", "in",
     ">", "<", ">=", "<=", "==", "!=",
@@ -1214,3 +1180,43 @@ def test_mixin_is_():
 
 
 # END COMPARISON MIXIN ========================================================================== END COMPARISON MIXIN
+
+
+# ITERATORS ================================================================================================ ITERATORS
+
+
+@pytest.mark.parametrize("condition", non_meta_conditions())
+def test_iter_conditions_non_meta(condition):
+    """These conditions aren't and/or/not, so they can't yield any inner conditions"""
+    assert set(iter_conditions(condition)) == {condition}
+
+
+@pytest.mark.parametrize("condition", meta_conditions())
+def test_iter_conditions_non_cyclic_meta(condition):
+    """Yield the inner conditions for each of these meta conditions"""
+    expected = condition.values
+    actual = list(iter_conditions(condition))
+    assert actual == expected
+
+
+def test_iter_conditions_cyclic():
+    """Cyclic conditions can be iterated safely"""
+    # Here's the structure to create:
+    #   root
+    #  /    \
+    # a      b
+    #      /   \
+    #     c   root
+    root = AndCondition()
+    a = ComparisonCondition("<", MockColumn("a"), 3)
+    b = OrCondition()
+    c = ComparisonCondition(">", MockColumn("c"), 3)
+    root.values.extend([a, b])
+    b.values.extend([c, root])
+
+    expected = {root, a, b, c}
+    actual = set(iter_conditions(root))
+    assert actual == expected
+
+
+# END ITERATORS ======================================================================================== END ITERATORS

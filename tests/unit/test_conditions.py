@@ -242,6 +242,7 @@ def test_ref_path_empty(reference_tracker):
     expected_ref = "#n0"
 
     ref = reference_tracker._path_ref(column)
+
     assert ref == expected_ref
     assert reference_tracker.attr_names[ref] == expected_name
     assert reference_tracker.name_attr_index[expected_name] == ref
@@ -249,10 +250,8 @@ def test_ref_path_empty(reference_tracker):
 
 def test_ref_path_complex(reference_tracker):
     """Path reference with integer and string indexes.  Strings include duplicates and literal periods."""
-    column = MockColumn("column")
-    path = ["foo", 3, 4, "repeat", "has.period", "repeat"]
+    column = MockColumn("column")["foo"][3][4]["repeat"]["has.period"]["repeat"]
     expected_ref = "#n0.#n1[3][4].#n2.#n3.#n2"
-
     expected_names = {
         "#n0": "d_column",
         "#n1": "foo",
@@ -260,16 +259,16 @@ def test_ref_path_complex(reference_tracker):
         "#n3": "has.period"
     }
 
-    ref = reference_tracker._path_ref(column, path=path)
+    ref = reference_tracker._path_ref(column)
+
     assert ref == expected_ref
     assert reference_tracker.attr_names == expected_names
 
 
 def test_ref_path_reuse(reference_tracker):
     """paths are re-used, even across columns"""
-    first = MockColumn("first")
-    second = MockColumn("second")
-    same_path = [3, "foo"]
+    first = MockColumn("first")[3]["foo"]
+    second = MockColumn("second")[3]["foo"]
 
     expected_first = "#n0[3].#n1"
     expected_second = "#n2[3].#n1"
@@ -279,8 +278,8 @@ def test_ref_path_reuse(reference_tracker):
         "#n2": "d_second"
     }
 
-    first_ref = reference_tracker._path_ref(first, path=same_path)
-    second_ref = reference_tracker._path_ref(second, path=same_path)
+    first_ref = reference_tracker._path_ref(first)
+    second_ref = reference_tracker._path_ref(second)
     assert first_ref == expected_first
     assert second_ref == expected_second
     assert reference_tracker.attr_names == expected_names
@@ -288,8 +287,7 @@ def test_ref_path_reuse(reference_tracker):
 
 def test_ref_path_periods(reference_tracker):
     """Path segments with periods aren't de-duped with each individual segment"""
-    column = MockColumn("column")
-    path = ["foo", "foo.bar", "bar"]
+    column = MockColumn("column")["foo"]["foo.bar"]["bar"]
     expected_ref = "#n0.#n1.#n2.#n3"
     expected_names = {
         "#n0": "d_column",
@@ -298,7 +296,8 @@ def test_ref_path_periods(reference_tracker):
         "#n3": "bar",
     }
 
-    ref = reference_tracker._path_ref(column, path=path)
+    ref = reference_tracker._path_ref(column)
+
     assert ref == expected_ref
     assert reference_tracker.attr_names == expected_names
 
@@ -307,14 +306,12 @@ def test_ref_value(reference_tracker):
     """no path, value not dumped"""
     column = User.age
     value = 3
-
     expected_ref = ":v0"
     expected_value = {"N": "3"}
-    expected_values = {
-        ":v0": expected_value
-    }
+    expected_values = {":v0": expected_value}
 
     ref, value = reference_tracker._value_ref(column, value)
+
     assert ref == expected_ref
     assert value == expected_value
     assert reference_tracker.attr_values == expected_values
@@ -322,17 +319,14 @@ def test_ref_value(reference_tracker):
 
 def test_ref_value_path(reference_tracker):
     """has path, value not dumped"""
-    column = Document.data
-    path = ["Description", "Body"]
+    column = Document.data["Description"]["Body"]
     value = "value"
-
     expected_ref = ":v0"
     expected_value = {"S": value}
-    expected_values = {
-        ":v0": expected_value
-    }
+    expected_values = {":v0": expected_value}
 
-    ref, value = reference_tracker._value_ref(column, value, path=path)
+    ref, value = reference_tracker._value_ref(column, value)
+
     assert ref == expected_ref
     assert value == expected_value
     assert reference_tracker.attr_values == expected_values
@@ -343,11 +337,8 @@ def test_ref_value_dumped(reference_tracker):
     column = Document.id
     # This shouldn't be dumped, so we use an impossible value for the type
     dumped_value = object()
-
     expected_ref = ":v0"
-    expected_values = {
-        ":v0": dumped_value
-    }
+    expected_values = {":v0": dumped_value}
 
     ref, value = reference_tracker._value_ref(column, dumped_value, dumped=True)
     assert ref == expected_ref
@@ -357,18 +348,14 @@ def test_ref_value_dumped(reference_tracker):
 
 def test_ref_value_dumped_path(reference_tracker):
     """has path, value already dumped"""
-    column = Document.data
-    path = ["Description"]
+    column = Document.data["Description"]
     # Description's typedef is Map, wich can't dump an object
     # This shouldn't be dumped, so we use an impossible value for the type
     dumped_value = object()
-
     expected_ref = ":v0"
-    expected_values = {
-        ":v0": dumped_value
-    }
+    expected_values = {":v0": dumped_value}
 
-    ref, value = reference_tracker._value_ref(column, dumped_value, dumped=True, path=path)
+    ref, value = reference_tracker._value_ref(column, dumped_value, dumped=True)
     assert ref == expected_ref
     assert value == dumped_value
     assert reference_tracker.attr_values == expected_values
@@ -377,7 +364,6 @@ def test_ref_value_dumped_path(reference_tracker):
 def test_ref_any_column_name(reference_tracker):
     """Render a reference to the column name (and path) when there's no value"""
     column = Document.data["Description"]["Body"]
-
     expected_ref = Reference(name="#n0.#n1.#n2", type="name", value=None)
     expected_names = {
         "#n0": "data",

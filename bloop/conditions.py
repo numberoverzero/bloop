@@ -154,9 +154,9 @@ class ReferenceTracker:
         self.counts[ref] += 1
         return ref
 
-    def _path_ref(self, column, path=None):
+    def _path_ref(self, column):
         pieces = [column.dynamo_name]
-        pieces.extend(path or [])
+        pieces.extend(column._path)
         str_pieces = []
         for piece in pieces:
             # List indexes are attached to last path item directly
@@ -167,13 +167,13 @@ class ReferenceTracker:
                 str_pieces.append(self._name_ref(piece))
         return ".".join(str_pieces)
 
-    def _value_ref(self, column, value, *, dumped=False, path=None):
+    def _value_ref(self, column, value, *, dumped=False):
         ref = ":v{}".format(self.next_index)
 
         # Need to dump this value
         if not dumped:
             typedef = column.typedef
-            for segment in (path or []):
+            for segment in column._path:
                 typedef = typedef[segment]
             value = self.engine._dump(typedef, value)
 
@@ -186,17 +186,17 @@ class ReferenceTracker:
         # Can't use None since it's a legal value for comparisons (attribute_not_exists)
         if value is missing:
             # Simple path ref to the column.
-            name = self._path_ref(column=column._proxied, path=column._path)
+            name = self._path_ref(column=column)
             ref_type = "name"
             value = None
         elif isinstance(value, ComparisonMixin):
             # value is also a column!  Also a path ref.
-            name = self._path_ref(column=value._proxied, path=value._path)
+            name = self._path_ref(column=value)
             ref_type = "name"
             value = None
         else:
             # Simple value ref.
-            name, value = self._value_ref(column=column._proxied, value=value, dumped=dumped, path=column._path)
+            name, value = self._value_ref(column=column, value=value, dumped=dumped)
             ref_type = "value"
         return Reference(name=name, type=ref_type, value=value)
 

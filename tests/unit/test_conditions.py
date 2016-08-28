@@ -498,6 +498,41 @@ def test_ref_pop_value(reference_tracker):
 # END REFERENCE TRACKER ======================================================================== END REFERENCE TRACKER
 
 
+# RENDERER ================================================================================================== RENDERER
+
+
+@pytest.mark.parametrize("func_name, expression_key", [
+    ("render_condition_expression", "ConditionExpression"),
+    ("render_filter_expression", "FilterExpression"),
+    ("render_key_expression", "KeyConditionExpression"),
+])
+def test_render_simple_conditions(func_name, expression_key, renderer):
+    """condition, filter, key expression rendering simply defers to the condition"""
+    condition = User.name.between("foo", User.age)
+    render = getattr(renderer, func_name)
+    render(condition)
+
+    assert renderer.rendered == {
+        "ExpressionAttributeNames": {"#n0": "name", "#n2": "age"},
+        "ExpressionAttributeValues": {":v1": {"S": "foo"}},
+        expression_key: "(#n0 BETWEEN :v1 AND #n2)"
+    }
+
+
+def test_render_projection_dedupes_names(renderer):
+    """Duplicate columns are filtered when rendering the projection expression"""
+    columns = [User.id, User.email, User.id, User.age]
+    renderer.render_projection_expression(columns)
+
+    assert renderer.rendered == {
+        "ProjectionExpression": "#n0, #n1, #n2",
+        "ExpressionAttributeNames": {"#n0": "id", "#n1": "email", "#n2": "age"}
+    }
+
+
+# END RENDERER ========================================================================================== END RENDERER
+
+
 # CONDITIONS ============================================================================================== CONDITIONS
 
 

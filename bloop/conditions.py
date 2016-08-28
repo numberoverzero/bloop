@@ -115,7 +115,7 @@ def is_empty(ref: Reference):
 
 class ReferenceTracker:
     def __init__(self, engine):
-        self._next_index = 0
+        self.__next_index = 0
         self.counts = collections.defaultdict(lambda: 0)
         self.attr_values = {}
         self.attr_names = {}
@@ -126,8 +126,8 @@ class ReferenceTracker:
     @property
     def next_index(self):
         """Prevent the ref index from *ever* decreasing and causing a collision."""
-        current = self._next_index
-        self._next_index += 1
+        current = self.__next_index
+        self.__next_index += 1
         return current
 
     def _name_ref(self, name):
@@ -258,8 +258,15 @@ class ConditionRenderer:
         self.expressions["KeyConditionExpression"] = condition.render(self)
 
     def render_projection_expression(self, columns):
-        self.expressions["ProjectionExpression"] = ", ".join(map(
-            lambda c: self.refs.any_ref(column=c).name, columns))
+        included = set()
+        ref_names = []
+        for column in columns:
+            if column in included:
+                continue
+            included.add(column)
+            ref = self.refs.any_ref(column=column)
+            ref_names.append(ref.name)
+        self.expressions["ProjectionExpression"] = ", ".join(ref_names)
 
     def render_update_expression(self, obj):
         updates = {

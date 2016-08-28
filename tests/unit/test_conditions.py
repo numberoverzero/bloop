@@ -8,6 +8,7 @@ from bloop.conditions import (
     AndCondition,
     OrCondition,
     NotCondition,
+    Reference,
     ReferenceTracker,
     BeginsWithCondition,
     BetweenCondition,
@@ -371,6 +372,43 @@ def test_ref_value_dumped_path(reference_tracker):
     assert ref == expected_ref
     assert value == dumped_value
     assert reference_tracker.attr_values == expected_values
+
+
+def test_ref_any_column_name(reference_tracker):
+    """Render a reference to the column name (and path) when there's no value"""
+    column = Document.data
+    path = ["Description", "Body"]
+
+    expected_ref = Reference(name="#n0.#n1.#n2", type="name", value=None)
+    expected_names = {
+        "#n0": "data",
+        "#n1": "Description",
+        "#n2": "Body"
+    }
+
+    ref = reference_tracker.any_ref(column=column, path=path)
+    assert ref == expected_ref
+    assert reference_tracker.attr_names == expected_names
+
+
+def test_ref_any_value_is_column(reference_tracker):
+    """Render a reference to a value that is also a column"""
+    column = Document.id
+    column_path = ["Description", "Rating"]
+
+    # value has its own path
+    value = Document.data["Description"]["Body"]
+
+    expected_ref = Reference(name="#n0.#n1.#n2", type="name", value=None)
+    expected_names = {
+        "#n0": "data",
+        "#n1": "Description",
+        "#n2": "Body"
+    }
+
+    ref = reference_tracker.any_ref(column=column, path=column_path, value=value)
+    assert ref == expected_ref
+    assert reference_tracker.attr_names == expected_names
 
 
 # END REFERENCE TRACKER ======================================================================== END REFERENCE TRACKER

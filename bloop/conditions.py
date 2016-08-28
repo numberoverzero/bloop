@@ -181,7 +181,7 @@ class ReferenceTracker:
         self.counts[ref] += 1
         return ref, value
 
-    def any_ref(self, column=None, path=None, value=missing, dumped=False) -> Reference:
+    def any_ref(self, *, column=None, path=None, value=missing, dumped=False) -> Reference:
         """Returns {"type": Union["name", "value"], "ref": str, "value": Optional[Any]}"""
         # Can't use None since it's a legal value for comparisons (attribute_not_exists)
         if value is missing:

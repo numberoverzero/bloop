@@ -231,6 +231,9 @@ class ConditionRenderer:
         self.expressions = {}
 
     def render(self, obj=None, condition=None, atomic=False, update=False, filter=None, projection=None, key=None):
+        if (atomic or update) and not obj:
+            raise InvalidCondition("An object is required to render atomic conditions or updates without an object.")
+
         if filter:
             self.render_filter_expression(filter)
 

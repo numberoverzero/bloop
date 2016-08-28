@@ -24,6 +24,7 @@ from bloop.conditions import (
     object_deleted,
     object_loaded,
     object_saved,
+    render
 )
 
 from ..helpers.models import Document, User
@@ -499,6 +500,137 @@ def test_ref_pop_value(reference_tracker):
 
 
 # RENDERER ================================================================================================== RENDERER
+
+
+def test_render_missing_object(engine):
+    """Can't render atomic or update without an object"""
+    with pytest.raises(InvalidCondition):
+        render(engine, update=True)
+    with pytest.raises(InvalidCondition):
+        render(engine, atomic=True)
+
+
+@pytest.mark.parametrize("kwarg_name, expression_key", [
+    ("filter", "FilterExpression"),
+    ("key", "KeyConditionExpression"),
+    ("condition", "ConditionExpression"),
+])
+def test_render_condition_only(kwarg_name, expression_key, engine):
+    """Only renders the given condition"""
+    condition = (User.email == "@") & (User.name.is_(None))
+    rendered = render(engine, **{kwarg_name: condition})
+    assert rendered == {
+        "ExpressionAttributeNames": {"#n0": "email", "#n2": "name"},
+        "ExpressionAttributeValues": {":v1": {"S": "@"}},
+        expression_key: "((#n0 = :v1) AND (attribute_not_exists(#n2)))"
+    }
+
+
+def test_render_projection_only(engine):
+    columns = [User.id, User.email, User.id, User.age]
+    rendered = render(engine, projection=columns)
+    assert rendered == {
+        "ExpressionAttributeNames": {"#n0": "id", "#n1": "email", "#n2": "age"},
+        "ProjectionExpression": "#n0, #n1, #n2",
+    }
+
+
+def test_render_atomic_only_new(engine):
+    """Atomic condition on a new object only -> all attribute_not_exists"""
+    rendered = render(engine, obj=User(), atomic=True)
+    assert rendered == {
+        "ExpressionAttributeNames": {"#n0": "age", "#n2": "email", "#n4": "id", "#n6": "j", "#n8": "name"},
+        "ConditionExpression": (
+            "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n2)) AND"
+            " (attribute_not_exists(#n4)) AND (attribute_not_exists(#n6)) AND"
+            " (attribute_not_exists(#n8)))"
+        )
+    }
+
+
+def test_render_atomic_only_partial(engine):
+    """Atomic condition on an object already partially synced"""
+    user = User(id="user_id", age=3, email=None)
+    # Sync gives us an atomic condition
+    object_saved.send(engine, obj=user)
+
+    # Unlike a new save, this one has no expectation about the values of "joined" or "name"
+    rendered = render(engine, obj=user, atomic=True)
+
+    assert rendered == {
+        "ExpressionAttributeNames": {"#n0": "age", "#n2": "email", "#n4": "id"},
+        "ExpressionAttributeValues": {":v1": {"N": "3"}, ":v5": {"S": "user_id"}},
+        "ConditionExpression": "((#n0 = :v1) AND (attribute_not_exists(#n2)) AND (#n4 = :v5))"
+    }
+
+
+def test_render_atomic_and_condition(engine):
+    """Atomic condition and condition are ANDed together (condition first)"""
+    user = User(id="user_id", age=3, email=None)
+    # Sync gives us an atomic condition
+    object_saved.send(engine, obj=user)
+
+    # Value ref isn't re-used
+    condition = User.email.contains("@")
+
+    rendered = render(engine, obj=user, condition=condition, atomic=True)
+
+    assert rendered == {
+        "ExpressionAttributeNames": {"#n0": "email", "#n2": "age", "#n5": "id"},
+        "ExpressionAttributeValues": {":v1": {"S": "@"}, ":v3": {"N": "3"}, ":v6": {"S": "user_id"}},
+        "ConditionExpression": "((contains(#n0, :v1)) AND (#n2 = :v3) AND (attribute_not_exists(#n0)) AND (#n5 = :v6))"
+    }
+
+
+def test_render_update_only(engine):
+    user = User(email="@", age=3)
+    rendered = render(engine, obj=user, update=True)
+    assert rendered == {
+        "ExpressionAttributeNames": {"#n0": "age", "#n2": "email"},
+        "ExpressionAttributeValues": {":v1": {"N": "3"}, ":v3": {"S": "@"}},
+        "UpdateExpression": "SET #n0=:v1, #n2=:v3",
+    }
+
+
+def test_render_complex(engine):
+    """Render a filter condition, key condition, projection, condition, atomic and update"""
+    user = User(id="uid", age=3, email=None)
+    # Sync gives us an atomic condition on id, age, email (sorted)
+    object_saved.send(engine, obj=user)
+
+    filter_condition = User.email.contains("@")
+    key_condition = User.age == 4
+    # projection isn't sorted by name
+    projection = [User.name, User.id]
+
+    condition = User.age <= User.id
+
+    # SET name, REMOVE age
+    # (in addition to REMOVE email, from email=None)
+    user.name = "bill"
+    del user.age
+
+    rendered = render(engine, obj=user,
+                      filter=filter_condition, projection=projection, key=key_condition,
+                      atomic=True, condition=condition, update=True)
+
+    # Render order: filter, projection, key, (condition & atomic), update
+    assert rendered == {
+        "ExpressionAttributeNames": {"#n0": "email", "#n2": "name", "#n3": "id", "#n4": "age"},
+        "ExpressionAttributeValues": {
+            ":v1": {"S": "@"},
+            ":v5": {"N": "4"},
+            ":v6": {"N": "3"},
+            ":v8": {"S": "uid"},
+            ":v11": {"S": "bill"}
+        },
+
+        "FilterExpression": "(contains(#n0, :v1))",
+        "ProjectionExpression": "#n2, #n3",
+        "KeyConditionExpression": "(#n4 = :v5)",
+        "ConditionExpression": "((#n4 <= #n3) AND (#n4 = :v6) AND (attribute_not_exists(#n0)) AND (#n3 = :v8))",
+        "UpdateExpression": "SET #n2=:v11 REMOVE #n4, #n0",
+    }
 
 
 @pytest.mark.parametrize("func_name, expression_key", [

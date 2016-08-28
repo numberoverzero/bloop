@@ -264,6 +264,44 @@ def test_ref_path_complex(reference_tracker):
     assert reference_tracker.attr_names == expected_names
 
 
+def test_ref_path_reuse(reference_tracker):
+    """paths are re-used, even across columns"""
+    first = MockColumn("first")
+    second = MockColumn("second")
+    same_path = [3, "foo"]
+
+    expected_first = "#n0[3].#n1"
+    expected_second = "#n2[3].#n1"
+    expected_names = {
+        "#n0": "d_first",
+        "#n1": "foo",
+        "#n2": "d_second"
+    }
+
+    first_ref = reference_tracker._path_ref(first, path=same_path)
+    second_ref = reference_tracker._path_ref(second, path=same_path)
+    assert first_ref == expected_first
+    assert second_ref == expected_second
+    assert reference_tracker.attr_names == expected_names
+
+
+def test_ref_path_periods(reference_tracker):
+    """Path segments with periods aren't de-duped with each individual segment"""
+    column = MockColumn("column")
+    path = ["foo", "foo.bar", "bar"]
+    expected_ref = "#n0.#n1.#n2.#n3"
+    expected_names = {
+        "#n0": "d_column",
+        "#n1": "foo",
+        "#n2": "foo.bar",
+        "#n3": "bar",
+    }
+
+    ref = reference_tracker._path_ref(column, path=path)
+    assert ref == expected_ref
+    assert reference_tracker.attr_names == expected_names
+
+
 # END REFERENCE TRACKER ======================================================================== END REFERENCE TRACKER
 
 

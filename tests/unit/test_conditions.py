@@ -24,7 +24,7 @@ from bloop.conditions import (
     object_saved
 )
 
-from ..helpers.models import User
+from ..helpers.models import Document, User
 
 
 class MockColumn(ComparisonMixin):
@@ -300,6 +300,77 @@ def test_ref_path_periods(reference_tracker):
     ref = reference_tracker._path_ref(column, path=path)
     assert ref == expected_ref
     assert reference_tracker.attr_names == expected_names
+
+
+def test_ref_value(reference_tracker):
+    """no path, value not dumped"""
+    column = User.age
+    value = 3
+
+    expected_ref = ":v0"
+    expected_value = {"N": "3"}
+    expected_values = {
+        ":v0": expected_value
+    }
+
+    ref, value = reference_tracker._value_ref(column, value)
+    assert ref == expected_ref
+    assert value == expected_value
+    assert reference_tracker.attr_values == expected_values
+
+
+def test_ref_value_path(reference_tracker):
+    """has path, value not dumped"""
+    column = Document.data
+    path = ["Description", "Body"]
+    value = "value"
+
+    expected_ref = ":v0"
+    expected_value = {"S": value}
+    expected_values = {
+        ":v0": expected_value
+    }
+
+    ref, value = reference_tracker._value_ref(column, value, path=path)
+    assert ref == expected_ref
+    assert value == expected_value
+    assert reference_tracker.attr_values == expected_values
+
+
+def test_ref_value_dumped(reference_tracker):
+    """no path, value already dumped"""
+    column = Document.id
+    # This shouldn't be dumped, so we use an impossible value for the type
+    dumped_value = object()
+
+    expected_ref = ":v0"
+    expected_values = {
+        ":v0": dumped_value
+    }
+
+    ref, value = reference_tracker._value_ref(column, dumped_value, dumped=True)
+    assert ref == expected_ref
+    assert value == dumped_value
+    assert reference_tracker.attr_values == expected_values
+
+
+def test_ref_value_dumped_path(reference_tracker):
+    """has path, value already dumped"""
+    column = Document.data
+    path = ["Description"]
+    # Description's typedef is Map, wich can't dump an object
+    # This shouldn't be dumped, so we use an impossible value for the type
+    dumped_value = object()
+
+    expected_ref = ":v0"
+    expected_values = {
+        ":v0": dumped_value
+    }
+
+    ref, value = reference_tracker._value_ref(column, dumped_value, dumped=True, path=path)
+    assert ref == expected_ref
+    assert value == dumped_value
+    assert reference_tracker.attr_values == expected_values
 
 
 # END REFERENCE TRACKER ======================================================================== END REFERENCE TRACKER

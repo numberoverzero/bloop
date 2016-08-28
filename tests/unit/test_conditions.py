@@ -525,8 +525,66 @@ def test_render_projection_dedupes_names(renderer):
     renderer.render_projection_expression(columns)
 
     assert renderer.rendered == {
+        "ExpressionAttributeNames": {"#n0": "id", "#n1": "email", "#n2": "age"},
         "ProjectionExpression": "#n0, #n1, #n2",
-        "ExpressionAttributeNames": {"#n0": "id", "#n1": "email", "#n2": "age"}
+    }
+
+
+def test_render_update_no_changes(renderer):
+    """When there aren't any marked *non-key* columns on an object, there's no update expression"""
+    user = User(id="user_id")
+    renderer.render_update_expression(user)
+    assert not renderer.rendered
+
+
+def test_render_update_set_only(renderer):
+    """Only updates are where values were set (none of the values were None or rendered as None)"""
+    user = User(email="@", age=3)
+    renderer.render_update_expression(user)
+    assert renderer.rendered == {
+        "ExpressionAttributeNames": {"#n0": "age", "#n2": "email"},
+        "ExpressionAttributeValues": {":v1": {"N": "3"}, ":v3": {"S": "@"}},
+        "UpdateExpression": "SET #n0=:v1, #n2=:v3",
+    }
+
+
+def test_render_update_remove_only(renderer):
+    """Only updates were del'd values, values set to None, or values that render as None"""
+    document = Document()
+    # Renders as None
+    document.data = dict()
+    # Deleted, even though it wasn't set
+    with pytest.raises(AttributeError):
+        del document.numbers
+    # Explicit None
+    document.value = None
+
+    renderer.render_update_expression(document)
+    assert renderer.rendered == {
+        "ExpressionAttributeNames": {"#n0": "data", "#n2": "numbers", "#n4": "value"},
+        "UpdateExpression": "REMOVE #n0, #n2, #n4",
+    }
+
+
+def test_render_update_set_and_remove(renderer):
+    """Some values set, some values removed"""
+    document = Document()
+    # Renders as None -> removed
+    document.data = dict()
+    # Deleted, even though it wasn't set
+    with pytest.raises(AttributeError):
+        del document.numbers
+    # Both set
+    document.value = 3
+    document.another_value = 4
+
+    renderer.render_update_expression(document)
+    # Ordering is alphabetical by model name: another_value, data, numbers, value
+    # REMOVE statements will cause a skip in index (because value renders empty and pops the ref)
+    assert renderer.rendered == {
+        "ExpressionAttributeNames": {"#n0": "another_value", "#n2": "data", "#n4": "numbers", "#n6": "value"},
+        "ExpressionAttributeValues": {":v1": {"N": "4"}, ":v7": {"N": "3"}},
+        "UpdateExpression": "SET #n0=:v1, #n6=:v7 REMOVE #n2, #n4",
     }
 
 

@@ -341,6 +341,7 @@ def test_ref_value_dumped(reference_tracker):
     expected_values = {":v0": dumped_value}
 
     ref, value = reference_tracker._value_ref(column, dumped_value, dumped=True)
+
     assert ref == expected_ref
     assert value == dumped_value
     assert reference_tracker.attr_values == expected_values
@@ -356,6 +357,7 @@ def test_ref_value_dumped_path(reference_tracker):
     expected_values = {":v0": dumped_value}
 
     ref, value = reference_tracker._value_ref(column, dumped_value, dumped=True)
+
     assert ref == expected_ref
     assert value == dumped_value
     assert reference_tracker.attr_values == expected_values
@@ -372,6 +374,7 @@ def test_ref_any_column_name(reference_tracker):
     }
 
     ref = reference_tracker.any_ref(column=column)
+
     assert ref == expected_ref
     assert reference_tracker.attr_names == expected_names
 
@@ -391,9 +394,23 @@ def test_ref_any_value_is_column(reference_tracker):
     }
 
     ref = reference_tracker.any_ref(column=column, value=value)
+
     assert ref == expected_ref
     assert reference_tracker.attr_names == expected_names
 
+
+def test_ref_any_value_not_column(reference_tracker):
+    """Render a reference to a regular value"""
+    column = Document.id
+    value = 3
+    expected_value = {"N": "3"}
+    expected_ref = Reference(name=":v0", type="value", value=expected_value)
+    expected_values = {":v0": expected_value}
+
+    ref = reference_tracker.any_ref(column=column, value=value)
+
+    assert ref == expected_ref
+    assert reference_tracker.attr_values == expected_values
 
 # END REFERENCE TRACKER ======================================================================== END REFERENCE TRACKER
 

@@ -106,16 +106,6 @@ def get_marked(obj):
 # RENDERING ================================================================================================ RENDERING
 
 
-def render(engine, obj=None, filter=None, projection=None, key=None, atomic=None, condition=None, update=None):
-    renderer = ConditionRenderer(engine)
-    renderer.render(
-        obj=obj, condition=condition,
-        atomic=atomic, update=update,
-        filter=filter, projection=projection, key=key,
-    )
-    return renderer.rendered
-
-
 Reference = NamedTuple("Reference", [("name", str), ("type", str), ("value", Any)])
 
 
@@ -225,6 +215,16 @@ class ReferenceTracker:
                     del self.name_attr_index[path_segment]
 
 
+def render(engine, obj=None, filter=None, projection=None, key=None, atomic=None, condition=None, update=None):
+    renderer = ConditionRenderer(engine)
+    renderer.render(
+        obj=obj, condition=condition,
+        atomic=atomic, update=update,
+        filter=filter, projection=projection, key=key,
+    )
+    return renderer.rendered
+
+
 class ConditionRenderer:
     def __init__(self, engine):
         self.refs = ReferenceTracker(engine)
@@ -299,6 +299,7 @@ class ConditionRenderer:
 
 
 # END RENDERING ======================================================================================== END RENDERING
+
 
 # CONDITIONS ============================================================================================== CONDITIONS
 

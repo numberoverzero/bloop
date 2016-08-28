@@ -1062,13 +1062,52 @@ def test_render_valid_condition(condition, as_str, expected_names, expected_valu
     User.age.in_(3, None),
     User.age.in_(None, None),
     # Not literal None, but becomes None
-    Document.data <= dict()
+    Document.data <= dict(),
+
+    # Empty meta conditions
+    AndCondition(),
+    OrCondition()
 ])
 def test_render_invalid_condition(condition, renderer):
     """After a condition fails to render, all of its name and value refs should be popped."""
     with pytest.raises(InvalidCondition):
         condition.render(renderer)
     assert not renderer.rendered
+
+
+def test_render_nested_meta_condition(renderer):
+    """Test meta conditions AND, OR, NOT"""
+    has_name = User.name.is_not(None)
+    is_foo = User.name == "foo"
+    is_3 = User.age != 3
+    is_email_address = User.email.contains("@")
+
+    # There's no ref with '1' because the first equality condition (is_not) renders a value ref, and then pops it.
+    expected = "(((attribute_exists(#n0)) AND (#n0 = :v2)) OR (NOT (#n3 <> :v4)) OR (contains(#n5, :v6)))"
+    expected_names = {"#n0": "name", "#n3": "age", "#n5": "email"}
+    expected_values = {":v2": {"S": "foo"}, ":v4": {"N": "3"}, ":v6": {"S": "@"}}
+
+    condition = (has_name & is_foo) | (~is_3) | is_email_address
+    assert condition.render(renderer) == expected
+    assert renderer.rendered == {
+        "ExpressionAttributeNames": expected_names,
+        "ExpressionAttributeValues": expected_values
+    }
+
+
+@pytest.mark.parametrize("condition_cls", [AndCondition, OrCondition])
+def test_render_and_or_simplify(condition_cls, renderer):
+    """When AND/OR have exactly one condition, they only render that condition (without an AND/OR)"""
+    inner = User.age < 3
+    condition = condition_cls(inner)
+    expected = "(#n0 < :v1)"
+
+    assert condition.render(renderer) == expected
+    assert renderer.rendered == {
+        "ExpressionAttributeNames": {"#n0": "age"},
+        "ExpressionAttributeValues": {":v1": {"N": "3"}}
+    }
+
 
 # END CONDITIONS ====================================================================================== END CONDITIONS
 

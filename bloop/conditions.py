@@ -486,9 +486,9 @@ class AndCondition(BaseCondition):
             return "({})".format(joiner.join(repr(c) for c in self.values))
 
     def render(self, renderer: ConditionRenderer):
-        rendered_conditions = [c.render(renderer) for c in self.values]
-        if not rendered_conditions:
+        if not self.values:
             raise InvalidCondition("Invalid Condition: <{!r}> does not contain any Conditions.".format(self))
+        rendered_conditions = [c.render(renderer) for c in self.values]
         if len(rendered_conditions) == 1:
             return rendered_conditions[0]
         return "({})".format(" AND ".join(rendered_conditions))
@@ -511,12 +511,12 @@ class OrCondition(BaseCondition):
             return "({})".format(joiner.join(repr(c) for c in self.values))
 
     def render(self, renderer: ConditionRenderer):
-        rendered_conditions = [c.render(renderer) for c in self.values]
-        if not rendered_conditions:
+        if not self.values:
             raise InvalidCondition("Invalid Condition: <{!r}> does not contain any Conditions.".format(self))
+        rendered_conditions = [c.render(renderer) for c in self.values]
         if len(rendered_conditions) == 1:
             return rendered_conditions[0]
-        return "({})".format(" AND ".join(rendered_conditions))
+        return "({})".format(" OR ".join(rendered_conditions))
 
 
 class NotCondition(BaseCondition):
@@ -531,8 +531,6 @@ class NotCondition(BaseCondition):
 
     def render(self, renderer: ConditionRenderer):
         rendered_condition = self.values[0].render(renderer)
-        if rendered_condition is None:
-            raise InvalidCondition("Invalid Condition: 'not' condition does not contain an inner Condition.")
         return "(NOT {})".format(rendered_condition)
 
 

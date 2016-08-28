@@ -2,6 +2,7 @@ import operator
 import pytest
 
 from bloop.conditions import (
+    ConditionRenderer,
     ComparisonMixin,
     BaseCondition,
     Condition,
@@ -100,6 +101,11 @@ def empty_conditions():
 @pytest.fixture
 def reference_tracker(engine):
     return ReferenceTracker(engine)
+
+
+@pytest.fixture
+def renderer(engine):
+    return ConditionRenderer(engine)
 
 
 # TRACKING SIGNALS ================================================================================== TRACKING SIGNALS
@@ -982,6 +988,59 @@ def test_eq_one_wrong_field(other):
 def test_eq_values_mismatch(other):
     condition = BaseCondition("op", values=[c, "x"])
     assert not (condition == other)
+
+
+# CONDITIONS RENDER ================================================================================ CONDITIONS RENDER
+
+
+@pytest.mark.parametrize("condition, as_str, expected_names, expected_values", [
+    # Comparison - all operations
+    (User.age == 3, "(#n0 = :v1)", {"#n0": "age"}, {":v1": {"N": "3"}}),
+    (User.age != 3, "(#n0 <> :v1)", {"#n0": "age"}, {":v1": {"N": "3"}}),
+    (User.age < 3, "(#n0 < :v1)", {"#n0": "age"}, {":v1": {"N": "3"}}),
+    (User.age > 3, "(#n0 > :v1)", {"#n0": "age"}, {":v1": {"N": "3"}}),
+    (User.age <= 3, "(#n0 <= :v1)", {"#n0": "age"}, {":v1": {"N": "3"}}),
+    (User.age >= 3, "(#n0 >= :v1)", {"#n0": "age"}, {":v1": {"N": "3"}}),
+
+    # Comparison - against None -> attribute_* functions
+    (User.age.is_(None), "(attribute_not_exists(#n0))", {"#n0": "age"}, None),
+    (User.age.is_not(None), "(attribute_exists(#n0))", {"#n0": "age"}, None),
+
+    # Comparison - against things that become None -> attribute_* functions
+    (Document.data == dict(), "(attribute_not_exists(#n0))", {"#n0": "data"}, None),
+    (Document.data != dict(), "(attribute_exists(#n0))", {"#n0": "data"}, None),
+
+    # Comparison - against another Column
+    (User.name == User.email, "(#n0 = #n1)", {"#n0": "name", "#n1": "email"}, None),
+
+    # BeginsWith - against value, Column
+    (User.name.begins_with("foo"), "(begins_with(#n0, :v1))", {"#n0": "name"}, {":v1": {"S": "foo"}}),
+    (User.name.begins_with(User.email), "(begins_with(#n0, #n1))", {"#n0": "name", "#n1": "email"}, None),
+
+    # Between - against value, Column
+    (User.age.between(3, 4), "(#n0 BETWEEN :v1 AND :v2)", {"#n0": "age"}, {":v1": {"N": "3"}, ":v2": {"N": "4"}}),
+    (User.age.between(3, User.age), "(#n0 BETWEEN :v1 AND #n0)", {"#n0": "age"}, {":v1": {"N": "3"}}),
+    (User.age.between(User.age, 4), "(#n0 BETWEEN #n0 AND :v1)", {"#n0": "age"}, {":v1": {"N": "4"}}),
+
+    # Contains - against value, Column
+    (User.name.contains("foo"), "(contains(#n0, :v1))", {"#n0": "name"}, {":v1": {"S": "foo"}}),
+    (User.name.contains(User.email), "(contains(#n0, #n1))", {"#n0": "name", "#n1": "email"}, None),
+
+    # In - mixed values, Column
+    (User.age.in_(3, User.age, 4), "(#n1 IN (:v0, #n1, :v2))", {"#n1": "age"}, {":v0": {"N": "3"}, ":v2": {"N": "4"}})
+])
+def test_render_valid_condition(condition, as_str, expected_names, expected_values, renderer):
+    assert condition.render(renderer) == as_str
+
+    if expected_names:
+        assert renderer.rendered["ExpressionAttributeNames"] == expected_names
+    else:
+        assert "ExpressionAttributeNames" not in renderer.rendered
+
+    if expected_values:
+        assert renderer.rendered["ExpressionAttributeValues"] == expected_values
+    else:
+        assert "ExpressionAttributeValues" not in renderer.rendered
 
 
 # END CONDITIONS ====================================================================================== END CONDITIONS

@@ -611,9 +611,9 @@ class BetweenCondition(BaseCondition):
     def render(self, renderer: ConditionRenderer):
         column_ref = renderer.refs.any_ref(
             column=self.column, dumped=self.dumped)
-        lower_ref, = renderer.refs.any_ref(
+        lower_ref = renderer.refs.any_ref(
             column=self.column, dumped=self.dumped, value=self.values[0])
-        upper_ref, = renderer.refs.any_ref(
+        upper_ref = renderer.refs.any_ref(
             column=self.column, dumped=self.dumped, value=self.values[1])
         if is_empty(lower_ref) or is_empty(upper_ref):
             # Try to revert the renderer to a valid state

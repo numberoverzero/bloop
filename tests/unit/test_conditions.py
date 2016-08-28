@@ -233,6 +233,7 @@ def test_ref_same_name(reference_tracker):
     assert ref == same_ref == expected_ref
     assert reference_tracker.attr_names[ref] == name
     assert reference_tracker.name_attr_index[name] == ref
+    assert reference_tracker.counts[ref] == 2
 
 
 def test_ref_path_empty(reference_tracker):
@@ -246,6 +247,7 @@ def test_ref_path_empty(reference_tracker):
     assert ref == expected_ref
     assert reference_tracker.attr_names[ref] == expected_name
     assert reference_tracker.name_attr_index[expected_name] == ref
+    assert reference_tracker.counts[ref] == 1
 
 
 def test_ref_path_complex(reference_tracker):
@@ -411,6 +413,80 @@ def test_ref_any_value_not_column(reference_tracker):
 
     assert ref == expected_ref
     assert reference_tracker.attr_values == expected_values
+
+
+def test_ref_pop_none(reference_tracker):
+    """pop_refs without args doesn't pop any refs"""
+    # Add a name and value ref so we can make sure nothing is cleared
+    name = reference_tracker.any_ref(column=Document.id).name
+    value = reference_tracker.any_ref(column=Document.id, value=3).name
+
+    reference_tracker.pop_refs()
+
+    assert name in reference_tracker.attr_names
+    assert value in reference_tracker.attr_values
+
+
+def test_ref_pop_unknown(reference_tracker):
+    """Popping an unknown ref doesn't do anything"""
+    # Add a name and value ref so we can make sure nothing is cleared
+    name = reference_tracker.any_ref(column=Document.id).name
+    value = reference_tracker.any_ref(column=Document.id, value=3).name
+
+    unknown_name_ref = Reference(name="foo", type="value", value=None)
+    unknown_value_ref = Reference(name="bar", type="name", value=None)
+    reference_tracker.pop_refs(unknown_name_ref, unknown_value_ref)
+
+    assert name in reference_tracker.attr_names
+    assert value in reference_tracker.attr_values
+
+
+def test_ref_pop_name(reference_tracker):
+    """References aren't removed until they're popped as many times as they're used"""
+    name_ref = reference_tracker.any_ref(column=Document.id)
+    same_name_ref = reference_tracker.any_ref(column=Document.id)
+    assert reference_tracker.counts[name_ref.name] == 2
+
+    # Still in attr_names, name_attr_index
+    reference_tracker.pop_refs(same_name_ref)
+    assert reference_tracker.counts[name_ref.name] == 1
+    assert reference_tracker.attr_names[name_ref.name] == "id"
+    assert reference_tracker.name_attr_index["id"] == name_ref.name
+
+    # Not in attr_names, name_attr_index
+    reference_tracker.pop_refs(same_name_ref)
+    assert reference_tracker.counts[name_ref.name] == 0
+    assert name_ref.name not in reference_tracker.attr_names
+    assert "id" not in reference_tracker.name_attr_index
+
+    # Count doesn't go below 0
+    reference_tracker.pop_refs(name_ref)
+    assert reference_tracker.counts[name_ref.name] == 0
+
+
+def test_ref_pop_value(reference_tracker):
+    """Same pop test, for values"""
+    value_ref = reference_tracker.any_ref(column=Document.id, value=3)
+    # Have to fake this out a bit, because there's no de-duping for values
+    # This test exists to guard incorrect pop behavior, in case values are
+    # ever de-duped.
+    reference_tracker.counts[value_ref.name] += 1
+    assert reference_tracker.counts[value_ref.name] == 2
+
+    # Still in attr_names, name_attr_index
+    reference_tracker.pop_refs(value_ref)
+    assert reference_tracker.counts[value_ref.name] == 1
+    assert reference_tracker.attr_values[value_ref.name] == {"N": "3"}
+
+    # Not in attr_names, name_attr_index
+    reference_tracker.pop_refs(value_ref)
+    assert reference_tracker.counts[value_ref.name] == 0
+    assert value_ref.name not in reference_tracker.attr_values
+
+    # Count doesn't go below 0
+    reference_tracker.pop_refs(value_ref)
+    assert reference_tracker.counts[value_ref.name] == 0
+
 
 # END REFERENCE TRACKER ======================================================================== END REFERENCE TRACKER
 

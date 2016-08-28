@@ -215,6 +215,7 @@ class ReferenceTracker:
                 self.counts[name] -= 1
             # Last reference, time to remove it from an index (or two)
             else:  # count == 1
+                self.counts[name] -= 1
                 if ref.type == "value":
                     del self.attr_values[name]
                 else:  # type == "name"

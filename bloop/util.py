@@ -39,7 +39,8 @@ def printable_column_name(column, path=None):
 
     User.name[3]["foo"][0]["bar"] -> name[3].foo[0].bar"""
     pieces = [column.model_name]
-    for segment in (path or []):
+    path = path or column._path or []
+    for segment in path:
         if isinstance(segment, str):
             pieces.append(segment)
         else:

@@ -8,6 +8,7 @@ from bloop.conditions import (
     AndCondition,
     OrCondition,
     NotCondition,
+    ReferenceTracker,
     BeginsWithCondition,
     BetweenCondition,
     ComparisonCondition,
@@ -27,11 +28,14 @@ from ..helpers.models import User
 
 
 class MockColumn(ComparisonMixin):
-    """Has a repr for testing condition reprs"""
+    """model, model_name, dynamo_name, __repr__"""
     def __init__(self, name):
-        self.model_name = name
         # Mock model so this can render as M.name
         self.model = type("M", tuple(), {})
+
+        self.model_name = name
+        self.dynamo_name = "d_" + name
+
         super().__init__()
 
     def _repr_with_path(self, path):
@@ -90,6 +94,11 @@ def meta_conditions():
 
 def empty_conditions():
     return [Condition(), AndCondition(), OrCondition(), NotCondition(Condition())]
+
+
+@pytest.fixture
+def reference_tracker(engine):
+    return ReferenceTracker(engine)
 
 
 # TRACKING SIGNALS ================================================================================== TRACKING SIGNALS
@@ -201,6 +210,61 @@ def test_on_saved(engine):
 
 
 # END TRACKING SIGNALS ========================================================================== END TRACKING SIGNALS
+
+
+# REFERENCE TRACKER ================================================================================ REFERENCE TRACKER
+
+
+def test_ref_index_always_increments(reference_tracker):
+    """Don't risk forgetting to increment it - ALWAYS increment after getting."""
+    assert reference_tracker.next_index == 0
+    assert reference_tracker.next_index == 1
+
+
+def test_ref_same_name(reference_tracker):
+    """Don't create two references for the same name string"""
+    name = "foo"
+    expected_ref = "#n0"
+
+    ref = reference_tracker._name_ref(name)
+    same_ref = reference_tracker._name_ref(name)
+
+    assert ref == same_ref == expected_ref
+    assert reference_tracker.attr_names[ref] == name
+    assert reference_tracker.name_attr_index[name] == ref
+
+
+def test_ref_path_empty(reference_tracker):
+    """Path reference without a path (column only) is just a name ref"""
+    column = MockColumn("column")
+    expected_name = "d_column"
+    expected_ref = "#n0"
+
+    ref = reference_tracker._path_ref(column)
+    assert ref == expected_ref
+    assert reference_tracker.attr_names[ref] == expected_name
+    assert reference_tracker.name_attr_index[expected_name] == ref
+
+
+def test_ref_path_complex(reference_tracker):
+    """Path reference with integer and string indexes.  Strings include duplicates and literal periods."""
+    column = MockColumn("column")
+    path = ["foo", 3, 4, "repeat", "has.period", "repeat"]
+    expected_ref = "#n0.#n1[3][4].#n2.#n3.#n2"
+
+    expected_names = {
+        "#n0": "d_column",
+        "#n1": "foo",
+        "#n2": "repeat",
+        "#n3": "has.period"
+    }
+
+    ref = reference_tracker._path_ref(column, path=path)
+    assert ref == expected_ref
+    assert reference_tracker.attr_names == expected_names
+
+
+# END REFERENCE TRACKER ======================================================================== END REFERENCE TRACKER
 
 
 # CONDITIONS ============================================================================================== CONDITIONS

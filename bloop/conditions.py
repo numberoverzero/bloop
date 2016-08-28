@@ -124,9 +124,9 @@ def is_empty(ref: Reference):
     return ref.type == "value" and ref.value is None
 
 
-class RefTracker:
+class ReferenceTracker:
     def __init__(self, engine):
-        self._ref_index = 0
+        self._next_index = 0
         self.counts = collections.defaultdict(lambda: 0)
         self.attr_values = {}
         self.attr_names = {}
@@ -135,10 +135,10 @@ class RefTracker:
         self.engine = engine
 
     @property
-    def ref_index(self):
+    def next_index(self):
         """Prevent the ref index from *ever* decreasing and causing a collision."""
-        current = self._ref_index
-        self._ref_index += 1
+        current = self._next_index
+        self._next_index += 1
         return current
 
     def _name_ref(self, name):
@@ -148,7 +148,7 @@ class RefTracker:
             self.counts[ref] += 1
             return ref
 
-        ref = "#n{}".format(self.ref_index)
+        ref = "#n{}".format(self.next_index)
         self.attr_names[ref] = name
         self.name_attr_index[name] = ref
         self.counts[ref] += 1
@@ -168,7 +168,7 @@ class RefTracker:
         return ".".join(str_pieces)
 
     def _value_ref(self, column, value, *, dumped=False, path=None):
-        ref = ":v{}".format(self.ref_index)
+        ref = ":v{}".format(self.next_index)
 
         # Need to dump this value
         if not dumped:
@@ -226,7 +226,7 @@ class RefTracker:
 
 class ConditionRenderer:
     def __init__(self, engine):
-        self.refs = RefTracker(engine)
+        self.refs = ReferenceTracker(engine)
         self.engine = engine
         self.expressions = {}
 

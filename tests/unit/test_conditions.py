@@ -376,8 +376,7 @@ def test_ref_value_dumped_path(reference_tracker):
 
 def test_ref_any_column_name(reference_tracker):
     """Render a reference to the column name (and path) when there's no value"""
-    column = Document.data
-    path = ["Description", "Body"]
+    column = Document.data["Description"]["Body"]
 
     expected_ref = Reference(name="#n0.#n1.#n2", type="name", value=None)
     expected_names = {
@@ -386,15 +385,14 @@ def test_ref_any_column_name(reference_tracker):
         "#n2": "Body"
     }
 
-    ref = reference_tracker.any_ref(column=column, path=path)
+    ref = reference_tracker.any_ref(column=column)
     assert ref == expected_ref
     assert reference_tracker.attr_names == expected_names
 
 
 def test_ref_any_value_is_column(reference_tracker):
     """Render a reference to a value that is also a column"""
-    column = Document.id
-    column_path = ["Description", "Rating"]
+    column = Document.id["Description"]["Rating"]
 
     # value has its own path
     value = Document.data["Description"]["Body"]
@@ -406,7 +404,7 @@ def test_ref_any_value_is_column(reference_tracker):
         "#n2": "Body"
     }
 
-    ref = reference_tracker.any_ref(column=column, path=column_path, value=value)
+    ref = reference_tracker.any_ref(column=column, value=value)
     assert ref == expected_ref
     assert reference_tracker.attr_names == expected_names
 
@@ -880,15 +878,17 @@ def test_eq_wrong_type():
 
 
 @pytest.mark.parametrize("other", [
-    BaseCondition("op", values=list("xy"), column=c, path=["wrong", "path"]),
-    BaseCondition("??", values=list("xy"), column=c, path=["foo", "bar"]),
-    BaseCondition("op", values=list("xy"), column=None, path=["foo", "bar"]),
-    BaseCondition("op", values=list("xyz"), column=c, path=["foo", "bar"]),
-    BaseCondition("op", values=list("yx"), column=c, path=["foo", "bar"]),
+    BaseCondition("op", values=list("xy"), column=c["wrong"]["path"]),
+    BaseCondition("??", values=list("xy"), column=c["foo"]["bar"]),
+    BaseCondition("op", values=list("xy"), column=None),
+    # Need to attach a path to the wrong proxy object
+    BaseCondition("op", values=list("xy"), column=ComparisonMixin(proxied=None, path=["foo", "bar"])),
+    BaseCondition("op", values=list("xyz"), column=c["foo"]["bar"]),
+    BaseCondition("op", values=list("yx"), column=c["foo"]["bar"]),
 ])
 def test_eq_one_wrong_field(other):
     """All four of operation, value, column, and path must match"""
-    self = BaseCondition("op", values=list("xy"), column=c, path=["foo", "bar"])
+    self = BaseCondition("op", values=list("xy"), column=c["foo"]["bar"])
     assert not (self == other)
 
 
@@ -944,15 +944,13 @@ def test_mixin_getattr_delegates():
 
 def test_mixin_path_chaining():
     """No depth limit to the chained path"""
-    self = ComparisonMixin()
+    obj = ComparisonMixin()
 
     for i in range(10):
-        self = self[i]
-        self = self[str(i)]
+        obj = obj[i]
+        obj = obj[str(i)]
 
-    # Render to condition to inspect the path attribute
-    condition = self.is_(None)
-    assert len(condition.path) == 20
+    assert len(obj._path) == 20
 
 
 @pytest.mark.parametrize("op, expected", [

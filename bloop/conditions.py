@@ -181,12 +181,12 @@ class ReferenceTracker:
         self.counts[ref] += 1
         return ref, value
 
-    def any_ref(self, *, column=None, path=None, value=missing, dumped=False) -> Reference:
+    def any_ref(self, *, column=None, value=missing, dumped=False) -> Reference:
         """Returns {"type": Union["name", "value"], "ref": str, "value": Optional[Any]}"""
         # Can't use None since it's a legal value for comparisons (attribute_not_exists)
         if value is missing:
             # Simple path ref to the column.
-            name = self._path_ref(column=column, path=path)
+            name = self._path_ref(column=column._proxied, path=column._path)
             ref_type = "name"
             value = None
         elif isinstance(value, ComparisonMixin):
@@ -196,7 +196,7 @@ class ReferenceTracker:
             value = None
         else:
             # Simple value ref.
-            name, value = self._value_ref(column=column, value=value, dumped=dumped, path=path)
+            name, value = self._value_ref(column=column._proxied, value=value, dumped=dumped, path=column._path)
             ref_type = "value"
         return Reference(name=name, type=ref_type, value=value)
 
@@ -303,11 +303,10 @@ class ConditionRenderer:
 
 
 class BaseCondition:
-    def __init__(self, operation, *, column=None, path=None, values=None, dumped=False):
+    def __init__(self, operation, *, column=None, values=None, dumped=False):
         self.operation = operation
         self.column = column
         self.values = list(values or [])
-        self.path = list(path or [])
         self.dumped = dumped
 
     __hash__ = object.__hash__
@@ -423,14 +422,18 @@ class BaseCondition:
     def __eq__(self, other):
         if self is other:
             return True
-        try:
-            if (
-                    (self.operation != other.operation) or
-                    (self.column is not other.column) or
-                    (self.path != other.path)):
-                return False
-        except AttributeError:
+        if not isinstance(other, BaseCondition):
             return False
+        if self.operation != other.operation:
+            return False
+        if isinstance(self.column, ComparisonMixin) != isinstance(other.column, ComparisonMixin):
+            return False
+        # If one isn't None, neither is None
+        if self.column is not None:
+            if self.column._proxied is not other.column._proxied:
+                return False
+            if self.column._path != other.column._path:
+                return False
         # Can't use a straight list == list because
         # values could contain columns, which will break equality.
         # Can't use 'is' either, since it won't work for non-column
@@ -533,22 +536,22 @@ class NotCondition(BaseCondition):
 
 
 class ComparisonCondition(BaseCondition):
-    def __init__(self, operation, column, value, path=None):
-        super().__init__(operation=operation, column=column, values=[value], path=path)
+    def __init__(self, operation, column, value):
+        super().__init__(operation=operation, column=column, values=[value])
 
     def __len__(self):
         return 1
 
     def __repr__(self):
         return "({}.{} {} {!r})".format(
-            self.column.model.__name__, printable_column_name(self.column, self.path),
+            self.column.model.__name__, printable_column_name(self.column),
             self.operation, self.values[0])
 
     def render(self, renderer: ConditionRenderer):
         column_ref = renderer.refs.any_ref(
-            column=self.column, path=self.path, dumped=self.dumped)
+            column=self.column, dumped=self.dumped)
         value_ref = renderer.refs.any_ref(
-            column=self.column, path=self.path, dumped=self.dumped, value=self.values[0])
+            column=self.column, dumped=self.dumped, value=self.values[0])
 
         # #n0 >= :v1
         # Comparison against another column, or comparison against non-None value
@@ -569,22 +572,22 @@ class ComparisonCondition(BaseCondition):
 
 
 class BeginsWithCondition(BaseCondition):
-    def __init__(self, column, value, path=None):
-        super().__init__("begins_with", column=column, values=[value], path=path)
+    def __init__(self, column, value):
+        super().__init__("begins_with", column=column, values=[value])
 
     def __len__(self):
         return 1
 
     def __repr__(self):
         return "begins_with({}.{}, {!r})".format(
-            self.column.model.__name__, printable_column_name(self.column, self.path),
+            self.column.model.__name__, printable_column_name(self.column),
             self.values[0])
 
     def render(self, renderer: ConditionRenderer):
         column_ref = renderer.refs.any_ref(
-            column=self.column, path=self.path, dumped=self.dumped)
+            column=self.column, dumped=self.dumped)
         value_ref = renderer.refs.any_ref(
-            column=self.column, path=self.path, dumped=self.dumped, value=self.values[0])
+            column=self.column, dumped=self.dumped, value=self.values[0])
         if is_empty(value_ref):
             # Try to revert the renderer to a valid state
             renderer.refs.pop_refs(column_ref, value_ref)
@@ -593,24 +596,24 @@ class BeginsWithCondition(BaseCondition):
 
 
 class BetweenCondition(BaseCondition):
-    def __init__(self, column, lower, upper, path=None):
-        super().__init__("between", column=column, values=[lower, upper], path=path)
+    def __init__(self, column, lower, upper):
+        super().__init__("between", column=column, values=[lower, upper])
 
     def __len__(self):
         return 1
 
     def __repr__(self):
         return "({}.{} between [{!r}, {!r}])".format(
-            self.column.model.__name__, printable_column_name(self.column, self.path),
+            self.column.model.__name__, printable_column_name(self.column),
             self.values[0], self.values[1])
 
     def render(self, renderer: ConditionRenderer):
         column_ref = renderer.refs.any_ref(
-            column=self.column, path=self.path, dumped=self.dumped)
+            column=self.column, dumped=self.dumped)
         lower_ref, = renderer.refs.any_ref(
-            column=self.column, path=self.path, dumped=self.dumped, value=self.values[0])
+            column=self.column, dumped=self.dumped, value=self.values[0])
         upper_ref, = renderer.refs.any_ref(
-            column=self.column, path=self.path, dumped=self.dumped, value=self.values[1])
+            column=self.column, dumped=self.dumped, value=self.values[1])
         if is_empty(lower_ref) or is_empty(upper_ref):
             # Try to revert the renderer to a valid state
             renderer.refs.pop_refs(column_ref, lower_ref, upper_ref)
@@ -619,22 +622,22 @@ class BetweenCondition(BaseCondition):
 
 
 class ContainsCondition(BaseCondition):
-    def __init__(self, column, value, path=None):
-        super().__init__("contains", column=column, values=[value], path=path)
+    def __init__(self, column, value):
+        super().__init__("contains", column=column, values=[value])
 
     def __len__(self):
         return 1
 
     def __repr__(self):
         return "contains({}.{}, {!r})".format(
-            self.column.model.__name__, printable_column_name(self.column, self.path),
+            self.column.model.__name__, printable_column_name(self.column),
             self.values[0])
 
     def render(self, renderer: ConditionRenderer):
         column_ref = renderer.refs.any_ref(
-            column=self.column, path=self.path, dumped=self.dumped)
+            column=self.column, dumped=self.dumped)
         value_ref = renderer.refs.any_ref(
-            column=self.column, path=self.path, dumped=self.dumped, value=self.values[0])
+            column=self.column, dumped=self.dumped, value=self.values[0])
         if is_empty(value_ref):
             # Try to revert the renderer to a valid state
             renderer.refs.pop_refs(column_ref, value_ref)
@@ -643,15 +646,15 @@ class ContainsCondition(BaseCondition):
 
 
 class InCondition(BaseCondition):
-    def __init__(self, column, values, path=None):
-        super().__init__("in", column=column, values=values, path=path)
+    def __init__(self, column, values):
+        super().__init__("in", column=column, values=values)
 
     def __len__(self):
         return 1
 
     def __repr__(self):
         return "({}.{} in {!r})".format(
-            self.column.model.__name__, printable_column_name(self.column, self.path),
+            self.column.model.__name__, printable_column_name(self.column),
             self.values)
 
     def render(self, renderer: ConditionRenderer):
@@ -660,13 +663,13 @@ class InCondition(BaseCondition):
         value_refs = []
         for value in self.values:
             value_ref = renderer.refs.any_ref(
-                column=self.column, path=self.path, dumped=self.dumped, value=value)
+                column=self.column, dumped=self.dumped, value=value)
             value_refs.append(value_ref)
             if is_empty(value_ref):
                 renderer.refs.pop_refs(*value_refs)
                 raise InvalidCondition("Condition <{!r}> includes the value None.".format(self))
         column_ref = renderer.refs.any_ref(
-            column=self.column, path=self.path, dumped=self.dumped)
+            column=self.column, dumped=self.dumped)
         return "({} IN ({}))".format(column_ref.name, ", ".join(ref.name for ref in value_refs))
 
 
@@ -683,6 +686,9 @@ class ComparisonMixin:
         return "<ComparisonMixin>"
 
     def __repr__(self):
+        # Need to delegate the __repr__ to the proxied object, BUT
+        # that object won't have the path that this proxy does.
+        # So, push this path into the proxy's repr
         return self._proxied._repr_with_path(self._path)
 
     def __getattr__(self, item):
@@ -694,34 +700,34 @@ class ComparisonMixin:
         return ComparisonMixin(proxied=self._proxied, path=self._path + [path])
 
     def __eq__(self, value):
-        return ComparisonCondition(operation="==", column=self._proxied, value=value, path=self._path)
+        return ComparisonCondition(operation="==", column=self, value=value)
 
     def __ne__(self, value):
-        return ComparisonCondition(operation="!=", column=self._proxied, value=value, path=self._path)
+        return ComparisonCondition(operation="!=", column=self, value=value)
 
     def __lt__(self, value):
-        return ComparisonCondition(operation="<", column=self._proxied, value=value, path=self._path)
+        return ComparisonCondition(operation="<", column=self, value=value)
 
     def __gt__(self, value):
-        return ComparisonCondition(operation=">", column=self._proxied, value=value, path=self._path)
+        return ComparisonCondition(operation=">", column=self, value=value)
 
     def __le__(self, value):
-        return ComparisonCondition(operation="<=", column=self._proxied, value=value, path=self._path)
+        return ComparisonCondition(operation="<=", column=self, value=value)
 
     def __ge__(self, value):
-        return ComparisonCondition(operation=">=", column=self._proxied, value=value, path=self._path)
+        return ComparisonCondition(operation=">=", column=self, value=value)
 
     def begins_with(self, value):
-        return BeginsWithCondition(column=self._proxied, value=value, path=self._path)
+        return BeginsWithCondition(column=self, value=value)
 
     def between(self, lower, upper):
-        return BetweenCondition(column=self._proxied, lower=lower, upper=upper, path=self._path)
+        return BetweenCondition(column=self, lower=lower, upper=upper)
 
     def contains(self, value):
-        return ContainsCondition(column=self._proxied, value=value, path=self._path)
+        return ContainsCondition(column=self, value=value)
 
     def in_(self, *values):
-        return InCondition(column=self._proxied, values=values, path=self._path)
+        return InCondition(column=self, values=values)
 
     is_ = __eq__
 

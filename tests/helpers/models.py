@@ -32,10 +32,12 @@ class Document(BaseModel):
     id = Column(Integer, hash_key=True)
     data = Column(DocumentType)
     numbers = Column(List(Integer))
+    value = Column(Float)
+    another_value = Column(Float)
 
 
 class User(BaseModel):
-    id = Column(UUID, hash_key=True)
+    id = Column(String, hash_key=True)
     age = Column(Integer)
     name = Column(String)
     email = Column(String)

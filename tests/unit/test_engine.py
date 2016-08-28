@@ -1,4 +1,3 @@
-import uuid
 from unittest.mock import Mock
 
 import arrow
@@ -37,7 +36,7 @@ def test_missing_objects(engine, session):
     # Patch batch_get_items to return no results
     session.load_items.return_value = {}
 
-    users = [User(id=uuid.uuid4()) for _ in range(3)]
+    users = [User(id=str(i)) for i in range(3)]
 
     with pytest.raises(MissingObjects) as excinfo:
         engine.load(*users)
@@ -50,8 +49,8 @@ def test_dump_key(engine):
         bar = Column(Integer, range_key=True)
     engine.bind(HashAndRange)
 
-    user = User(id=uuid.uuid4())
-    user_key = {"id": {"S": str(user.id)}}
+    user = User(id="foo")
+    user_key = {"id": {"S": "foo"}}
     assert dump_key(engine, user) == user_key
 
     obj = HashAndRange(foo=4, bar=5)
@@ -60,15 +59,15 @@ def test_dump_key(engine):
 
 
 def test_load_object(engine, session):
-    user_id = uuid.uuid4()
+    user_id = "user_id"
     expected = {
         "User": {
-            "Keys": [{"id": {"S": str(user_id)}}],
+            "Keys": [{"id": {"S": "user_id"}}],
             "ConsistentRead": True
         }
     }
     response = {
-        "User": [{"age": {"N": 5}, "name": {"S": "foo"}, "id": {"S": str(user_id)}}]
+        "User": [{"age": {"N": 5}, "name": {"S": "foo"}, "id": {"S": "user_id"}}]
     }
 
     def respond(RequestItems):
@@ -85,21 +84,21 @@ def test_load_object(engine, session):
 
 
 def test_load_objects(engine, session):
-    user1 = User(id=uuid.uuid4())
-    user2 = User(id=uuid.uuid4())
+    user1 = User(id="user1")
+    user2 = User(id="user2")
     expected = {
         "User": {
             "Keys": [
-                {"id": {"S": str(user1.id)}},
-                {"id": {"S": str(user2.id)}}
+                {"id": {"S": "user1"}},
+                {"id": {"S": "user2"}}
             ],
             "ConsistentRead": False
         }
     }
     response = {
         "User": [
-            {"age": {"N": 5}, "name": {"S": "foo"}, "id": {"S": str(user1.id)}},
-            {"age": {"N": 10}, "name": {"S": "bar"}, "id": {"S": str(user2.id)}}
+            {"age": {"N": 5}, "name": {"S": "foo"}, "id": {"S": "user1"}},
+            {"age": {"N": 10}, "name": {"S": "bar"}, "id": {"S": "user2"}}
         ]
     }
 
@@ -118,14 +117,14 @@ def test_load_objects(engine, session):
 
 def test_load_repeated_objects(engine, session):
     """The same object is only loaded once"""
-    user = User(id=uuid.uuid4())
+    user = User(id="user_id")
     expected = {
         "User": {
-            "Keys": [{"id": {"S": str(user.id)}}],
+            "Keys": [{"id": {"S": user.id}}],
             "ConsistentRead": False}
     }
     response = {
-        "User": [{"age": {"N": 5}, "name": {"S": "foo"}, "id": {"S": str(user.id)}}],
+        "User": [{"age": {"N": 5}, "name": {"S": "foo"}, "id": {"S": user.id}}],
     }
 
     def respond(RequestItems):
@@ -141,17 +140,17 @@ def test_load_repeated_objects(engine, session):
 
 def test_load_equivalent_objects(engine, session):
     """Two objects with the same key are both loaded"""
-    user = User(id=uuid.uuid4())
+    user = User(id="user_id")
     same_user = User(id=user.id)
 
     expected = {
         "User": {
-            "Keys": [{"id": {"S": str(user.id)}}],
+            "Keys": [{"id": {"S": user.id}}],
             "ConsistentRead": False
         }
     }
     response = {
-        "User": [{"age": {"N": 5}, "name": {"S": "foo"}, "id": {"S": str(user.id)}}]
+        "User": [{"age": {"N": 5}, "name": {"S": "foo"}, "id": {"S": user.id}}]
     }
 
     def respond(RequestItems):
@@ -225,10 +224,10 @@ def test_load_missing_attrs(engine, session):
     When an instance of a Model is loaded into, existing attributes should be
     overwritten with new values, or if there is no new value, should be deleted
     """
-    obj = User(id=uuid.uuid4(), age=4, name="user")
+    obj = User(id="user_id", age=4, name="user")
 
     response = {
-        "User": [{"age": {"N": 5}, "id": {"S": str(obj.id)}}]
+        "User": [{"age": {"N": 5}, "id": {"S": obj.id}}]
     }
 
     session.load_items.return_value = response
@@ -280,7 +279,7 @@ def test_load_dump_unknown(engine):
     value = {
         "age": {"N": 5},
         "name": {"S": "foo"},
-        "id": {"S": str(uuid.uuid4())}
+        "id": {"S": "user_id"}
     }
 
     with pytest.raises(UnknownType):
@@ -307,9 +306,9 @@ def test_load_missing_key(engine):
 
 def test_save_twice(engine, session):
     """Save sends full local values, not just deltas from last save"""
-    user = User(id=uuid.uuid4(), age=5)
+    user = User(id="user_id", age=5)
     expected = {
-        "Key": {"id": {"S": str(user.id)}},
+        "Key": {"id": {"S": user.id}},
         "TableName": "User",
         "ExpressionAttributeNames": {"#n0": "age"},
         "ExpressionAttributeValues": {":v1": {"N": "5"}},
@@ -322,13 +321,13 @@ def test_save_twice(engine, session):
 
 
 def test_save_list_with_condition(engine, session):
-    users = [User(id=uuid.uuid4()) for _ in range(3)]
+    users = [User(id=str(i)) for i in range(3)]
     condition = User.id.is_(None)
     expected_calls = [
         {
             "ConditionExpression": "(attribute_not_exists(#n0))",
             "ExpressionAttributeNames": {"#n0": "id"},
-            "Key": {"id": {"S": str(user.id)}},
+            "Key": {"id": {"S": user.id}},
             "TableName": "User"}
         for user in users]
     engine.save(*users, condition=condition)
@@ -338,24 +337,24 @@ def test_save_list_with_condition(engine, session):
 
 
 def test_save_single_with_condition(engine, session):
-    user = User(id=uuid.uuid4())
+    user = User(id="user_id")
     condition = User.id.is_(None)
     expected = {"TableName": "User",
                 "ExpressionAttributeNames": {"#n0": "id"},
                 "ConditionExpression": "(attribute_not_exists(#n0))",
-                "Key": {"id": {"S": str(user.id)}}}
+                "Key": {"id": {"S": user.id}}}
     engine.save(user, condition=condition)
     session.save_item.assert_called_once_with(expected)
 
 
 def test_save_atomic_new(engine, session):
     """atomic save on new object should expect no columns to exist"""
-    user = User(id=uuid.uuid4())
+    user = User(id="user_id")
     expected = {
         "ExpressionAttributeNames": {
             "#n0": "age", "#n6": "j", "#n2": "email",
             "#n8": "name", "#n4": "id"},
-        "Key": {"id": {"S": str(user.id)}},
+        "Key": {"id": {"S": user.id}},
         "TableName": "User",
         "ConditionExpression": (
             "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n2)) "
@@ -366,7 +365,7 @@ def test_save_atomic_new(engine, session):
 
 
 def test_save_atomic_condition(engine, session):
-    user = User(id=uuid.uuid4())
+    user = User(id="user_id")
     # Tell the tracking system the user's id was saved to DynamoDB
     object_saved.send(engine, obj=user)
     # Mutate a field; part of the update but not an expected condition
@@ -379,9 +378,9 @@ def test_save_atomic_condition(engine, session):
         "ExpressionAttributeNames": {"#n0": "name", "#n2": "id"},
         "ExpressionAttributeValues": {
             ":v1": {"S": "expect_foo"},
-            ":v3": {"S": str(user.id)},
+            ":v3": {"S": user.id},
             ":v4": {"S": "new_foo"}},
-        "Key": {"id": {"S": str(user.id)}},
+        "Key": {"id": {"S": user.id}},
         "TableName": "User",
         "UpdateExpression": "SET #n0=:v4"
     }
@@ -394,25 +393,25 @@ def test_save_condition_key_only(engine, session):
     Even when the diff is empty, an UpdateItem should be issued
     (in case this is really a create - the item doesn't exist yet)
     """
-    user = User(id=uuid.uuid4())
+    user = User(id="user_id")
     condition = User.id.is_(None)
     expected = {
         "ConditionExpression": "(attribute_not_exists(#n0))",
         "TableName": "User",
         "ExpressionAttributeNames": {"#n0": "id"},
-        "Key": {"id": {"S": str(user.id)}}}
+        "Key": {"id": {"S": user.id}}}
     engine.save(user, condition=condition)
     session.save_item.assert_called_once_with(expected)
 
 
 def test_save_set_only(engine, session):
-    user = User(id=uuid.uuid4())
+    user = User(id="user_id")
 
     # Expect a SET on email
     user.email = "foo@domain.com"
 
     expected = {
-        "Key": {"id": {"S": str(user.id)}},
+        "Key": {"id": {"S": user.id}},
         "ExpressionAttributeNames": {"#n0": "email"},
         "TableName": "User",
         "UpdateExpression": "SET #n0=:v1",
@@ -422,13 +421,13 @@ def test_save_set_only(engine, session):
 
 
 def test_save_del_only(engine, session):
-    user = User(id=uuid.uuid4(), age=4)
+    user = User(id="user_id", age=4)
 
     # Expect a REMOVE on age
     del user.age
 
     expected = {
-        "Key": {"id": {"S": str(user.id)}},
+        "Key": {"id": {"S": user.id}},
         "ExpressionAttributeNames": {"#n0": "age"},
         "TableName": "User",
         "UpdateExpression": "REMOVE #n0"}
@@ -437,10 +436,10 @@ def test_save_del_only(engine, session):
 
 
 def test_delete_multiple_condition(engine, session):
-    users = [User(id=uuid.uuid4()) for _ in range(3)]
+    users = [User(id=str(i)) for i in range(3)]
     condition = User.id == "foo"
     expected_calls = [
-        {"Key": {"id": {"S": str(user.id)}},
+        {"Key": {"id": {"S": user.id}},
          "ExpressionAttributeValues": {":v1": {"S": "foo"}},
          "ExpressionAttributeNames": {"#n0": "id"},
          "ConditionExpression": "(#n0 = :v1)",
@@ -453,16 +452,16 @@ def test_delete_multiple_condition(engine, session):
 
 
 def test_delete_atomic(engine, session):
-    user = User(id=uuid.uuid4())
+    user = User(id="user_id")
 
     # Tell the tracking system the user's id was saved to DynamoDB
     object_saved.send(engine, obj=user)
 
     expected = {
         "ConditionExpression": "(#n0 = :v1)",
-        "ExpressionAttributeValues": {":v1": {"S": str(user.id)}},
+        "ExpressionAttributeValues": {":v1": {"S": user.id}},
         "TableName": "User",
-        "Key": {"id": {"S": str(user.id)}},
+        "Key": {"id": {"S": user.id}},
         "ExpressionAttributeNames": {"#n0": "id"}}
     engine.delete(user, atomic=True)
     session.delete_item.assert_called_once_with(expected)
@@ -470,13 +469,13 @@ def test_delete_atomic(engine, session):
 
 def test_delete_atomic_new(engine, session):
     """atomic delete on new object should expect no columns to exist"""
-    user = User(id=uuid.uuid4())
+    user = User(id="user_id")
     expected = {
         "TableName": "User",
         "ExpressionAttributeNames": {
             "#n4": "id", "#n0": "age", "#n8": "name",
             "#n6": "j", "#n2": "email"},
-        "Key": {"id": {"S": str(user.id)}},
+        "Key": {"id": {"S": user.id}},
         "ConditionExpression": (
             "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n2)) "
             "AND (attribute_not_exists(#n4)) AND (attribute_not_exists(#n6))"
@@ -490,18 +489,16 @@ def test_delete_new(engine, session):
     When an object is first created, a non-atomic delete shouldn't expect
     anything.
     """
-    user_id = uuid.uuid4()
-    user = User(id=user_id)
+    user = User(id="user_id")
     expected = {
         "TableName": "User",
-        "Key": {"id": {"S": str(user_id)}}}
+        "Key": {"id": {"S": user.id}}}
     engine.delete(user)
     session.delete_item.assert_called_once_with(expected)
 
 
 def test_delete_atomic_condition(engine, session):
-    user_id = uuid.uuid4()
-    user = User(id=user_id, email="foo@bar.com")
+    user = User(id="user_id", email="foo@bar.com")
 
     # Tell the tracking system the user's id and email were saved to DynamoDB
     object_saved.send(engine, obj=user)
@@ -511,9 +508,9 @@ def test_delete_atomic_condition(engine, session):
         "ExpressionAttributeValues": {
             ":v1": {"S": "foo"},
             ":v3": {"S": "foo@bar.com"},
-            ":v5": {"S": str(user_id)}},
+            ":v5": {"S": user.id}},
         "ExpressionAttributeNames": {"#n0": "name", "#n2": "email", "#n4": "id"},
-        "Key": {"id": {"S": str(user_id)}},
+        "Key": {"id": {"S": user.id}},
         "TableName": "User"
     }
     engine.delete(user, condition=User.name.is_("foo"), atomic=True)

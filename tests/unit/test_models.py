@@ -1,5 +1,4 @@
 import operator
-import uuid
 
 import arrow
 import pytest
@@ -33,7 +32,8 @@ operations = [
 
 def test_default_model_init():
     """Missing attributes are set to `None`"""
-    user = User(id=uuid.uuid4(), email="user@domain.com")
+    user = User(id="user_id", email="user@domain.com")
+    assert user.id == "user_id"
     assert user.email == "user@domain.com"
     assert not hasattr(user, "name")
 
@@ -73,10 +73,10 @@ def test_load_default_init(engine):
 
 def test_load_dump(engine):
     """_load and _dump should be symmetric"""
-    user = User(id=uuid.uuid4(), name="test-name", email="email@domain.com", age=31,
+    user = User(id="user_id", name="test-name", email="email@domain.com", age=31,
                 joined=arrow.now())
     serialized = {
-        "id": {"S": str(user.id)},
+        "id": {"S": user.id},
         "age": {"N": "31"},
         "name": {"S": "test-name"},
         "email": {"S": "email@domain.com"},

@@ -1043,6 +1043,33 @@ def test_render_valid_condition(condition, as_str, expected_names, expected_valu
         assert "ExpressionAttributeValues" not in renderer.rendered
 
 
+@pytest.mark.parametrize("condition", [
+    # Value is None
+    User.age < None,
+    User.age > None,
+    User.age <= None,
+    User.age >= None,
+    User.age.begins_with(None),
+    # At least one None
+    User.age.between(3, None),
+    User.age.between(None, 4),
+    User.age.between(None, None),
+    User.age.contains(None),
+    # No values
+    User.age.in_(),
+    # At least one None
+    User.age.in_(None, 4),
+    User.age.in_(3, None),
+    User.age.in_(None, None),
+    # Not literal None, but becomes None
+    Document.data <= dict()
+])
+def test_render_invalid_condition(condition, renderer):
+    """After a condition fails to render, all of its name and value refs should be popped."""
+    with pytest.raises(InvalidCondition):
+        condition.render(renderer)
+    assert not renderer.rendered
+
 # END CONDITIONS ====================================================================================== END CONDITIONS
 
 

@@ -49,6 +49,10 @@ class InvalidComparisonOperator(BloopException, ValueError):
     """This is not a valid Comparison operator."""
 
 
+class InvalidCondition(BloopException, ValueError):
+    """This is not a valid Condition."""
+
+
 class InvalidKeyCondition(BloopException, ValueError):
     """This is not a valid key condition for the Model and Index."""
 

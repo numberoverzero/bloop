@@ -1,9 +1,7 @@
 import operator
-import uuid
 
 import arrow
 import pytest
-from bloop.conditions import AttributeExists, BeginsWith, Between, Contains, In
 from bloop.exceptions import InvalidIndex, InvalidModel
 from bloop.models import (
     BaseModel,
@@ -12,7 +10,7 @@ from bloop.models import (
     Index,
     LocalSecondaryIndex,
     model_created,
-    object_modified
+    object_modified,
 )
 from bloop.types import UUID, Boolean, DateTime, Integer, String
 
@@ -34,7 +32,8 @@ operations = [
 
 def test_default_model_init():
     """Missing attributes are set to `None`"""
-    user = User(id=uuid.uuid4(), email="user@domain.com")
+    user = User(id="user_id", email="user@domain.com")
+    assert user.id == "user_id"
     assert user.email == "user@domain.com"
     assert not hasattr(user, "name")
 
@@ -74,10 +73,10 @@ def test_load_default_init(engine):
 
 def test_load_dump(engine):
     """_load and _dump should be symmetric"""
-    user = User(id=uuid.uuid4(), name="test-name", email="email@domain.com", age=31,
+    user = User(id="user_id", name="test-name", email="email@domain.com", age=31,
                 joined=arrow.now())
     serialized = {
-        "id": {"S": str(user.id)},
+        "id": {"S": user.id},
         "age": {"N": "31"},
         "name": {"S": "test-name"},
         "email": {"S": "email@domain.com"},
@@ -299,76 +298,6 @@ def test_created_signal():
 
 
 # COLUMN ======================================================================================================= COLUMN
-
-
-def test_column_equals_alias_exists():
-    """
-    == and != should map to attribute_not_exists and attribute_exists
-    when compared to None
-    """
-    column = Column(Integer)
-
-    condition = column.is_(None)
-    assert isinstance(condition, AttributeExists)
-    assert condition.column is column
-    assert condition.negate is True
-
-    condition = column.is_not(None)
-    assert isinstance(condition, AttributeExists)
-    assert condition.column is column
-    assert condition.negate is False
-
-
-@pytest.mark.parametrize("op_func, op_name", operations, ids=repr)
-def test_column_comparison(op_func, op_name):
-    column = Column(Integer)
-    value = object()
-
-    condition = op_func(column, value)
-    assert condition.comparator == op_name
-    assert condition.column is column
-    assert condition.value is value
-
-
-def test_column_between():
-    lower, upper = object(), object()
-    column = Column(Integer)
-    condition = column.between(lower, upper)
-
-    assert isinstance(condition, Between)
-    assert condition.column is column
-    assert condition.lower is lower
-    assert condition.upper is upper
-
-
-def test_column_in():
-    values = [object() for _ in range(3)]
-    column = Column(Integer)
-    condition = column.in_(values)
-
-    assert isinstance(condition, In)
-    assert condition.column is column
-    assert condition.values == values
-
-
-def test_column_begins_with():
-    value = object
-    column = Column(Integer)
-    condition = column.begins_with(value)
-
-    assert isinstance(condition, BeginsWith)
-    assert condition.column is column
-    assert condition.value == value
-
-
-def test_column_contains():
-    value = object
-    column = Column(Integer)
-    condition = column.contains(value)
-
-    assert isinstance(condition, Contains)
-    assert condition.column is column
-    assert condition.value == value
 
 
 def test_column_dynamo_name():

@@ -1,4 +1,3 @@
-import uuid
 from unittest.mock import Mock
 
 import botocore.exceptions
@@ -63,21 +62,21 @@ def test_batch_get_raises(session, dynamodb_client):
 
 def test_batch_get_one_item(session, dynamodb_client):
     """A single call for a single item"""
-    user1 = User(id=uuid.uuid4())
+    user = User(id="user_id")
 
-    request = {"User": {"Keys": [{"id": {"S": str(user1.id)}}],
+    request = {"User": {"Keys": [{"id": {"S": user.id}}],
                         "ConsistentRead": False}}
     # When batching input with less keys than the batch size, the request
     # will look identical
     expected_request = request
     response = {
         "Responses": {
-            "User": [{"id": {"S": str(user1.id)}, "age": {"N": "4"}}]
+            "User": [{"id": {"S": user.id}, "age": {"N": "4"}}]
         },
         "UnprocessedKeys": {}
     }
     # Expected response is a single list of users
-    expected_response = {"User": [{"id": {"S": str(user1.id)}, "age": {"N": "4"}}]}
+    expected_response = {"User": [{"id": {"S": user.id}, "age": {"N": "4"}}]}
 
     def handle(RequestItems):
         assert RequestItems == expected_request
@@ -91,13 +90,13 @@ def test_batch_get_one_item(session, dynamodb_client):
 
 def test_batch_get_one_batch(session, dynamodb_client):
     """A single call when the number of requested items is <= batch size"""
-    users = [User(id=uuid.uuid4()) for _ in range(BATCH_GET_ITEM_CHUNK_SIZE)]
+    users = [User(id=str(i)) for i in range(BATCH_GET_ITEM_CHUNK_SIZE)]
 
     # Request to the bloop client
     client_request = {
         "User": {
             "Keys": [
-                {"id": {"S": str(user.id)}}
+                {"id": {"S": user.id}}
                 for user in users
             ],
             "ConsistentRead": False
@@ -107,7 +106,7 @@ def test_batch_get_one_batch(session, dynamodb_client):
     boto3_client_response = {
         "Responses": {
             "User": [
-                {"id": {"S": str(user.id)}, "age": {"N": "4"}}
+                {"id": {"S": user.id}, "age": {"N": "4"}}
                 for user in users
             ]
         },
@@ -126,9 +125,9 @@ def test_batch_get_one_batch(session, dynamodb_client):
 
 def test_batch_get_paginated(session, dynamodb_client):
     """Paginate requests to fit within the max batch size"""
-    users = [User(id=uuid.uuid4()) for _ in range(BATCH_GET_ITEM_CHUNK_SIZE + 1)]
+    users = [User(id=str(i)) for i in range(BATCH_GET_ITEM_CHUNK_SIZE + 1)]
     keys = [
-        {"id": {"S": str(user.id)}}
+        {"id": {"S": user.id}}
         for user in users
     ]
 
@@ -141,7 +140,7 @@ def test_batch_get_paginated(session, dynamodb_client):
         {
             "Responses": {
                 "User": [
-                    {"id": {"S": str(user.id)}, "age": {"N": "4"}}
+                    {"id": {"S": user.id}, "age": {"N": "4"}}
                     for user in users[:BATCH_GET_ITEM_CHUNK_SIZE]
                 ]
             },
@@ -151,7 +150,7 @@ def test_batch_get_paginated(session, dynamodb_client):
         {
             "Responses": {
                 "User": [
-                    {"id": {"S": str(user.id)}, "age": {"N": "4"}}
+                    {"id": {"S": user.id}, "age": {"N": "4"}}
                     for user in users[BATCH_GET_ITEM_CHUNK_SIZE:]
                 ]
             },
@@ -162,7 +161,7 @@ def test_batch_get_paginated(session, dynamodb_client):
     # The response that the bloop client should return (all items)
     expected_client_response = {
         "User": [
-            {"id": {"S": str(user.id)}, "age": {"N": "4"}}
+            {"id": {"S": user.id}, "age": {"N": "4"}}
             for user in users
         ]
     }
@@ -176,37 +175,37 @@ def test_batch_get_paginated(session, dynamodb_client):
 
 def test_batch_get_unprocessed(session, dynamodb_client):
     """ Re-request unprocessed keys """
-    user1 = User(id=uuid.uuid4())
+    user = User(id="user_id")
 
     request = {
         "User": {
-            "Keys": [{"id": {"S": str(user1.id)}}],
+            "Keys": [{"id": {"S": user.id}}],
             "ConsistentRead": False
         }
     }
     expected_requests = [{
         "User": {
-            "Keys": [{"id": {"S": str(user1.id)}}],
+            "Keys": [{"id": {"S": user.id}}],
             "ConsistentRead": False}
     }, {
         "User": {
-            "Keys": [{"id": {"S": str(user1.id)}}],
+            "Keys": [{"id": {"S": user.id}}],
             "ConsistentRead": False}
     }]
 
     responses = [{
         "UnprocessedKeys": {
             "User": {
-                "Keys": [{"id": {"S": str(user1.id)}}],
+                "Keys": [{"id": {"S": user.id}}],
                 "ConsistentRead": False}}
     }, {
         "Responses": {
-            "User": [{"id": {"S": str(user1.id)}, "age": {"N": "4"}}]
+            "User": [{"id": {"S": user.id}, "age": {"N": "4"}}]
         },
         "UnprocessedKeys": {}
     }]
 
-    expected_response = {"User": [{"id": {"S": str(user1.id)}, "age": {"N": "4"}}]}
+    expected_response = {"User": [{"id": {"S": user.id}, "age": {"N": "4"}}]}
     calls = 0
 
     def handle(RequestItems):

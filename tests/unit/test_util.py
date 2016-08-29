@@ -74,12 +74,22 @@ def test_ordered_recursion(obj, expected):
 
 def test_printable_column_no_path():
     """Model.column"""
-    assert printable_column_name(User.email) == "User.email"
+    assert printable_column_name(User.email) == "email"
 
 
 def test_printable_column_mixed_path():
     """Model.column[3].foo[1]"""
-    assert printable_column_name(User.id, path=[3, "foo", "bar", 0, 1]) == "User.id[3].foo.bar[0][1]"
+    assert printable_column_name(User.id, path=[3, "foo", "bar", 0, 1]) == "id[3].foo.bar[0][1]"
+
+
+def test_printable_column_included_path():
+    """Path is part of the 'column' that's provided"""
+    assert printable_column_name(User.id[3]["foo"]["bar"][0][1]) == "id[3].foo.bar[0][1]"
+
+
+def test_printable_column_both_paths():
+    """When both paths are provided, the explicit path wins"""
+    assert printable_column_name(User.id["not used"], path=[3, "foo", "bar", 0, 1]) == "id[3].foo.bar[0][1]"
 
 
 @pytest.mark.parametrize("query_on, expected", [

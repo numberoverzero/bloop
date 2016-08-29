@@ -63,15 +63,17 @@ You can construct conditions against individual elements of List and Map types w
         name=String,
         price=Float,
         quantity=Integer)
-    # Total checkout time, applying coupons, payment processing...
-    TimingData = TypedMap(Float)
-
+    Metrics = Map(**{
+        "payment-duration": Float,
+        "coupons.used"=Integer,
+        "coupons.available"=Integer
+    })
     class Receipt(BaseModel):
         transaction_id = Column(UUID, column=True)
         total = Column(Integer)
 
         items = Column(List(Item))
-        metrics = Column(TimingData)
+        metrics = Column(Metrics)
 
 Here are some basic conditions using paths:
 

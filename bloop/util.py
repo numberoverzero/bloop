@@ -4,17 +4,7 @@ import weakref
 import blinker
 
 
-__all__ = [
-    "Sentinel",
-    "WeakDefaultDictionary",
-    "missing",
-    "ordered",
-    "printable_column_name",
-    "printable_query",
-    "signal",
-    "walk_subclasses",
-    "unpack_from_dynamodb"
-]
+__all__ = ["signal"]
 
 # De-dupe dict for Sentinel
 _symbols = {}
@@ -45,11 +35,12 @@ def ordered(obj):
 
 
 def printable_column_name(column, path=None):
-    """Provided for debug output when rendering conditions"""
-    model_name = column.model.__name__
-    name = "{}.{}".format(model_name, column.model_name)
-    pieces = [name]
-    for segment in (path or []):
+    """Provided for debug output when rendering conditions.
+
+    User.name[3]["foo"][0]["bar"] -> name[3].foo[0].bar"""
+    pieces = [column.model_name]
+    path = path or column._path or []
+    for segment in path:
         if isinstance(segment, str):
             pieces.append(segment)
         else:

@@ -285,45 +285,6 @@ class List(Type):
         return list(filtered) or None
 
 
-class TypedMap(Type):
-    python_type = collections.abc.Mapping
-    backing_type = MAP
-
-    def __init__(self, typedef):
-        self.typedef = type_instance(typedef)
-        super().__init__()
-
-    def __getitem__(self, key):
-        """Overload allows easy nested access to types"""
-        return self.typedef
-
-    def _register(self, engine):
-        """Register all types for the map"""
-        engine.register(self.typedef)
-
-    def dynamo_load(self, values, *, context, **kwargs):
-        if values is None:
-            return dict()
-        # local lookup in a tight loop
-        load = context["engine"]._load
-        typedef = self.typedef
-        return {k: load(typedef, v, context=context, **kwargs) for k, v in values.items()}
-
-    def dynamo_dump(self, values, *, context, **kwargs):
-        if values is None:
-            return None
-        # local lookup in a tight loop
-        dump = context["engine"]._dump
-        typedef = self.typedef
-
-        filtered = filter(
-            lambda item: item[1] is not None,
-            ((
-                key, dump(typedef, value, context=context, **kwargs)
-            ) for key, value in values.items()))
-        return dict(filtered) or None
-
-
 class Map(Type):
     python_type = collections.abc.Mapping
     backing_type = MAP

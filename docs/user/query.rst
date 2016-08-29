@@ -39,8 +39,7 @@ Find all files named "setup.py" with a scan:
 
 .. code-block:: python
 
-    scan = engine.scan(
-        File, filter=File.name == "setup.py")
+    scan = engine.scan(File, filter=File.name == "setup.py")
 
     for file in scan:
         print(file)
@@ -49,8 +48,7 @@ Find all files owned by "root" with a query on a GSI:
 
 .. code-block:: python
 
-    query = engine.query(
-        File.by_owner, key=File.owner == "root")
+    query = engine.query(File.by_owner, key=File.owner == "root")
 
     for file in query:
         print(file)
@@ -83,8 +81,7 @@ Find exactly one file in the path "~/bloop/scripts":
 
 .. code-block:: python
 
-    query = engine.query(
-        File, key=File.path == "~/bloop/scripts")
+    query = engine.query(File, key=File.path == "~/bloop/scripts")
 
     print(query.one())
 

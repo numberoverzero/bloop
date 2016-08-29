@@ -16,13 +16,10 @@ Configure the Stream:
         email = Column(String)
         verified = Column(Boolean)
 
-`StreamViewType`__ maps to ``"include"`` and has four possible values:
+``"include"`` has four possible values, matching `StreamViewType`__:
 
 .. code-block:: python
 
-    {"keys"}
-    {"new"}
-    {"old"}
-    {"new", "old"}
+    {"keys"}, {"new"}, {"old"}, {"new", "old"}
 
 __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamDescription.html#DDB-Type-StreamDescription-StreamViewType

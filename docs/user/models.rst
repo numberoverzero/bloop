@@ -114,14 +114,12 @@ Available properties:
 
 .. attribute:: Meta.stream
 
-    Configure this table's `Stream`__.  Must be ``None`` or a dict with the key ``"include"`` that
-    describes the `StreamViewType`__.  ``"include"`` can be ``{"new"}``, ``{"old"}``, ``{"new", "old"}``,
-    or ``{"keys"}``.
+    Configure this table's `Stream`__.  Must be ``None`` or a dict with the key ``"include"``, with a value of
+    ``{"new"}``, ``{"old"}``, ``{"new", "old"}``, or ``{"keys"}``.
 
     See :ref:`streams`.
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html
-    __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamDescription.html#DDB-Type-StreamDescription-StreamViewType
 
 Instances of abstract models can't be used with an Engine since there is no table to modify or query.  Their
 columns and indexes are not inherited.

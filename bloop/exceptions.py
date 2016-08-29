@@ -45,6 +45,10 @@ class InvalidIndex(BloopException, ValueError):
     """This is not a valid Index."""
 
 
+class InvalidStream(BloopException, ValueError):
+    """This is not a valid stream definition."""
+
+
 class InvalidComparisonOperator(BloopException, ValueError):
     """This is not a valid Comparison operator."""
 

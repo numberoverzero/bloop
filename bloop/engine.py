@@ -13,19 +13,18 @@ from .exceptions import (
 from .models import Index, ModelMetaclass
 from .search import Query, Scan
 from .session import SessionWrapper
-from .util import missing, signal, unpack_from_dynamodb, walk_subclasses
+from .signals import (
+    before_create_table,
+    model_bound,
+    model_validated,
+    object_deleted,
+    object_loaded,
+    object_saved,
+)
+from .util import missing, unpack_from_dynamodb, walk_subclasses
 
 
-__all__ = ["Engine", "before_create_table", "model_bound", "model_validated"]
-
-# Signals!
-before_create_table = signal("before_create_table")
-model_bound = signal("model_bound")
-model_validated = signal("model_validated")
-
-object_loaded = signal("object_loaded")
-object_saved = signal("object_saved")
-object_deleted = signal("object_deleted")
+__all__ = ["Engine"]
 
 
 def value_of(column):

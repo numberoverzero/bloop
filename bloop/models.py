@@ -4,17 +4,11 @@ import declare
 
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel
-from .util import missing, printable_column_name, signal, unpack_from_dynamodb
+from .signals import model_created, object_modified
+from .util import missing, printable_column_name, unpack_from_dynamodb
 
 
-__all__ = [
-    "BaseModel", "Column",
-    "GlobalSecondaryIndex", "LocalSecondaryIndex",
-    "model_created"]
-
-# Signals!
-model_created = signal("model_created")
-object_modified = signal("object_modified")
+__all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 
 
 def loaded_columns(obj):

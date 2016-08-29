@@ -5,12 +5,14 @@ import pytest
 from bloop import (
     BaseModel,
     Engine,
+)
+from bloop.session import SessionWrapper
+from bloop.signals import (
     object_deleted,
     object_loaded,
     object_modified,
     object_saved,
 )
-from bloop.session import SessionWrapper
 
 
 @pytest.fixture

@@ -4,10 +4,11 @@ import collections
 from typing import Any, NamedTuple
 
 from .exceptions import InvalidCondition
-from .util import WeakDefaultDictionary, missing, printable_column_name, signal
+from .signals import object_deleted, object_loaded, object_modified, object_saved
+from .util import WeakDefaultDictionary, missing, printable_column_name
 
 
-__all__ = ["Condition", "object_deleted", "object_loaded", "object_modified", "object_saved", "render"]
+__all__ = ["Condition", "render"]
 
 
 comparison_aliases = {
@@ -29,12 +30,6 @@ comparisons = list(comparison_aliases.keys())
 # 2) Latest snapshot for atomic operations
 _obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None})
 
-
-# Watched signals
-object_loaded = signal("object_loaded")
-object_saved = signal("object_saved")
-object_deleted = signal("object_deleted")
-object_modified = signal("object_modified")
 
 # Ensure signals aren't connected twice
 __signals_connected = False

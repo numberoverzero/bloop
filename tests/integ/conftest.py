@@ -5,8 +5,8 @@ import string
 import blinker
 import boto3
 import pytest
-from bloop import Engine, before_create_table
-
+from bloop import Engine
+from bloop.signals import before_create_table
 from .models import User
 
 

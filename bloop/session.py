@@ -172,6 +172,13 @@ def compare_tables(actual_description, model):
         actual = sanitized_table_description(actual_description)
     except KeyError:
         return False
+    # Table doesn't care if there's a stream or not
+    if not model.Meta.stream:
+        actual.pop("LatestStreamLabel", None)
+        actual.pop("StreamSpecification", None)
+    # Don't compare the stream label (if it exists) unless the model cares about it
+    elif model.Meta.stream and "label" not in model.Meta.stream:
+        actual.pop("LatestStreamLabel", None)
     return ordered(actual) == ordered(expected)
 
 
@@ -338,6 +345,7 @@ def sanitized_table_description(description):
              "KeyType": table_key["KeyType"]}
             for table_key in description["KeySchema"]
         ],
+        "LatestStreamLabel": description.get("LatestStreamLabel", None),
         "LocalSecondaryIndexes": [
             {"IndexName": lsi["IndexName"],
              "KeySchema": [
@@ -356,6 +364,7 @@ def sanitized_table_description(description):
             "WriteCapacityUnits":
                 description["ProvisionedThroughput"]["WriteCapacityUnits"]
         },
+        "StreamSpecification": description.get("StreamSpecification", None),
         "TableName": description["TableName"]
     }
 
@@ -366,10 +375,11 @@ def sanitized_table_description(description):
         if not index["Projection"]["NonKeyAttributes"]:
             index["Projection"].pop("NonKeyAttributes")
 
-    if not table["GlobalSecondaryIndexes"]:
-        table.pop("GlobalSecondaryIndexes")
-    if not table["LocalSecondaryIndexes"]:
-        table.pop("LocalSecondaryIndexes")
+    for possibly_empty in [
+            "GlobalSecondaryIndexes", "LocalSecondaryIndexes",
+            "LatestStreamLabel", "StreamSpecification"]:
+        if not table[possibly_empty]:
+            table.pop(possibly_empty)
 
     return table
 

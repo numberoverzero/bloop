@@ -459,6 +459,133 @@ def test_validate_simple_model(session, dynamodb_client):
         TableName="Simple")
 
 
+def test_validate_stream_without_label(session, dynamodb_client):
+    """Model expects a stream but doesn't care about the label"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"]
+            }
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "LatestStreamArn": "table/stream_both/stream/2016-08-29T03:30:15.582",
+        "LatestStreamLabel": "2016-08-29T03:30:15.582",
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "StreamSpecification": {
+            "StreamEnabled": True,
+            "StreamViewType": "KEYS_ONLY"},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    session.validate_table(Model)
+
+
+def test_validate_stream_missing(session, dynamodb_client):
+    """Model expects a stream that doesn't exist"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"]
+            }
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    with pytest.raises(TableMismatch):
+        session.validate_table(Model)
+
+
+def test_validate_stream_with_label(session, dynamodb_client):
+    """When stream expects a label, it MUST match"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"],
+                "label": "2016-08-29T03:30:15.582"
+            }
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "LatestStreamArn": "table/stream_both/stream/2016-08-29T03:30:15.582",
+        "LatestStreamLabel": "2016-08-29T03:30:15.582",
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "StreamSpecification": {
+            "StreamEnabled": True,
+            "StreamViewType": "KEYS_ONLY"},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    session.validate_table(Model)
+
+
+def test_validate_stream_with_wrong_label(session, dynamodb_client):
+    """When stream expects a label, it MUST match"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"],
+                "label": "This label is wrong"
+            }
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "LatestStreamArn": "table/stream_both/stream/2016-08-29T03:30:15.582",
+        "LatestStreamLabel": "2016-08-29T03:30:15.582",
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "StreamSpecification": {
+            "StreamEnabled": True,
+            "StreamViewType": "KEYS_ONLY"},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    with pytest.raises(TableMismatch):
+        session.validate_table(Model)
+
+
+def test_validate_stream_unexpected(session, dynamodb_client):
+    """It's ok if the model doesn't expect a stream that exists"""
+    class Model(BaseModel):
+        class Meta:
+            stream = None
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "LatestStreamArn": "table/stream_both/stream/2016-08-29T03:30:15.582",
+        "LatestStreamLabel": "2016-08-29T03:30:15.582",
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "StreamSpecification": {
+            "StreamEnabled": True,
+            "StreamViewType": "KEYS_ONLY"},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    session.validate_table(Model)
+
+
 def test_validate_wrong_table(session, dynamodb_client):
     """dynamo returns a valid document but it doesn't match"""
     full = expected_table_description(SimpleModel)

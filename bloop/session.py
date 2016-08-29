@@ -287,10 +287,14 @@ def create_table_request(model):
 
 
 def expected_table_description(model):
-    # Right now, we expect the exact same thing as create_table_request
-    # This doesn't include statuses (table, indexes) since that's
-    # pulled out by the polling mechanism
     table = create_table_request(model)
+    # Not required, but a model MAY specify the label that it expects for
+    # the stream.  This allows us to pin a model against a specific stream,
+    # and bail if it's shifted in an unexpected way
+    if model.Meta.stream:
+        required_label = model.Meta.stream.get("label", None)
+        if required_label:
+            table["LatestStreamLabel"] = required_label
     return table
 
 

@@ -570,6 +570,31 @@ def test_create_table_with_stream(include, view_type):
     }
 
 
+def test_expected_stream_no_label():
+    """LatestStreamLabel shouldn't be included unless there's one in Model.Meta.Stream"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"]
+            }
+        id = Column(String, hash_key=True)
+    table = expected_table_description(Model)
+    assert "LatestStreamLabel" not in table
+
+
+def test_expected_stream_with_label():
+    """LatestStreamLabel should be included when there's one in Model.Meta.Stream"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"],
+                "label": "2016-08-29T03:26:22.376"
+            }
+        id = Column(String, hash_key=True)
+    table = expected_table_description(Model)
+    assert table["LatestStreamLabel"] == "2016-08-29T03:26:22.376"
+
+
 def test_sanitize_drop_empty_lists():
     expected = expected_table_description(ComplexModel)
     # Start from the same base, but inject an unnecessary NonKeyAttributes

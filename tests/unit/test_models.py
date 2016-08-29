@@ -2,7 +2,7 @@ import operator
 
 import arrow
 import pytest
-from bloop.exceptions import InvalidIndex, InvalidModel
+from bloop.exceptions import InvalidIndex, InvalidModel, InvalidStream
 from bloop.models import (
     BaseModel,
     Column,
@@ -257,6 +257,20 @@ def test_meta_table_name():
     assert Other.Meta.table_name == "table_name"
 
 
+def test_meta_default_stream():
+    """By default, stream is None"""
+    class Model(BaseModel):
+        id = Column(UUID, hash_key=True)
+    assert Model.Meta.stream is None
+
+    class Other(BaseModel):
+        class Meta:
+            stream = None
+
+        id = Column(UUID, hash_key=True)
+    assert Other.Meta.stream is None
+
+
 def test_abstract_not_inherited():
     class Concrete(BaseModel):
         id = Column(UUID, hash_key=True)
@@ -293,6 +307,47 @@ def test_created_signal():
 
     assert new_model is SomeModel
 
+
+@pytest.mark.parametrize("invalid_stream", [
+    False,
+    True,
+    "new",
+    ["old", "new"],
+    {"label": "foo"},
+    {"include": "new"},
+    {"include": []},
+    {"include": ["keys", "old"]},
+    {"include": ["keys", "new"]},
+    {"include": ["KEYS"]},
+])
+def test_invalid_stream(invalid_stream):
+    """Stream must be a dict with include a list containing keys or (new, old) or new or old"""
+    with pytest.raises(InvalidStream):
+        class Model(BaseModel):
+            class Meta:
+                stream = invalid_stream
+            id = Column(Integer, hash_key=True)
+
+
+@pytest.mark.parametrize("valid_stream", [
+    {"include": ["new"]},
+    {"include": ["old"]},
+    {"include": ["new", "old"]},
+    {"include": ["keys"]},
+    {"label": "stream-label", "include": ["new"]},
+    {"label": "stream-label", "include": ["old"]},
+    {"label": "stream-label", "include": ["new", "old"]},
+    {"label": "stream-label", "include": ["keys"]},
+])
+def test_valid_stream(valid_stream):
+    class Model(BaseModel):
+        class Meta:
+            stream = valid_stream
+
+        id = Column(Integer, hash_key=True)
+    assert Model.Meta.stream["include"] == set(valid_stream["include"])
+    sentinel = object()
+    assert Model.Meta.stream.get("label", sentinel) == valid_stream.get("label", sentinel)
 
 # END BASE MODEL ======================================================================================= END BASE MODEL
 

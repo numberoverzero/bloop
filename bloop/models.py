@@ -3,7 +3,7 @@ import collections.abc
 import declare
 
 from .conditions import ComparisonMixin
-from .exceptions import InvalidIndex, InvalidModel
+from .exceptions import InvalidIndex, InvalidModel, InvalidStream
 from .signals import model_created, object_modified
 from .util import missing, printable_column_name, unpack_from_dynamodb
 
@@ -54,6 +54,26 @@ def validate_projection(projection):
     return validated_projection
 
 
+def validate_stream(stream):
+    if stream is None:
+        return
+    if not isinstance(stream, collections.abc.MutableMapping):
+        raise InvalidStream("Stream must be None or a dict.")
+    if "include" not in stream:
+        raise InvalidStream("Specify what the stream will return with the 'include' key.")
+    include = stream["include"] = set(stream["include"])
+    # []
+    if not include:
+        raise InvalidStream("Must include at least one of 'keys', 'old', or 'new'.")
+    # ["what is this", "keys"]
+    for value in include:
+        if value not in {"new", "keys", "old"}:
+            raise InvalidStream("Streams can only contain 'keys', 'old', and/or 'new'.")
+    # ["keys", "old"]
+    if include == {"new", "keys"} or include == {"old", "keys"}:
+        raise InvalidStream("The option 'keys' cannot be used with either 'old' or 'new'.")
+
+
 class ModelMetaclass(declare.ModelMetaclass):
     def __new__(mcs, name, bases, attrs):
         model = super().__new__(mcs, name, bases, attrs)
@@ -74,6 +94,9 @@ class ModelMetaclass(declare.ModelMetaclass):
         # arguments that returns an instance of the class
         setdefault(meta, "init", model)
         setdefault(meta, "table_name", model.__name__)
+        setdefault(meta, "stream", None)
+
+        validate_stream(meta.stream)
 
         model_created.send(model=model)
         return model

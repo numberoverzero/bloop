@@ -270,6 +270,19 @@ def create_table_request(model):
     if model.Meta.lsis:
         table["LocalSecondaryIndexes"] = [
             local_secondary_index(index) for index in model.Meta.lsis]
+    if model.Meta.stream:
+        include = model.Meta.stream["include"]
+        view = {
+            ("keys",): "KEYS_ONLY",
+            ("new",): "NEW_IMAGE",
+            ("old",): "OLD_IMAGE",
+            ("new", "old"): "NEW_AND_OLD_IMAGES"
+        }[tuple(sorted(include))]
+
+        table["StreamSpecification"] = {
+            "StreamEnabled": True,
+            "StreamViewType": view
+        }
     return table
 
 

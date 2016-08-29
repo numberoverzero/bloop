@@ -8,7 +8,7 @@ from bloop.exceptions import (
     TableMismatch,
     UnknownSearchMode,
 )
-from bloop.models import Column
+from bloop.models import BaseModel, Column
 from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,
     SessionWrapper,
@@ -536,6 +536,38 @@ def test_expected_description():
     create = create_table_request(ComplexModel)
     expected = expected_table_description(ComplexModel)
     assert_unordered(create, expected)
+
+
+def test_create_table_no_stream():
+    """No StreamSpecification if Model.Meta.stream is None"""
+    class Model(BaseModel):
+        class Meta:
+            stream = None
+        id = Column(String, hash_key=True)
+    table = create_table_request(Model)
+    assert "StreamSpecification" not in table
+
+
+@pytest.mark.parametrize("include, view_type", [
+    (["keys"], "KEYS_ONLY"),
+    (["new"], "NEW_IMAGE"),
+    (["old"], "OLD_IMAGE"),
+    (["new", "old"], "NEW_AND_OLD_IMAGES"),
+])
+def test_create_table_with_stream(include, view_type):
+    """A table that streams only new images"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": include
+            }
+        id = Column(String, hash_key=True)
+
+    table = create_table_request(Model)
+    assert table["StreamSpecification"] == {
+        "StreamEnabled": True,
+        "StreamViewType": view_type
+    }
 
 
 def test_sanitize_drop_empty_lists():

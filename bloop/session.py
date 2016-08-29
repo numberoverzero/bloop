@@ -174,11 +174,7 @@ def compare_tables(actual_description, model):
         return False
     # Table doesn't care if there's a stream or not
     if not model.Meta.stream:
-        actual.pop("LatestStreamLabel", None)
         actual.pop("StreamSpecification", None)
-    # Don't compare the stream label (if it exists) unless the model cares about it
-    elif model.Meta.stream and "label" not in model.Meta.stream:
-        actual.pop("LatestStreamLabel", None)
     return ordered(actual) == ordered(expected)
 
 
@@ -294,14 +290,10 @@ def create_table_request(model):
 
 
 def expected_table_description(model):
+    # Right now, we expect the exact same thing as create_table_request
+    # This doesn't include statuses (table, indexes) since that's
+    # pulled out by the polling mechanism
     table = create_table_request(model)
-    # Not required, but a model MAY specify the label that it expects for
-    # the stream.  This allows us to pin a model against a specific stream,
-    # and bail if it's shifted in an unexpected way
-    if model.Meta.stream:
-        required_label = model.Meta.stream.get("label", None)
-        if required_label:
-            table["LatestStreamLabel"] = required_label
     return table
 
 
@@ -345,7 +337,6 @@ def sanitized_table_description(description):
              "KeyType": table_key["KeyType"]}
             for table_key in description["KeySchema"]
         ],
-        "LatestStreamLabel": description.get("LatestStreamLabel", None),
         "LocalSecondaryIndexes": [
             {"IndexName": lsi["IndexName"],
              "KeySchema": [
@@ -375,9 +366,7 @@ def sanitized_table_description(description):
         if not index["Projection"]["NonKeyAttributes"]:
             index["Projection"].pop("NonKeyAttributes")
 
-    for possibly_empty in [
-            "GlobalSecondaryIndexes", "LocalSecondaryIndexes",
-            "LatestStreamLabel", "StreamSpecification"]:
+    for possibly_empty in ["GlobalSecondaryIndexes", "LocalSecondaryIndexes", "StreamSpecification"]:
         if not table[possibly_empty]:
             table.pop(possibly_empty)
 

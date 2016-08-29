@@ -437,7 +437,7 @@ def test_validate_checks_status(session, dynamodb_client):
 
 
 def test_validate_invalid_table(session, dynamodb_client):
-    """dynamo returns an invalid json document"""
+    """DynamoDB returns an invalid json document"""
     dynamodb_client.describe_table.return_value = \
         {"Table": {"TableStatus": "ACTIVE"}}
     with pytest.raises(TableMismatch):
@@ -459,8 +459,8 @@ def test_validate_simple_model(session, dynamodb_client):
         TableName="Simple")
 
 
-def test_validate_stream_without_label(session, dynamodb_client):
-    """Model expects a stream but doesn't care about the label"""
+def test_validate_stream_exists(session, dynamodb_client):
+    """Model expects a stream that exists and matches"""
     class Model(BaseModel):
         class Meta:
             stream = {
@@ -483,6 +483,31 @@ def test_validate_stream_without_label(session, dynamodb_client):
         "TableStatus": "ACTIVE"}
     dynamodb_client.describe_table.return_value = {"Table": full}
     session.validate_table(Model)
+
+
+def test_validate_stream_wrong_view_type(session, dynamodb_client):
+    """Model expects a stream that doesn't exist"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"]
+            }
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "StreamSpecification": {
+            "StreamEnabled": True,
+            "StreamViewType": "NEW_IMAGE"},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    with pytest.raises(TableMismatch):
+        session.validate_table(Model)
 
 
 def test_validate_stream_missing(session, dynamodb_client):
@@ -500,61 +525,6 @@ def test_validate_stream_missing(session, dynamodb_client):
         "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
         "ProvisionedThroughput": {
             "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-        "TableName": "Model",
-        "TableStatus": "ACTIVE"}
-    dynamodb_client.describe_table.return_value = {"Table": full}
-    with pytest.raises(TableMismatch):
-        session.validate_table(Model)
-
-
-def test_validate_stream_with_label(session, dynamodb_client):
-    """When stream expects a label, it MUST match"""
-    class Model(BaseModel):
-        class Meta:
-            stream = {
-                "include": ["keys"],
-                "label": "2016-08-29T03:30:15.582"
-            }
-        id = Column(String, hash_key=True)
-
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeName": "id", "AttributeType": "S"}],
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        "LatestStreamArn": "table/stream_both/stream/2016-08-29T03:30:15.582",
-        "LatestStreamLabel": "2016-08-29T03:30:15.582",
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-        "StreamSpecification": {
-            "StreamEnabled": True,
-            "StreamViewType": "KEYS_ONLY"},
-        "TableName": "Model",
-        "TableStatus": "ACTIVE"}
-    dynamodb_client.describe_table.return_value = {"Table": full}
-    session.validate_table(Model)
-
-
-def test_validate_stream_with_wrong_label(session, dynamodb_client):
-    """When stream expects a label, it MUST match"""
-    class Model(BaseModel):
-        class Meta:
-            stream = {
-                "include": ["keys"],
-                "label": "This label is wrong"
-            }
-        id = Column(String, hash_key=True)
-
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeName": "id", "AttributeType": "S"}],
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        "LatestStreamArn": "table/stream_both/stream/2016-08-29T03:30:15.582",
-        "LatestStreamLabel": "2016-08-29T03:30:15.582",
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-        "StreamSpecification": {
-            "StreamEnabled": True,
-            "StreamViewType": "KEYS_ONLY"},
         "TableName": "Model",
         "TableStatus": "ACTIVE"}
     dynamodb_client.describe_table.return_value = {"Table": full}
@@ -657,14 +627,6 @@ def test_create_complex():
     assert_unordered(create_table_request(ComplexModel), expected)
 
 
-def test_expected_description():
-    # Eventually expected_table_description will probably diverge from create_table
-    # This will guard against (or coverage should show) if there's drift
-    create = create_table_request(ComplexModel)
-    expected = expected_table_description(ComplexModel)
-    assert_unordered(create, expected)
-
-
 def test_create_table_no_stream():
     """No StreamSpecification if Model.Meta.stream is None"""
     class Model(BaseModel):
@@ -697,29 +659,12 @@ def test_create_table_with_stream(include, view_type):
     }
 
 
-def test_expected_stream_no_label():
-    """LatestStreamLabel shouldn't be included unless there's one in Model.Meta.Stream"""
-    class Model(BaseModel):
-        class Meta:
-            stream = {
-                "include": ["keys"]
-            }
-        id = Column(String, hash_key=True)
-    table = expected_table_description(Model)
-    assert "LatestStreamLabel" not in table
-
-
-def test_expected_stream_with_label():
-    """LatestStreamLabel should be included when there's one in Model.Meta.Stream"""
-    class Model(BaseModel):
-        class Meta:
-            stream = {
-                "include": ["keys"],
-                "label": "2016-08-29T03:26:22.376"
-            }
-        id = Column(String, hash_key=True)
-    table = expected_table_description(Model)
-    assert table["LatestStreamLabel"] == "2016-08-29T03:26:22.376"
+def test_expected_description():
+    # Eventually expected_table_description will probably diverge from create_table
+    # This will guard against (or coverage should show) if there's drift
+    create = create_table_request(ComplexModel)
+    expected = expected_table_description(ComplexModel)
+    assert_unordered(create, expected)
 
 
 def test_sanitize_drop_empty_lists():

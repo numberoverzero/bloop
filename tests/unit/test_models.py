@@ -313,7 +313,7 @@ def test_created_signal():
     True,
     "new",
     ["old", "new"],
-    {"label": "foo"},
+    {},
     {"include": "new"},
     {"include": []},
     {"include": ["keys", "old"]},
@@ -334,10 +334,6 @@ def test_invalid_stream(invalid_stream):
     {"include": ["old"]},
     {"include": ["new", "old"]},
     {"include": ["keys"]},
-    {"label": "stream-label", "include": ["new"]},
-    {"label": "stream-label", "include": ["old"]},
-    {"label": "stream-label", "include": ["new", "old"]},
-    {"label": "stream-label", "include": ["keys"]},
 ])
 def test_valid_stream(valid_stream):
     class Model(BaseModel):
@@ -346,8 +342,6 @@ def test_valid_stream(valid_stream):
 
         id = Column(Integer, hash_key=True)
     assert Model.Meta.stream["include"] == set(valid_stream["include"])
-    sentinel = object()
-    assert Model.Meta.stream.get("label", sentinel) == valid_stream.get("label", sentinel)
 
 # END BASE MODEL ======================================================================================= END BASE MODEL
 

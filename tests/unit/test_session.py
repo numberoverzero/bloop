@@ -18,6 +18,7 @@ from bloop.session import (
     sanitized_table_description,
     simple_table_status,
 )
+from bloop.signals import table_validated
 from bloop.types import String
 from bloop.util import ordered
 
@@ -408,6 +409,15 @@ def test_search_unknown(session):
 
 
 def test_validate_compares_tables(session, dynamodb_client):
+    validated = False
+
+    @table_validated.connect
+    def assert_validated(sender, model, actual_description, expected_description):
+        assert sender is session
+        assert model is User
+        nonlocal validated
+        validated = True
+
     description = expected_table_description(User)
     description["TableStatus"] = "ACTIVE"
     description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
@@ -415,6 +425,7 @@ def test_validate_compares_tables(session, dynamodb_client):
     dynamodb_client.describe_table.return_value = {"Table": description}
     session.validate_table(User)
     dynamodb_client.describe_table.assert_called_once_with(TableName="User")
+    assert validated
 
 
 def test_validate_checks_status(session, dynamodb_client):

@@ -8,6 +8,7 @@ from .exceptions import (
     TableMismatch,
     UnknownSearchMode,
 )
+from .signals import table_validated
 from .util import Sentinel, ordered
 
 
@@ -60,12 +61,14 @@ class SessionWrapper:
 
     def validate_table(self, model):
         table_name = model.Meta.table_name
-        status, description = None, {}
+        status, actual = None, {}
         while status is not ready:
-            description = wrapped_describe_table(self._dynamodb_client, table_name)
-            status = simple_table_status(description)
-        if not compare_tables(description, model):
+            actual = wrapped_describe_table(self._dynamodb_client, table_name)
+            status = simple_table_status(actual)
+        expected = expected_table_description(model)
+        if not compare_tables(model, actual, expected):
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
+        table_validated.send(self, model=model, actual_description=actual, expected_description=expected)
 
 
 def validate_search_mode(mode):
@@ -166,16 +169,15 @@ def create_batch_get_chunks(items):
 # TABLE HELPERS ======================================================================================== TABLE HELPERS
 
 
-def compare_tables(actual_description, model):
-    expected = expected_table_description(model)
+def compare_tables(model, actual, expected):
     try:
-        actual = sanitized_table_description(actual_description)
+        sanitized_actual = sanitized_table_description(actual)
     except KeyError:
         return False
     # Table doesn't care if there's a stream or not
     if not model.Meta.stream:
-        actual.pop("StreamSpecification", None)
-    return ordered(actual) == ordered(expected)
+        sanitized_actual.pop("StreamSpecification", None)
+    return ordered(sanitized_actual) == ordered(expected)
 
 
 def attribute_definitions(model):

@@ -5,6 +5,16 @@ from .util import signal
 # model: Model class
 before_create_table = signal("before_create_table")
 
+# After a Model's expected table has been validated against the
+#   actual table in DynamoDB
+# sender: SessionWrapper
+# model: Model class
+# actual_description: dict
+#   Unmodified table dict from DynamoDB
+# expected_description: dict
+#   The dict that Bloop expects for the Model
+table_validated = signal("table_validated")
+
 # After an object is loaded from DynamoDB
 #   (Engine.load, Engine.query, Engine.scan)
 # sender: Engine

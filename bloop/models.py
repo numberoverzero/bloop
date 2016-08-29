@@ -4,11 +4,17 @@ import declare
 
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel, InvalidStream
-from .signals import model_created, object_modified
+from .signals import model_created, object_modified, table_validated
 from .util import missing, printable_column_name, unpack_from_dynamodb
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
+
+
+@table_validated.connect
+def on_table_validated(_, model, actual_description, **kwargs):
+    if model.Meta.stream:
+        model.Meta.stream["arn"] = actual_description["LatestStreamArn"]
 
 
 def loaded_columns(obj):
@@ -72,6 +78,7 @@ def validate_stream(stream):
     # ["keys", "old"]
     if include == {"new", "keys"} or include == {"old", "keys"}:
         raise InvalidStream("The option 'keys' cannot be used with either 'old' or 'new'.")
+    stream["arn"] = None
 
 
 class ModelMetaclass(declare.ModelMetaclass):

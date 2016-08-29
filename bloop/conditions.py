@@ -31,29 +31,27 @@ comparisons = list(comparison_aliases.keys())
 _obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None})
 
 
-# Ensure signals aren't connected twice
-__signals_connected = False
-if not __signals_connected:  # pragma: no branch
-    __signals_connected = True
+@object_deleted.connect
+def on_object_deleted(_, obj, **kwargs):
+    _obj_tracking[obj].pop("snapshot", None)
 
-    @object_deleted.connect
-    def on_object_deleted(_, obj, **kwargs):
-        _obj_tracking[obj].pop("snapshot", None)
 
-    @object_loaded.connect
-    def on_object_loaded(engine, obj, **kwargs):
-        sync(obj, engine)
+@object_loaded.connect
+def on_object_loaded(engine, obj, **kwargs):
+    sync(obj, engine)
 
-    @object_modified.connect
-    def on_object_modified(_, obj, column, **kwargs):
-        # Mark a column for a given object as being modified in any way.
-        # Any marked columns will be pushed (possibly as DELETES) in
-        # future UpdateItem calls that include the object.
-        _obj_tracking[obj]["marked"].add(column)
 
-    @object_saved.connect
-    def on_object_saved(engine, obj, **kwargs):
-        sync(obj, engine)
+@object_modified.connect
+def on_object_modified(_, obj, column, **kwargs):
+    # Mark a column for a given object as being modified in any way.
+    # Any marked columns will be pushed (possibly as DELETES) in
+    # future UpdateItem calls that include the object.
+    _obj_tracking[obj]["marked"].add(column)
+
+
+@object_saved.connect
+def on_object_saved(engine, obj, **kwargs):
+    sync(obj, engine)
 
 
 def sync(obj, engine):

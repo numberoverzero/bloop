@@ -43,3 +43,13 @@ def test_projection_overlap(engine):
         by_other = GlobalSecondaryIndex(projection=["other", "range"], hash_key="other")
     # by_other's projected attributes overlap with the model and its own keys
     engine.bind(Model)
+
+
+def test_stream_creation(engine):
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"]
+            }
+        hash = Column(Integer, hash_key=True)
+    engine.bind(Model)

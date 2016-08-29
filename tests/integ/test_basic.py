@@ -35,21 +35,21 @@ def test_crud(engine):
 
 
 def test_projection_overlap(engine):
-    class Model(BaseModel):
+    class ProjectionOverlap(BaseModel):
         hash = Column(Integer, hash_key=True)
         range = Column(Integer, range_key=True)
         other = Column(Integer)
 
         by_other = GlobalSecondaryIndex(projection=["other", "range"], hash_key="other")
     # by_other's projected attributes overlap with the model and its own keys
-    engine.bind(Model)
+    engine.bind(ProjectionOverlap)
 
 
 def test_stream_creation(engine):
-    class Model(BaseModel):
+    class StreamCreation(BaseModel):
         class Meta:
             stream = {
                 "include": ["keys"]
             }
         hash = Column(Integer, hash_key=True)
-    engine.bind(Model)
+    engine.bind(StreamCreation)

@@ -93,5 +93,6 @@ Kick it up a notch with conditional operations:
     user/models
     user/engine
     user/query
+    user/streams
     user/types
     user/conditions

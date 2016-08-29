@@ -1,5 +1,3 @@
-..
-
 .. _define-models:
 
 Define Models
@@ -121,6 +119,8 @@ Available properties:
     describes the `StreamViewType`__.  ``"include"`` can be ``{"new"}``, ``{"old"}``, ``{"new", "old"}``,
     or ``{"keys"}``.  If ``"label"`` is specified, ``Engine.bind`` requires the Stream to already exist,
     and have the given `StreamLabel`__.
+
+    See :ref:`streams`.
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html
     __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamDescription.html#DDB-Type-StreamDescription-StreamViewType

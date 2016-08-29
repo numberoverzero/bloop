@@ -53,3 +53,4 @@ def test_stream_creation(engine):
             }
         hash = Column(Integer, hash_key=True)
     engine.bind(StreamCreation)
+    assert "arn" in StreamCreation.Meta.stream

@@ -85,14 +85,23 @@ You can customize how the table is created with an inner ``Meta`` class:
 
     class Tweet(BaseModel):
         class Meta:
+            abstract = False
             table_name = "custom_table_name"
             read_units = 1000
             write_units = 300
+            stream = {
+                "include": ["new", "old"]
+                "label": "2016-08-29T03:26:22.376"
+            }
 
         user = Column(Integer, hash_key=True)
         created = Column(DateTime, range_key=True)
 
 Available properties:
+
+.. attribute:: Meta.abstract
+
+    True if this model is not backed by a DynamoDB table.  Defaults to False.
 
 .. attribute:: Meta.table_name
 
@@ -106,9 +115,16 @@ Available properties:
 
     The provisioned write units for the table.  Defaults to 1.
 
-.. attribute:: Meta.abstract
+.. attribute:: Meta.stream
 
-    True if this model is not backed by a DynamoDB table.  Defaults to False.
+    Configure this table's `Stream`__.  Must be ``None`` or a dict with the key ``"include"`` that
+    describes the `StreamViewType`__.  ``"include"`` can be ``{"new"}``, ``{"old"}``, ``{"new", "old"}``,
+    or ``{"keys"}``.  If ``"label"`` is specified, ``Engine.bind`` requires the Stream to already exist,
+    and have the given `StreamLabel`__.
+
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html
+    __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamDescription.html#DDB-Type-StreamDescription-StreamViewType
+    __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamDescription.html#DDB-Type-StreamDescription-StreamLabel
 
 Instances of abstract models can't be used with an Engine since there is no table to modify or query.  Their
 columns and indexes are not inherited.

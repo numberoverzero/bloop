@@ -6,11 +6,11 @@ import blinker
 import boto3
 import pytest
 from bloop import Engine
-from bloop.signals import before_create_table
+from bloop.signals import model_created
 from .models import User
 
 
-session = boto3.Session(region_name="us-west-2")
+fixed_session = boto3.Session(region_name="us-west-2")
 
 
 def pytest_addoption(parser):
@@ -26,7 +26,7 @@ def pytest_addoption(parser):
 def pytest_configure(config):
     nonce = config.getoption("--nonce")
 
-    @before_create_table.connect_via(sender=blinker.ANY, weak=False)
+    @model_created.connect_via(sender=blinker.ANY, weak=False)
     def nonce_table_name(_, *, model, **__):
         table_name = model.Meta.table_name
         if nonce not in table_name:
@@ -38,7 +38,7 @@ def pytest_unconfigure(config):
     if skip_cleanup:
         print("Skipping cleanup")
         return
-    dynamodb_client = session.client("dynamodb")
+    dynamodb_client = fixed_session.client("dynamodb")
     it = dynamodb_client.get_paginator("list_tables").paginate()
     tables = [response["TableNames"] for response in it]
     tables = itertools.chain(*tables)
@@ -69,5 +69,10 @@ def cleanup_objects(engine):
 
 
 @pytest.fixture
-def engine():
+def session():
+    return fixed_session
+
+
+@pytest.fixture
+def engine(session):
     return Engine(session=session)

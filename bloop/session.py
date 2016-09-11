@@ -170,13 +170,24 @@ def create_batch_get_chunks(items):
 
 
 def compare_tables(model, actual, expected):
-    try:
-        sanitized_actual = sanitized_table_description(actual)
-    except KeyError:
-        return False
-    # Table doesn't care if there's a stream or not
+    sanitized_actual = sanitize_table_description(actual)
+    # 1. If the table doesn't specify an expected stream type,
+    #    don't inspect the StreamSpecification at all.
     if not model.Meta.stream:
         sanitized_actual.pop("StreamSpecification", None)
+    # 2. If the table backs multiple models, the AttributeDefinitions,
+    #    GlobalSecondaryIndexes, and LocalSecondaryIndexes may contain
+    #    additional entries that this model doesn't care about.
+    #    Drop any values in the sanitized table that aren't expected.
+    subset_only = ["AttributeDefinitions", "GlobalSecondaryIndexes", "LocalSecondaryIndexes"]
+    for section_name in subset_only:
+        if section_name not in sanitized_actual:
+            continue
+        possible_superset = sanitized_actual[section_name]
+        # Ordering because some inner values are lists, and we don't care about their order
+        expected_values = ordered(expected.get(section_name, []))
+        filtered_superset = [x for x in possible_superset if ordered(x) in expected_values]
+        sanitized_actual[section_name] = filtered_superset
     return ordered(sanitized_actual) == ordered(expected)
 
 
@@ -299,7 +310,7 @@ def expected_table_description(model):
     return table
 
 
-def sanitized_table_description(description):
+def sanitize_table_description(description):
     # We don't need to match most of what comes back from describe_table
     # This monster structure carefully extracts the exact fields that bloop
     # will compare against, without picking up any new fields that
@@ -313,61 +324,52 @@ def sanitized_table_description(description):
     # for missing values from the wire.
     table = {
         "AttributeDefinitions": [
-            {"AttributeName": attr_definition["AttributeName"],
-             "AttributeType": attr_definition["AttributeType"]}
-            for attr_definition in description["AttributeDefinitions"]
+            {"AttributeName": attr_definition["AttributeName"], "AttributeType": attr_definition["AttributeType"]}
+            for attr_definition in description.get("AttributeDefinitions", [])
         ],
         "GlobalSecondaryIndexes": [
-            {"IndexName": gsi["IndexName"],
-             "KeySchema": [
-                 {"AttributeName": gsi_key["AttributeName"],
-                  "KeyType": gsi_key["KeyType"]}
-                 for gsi_key in gsi["KeySchema"]],
-             "Projection": {
-                 "NonKeyAttributes":
-                     gsi["Projection"].get("NonKeyAttributes", []),
-                 "ProjectionType": gsi["Projection"]["ProjectionType"]},
-             "ProvisionedThroughput": {
-                 "ReadCapacityUnits":
-                     gsi["ProvisionedThroughput"]["ReadCapacityUnits"],
-                 "WriteCapacityUnits":
-                     gsi["ProvisionedThroughput"]["WriteCapacityUnits"]}}
-            for gsi in description.get("GlobalSecondaryIndexes", [])
+            {
+                "IndexName": gsi["IndexName"],
+                "KeySchema": [
+                    {"AttributeName": gsi_key["AttributeName"], "KeyType": gsi_key["KeyType"]}
+                    for gsi_key in gsi["KeySchema"]],
+                "Projection": {
+                    "NonKeyAttributes": gsi["Projection"].get("NonKeyAttributes", []),
+                    "ProjectionType": gsi["Projection"]["ProjectionType"]},
+                "ProvisionedThroughput": {
+                    "ReadCapacityUnits": gsi["ProvisionedThroughput"]["ReadCapacityUnits"],
+                    "WriteCapacityUnits": gsi["ProvisionedThroughput"]["WriteCapacityUnits"]}}
+                for gsi in description.get("GlobalSecondaryIndexes", [])
         ],
         "KeySchema": [
-            {"AttributeName": table_key["AttributeName"],
-             "KeyType": table_key["KeyType"]}
-            for table_key in description["KeySchema"]
+            {"AttributeName": table_key["AttributeName"], "KeyType": table_key["KeyType"]}
+            for table_key in description.get("KeySchema", [])
         ],
         "LocalSecondaryIndexes": [
-            {"IndexName": lsi["IndexName"],
-             "KeySchema": [
-                 {"AttributeName": lsi_key["AttributeName"],
-                  "KeyType": lsi_key["KeyType"]}
-                 for lsi_key in lsi["KeySchema"]],
-             "Projection": {
-                 "NonKeyAttributes":
-                     lsi["Projection"].get("NonKeyAttributes", []),
-                 "ProjectionType": lsi["Projection"]["ProjectionType"]}}
-            for lsi in description.get("LocalSecondaryIndexes", [])
+            {
+                "IndexName": lsi["IndexName"],
+                "KeySchema": [
+                    {"AttributeName": lsi_key["AttributeName"], "KeyType": lsi_key["KeyType"]}
+                    for lsi_key in lsi["KeySchema"]],
+                "Projection": {
+                    "NonKeyAttributes": lsi["Projection"].get("NonKeyAttributes", []),
+                    "ProjectionType": lsi["Projection"]["ProjectionType"]}}
+                for lsi in description.get("LocalSecondaryIndexes", [])
         ],
         "ProvisionedThroughput": {
             "ReadCapacityUnits":
-                description["ProvisionedThroughput"]["ReadCapacityUnits"],
+                description.get("ProvisionedThroughput", {"ReadCapacityUnits": None})["ReadCapacityUnits"],
             "WriteCapacityUnits":
-                description["ProvisionedThroughput"]["WriteCapacityUnits"]
+                description.get("ProvisionedThroughput", {"WriteCapacityUnits": None})["WriteCapacityUnits"]
         },
         "StreamSpecification": description.get("StreamSpecification", None),
-        "TableName": description["TableName"]
+        "TableName": description.get("TableName", None)
     }
 
-    # Safe to concatenate here since we won't be removing items from the
-    # combined list, but modifying the mutable dicts within
     indexes = table["GlobalSecondaryIndexes"] + table["LocalSecondaryIndexes"]
     for index in indexes:
         if not index["Projection"]["NonKeyAttributes"]:
             index["Projection"].pop("NonKeyAttributes")
-
     for possibly_empty in ["GlobalSecondaryIndexes", "LocalSecondaryIndexes", "StreamSpecification"]:
         if not table[possibly_empty]:
             table.pop(possibly_empty)

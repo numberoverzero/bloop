@@ -15,7 +15,7 @@ from bloop.session import (
     create_table_request,
     expected_table_description,
     ready,
-    sanitized_table_description,
+    sanitize_table_description,
     simple_table_status,
 )
 from bloop.signals import table_validated
@@ -587,6 +587,34 @@ def test_validate_raises(session, dynamodb_client):
     assert excinfo.value.__cause__ is cause
 
 
+def test_validate_unexpected_index(session, dynamodb_client):
+    """Validation doesn't fail when the backing table has an extra GSI and named attribute"""
+    full = expected_table_description(ComplexModel)
+    full["AttributeDefinitions"].append(
+        {"AttributeType": "N", "AttributeName": "extra_attribute"}
+    )
+    full["GlobalSecondaryIndexes"].append({
+        "IndexName": "extra_gsi",
+        "Projection": {"ProjectionType": "KEYS_ONLY"},
+        "KeySchema": [{"KeyType": "HASH", "AttributeName": "date"}],
+        "ProvisionedThroughput": {"WriteCapacityUnits": 1, "ReadCapacityUnits": 1},
+    })
+
+    full["LocalSecondaryIndexes"].append({
+        "IndexName": "extra_lsi",
+        "Projection": {"ProjectionType": "KEYS_ONLY"},
+        "KeySchema": [{"KeyType": "RANGE", "AttributeName": "date"}],
+        "ProvisionedThroughput": {"WriteCapacityUnits": 1, "ReadCapacityUnits": 1}
+    })
+    dynamodb_client.describe_table.return_value = {"Table": full}
+
+    full["TableStatus"] = "ACTIVE"
+    for gsi in full["GlobalSecondaryIndexes"]:
+        gsi["IndexStatus"] = "ACTIVE"
+    # Validation passes even though there are extra Indexes and AttributeDefinitions
+    session.validate_table(ComplexModel)
+
+
 # END VALIDATION HELPERS ======================================================================= END VALIDATION HELPERS
 
 
@@ -685,7 +713,7 @@ def test_sanitize_drop_empty_lists():
     index = description["GlobalSecondaryIndexes"][0]
     index["Projection"]["NonKeyAttributes"] = []
 
-    assert_unordered(expected, sanitized_table_description(description))
+    assert_unordered(expected, sanitize_table_description(description))
 
 
 def test_sanitize_drop_empty_indexes():
@@ -694,7 +722,7 @@ def test_sanitize_drop_empty_indexes():
     description = expected_table_description(SimpleModel)
     description["GlobalSecondaryIndexes"] = []
 
-    assert_unordered(expected, sanitized_table_description(description))
+    assert_unordered(expected, sanitize_table_description(description))
 
 
 def test_sanitize_expected():
@@ -728,7 +756,7 @@ def test_sanitize_expected():
         'TableName': 'User',
         'TableSizeBytes': 'EXTRA_FIELD',
         'TableStatus': 'EXTRA_FIELD'}
-    sanitized = sanitized_table_description(description)
+    sanitized = sanitize_table_description(description)
     assert_unordered(expected, sanitized)
 
 

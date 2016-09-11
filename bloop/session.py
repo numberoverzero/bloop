@@ -24,17 +24,27 @@ class SessionWrapper:
         self._dynamodb_client = session.client("dynamodb")
 
     def save_item(self, item):
-        wrapped_update_item(self._dynamodb_client, item)
+        try:
+            self._dynamodb_client.update_item(**item)
+        except botocore.exceptions.ClientError as error:
+            handle_constraint_violation(error)
 
     def delete_item(self, item):
-        wrapped_delete_item(self._dynamodb_client, item)
+        try:
+            self._dynamodb_client.delete_item(**item)
+        except botocore.exceptions.ClientError as error:
+            handle_constraint_violation(error)
 
     def load_items(self, items):
         loaded_items = {}
         requests = collections.deque(create_batch_get_chunks(items))
         while requests:
             request = requests.pop()
-            response = wrapped_batch_get_item(self._dynamodb_client, request)
+            try:
+                response = self._dynamodb_client.batch_get_item(RequestItems=request)
+            except botocore.exceptions.ClientError as error:
+                raise BloopException("Unexpected error while loading items.") from error
+
             # Accumulate results
             for table_name, table_items in response.get("Responses", {}).items():
                 loaded_items.setdefault(table_name, []).extend(table_items)
@@ -51,19 +61,30 @@ class SessionWrapper:
         return self.search_items("scan", request)
 
     def search_items(self, mode, request):
-        response = wrapped_search(self._dynamodb_client, mode, request)
+        validate_search_mode(mode)
+        method = getattr(self._dynamodb_client, mode)
+        try:
+            response = method(**request)
+        except botocore.exceptions.ClientError as error:
+            raise BloopException("Unexpected error during {}.".format(mode)) from error
         standardize_query_response(response)
         return response
 
     def create_table(self, model):
         table = create_table_request(model)
-        wrapped_create_table(self._dynamodb_client, table, model)
+        try:
+            self._dynamodb_client.create_table(**table)
+        except botocore.exceptions.ClientError as error:
+            handle_table_exists(error, model)
 
     def validate_table(self, model):
         table_name = model.Meta.table_name
         status, actual = None, {}
         while status is not ready:
-            actual = wrapped_describe_table(self._dynamodb_client, table_name)
+            try:
+                actual = self._dynamodb_client.describe_table(TableName=table_name)["Table"]
+            except botocore.exceptions.ClientError as error:
+                raise BloopException("Unexpected error while describing table.") from error
             status = simple_table_status(actual)
         expected = expected_table_description(model)
         if not compare_tables(model, actual, expected):
@@ -90,54 +111,9 @@ def handle_table_exists(error, model):
         raise BloopException("Unexpected error while creating table {!r}.".format(model.__name__)) from error
     # Don't raise if the table already exists
 
-# WRAPPERS ================================================================================================== WRAPPERS
-
-
-def wrapped_batch_get_item(dynamodb_client, request):
-    try:
-        return dynamodb_client.batch_get_item(RequestItems=request)
-    except botocore.exceptions.ClientError as error:
-        raise BloopException("Unexpected error while loading items.") from error
-
-
-def wrapped_update_item(dynamodb_client, item):
-    try:
-        dynamodb_client.update_item(**item)
-    except botocore.exceptions.ClientError as error:
-        handle_constraint_violation(error)
-
-
-def wrapped_delete_item(dynamodb_client, item):
-    try:
-        dynamodb_client.delete_item(**item)
-    except botocore.exceptions.ClientError as error:
-        handle_constraint_violation(error)
-
-
-def wrapped_search(dynamodb_client, mode, request):
-    validate_search_mode(mode)
-    method = getattr(dynamodb_client, mode)
-    try:
-        return method(**request)
-    except botocore.exceptions.ClientError as error:
-        raise BloopException("Unexpected error during {}.".format(mode)) from error
-
-
-def wrapped_create_table(dynamodb_client, table, model):
-    try:
-        dynamodb_client.create_table(**table)
-    except botocore.exceptions.ClientError as error:
-        handle_table_exists(error, model)
-
-
-def wrapped_describe_table(dynamodb_client, table_name):
-    try:
-        return dynamodb_client.describe_table(TableName=table_name)["Table"]
-    except botocore.exceptions.ClientError as error:
-        raise BloopException("Unexpected error while describing table.") from error
-
 
 # MODEL HELPERS ======================================================================================== MODEL HELPERS
+
 
 def standardize_query_response(response):
     count = response.setdefault("Count", 0)

@@ -5,7 +5,9 @@ import pytest
 from bloop.exceptions import (
     BloopException,
     ConstraintViolation,
+    InvalidShardIterator,
     InvalidStream,
+    RecordsExpired,
     TableMismatch,
     UnknownSearchMode,
 )
@@ -715,10 +717,88 @@ def test_describe_stream_combines_results(shard_list, session, streams_client):
     streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId=None)
     streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId="second-token")
 
+
 # END DESCRIBE STREAM ============================================================================ END DESCRIBE STREAM
 
 
 # GET SHARD ITERATOR ============================================================================= GET SHARD ITERATOR
+
+
+def test_get_unknown_shard_iterator(streams_client, session):
+    unknown_type = "foo123"
+    with pytest.raises(InvalidShardIterator) as excinfo:
+        session.get_shard_iterator(
+            stream_arn="arn",
+            shard_id="shard_id",
+            iterator_type=unknown_type,
+            sequence_number=None
+        )
+    assert unknown_type in str(excinfo.value)
+    streams_client.get_shard_iterator.assert_not_called()
+
+
+def test_get_trimmed_shard_iterator(streams_client, session):
+    streams_client.get_shard_iterator.side_effect = client_error("TrimmedDataAccessException")
+    with pytest.raises(RecordsExpired) as excinfo:
+        session.get_shard_iterator(
+            stream_arn="arn",
+            shard_id="shard_id",
+            iterator_type="at_sequence",
+            sequence_number="sequence-123"
+        )
+    assert "at_sequence" in str(excinfo.value)
+    assert "sequence-123" in str(excinfo.value)
+    streams_client.get_shard_iterator.assert_called_once_with(
+        StreamArn="arn",
+        ShardId="shard_id",
+        ShardIteratorType="AT_SEQUENCE_NUMBER",
+        SequenceNumber="sequence-123"
+    )
+
+
+def test_get_shard_iterator_unknown_error(streams_client, session):
+    cause = streams_client.get_shard_iterator.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.get_shard_iterator(stream_arn="arn", shard_id="shard_id", iterator_type="at_sequence")
+    assert excinfo.value.__cause__ is cause
+
+
+def test_get_shard_iterator_after_sequence(streams_client, session):
+    streams_client.get_shard_iterator.return_value = {"ShardIterator": "return value"}
+
+    shard_iterator = session.get_shard_iterator(
+        stream_arn="arn",
+        shard_id="shard_id",
+        iterator_type="after_sequence",
+        sequence_number="sequence-123"
+    )
+    assert shard_iterator == "return value"
+
+    streams_client.get_shard_iterator.assert_called_once_with(
+        StreamArn="arn",
+        ShardId="shard_id",
+        ShardIteratorType="AFTER_SEQUENCE_NUMBER",
+        SequenceNumber="sequence-123"
+    )
+
+
+def test_get_shard_iterator_latest(streams_client, session):
+    streams_client.get_shard_iterator.return_value = {"ShardIterator": "return value"}
+
+    shard_iterator = session.get_shard_iterator(
+        stream_arn="arn",
+        shard_id="shard_id",
+        iterator_type="latest"
+    )
+    assert shard_iterator == "return value"
+
+    streams_client.get_shard_iterator.assert_called_once_with(
+        StreamArn="arn",
+        ShardId="shard_id",
+        ShardIteratorType="LATEST",
+        SequenceNumber=None
+    )
+
 
 
 # END GET SHARD ITERATOR ====================================================================== END GET SHARD ITERATOR

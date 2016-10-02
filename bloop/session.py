@@ -2,6 +2,8 @@ import collections
 import boto3.session
 import botocore.exceptions
 
+from typing import Dict
+
 from .exceptions import (
     BloopException,
     ConstraintViolation,
@@ -105,7 +107,7 @@ class SessionWrapper:
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
         table_validated.send(self, model=model, actual_description=actual, expected_description=expected)
 
-    def describe_stream(self, stream_arn, first_shard=None):
+    def describe_stream(self, stream_arn, first_shard=None) -> Dict[str, str]:
         description = {"Shards": []}
         next_shard = first_shard
         # Can't use None here, it's the most common value for first_shard
@@ -127,7 +129,7 @@ class SessionWrapper:
             description.update(response)
         return description
 
-    def get_shard_iterator(self, *, stream_arn, shard_id, iterator_type, sequence_number=None):
+    def get_shard_iterator(self, *, stream_arn, shard_id, iterator_type, sequence_number=None) -> str:
         real_iterator_type = validate_stream_iterator_type(iterator_type)
         try:
             return self._stream_client.get_shard_iterator(

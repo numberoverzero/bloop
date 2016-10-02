@@ -3,13 +3,16 @@ import collections
 
 from typing import Dict, List
 
+from .exceptions import RecordsExpired, ShardIteratorExpired
 from .session import SessionWrapper
 from .signals import object_loaded
 from .util import unpack_from_dynamodb
 
 
 CALLS_TO_REACH_HEAD = 5
-"""The approximate number of consecutive empty calls required to reach the HEAD of an open shard.
+"""The approximate number of consecutive empty calls required to fully iterate a single shard.
+
+This is the upper limit of advance_iterator calls to ensure an iterator is caught up to HEAD.
 HEAD means "probably caught up to whatever changes are occurring within the shard".  It's not *really* caught up,
 since we can't really do that with a moving target and no idea of "where" the iterator is in time.
 
@@ -49,19 +52,26 @@ def get_iterator(
     iterator_id = session.get_shard_iterator(
         stream_arn=shard["stream_arn"], shard_id=shard["shard_id"],
         iterator_type=iterator_type, sequence_number=sequence_number)
+    # TODO should be a class so users can call iterator.move_to(...) when they get an
     return {
         "stream_arn": shard["stream_arn"],
         "shard_id": shard["shard_id"],
         "iterator_id": iterator_id,
         "type": iterator_type,
         "sequence_number": sequence_number,
-        "consecutive_empty_responses": 0
     }
 
 
 def advance_iterator(session: SessionWrapper, iterator: Dict[str, str]) -> List[Dict]:
     """Updates the iterator's state, and returns any records."""
-    response = session.get_stream_records(iterator["iterator_id"])
+    try:
+        response = session.get_stream_records(iterator["iterator_id"])
+    except ShardIteratorExpired as exception:
+        # iterator is more than 15 minutes old
+        raise ShardIteratorExpired.for_iterator(iterator) from exception
+    except RecordsExpired as exception:
+        # this section of the shard is beyond the trim horizon
+        raise RecordsExpired.for_iterator(iterator) from exception
     records = response.get("Records", [])
 
     # When the shard is closed and we reach the end, NextShardIterator will be None
@@ -70,13 +80,24 @@ def advance_iterator(session: SessionWrapper, iterator: Dict[str, str]) -> List[
     # Record the last state this iterator saw,
     # so we can rebuild an expired iterator or create a stream token
     if records:
-        iterator["consecutive_empty_responses"] = 0
+        # TODO this should be based on advancing the iterator's buffer, and only updated after an
+        # TODO object is read from the buffer
         iterator["sequence_number"] = records[-1]["dynamodb"]["SequenceNumber"]
         iterator["type"] = "after_sequence"
-    else:
-        # Yet another empty response :(
-        iterator["consecutive_empty_responses"] += 1
     return records
+
+
+def refresh_iterator(session: SessionWrapper, *, iterator: Dict[str, str], shard: Dict[str, str]) -> None:
+    """Update the iterator in place to use a new iterator_id"""
+    # Can't deterministically refresh an iterator without a sequence number
+    if iterator["type"] in {"trim_horizon", "latest"}:
+        raise ShardIteratorExpired.for_iterator(iterator)
+    same_iterator = get_iterator(
+        session, shard=shard,
+        iterator_type=iterator["type"],
+        sequence_number=iterator["sequence_number"]
+    )
+    iterator["iterator_id"] = same_iterator["iterator_id"]
 
 
 class StreamIterator:
@@ -101,27 +122,72 @@ class StreamIterator:
         # Buffer where there's more results
         return {}
 
-    def move_to(self, position, strict: bool=False) -> None:
+    def heartbeat(self) -> None:
+        """Call periodically to ensure iterators without a fixed sequence number don't expire.
+
+        You should call this once every ~12 minutes so that your "latest" and "trim_horizon" shard iterators don't
+        expire.  While iterators have an advertised lifetime of 15 minutes, it would be good to call more frequently
+        so you aren't caught by clock skew expiring an iterator.
+
+        When an iterator with a sequence_number expires, it can be re-created deterministically (although that
+        create may raise ``RecordsExpired`` if the iterator is now beyond the trim horizon).  However, "latest" and
+        "trim_horizon" iterators don't refer to a fixed point in a Shard and so can't be re-created without either:
+            (1) possibly missing records between "latest" at 15 minutes ago and "latest" now
+            (2) re-iterating the entire stream from trim_horizon until the approximate iterator creation time is
+                reached.  This may also fail, if "15 minutes ago" has passed the trim_horizon.
+
+        A periodic call to heartbeat removes the ambiguity without incurring the massive performance impact of
+        trying to rebuild an expired "latest" or "trim_horizon" iterator from the beginning of the shard.
+
+        Examples
+        ========
+
+        stream = engine.stream(User, position="latest")
+        start_heartbeats(stream, freq=12)
+        start_processing(stream, processor)
+
+        # heartbeat.py
+        def start_heartbeats(stream, freq=12):
+            # Inside a thread, or whatever your io model supports
+            while True:
+                stream.heartbeat()
+                time.sleep(freq * 60)
+
+        # process.py
+        def start_processing(stream, processor)
+            # Inside a thread, or whatever your io model supports
+            while True:
+                records = next(stream)
+                if records:
+                    # No sleep when we find records, try to get the next
+                    # set as fast as possible
+                    processor(records)
+                else:
+                    # No records on any shard iterators, sleep
+                    # a bit so we're not busy polling past the
+                    # throttling limit
+                    time.sleep(NO_RECORDS_BACKOFF)
+
+        """
+        # TODO get_records on shard iterators without a sequence_number
+        pass
+
+    def move_to(self, position) -> None:
         """Updates the StreamIterator to point to the endpoint, time, or token provided.
 
         - Moving to ``trim_horizon`` or ``latest`` is very fast.
-        - Moving to a time is slow.
-        - Moving to a token from a previous stream is somewhere in the middle.
-
-        When ``strict`` is True, moving to a token will raise when:
-          - the token includes expired shards
-          - the token includes sequence_numbers beyond the trim_horizon
-          - the stream includes shards not in the token
+        - Moving to a specific time is slow.
+        - Moving to a previous stream's token is somewhere in the middle.
         """
         if position in {"latest", "trim_horizon"}:
-            self._jump(position)
+            move = self._jump
         elif isinstance(position, arrow.Arrow):
-            self._seek(position)
+            move = self._seek
         elif isinstance(position, collections.Mapping):
-            self._load(position, strict=strict)
+            move = self._load
         else:
-            # TODO subclass BloopException
-            raise ValueError("Unknown position <p>")
+            raise ValueError("Don't know how to move to position {!r}".format(position))
+        move(position)
 
     def _jump(self, endpoint: str) -> None:
         """Jump to ``trim_horizon`` or ``latest``.
@@ -147,18 +213,17 @@ class StreamIterator:
         # TODO
         return
 
-    def _load(self, token: collections.Mapping, strict: bool) -> None:
+    def _load(self, token: collections.Mapping) -> None:
         """Update the stream to match the token's state as closely as possible.
 
-        When strict is True, any of the following will cause the stream to stop loading the token:
-          - Any shard in the token no longer exists
-          - Any sequence_number is beyond it's shards' trim_horizon
-          - The stream contains new shards not included in the token
-        When strict is False, the above are handled as follows:
-          - Non-existent shards are ignored
-          - Sequence numbers beyond trim_horizon are set to trim_horizon instead
-          - New shards are included in the stream and seek to the approximate time of the existing shards
+        When loading an old token the stream may not be in the same state as when the token was created.  The following
+        edge cases are handled automatically:
+          - When the token references a non-existent (moved past trim_horizon) shard, that shard is ignored
+          - When a sequence number is past that shard's trim_horizon, the iterator is set to trim_horizon
+          - When the stream includes a shard not referenced in the token, its iterator is set to trim_horizon
         """
+        # TODO
+        return
 
     @property
     def token(self):
@@ -191,6 +256,10 @@ class Stream(StreamIterator):
         self.engine = engine
         self.model = model
         super().__init__(**kwargs)
+
+    def __repr__(self):
+        # <Stream[User]>
+        return "<{}[{}]>".format(self.__class__, self.model.__name__)
 
     def __next__(self):
         record = super().__next__()

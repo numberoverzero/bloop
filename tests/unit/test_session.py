@@ -61,6 +61,68 @@ def client_error(code):
     return botocore.exceptions.ClientError(error_response, operation_name)
 
 
+# SAVE ITEM ================================================================================================= SAVE ITEM
+
+
+def test_save_item(session, dynamodb_client):
+    request = {"foo": "bar"}
+    session.save_item(request)
+    dynamodb_client.update_item.assert_called_once_with(**request)
+
+
+def test_save_item_unknown_error(session, dynamodb_client):
+    request = {"foo": "bar"}
+    cause = dynamodb_client.update_item.side_effect = client_error("FooError")
+
+    with pytest.raises(BloopException) as excinfo:
+        session.save_item(request)
+    assert excinfo.value.__cause__ is cause
+    dynamodb_client.update_item.assert_called_once_with(**request)
+
+
+def test_save_item_condition_failed(session, dynamodb_client):
+    request = {"foo": "bar"}
+    dynamodb_client.update_item.side_effect = client_error("ConditionalCheckFailedException")
+
+    with pytest.raises(ConstraintViolation):
+        session.save_item(request)
+    dynamodb_client.update_item.assert_called_once_with(**request)
+
+
+# END SAVE ITEM ========================================================================================= END SAVE ITEM
+
+
+# DELETE ITEM ============================================================================================= DELETE ITEM
+
+
+def test_delete_item(session, dynamodb_client):
+    request = {"foo": "bar"}
+    session.delete_item(request)
+    dynamodb_client.delete_item.assert_called_once_with(**request)
+
+
+def test_delete_item_unknown_error(session, dynamodb_client):
+    request = {"foo": "bar"}
+    cause = dynamodb_client.delete_item.side_effect = client_error("FooError")
+
+    with pytest.raises(BloopException) as excinfo:
+        session.delete_item(request)
+    assert excinfo.value.__cause__ is cause
+    dynamodb_client.delete_item.assert_called_once_with(**request)
+
+
+def test_delete_item_condition_failed(session, dynamodb_client):
+    request = {"foo": "bar"}
+    dynamodb_client.delete_item.side_effect = client_error("ConditionalCheckFailedException")
+
+    with pytest.raises(ConstraintViolation):
+        session.delete_item(request)
+    dynamodb_client.delete_item.assert_called_once_with(**request)
+
+
+# END DELETE ITEM ===================================================================================== END DELETE ITEM
+
+
 # LOAD ITEMS =============================================================================================== LOAD ITEMS
 
 
@@ -238,6 +300,45 @@ def test_batch_get_unprocessed(session, dynamodb_client):
 # END LOAD ITEMS ======================================================================================= END LOAD ITEMS
 
 
+# QUERY SCAN SEARCH ================================================================================= QUERY SCAN SEARCH
+
+
+@pytest.mark.parametrize("response, expected", [
+    ({}, (0, 0)),
+    ({"Count": -1}, (-1, -1)),
+    ({"ScannedCount": -1}, (0, -1)),
+    ({"Count": 1, "ScannedCount": 2}, (1, 2))
+], ids=str)
+def test_query_scan(session, dynamodb_client, response, expected):
+    dynamodb_client.query.return_value = response
+    dynamodb_client.scan.return_value = response
+
+    expected = {"Count": expected[0], "ScannedCount": expected[1]}
+    assert session.query_items({}) == expected
+    assert session.scan_items({}) == expected
+
+
+def test_query_scan_raise(session, dynamodb_client):
+    cause = dynamodb_client.query.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.query_items({})
+    assert excinfo.value.__cause__ is cause
+
+    cause = dynamodb_client.scan.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.scan_items({})
+    assert excinfo.value.__cause__ is cause
+
+
+def test_search_unknown(session):
+    with pytest.raises(UnknownSearchMode) as excinfo:
+        session.search_items(mode="foo", request={})
+    assert "foo" in str(excinfo.value)
+
+
+# END QUERY SCAN SEARCH ======================================================================== END QUERY SCAN SEARCH
+
+
 # CREATE TABLE =========================================================================================== CREATE TABLE
 
 
@@ -318,105 +419,7 @@ def test_create_already_exists(session, dynamodb_client):
 # END CREATE TABLE =================================================================================== END CREATE TABLE
 
 
-# DELETE ITEM ============================================================================================= DELETE ITEM
-
-
-def test_delete_item(session, dynamodb_client):
-    request = {"foo": "bar"}
-    session.delete_item(request)
-    dynamodb_client.delete_item.assert_called_once_with(**request)
-
-
-def test_delete_item_unknown_error(session, dynamodb_client):
-    request = {"foo": "bar"}
-    cause = dynamodb_client.delete_item.side_effect = client_error("FooError")
-
-    with pytest.raises(BloopException) as excinfo:
-        session.delete_item(request)
-    assert excinfo.value.__cause__ is cause
-    dynamodb_client.delete_item.assert_called_once_with(**request)
-
-
-def test_delete_item_condition_failed(session, dynamodb_client):
-    request = {"foo": "bar"}
-    dynamodb_client.delete_item.side_effect = client_error("ConditionalCheckFailedException")
-
-    with pytest.raises(ConstraintViolation):
-        session.delete_item(request)
-    dynamodb_client.delete_item.assert_called_once_with(**request)
-
-
-# END DELETE ITEM ===================================================================================== END DELETE ITEM
-
-
-# SAVE ITEM ================================================================================================= SAVE ITEM
-
-
-def test_save_item(session, dynamodb_client):
-    request = {"foo": "bar"}
-    session.save_item(request)
-    dynamodb_client.update_item.assert_called_once_with(**request)
-
-
-def test_save_item_unknown_error(session, dynamodb_client):
-    request = {"foo": "bar"}
-    cause = dynamodb_client.update_item.side_effect = client_error("FooError")
-
-    with pytest.raises(BloopException) as excinfo:
-        session.save_item(request)
-    assert excinfo.value.__cause__ is cause
-    dynamodb_client.update_item.assert_called_once_with(**request)
-
-
-def test_save_item_condition_failed(session, dynamodb_client):
-    request = {"foo": "bar"}
-    dynamodb_client.update_item.side_effect = client_error("ConditionalCheckFailedException")
-
-    with pytest.raises(ConstraintViolation):
-        session.save_item(request)
-    dynamodb_client.update_item.assert_called_once_with(**request)
-
-
-# END SAVE ITEM ========================================================================================= END SAVE ITEM
-
-
-# QUERY SCAN SEARCH ================================================================================= QUERY SCAN SEARCH
-
-
-@pytest.mark.parametrize("response, expected", [
-    ({}, (0, 0)),
-    ({"Count": -1}, (-1, -1)),
-    ({"ScannedCount": -1}, (0, -1)),
-    ({"Count": 1, "ScannedCount": 2}, (1, 2))
-], ids=str)
-def test_query_scan(session, dynamodb_client, response, expected):
-    dynamodb_client.query.return_value = response
-    dynamodb_client.scan.return_value = response
-
-    expected = {"Count": expected[0], "ScannedCount": expected[1]}
-    assert session.query_items({}) == expected
-    assert session.scan_items({}) == expected
-
-
-def test_query_scan_raise(session, dynamodb_client):
-    cause = dynamodb_client.query.side_effect = client_error("FooError")
-    with pytest.raises(BloopException) as excinfo:
-        session.query_items({})
-    assert excinfo.value.__cause__ is cause
-
-    cause = dynamodb_client.scan.side_effect = client_error("FooError")
-    with pytest.raises(BloopException) as excinfo:
-        session.scan_items({})
-    assert excinfo.value.__cause__ is cause
-
-
-def test_search_unknown(session):
-    with pytest.raises(UnknownSearchMode) as excinfo:
-        session.search_items(mode="foo", request={})
-    assert "foo" in str(excinfo.value)
-
-
-# VALIDATION HELPERS =============================================================================== VALIDATION HELPERS
+# VALIDATE TABLE ====================================================================================== VALIDATE TABLE
 
 
 def test_validate_compares_tables(session, dynamodb_client):
@@ -626,7 +629,7 @@ def test_validate_unexpected_index(session, dynamodb_client):
     session.validate_table(ComplexModel)
 
 
-# END VALIDATION HELPERS ======================================================================= END VALIDATION HELPERS
+# END VALIDATE TABLE ============================================================================== END VALIDATE TABLE
 
 
 # TABLE HELPERS ========================================================================================= TABLE HELPERS

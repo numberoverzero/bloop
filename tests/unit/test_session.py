@@ -747,8 +747,8 @@ def test_get_trimmed_shard_iterator(streams_client, session):
             iterator_type="at_sequence",
             sequence_number="sequence-123"
         )
-    assert "at_sequence" in str(excinfo.value)
-    assert "sequence-123" in str(excinfo.value)
+    assert excinfo.value.iterator is None
+    assert excinfo.value.iterator_id is None
     streams_client.get_shard_iterator.assert_called_once_with(
         StreamArn="arn",
         ShardId="shard_id",
@@ -811,14 +811,14 @@ def test_get_trimmed_records(streams_client, session):
     streams_client.get_records.side_effect = client_error("TrimmedDataAccessException")
     with pytest.raises(RecordsExpired) as excinfo:
         session.get_stream_records(iterator_id="iterator-123")
-    assert "iterator-123" in str(excinfo.value)
+    assert excinfo.value.iterator_id == "iterator-123"
 
 
 def test_get_records_expired_iterator(streams_client, session):
     streams_client.get_records.side_effect = client_error("ExpiredIteratorException")
     with pytest.raises(ShardIteratorExpired) as excinfo:
         session.get_stream_records("some-iterator")
-    assert "some-iterator" in str(excinfo.value)
+    assert excinfo.value.iterator_id == "some-iterator"
 
 
 def test_get_shard_records_unknown_error(streams_client, session):

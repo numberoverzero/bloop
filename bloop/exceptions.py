@@ -37,11 +37,27 @@ class MissingKey(BloopException, ValueError):
     """The instance must provide values for its key columns."""
 
 
-class RecordsExpired(BloopException):
+class ShardIteratorException(BloopException):
+    """Something failed when accessing or creating a ShardIterator"""
+    def __init__(self, iterator, iterator_id):
+        """iterator should be the dict; when the iterator isn't available, iterator_id should be populated."""
+        self.iterator = iterator
+        self.iterator_id = iterator_id
+
+    @classmethod
+    def for_iterator(cls, iterator):
+        return cls(iterator, None)
+
+    @classmethod
+    def for_id(cls, iterator_id):
+        return cls(None, iterator_id)
+
+
+class RecordsExpired(ShardIteratorException):
     """The requested stream records are beyond the trim horizon."""
 
 
-class ShardIteratorExpired(BloopException):
+class ShardIteratorExpired(ShardIteratorException):
     """The shard iterator is past its expiration date."""
 
 

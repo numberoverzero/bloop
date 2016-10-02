@@ -21,6 +21,7 @@ from .signals import (
     object_loaded,
     object_saved,
 )
+from .streams import Stream
 from .util import missing, unpack_from_dynamodb, walk_subclasses
 
 
@@ -235,3 +236,8 @@ class Engine:
             engine=self, session=self.session, model=model, index=index, filter=filter,
             projection=projection, limit=limit, consistent=consistent)
         return iter(s.prepare())
+
+    def stream(self, model, position, strict: bool=False) -> Stream:
+        s = Stream(engine=self, model=model, session=self.session)
+        s.move_to(position=position, strict=strict)
+        return s

@@ -63,18 +63,23 @@ def validate_projection(projection):
 def validate_stream(stream):
     if stream is None:
         return
+
     if not isinstance(stream, collections.abc.MutableMapping):
         raise InvalidStream("Stream must be None or a dict.")
+
     if "include" not in stream:
         raise InvalidStream("Specify what the stream will return with the 'include' key.")
     include = stream["include"] = set(stream["include"])
+
     # []
     if not include:
         raise InvalidStream("Must include at least one of 'keys', 'old', or 'new'.")
+
     # ["what is this", "keys"]
     for value in include:
         if value not in {"new", "keys", "old"}:
             raise InvalidStream("Streams can only contain 'keys', 'old', and/or 'new'.")
+
     # ["keys", "old"]
     if include == {"new", "keys"} or include == {"old", "keys"}:
         raise InvalidStream("The option 'keys' cannot be used with either 'old' or 'new'.")

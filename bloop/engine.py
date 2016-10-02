@@ -237,7 +237,7 @@ class Engine:
             projection=projection, limit=limit, consistent=consistent)
         return iter(s.prepare())
 
-    def stream(self, model, position, strict: bool=False) -> Stream:
+    def stream(self, model, position) -> Stream:
         s = Stream(engine=self, model=model, session=self.session)
-        s.move_to(position=position, strict=strict)
+        s.move_to(position=position)
         return s

@@ -1,10 +1,14 @@
 #!/usr/bin/env bash
 
-# Run tests for one module
+# Output test status when running a single module's tests
 cover_file () {
-    coverage run --append --branch --source=bloop/$MODULE -m py.test tests/unit/test_$MODULE &> /dev/null 2>&1
+    coverage run --branch --source=bloop/$MODULE -m py.test tests/unit/test_$MODULE
 }
 
+# Just collecting coverage, suppress test output
+cover_silent () {
+    coverage run --append --branch --source=bloop/$MODULE -m py.test tests/unit/test_$MODULE &> /dev/null 2>&1
+}
 # Discover all modules and run tests against each
 cover_all () {
     for filename in bloop/*.py; do
@@ -13,7 +17,7 @@ cover_all () {
         # skip root import file
         [[ "$MODULE" == "__init__.py" ]] && continue
         echo "Collecting ${MODULE%.*}..."
-        cover_file
+        cover_silent
     done
 }
 
@@ -22,7 +26,7 @@ rm -f .coverage
 
 if [ -z "$1" ]; then
     # No module specified, run all
-    echo "Unit tests for all modules"
+    echo "Unit tests for all modules, suppressing test output"
     cover_all
 else
     # Run specified module

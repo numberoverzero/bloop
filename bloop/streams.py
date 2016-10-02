@@ -36,7 +36,7 @@ def list_shards(session: SessionWrapper, stream: Dict[str, str], first_shard: Di
 
 def rebuild_shard_forest(session: SessionWrapper, stream: Dict[str, str]) -> None:
     """Clean up shards that rolled off, unpack flat list into existing (or empty) shard forest"""
-    all_shards = list_shards(session=session, stream=stream)
+    list_shards(session=session, stream=stream)
     # TODO unpack shards
     pass
 
@@ -101,7 +101,29 @@ class StreamIterator:
         # Buffer where there's more results
         return {}
 
-    def jump(self, endpoint: str) -> None:
+    def move_to(self, position, strict: bool=False) -> None:
+        """Updates the StreamIterator to point to the endpoint, time, or token provided.
+
+        - Moving to ``trim_horizon`` or ``latest`` is very fast.
+        - Moving to a time is slow.
+        - Moving to a token from a previous stream is somewhere in the middle.
+
+        When ``strict`` is True, moving to a token will raise when:
+          - the token includes expired shards
+          - the token includes sequence_numbers beyond the trim_horizon
+          - the stream includes shards not in the token
+        """
+        if position in {"latest", "trim_horizon"}:
+            self._jump(position)
+        elif isinstance(position, arrow.Arrow):
+            self._seek(position)
+        elif isinstance(position, collections.Mapping):
+            self._load(position, strict=strict)
+        else:
+            # TODO subclass BloopException
+            raise ValueError("Unknown position <p>")
+
+    def _jump(self, endpoint: str) -> None:
         """Jump to ``trim_horizon`` or ``latest``.
 
         This is a fast operation that will jump to either end of the stream.  This does not mean
@@ -114,7 +136,7 @@ class StreamIterator:
         # TODO
         return
 
-    def seek(self, position: arrow.Arrow) -> None:
+    def _seek(self, position: arrow.Arrow) -> None:
         """Seek through the stream for the desired position in time.
 
         This is an *expensive* operation.  Seeking to an arbitrary position in time will require partially
@@ -124,6 +146,19 @@ class StreamIterator:
         """
         # TODO
         return
+
+    def _load(self, token: collections.Mapping, strict: bool) -> None:
+        """Update the stream to match the token's state as closely as possible.
+
+        When strict is True, any of the following will cause the stream to stop loading the token:
+          - Any shard in the token no longer exists
+          - Any sequence_number is beyond it's shards' trim_horizon
+          - The stream contains new shards not included in the token
+        When strict is False, the above are handled as follows:
+          - Non-existent shards are ignored
+          - Sequence numbers beyond trim_horizon are set to trim_horizon instead
+          - New shards are included in the stream and seek to the approximate time of the existing shards
+        """
 
     @property
     def token(self):
@@ -178,12 +213,3 @@ class Stream(StreamIterator):
         )
         object_loaded.send(self.engine, obj=obj)
         record[key] = obj
-
-
-def from_token(engine, model, session, token):
-    # TODO warn on expired shards, or shards with abstract times ``trim_horizon`` or ``latest``.
-    stream = Stream(engine=engine, model=model, session=session)
-
-    # TODO the whole all of it
-
-    return stream

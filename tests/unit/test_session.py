@@ -8,6 +8,7 @@ from bloop.exceptions import (
     InvalidShardIterator,
     InvalidStream,
     RecordsExpired,
+    ShardIteratorExpired,
     TableMismatch,
     UnknownSearchMode,
 )
@@ -800,11 +801,41 @@ def test_get_shard_iterator_latest(streams_client, session):
     )
 
 
-
 # END GET SHARD ITERATOR ====================================================================== END GET SHARD ITERATOR
 
 
 # GET STREAM RECORDS ============================================================================== GET STREAM RECORDS
+
+
+def test_get_trimmed_records(streams_client, session):
+    streams_client.get_records.side_effect = client_error("TrimmedDataAccessException")
+    with pytest.raises(RecordsExpired) as excinfo:
+        session.get_stream_records(iterator_id="iterator-123")
+    assert "iterator-123" in str(excinfo.value)
+
+
+def test_get_records_expired_iterator(streams_client, session):
+    streams_client.get_records.side_effect = client_error("ExpiredIteratorException")
+    with pytest.raises(ShardIteratorExpired) as excinfo:
+        session.get_stream_records("some-iterator")
+    assert "some-iterator" in str(excinfo.value)
+
+
+def test_get_shard_records_unknown_error(streams_client, session):
+    cause = streams_client.get_records.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.get_stream_records("iterator-123")
+    assert excinfo.value.__cause__ is cause
+
+
+def test_get_records(streams_client, session):
+    # Return structure isn't important, since it's just a passthrough
+    response = streams_client.get_records.return_value = {"return": "value"}
+
+    records = session.get_stream_records(iterator_id="some-iterator")
+    assert records is response
+
+    streams_client.get_records.assert_called_once_with(ShardIterator="some-iterator")
 
 
 # END GET STREAM RECORDS ====================================================================== END GET STREAM RECORDS

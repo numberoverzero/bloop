@@ -34,10 +34,21 @@ def dynamodb_client():
 
 
 @pytest.fixture
-def session(dynamodb_client):
+def streams_client():
+    # No spec since clients are generated dynamically.
+    return Mock()
+
+
+@pytest.fixture
+def session(dynamodb_client, streams_client):
     class Session:
         def client(self, name):
-            return dynamodb_client
+            assert name in {"dynamodb", "dynamodbstreams"}
+            if name == "dynamodb":
+                return dynamodb_client
+            elif name == "dynamodbstreams":
+                return streams_client
+            raise RuntimeError("Mock session asked for unexpected client {!r}".format(name))
     return SessionWrapper(Session())
 
 

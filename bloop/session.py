@@ -1,10 +1,14 @@
 import collections
-
+import boto3.session
 import botocore.exceptions
 
 from .exceptions import (
     BloopException,
     ConstraintViolation,
+    InvalidShardIterator,
+    InvalidStream,
+    RecordsExpired,
+    ShardIteratorExpired,
     TableMismatch,
     UnknownSearchMode,
 )
@@ -12,16 +16,25 @@ from .signals import table_validated
 from .util import Sentinel, ordered
 
 
+missing = Sentinel("missing")
 ready = Sentinel("ready")
 
 __all__ = ["SessionWrapper"]
 # https://boto3.readthedocs.io/en/latest/reference/services/dynamodb.html#DynamoDB.Client.batch_get_item
 BATCH_GET_ITEM_CHUNK_SIZE = 100
 
+SHARD_ITERATOR_TYPES = {
+    "at_sequence": "AT_SEQUENCE_NUMBER",
+    "after_sequence": "AFTER_SEQUENCE_NUMBER",
+    "trim_horizon": "TRIM_HORIZON",
+    "latest": "LATEST"
+}
+
 
 class SessionWrapper:
-    def __init__(self, session):
+    def __init__(self, session: boto3.session.Session):
         self._dynamodb_client = session.client("dynamodb")
+        self._stream_client = session.client("dynamodbstreams")
 
     def save_item(self, item):
         try:
@@ -48,7 +61,8 @@ class SessionWrapper:
             # Accumulate results
             for table_name, table_items in response.get("Responses", {}).items():
                 loaded_items.setdefault(table_name, []).extend(table_items)
-            # Push additional requests onto the deque.
+
+            # Push additional request onto the deque.
             # "UnprocessedKeys" is {} if this request is done
             if response["UnprocessedKeys"]:
                 requests.append(response["UnprocessedKeys"])
@@ -91,10 +105,60 @@ class SessionWrapper:
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
         table_validated.send(self, model=model, actual_description=actual, expected_description=expected)
 
+    def describe_stream(self, stream_arn, first_shard=None):
+        description = {"Shards": []}
+        next_shard = first_shard.shard_id if first_shard else None
+        while next_shard is not missing:
+            try:
+                response = self._stream_client.describe_stream(
+                    StreamArn=stream_arn,
+                    ExclusiveStartShardId=next_shard
+                )["StreamDescription"]
+            except botocore.exceptions.ClientError as error:
+                if error.response["Error"]["Code"] == "ResourceNotFoundException":
+                    raise InvalidStream("The stream arn {!r} does not exist.".format(stream_arn))
+                raise BloopException("Unexpected error while describing stream.") from error
+            next_shard = response.pop("LastEvaluatedShardId", missing)
+            description["Shards"].extend(response.pop("Shards", []))
+            description.update(response)
+        return description
+
+    def get_shard_iterator(self, stream_arn, shard_id, iterator_type, sequence_number):
+        iterator_type = validate_stream_iterator_type(iterator_type)
+        try:
+            return self._stream_client.get_shard_iterator(
+                StreamArn=stream_arn,
+                ShardId=shard_id,
+                ShardIteratorType=iterator_type,
+                SequenceNumber=sequence_number
+            )["ShardIterator"]
+        except botocore.exceptions.ClientError as error:
+            if error.response["Error"]["Code"] == "TrimmedDataAccessException":
+                raise RecordsExpired("Sequence number {!r} is beyond the trim horizon.".format(sequence_number))
+            raise BloopException("Unexpected error while creating shard iterator") from error
+
+    def get_stream_records(self, iterator_id):
+        try:
+            return self._stream_client.get_records(ShardIterator=iterator_id)
+        except botocore.exceptions.ClientError as error:
+            if error.response["Error"]["Code"] == "TrimmedDataAccessException":
+                raise RecordsExpired(
+                    "The iterator {!r} requested records beyond the trim horizon.".format(iterator_id))
+            elif error.response["Error"]["Code"] == "ExpiredIteratorException":
+                raise ShardIteratorExpired("The iterator {!r} expired.".format(iterator_id))
+            raise BloopException("Unexpected error while getting records.") from error
+
 
 def validate_search_mode(mode):
     if mode not in {"query", "scan"}:
         raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
+
+
+def validate_stream_iterator_type(iterator_type):
+    try:
+        return SHARD_ITERATOR_TYPES[iterator_type]
+    except KeyError:
+        raise InvalidShardIterator("Unknown iterator type {!r}".format(iterator_type))
 
 
 def handle_constraint_violation(error):

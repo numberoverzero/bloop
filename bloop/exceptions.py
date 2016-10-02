@@ -37,6 +37,14 @@ class MissingKey(BloopException, ValueError):
     """The instance must provide values for its key columns."""
 
 
+class RecordsExpired(BloopException):
+    """The requested stream records are beyond the trim horizon."""
+
+
+class ShardIteratorExpired(BloopException):
+    """The shard iterator is past its expiration date."""
+
+
 class InvalidModel(BloopException, ValueError):
     """This is not a valid Model."""
 
@@ -47,6 +55,10 @@ class InvalidIndex(BloopException, ValueError):
 
 class InvalidStream(BloopException, ValueError):
     """This is not a valid stream definition."""
+
+
+class InvalidShardIterator(BloopException, ValueError):
+    """This is not a valid shard iterator."""
 
 
 class InvalidComparisonOperator(BloopException, ValueError):

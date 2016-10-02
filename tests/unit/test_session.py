@@ -5,6 +5,7 @@ import pytest
 from bloop.exceptions import (
     BloopException,
     ConstraintViolation,
+    InvalidStream,
     TableMismatch,
     UnknownSearchMode,
 )
@@ -20,9 +21,11 @@ from bloop.session import (
 )
 from bloop.signals import table_validated
 from bloop.types import String
-from bloop.util import ordered
+from bloop.util import Sentinel, ordered
 
 from ..helpers.models import ComplexModel, SimpleModel, User
+
+missing = Sentinel("missing")
 
 
 @pytest.fixture
@@ -50,6 +53,27 @@ def session(dynamodb_client, streams_client):
                 return streams_client
             raise RuntimeError("Mock session asked for unexpected client {!r}".format(name))
     return SessionWrapper(Session())
+
+
+def build_describe_stream_response(shards=missing, next_id=missing):
+    description = {
+        "StreamDescription": {
+            "CreationRequestDateTime": "now",
+            "KeySchema": [{"AttributeName": "string", "KeyType": "string"}],
+            "LastEvaluatedShardId": next_id,
+            "Shards": shards,
+            "StreamArn": "string",
+            "StreamLabel": "string",
+            "StreamStatus": "string",
+            "StreamViewType": "string",
+            "TableName": "string"
+        }
+    }
+    if shards is missing:
+        description["StreamDescription"].pop("Shards")
+    if next_id is missing:
+        description["StreamDescription"].pop("LastEvaluatedShardId")
+    return description
 
 
 def client_error(code):
@@ -630,6 +654,80 @@ def test_validate_unexpected_index(session, dynamodb_client):
 
 
 # END VALIDATE TABLE ============================================================================== END VALIDATE TABLE
+
+
+# DESCRIBE STREAM ==================================================================================== DESCRIBE STREAM
+
+
+def test_describe_stream_unknown_error(session, streams_client):
+    request = {"StreamArn": "arn", "ExclusiveStartShardId": "shard id"}
+    cause = streams_client.describe_stream.side_effect = client_error("FooError")
+
+    with pytest.raises(BloopException) as excinfo:
+        session.describe_stream("arn", "shard id")
+    assert excinfo.value.__cause__ is cause
+    streams_client.describe_stream.assert_called_once_with(**request)
+
+
+def test_describe_stream_not_found(session, streams_client):
+    request = {"StreamArn": "arn", "ExclusiveStartShardId": "shard id"}
+    cause = streams_client.describe_stream.side_effect = client_error("ResourceNotFoundException")
+
+    with pytest.raises(InvalidStream) as excinfo:
+        session.describe_stream("arn", "shard id")
+    assert excinfo.value.__cause__ is cause
+    streams_client.describe_stream.assert_called_once_with(**request)
+
+
+@pytest.mark.parametrize("no_shards", [missing, list()])
+@pytest.mark.parametrize("next_ids", [(missing, ), (None, ), ("two pages", None)])
+def test_describe_stream_no_results(no_shards, next_ids, session, streams_client):
+    stream_arn = "arn"
+    responses = [build_describe_stream_response(shards=no_shards, next_id=next_id) for next_id in next_ids]
+    streams_client.describe_stream.side_effect = responses
+
+    description = session.describe_stream(stream_arn=stream_arn, first_shard="first-token")
+    assert description["Shards"] == []
+
+    empty_response = build_describe_stream_response(shards=[])["StreamDescription"]
+    assert ordered(description) == ordered(empty_response)
+
+    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId="first-token")
+    assert streams_client.describe_stream.call_count == len(next_ids)
+
+
+@pytest.mark.parametrize("shard_list", [
+    # results followed by empty
+    (["first", "second"], []),
+    # empty followed by results
+    ([], ["first", "second"])
+])
+def test_describe_stream_combines_results(shard_list, session, streams_client):
+    stream_arn = "arn"
+    responses = [build_describe_stream_response(shards=shard_list[0], next_id="second-token"),
+                 build_describe_stream_response(shards=shard_list[1], next_id=missing)]
+    streams_client.describe_stream.side_effect = responses
+
+    description = session.describe_stream(stream_arn)
+    assert description["Shards"] == ["first", "second"]
+
+    assert streams_client.describe_stream.call_count == 2
+    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId=None)
+    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId="second-token")
+
+# END DESCRIBE STREAM ============================================================================ END DESCRIBE STREAM
+
+
+# GET SHARD ITERATOR ============================================================================= GET SHARD ITERATOR
+
+
+# END GET SHARD ITERATOR ====================================================================== END GET SHARD ITERATOR
+
+
+# GET STREAM RECORDS ============================================================================== GET STREAM RECORDS
+
+
+# END GET STREAM RECORDS ====================================================================== END GET STREAM RECORDS
 
 
 # TABLE HELPERS ========================================================================================= TABLE HELPERS

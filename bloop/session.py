@@ -107,7 +107,8 @@ class SessionWrapper:
 
     def describe_stream(self, stream_arn, first_shard=None):
         description = {"Shards": []}
-        next_shard = first_shard.shard_id if first_shard else None
+        next_shard = first_shard
+        # Can't use None here, it's the most common value for first_shard
         while next_shard is not missing:
             try:
                 response = self._stream_client.describe_stream(
@@ -116,9 +117,12 @@ class SessionWrapper:
                 )["StreamDescription"]
             except botocore.exceptions.ClientError as error:
                 if error.response["Error"]["Code"] == "ResourceNotFoundException":
-                    raise InvalidStream("The stream arn {!r} does not exist.".format(stream_arn))
+                    raise InvalidStream("The stream arn {!r} does not exist.".format(stream_arn)) from error
                 raise BloopException("Unexpected error while describing stream.") from error
-            next_shard = response.pop("LastEvaluatedShardId", missing)
+            # Docs aren't clear if the terminal value is null, or won't exist.
+            # Since we don't terminate the loop on None, the "or missing" here
+            # will ensure we stop on a falsey value.
+            next_shard = response.pop("LastEvaluatedShardId", None) or missing
             description["Shards"].extend(response.pop("Shards", []))
             description.update(response)
         return description
@@ -134,7 +138,8 @@ class SessionWrapper:
             )["ShardIterator"]
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "TrimmedDataAccessException":
-                raise RecordsExpired("Sequence number {!r} is beyond the trim horizon.".format(sequence_number))
+                raise RecordsExpired(
+                    "Sequence number {!r} is beyond the trim horizon.".format(sequence_number)) from error
             raise BloopException("Unexpected error while creating shard iterator") from error
 
     def get_stream_records(self, iterator_id):
@@ -143,9 +148,9 @@ class SessionWrapper:
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "TrimmedDataAccessException":
                 raise RecordsExpired(
-                    "The iterator {!r} requested records beyond the trim horizon.".format(iterator_id))
+                    "The iterator {!r} requested records beyond the trim horizon.".format(iterator_id)) from error
             elif error.response["Error"]["Code"] == "ExpiredIteratorException":
-                raise ShardIteratorExpired("The iterator {!r} expired.".format(iterator_id))
+                raise ShardIteratorExpired("The iterator {!r} expired.".format(iterator_id)) from error
             raise BloopException("Unexpected error while getting records.") from error
 
 

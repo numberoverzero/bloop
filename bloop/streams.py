@@ -100,8 +100,8 @@ def refresh_iterator(session: SessionWrapper, *, iterator: Dict[str, str], shard
     iterator["iterator_id"] = same_iterator["iterator_id"]
 
 
-class StreamIterator:
-    def __init__(self, *, session, **kwargs):
+class Coordinator:
+    def __init__(self, session):
         self.session = session
         self.buffer = collections.deque()
 
@@ -123,6 +123,128 @@ class StreamIterator:
         return {}
 
     def heartbeat(self) -> None:
+        """Force refresh iterators without sequence numbers"""
+        # TODO get_records on shard iterators without a sequence_number
+        pass
+
+    def jump(self, endpoint: str) -> None:
+        """Jump to ``trim_horizon`` or ``latest``.
+
+        This is a fast operation that will jump to either end of the stream.  This does not mean
+        that every shard iterator will move to ``trim_horizon`` or ``latest``.  For example, only the root
+        shards (oldest in each tree) will be part of the StreamIterator after jumping to ``trim_horizon``.
+        When jumping to ``latest``, only the leaf shards (newest in each tree) will be part of the
+        StreamIterator.  Leaf shards aren't necessarily open (ie. a disabled stream, or a reduction in provisioned
+        throughput).
+        """
+        # TODO
+        return
+
+    def seek(self, position: arrow.Arrow) -> None:
+        """Seek through the stream for the desired position in time.
+
+        This is an *expensive* operation.  Seeking to an arbitrary position in time will require partially
+        or fully iterating most (or all) Shards in the Stream.  At the moment, seek is O(N) for GetRecords calls
+        over both open and closed shards.  A more clever algorithm could use probing to cut down the search space,
+        but still has worst case O(N) performance and in practice won't save that many calls.  Open shards
+        """
+        # TODO
+        return
+
+    def load(self, token: collections.Mapping) -> None:
+        """Update the stream to match the token's state as closely as possible.
+
+        When loading an old token the stream may not be in the same state as when the token was created.  The following
+        edge cases are handled automatically:
+          - When the token references a non-existent (moved past trim_horizon) shard, that shard is ignored
+          - When a sequence number is past that shard's trim_horizon, the iterator is set to trim_horizon
+          - When the stream includes a shard not referenced in the token, its iterator is set to trim_horizon
+        """
+        # TODO
+        return
+
+    @property
+    def token(self):
+        """Dict of current state"""
+        # TODO the whole all of it
+
+        # TODO warn when including ``trim_horizon`` or ``latest`` iterators, since they
+        # TODO   represent an abstract time; ``latest`` when the token is created would be
+        # TODO   very different from ``latest`` when the token is re-used a day later.
+        return {}
+
+
+class Stream:
+    """Provides an approximate iterator over all Records in all Shards in a Stream.
+
+    There are no guarantees or bounds on ordering (you can't order records in different shards, in general) but
+    in practice, this will provide a close approximation of the order that changes occurred across an entire Model's
+    table.
+
+    Examples
+    ========
+
+    # This could be part of a replication process, where
+    # most of the table has been copied (+/- the last 12 hours).
+    # Now, this should catch up changes missed during the bulk move,
+    # and apply new changes as they come in.
+
+    stream = engine.stream(Model, position="trim_horizon")
+
+    # Heartbeat slightly more often than the lifetime of an iterator
+    next_heartbeat = lambda: arrow.now().replace(12 * 60)
+
+    heartbeat_at = next_heartbeat()
+    for records in stream:
+        if records:
+            for record in records:
+                replicate(record)
+        if arrow.now() > next_heartbeat:
+            next_heartbeat = calculate_next_heartbeat()
+            stream.heartbeat()
+    """
+    def __init__(self, *, engine, model, session):
+        self.engine = engine
+        self.model = model
+        self.coordinator = Coordinator(session)
+
+    def __repr__(self):
+        # <Stream[User]>
+        return "<{}[{}]>".format(self.__class__, self.model.__name__)
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        record = next(self.coordinator, None)
+        if record is None:
+            return record
+        meta = self.model.Meta
+        self._unpack(record, "new", meta.columns)
+        self._unpack(record, "old", meta.columns)
+        self._unpack(record, "key", meta.keys)
+
+    @property
+    def token(self):
+        """Dict that can be used to reconstruct the current progress of the iterator.
+
+        Example
+        =======
+
+        with open(".stream-state", "w") as f:
+            json.dump(stream.token, f)
+
+        # Some time later
+        ...
+
+        with open(".stream-state", "r") as f:
+            token = json.load(f)
+
+        stream = engine.stream(MyModel, at=token)
+        """
+        return self.coordinator.token
+
+    def heartbeat(self):
         """Call periodically to ensure iterators without a fixed sequence number don't expire.
 
         You should call this once every ~12 minutes so that your "latest" and "trim_horizon" shard iterators don't
@@ -169,8 +291,7 @@ class StreamIterator:
                     time.sleep(NO_RECORDS_BACKOFF)
 
         """
-        # TODO get_records on shard iterators without a sequence_number
-        pass
+        self.coordinator.heartbeat()
 
     def move_to(self, position) -> None:
         """Updates the StreamIterator to point to the endpoint, time, or token provided.
@@ -180,123 +301,14 @@ class StreamIterator:
         - Moving to a previous stream's token is somewhere in the middle.
         """
         if position in {"latest", "trim_horizon"}:
-            move = self._jump
+            move = self.coordinator.jump
         elif isinstance(position, arrow.Arrow):
-            move = self._seek
+            move = self.coordinator.seek
         elif isinstance(position, collections.Mapping):
-            move = self._load
+            move = self.coordinator.load
         else:
             raise ValueError("Don't know how to move to position {!r}".format(position))
         move(position)
-
-    def _jump(self, endpoint: str) -> None:
-        """Jump to ``trim_horizon`` or ``latest``.
-
-        This is a fast operation that will jump to either end of the stream.  This does not mean
-        that every shard iterator will move to ``trim_horizon`` or ``latest``.  For example, only the root
-        shards (oldest in each tree) will be part of the StreamIterator after jumping to ``trim_horizon``.
-        When jumping to ``latest``, only the leaf shards (newest in each tree) will be part of the
-        StreamIterator.  Leaf shards aren't necessarily open (ie. a disabled stream, or a reduction in provisioned
-        throughput).
-        """
-        # TODO
-        return
-
-    def _seek(self, position: arrow.Arrow) -> None:
-        """Seek through the stream for the desired position in time.
-
-        This is an *expensive* operation.  Seeking to an arbitrary position in time will require partially
-        or fully iterating most (or all) Shards in the Stream.  At the moment, seek is O(N) for GetRecords calls
-        over both open and closed shards.  A more clever algorithm could use probing to cut down the search space,
-        but still has worst case O(N) performance and in practice won't save that many calls.  Open shards
-        """
-        # TODO
-        return
-
-    def _load(self, token: collections.Mapping) -> None:
-        """Update the stream to match the token's state as closely as possible.
-
-        When loading an old token the stream may not be in the same state as when the token was created.  The following
-        edge cases are handled automatically:
-          - When the token references a non-existent (moved past trim_horizon) shard, that shard is ignored
-          - When a sequence number is past that shard's trim_horizon, the iterator is set to trim_horizon
-          - When the stream includes a shard not referenced in the token, its iterator is set to trim_horizon
-        """
-        # TODO
-        return
-
-    @property
-    def token(self):
-        """Dict that can be used to reconstruct the current progress of the iterator.
-
-        Example
-        =======
-
-        with open(".stream-state", "w") as f:
-            json.dump(stream.token, f)
-
-        # Some time later
-        ...
-
-        with open(".stream-state", "r") as f:
-            token = json.load(f)
-
-        stream = engine.stream(MyModel, at=token)
-        """
-        # TODO the whole all of it
-
-        # TODO warn when including ``trim_horizon`` or ``latest`` iterators, since they
-        # TODO   represent an abstract time; ``latest`` when the token is created would be
-        # TODO   very different from ``latest`` when the token is re-used a day later.
-        return {}
-
-
-class Stream(StreamIterator):
-    """Provides an approximate iterator over all Records in all Shards in a Stream.
-
-    There are no guarantees or bounds on ordering (you can't order records in different shards, in general) but
-    in practice, this will provide a close approximation of the order that changes occurred across an entire Model's
-    table.
-
-    Examples
-    ========
-
-    # This could be part of a replication process, where
-    # most of the table has been copied (+/- the last 12 hours).
-    # Now, this should catch up changes missed during the bulk move,
-    # and apply new changes as they come in.
-
-    stream = engine.stream(Model, position="trim_horizon")
-
-    # Heartbeat slightly more often than the lifetime of an iterator
-    next_heartbeat = lambda: arrow.now().replace(12 * 60)
-
-    heartbeat_at = next_heartbeat()
-    for records in stream:
-        if records:
-            for record in records:
-                replicate(record)
-        if arrow.now() > next_heartbeat:
-            next_heartbeat = calculate_next_heartbeat()
-            stream.heartbeat()
-    """
-    def __init__(self, *, engine, model, **kwargs):
-        self.engine = engine
-        self.model = model
-        super().__init__(**kwargs)
-
-    def __repr__(self):
-        # <Stream[User]>
-        return "<{}[{}]>".format(self.__class__, self.model.__name__)
-
-    def __next__(self):
-        record = super().__next__()
-        if record is None:
-            return record
-        meta = self.model.Meta
-        self._unpack(record, "new", meta.columns)
-        self._unpack(record, "old", meta.columns)
-        self._unpack(record, "key", meta.keys)
 
     def _unpack(self, record, key, expected):
         attrs = record[key]

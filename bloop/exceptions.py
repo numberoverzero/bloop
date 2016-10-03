@@ -61,6 +61,10 @@ class ShardIteratorExpired(ShardIteratorException):
     """The shard iterator is past its expiration date."""
 
 
+class SeekFailed(ShardIteratorException):
+    """Failed to seek to the requested date within the shard."""
+
+
 class InvalidModel(BloopException, ValueError):
     """This is not a valid Model."""
 

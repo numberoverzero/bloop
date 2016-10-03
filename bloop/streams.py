@@ -1,9 +1,9 @@
 import arrow
 import collections
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
-from .exceptions import RecordsExpired, ShardIteratorExpired
+from .exceptions import InvalidShardIterator, RecordsExpired, SeekFailed, ShardIteratorExpired
 from .session import SessionWrapper
 from .signals import object_loaded
 from .util import unpack_from_dynamodb
@@ -29,12 +29,29 @@ Benchmarking: https://gist.github.com/numberoverzero/8bde1089b5def6cc8c6d5fba618
 """
 
 
-def list_shards(session: SessionWrapper, stream: Dict[str, str], first_shard: Dict[str, str]=None) -> List[Dict]:
+def first_overlap(records: List[Dict], position: arrow.Arrow) -> int:
+    """Return the index of the first value with a time after position.
+
+    """
+    i = len(records)
+    while i > 0:
+        i -= 1
+        record = records[i]
+        create_time = arrow.get(record["dynamodb"]["ApproximateCreationDateTime"])
+        if create_time < position:
+            # This is the first record that was before position; return the index after this
+            return i + 1
+    # If every record has a create time after the position, return 0.
+    # It's not _before_ the position, but it's the earliest in the list that's after the position.
+    return 0
+
+
+def list_shards(session: SessionWrapper, stream: Dict[str, str], first_shard: str=None) -> List[Dict]:
     """Flat list of shards with unknown sort stability"""
-    if first_shard:
-        first_shard = first_shard["shard_id"]
-    description = session.describe_stream(stream_arn=stream["stream_arn"], first_shard=first_shard)
-    return description["Shards"]
+    return session.describe_stream(
+        stream_arn=stream["stream_arn"],
+        first_shard=first_shard
+    )["Shards"]
 
 
 def rebuild_shard_forest(session: SessionWrapper, stream: Dict[str, str]) -> None:
@@ -44,64 +61,165 @@ def rebuild_shard_forest(session: SessionWrapper, stream: Dict[str, str]) -> Non
     pass
 
 
-def get_iterator(
-        session: SessionWrapper, *,
-        shard: Dict[str, str], iterator_type: str,
-        sequence_number: str=None) -> Dict[str, str]:
-    """Create an iterator dict for a shard at a given location (or trim_horizon, or latest)"""
-    iterator_id = session.get_shard_iterator(
-        stream_arn=shard["stream_arn"], shard_id=shard["shard_id"],
-        iterator_type=iterator_type, sequence_number=sequence_number)
-    # TODO should be a class so users can call iterator.move_to(...) when they get an
-    return {
-        "stream_arn": shard["stream_arn"],
-        "shard_id": shard["shard_id"],
-        "iterator_id": iterator_id,
-        "type": iterator_type,
-        "sequence_number": sequence_number,
-    }
+class Shard:
+    def __init__(self, session: SessionWrapper, *,
+                 stream_arn: str, shard_id: str, iterator_type: str,
+                 sequence_number: str=None, iterator_id: str=None):
+        """Call ``shard.refresh()`` before ``next(shard)`` or the shard will immediately be exhausted"""
+        self.session = session
+        self.stream_arn = stream_arn
+        self.shard_id = shard_id
+        self.iterator_id = iterator_id
+        self.iterator_type = iterator_type
+        self.sequence_number = sequence_number
 
+        # True when GetRecords didn't return an iterator_id and the buffer is empty
+        # Can't use iterator_id is None, since that will be true before the first iterator is created
+        self.exhausted = False
 
-def advance_iterator(session: SessionWrapper, iterator: Dict[str, str]) -> List[Dict]:
-    """Updates the iterator's state, and returns any records."""
-    try:
-        response = session.get_stream_records(iterator["iterator_id"])
-    except ShardIteratorExpired as exception:
-        # iterator is more than 15 minutes old
-        raise ShardIteratorExpired.for_iterator(iterator) from exception
-    except RecordsExpired as exception:
-        # this section of the shard is beyond the trim horizon
-        raise RecordsExpired.for_iterator(iterator) from exception
-    records = response.get("Records", [])
+        # popleft <- [foo, bar, baz] <- append[extend]
+        self.buffer = collections.deque()
 
-    # When the shard is closed and we reach the end, NextShardIterator will be None
-    iterator["iterator_id"] = response.get("NextShardIterator", None)
+    def heartbeat(self) -> None:
+        # No way to keep the iterator alive, there's nothing
+        # to do after it becomes exhausted
+        if self.exhausted:
+            return
 
-    # Record the last state this iterator saw,
-    # so we can rebuild an expired iterator or create a stream token
-    if records:
-        # TODO this should be based on advancing the iterator's buffer, and only updated after an
-        # TODO object is read from the buffer
-        iterator["sequence_number"] = records[-1]["dynamodb"]["SequenceNumber"]
-        iterator["type"] = "after_sequence"
-    return records
+        # Don't need to heartbeat an iterator that can be recreated deterministically
+        if self.iterator_type not in {"trim_horizon", "latest"}:
+            return
 
+        # can raise RecordsExpired, ShardIteratorExpired
+        response = self.session.get_stream_records(self.iterator_id)
+        records = response.get("Records", [])
+        self.iterator_id = response.get("NextShardIterator", None)
+        if records:
+            # Success!  We've got a sequence number
+            self.sequence_number = records[0]["dynamodb"]["SequenceNumber"]
+            self.iterator_type = "at_record"
+            self.buffer.extend(records)
 
-def refresh_iterator(session: SessionWrapper, *, iterator: Dict[str, str], shard: Dict[str, str]) -> None:
-    """Update the iterator in place to use a new iterator_id"""
-    # Can't deterministically refresh an iterator without a sequence number
-    if iterator["type"] in {"trim_horizon", "latest"}:
-        raise ShardIteratorExpired.for_iterator(iterator)
-    same_iterator = get_iterator(
-        session, shard=shard,
-        iterator_type=iterator["type"],
-        sequence_number=iterator["sequence_number"]
-    )
-    iterator["iterator_id"] = same_iterator["iterator_id"]
+    def jump(self, position: str) -> None:
+        """Jump to ``trim_horizon`` or ``latest``"""
+        if position not in {"trim_horizon", "latest"}:
+            raise InvalidShardIterator("Can only jump to trim_horizon or latest.")
+        self.iterator_id = None
+        self.iterator_type = position
+        self.sequence_number = None
+        self.exhausted = False
+        self.refresh()
+
+    def seek(self, position: arrow.Arrow) -> None:
+        self.iterator_id = None
+        self.iterator_type = "trim_horizon"
+        self.sequence_number = None
+        self.exhausted = False
+        self.refresh()
+
+        # This doesn't iter over self because the per-record overhead of manipulating the
+        # shard state is huge in the cases where iterating the Shard is already taxing
+        # (that is, a Shard with millions of records).  Instead, we can shortcut by
+        # checking records[-1] and then iterating the first record set that
+        # has a record created after the position.
+        total_empty_responses = 0
+        while total_empty_responses < CALLS_TO_REACH_HEAD:
+            try:
+                response = self.session.get_stream_records(self.iterator_id)
+                records = response.get("Records", [])
+                self.iterator_id = response.get("NextShardIterator", None)
+
+                if records:
+                    last_create_time = records[-1]["dynamodb"]["ApproximateCreationDateTime"]
+                    if arrow.get(last_create_time) >= position:
+                        # Found a record set that overlaps position!
+                        # Now to find the earliest record that overlaps.
+                        first_after = first_overlap(records, position)
+                        self.buffer.extend(records[first_after:])
+                        self.iterator_type = "at_sequence"
+                        self.sequence_number = records[first_after]["dynamodb"]["SequenceNumber"]
+                        return
+                else:
+                    # No results. increment count so we can stop searching an open shard after a reasonable
+                    # effort. total_empty_responses is never reset, because after we reach CALLS_TO_REACH_HEAD,
+                    # we would be at the head of a shard even in the pathological case of a closed, empty shard.
+                    # (A closed empty shard takes approximately CALLS_TO_REACH_HEAD calls to fully traverse)
+                    total_empty_responses += 1
+
+                # This MUST be after the if records: block above.  Otherwise, we might break on the last
+                # record set, when the desired position was within that record set.
+                if not self.iterator_id:
+                    # There isn't another record set to check after this, so just bail
+                    break
+
+            # The standard exception re-wrap to provide more info
+            except RecordsExpired as records_expired:
+                raise RecordsExpired.for_iterator(self) from records_expired
+            except ShardIteratorExpired as shard_expired:
+                raise ShardIteratorExpired.for_iterator(self) from shard_expired
+
+        raise SeekFailed.for_iterator(self)
+
+    def refresh(self) -> None:
+        if self.exhausted:
+            # There's no point to refreshing an exhausted iterator, since
+            # there won't be another iterator id to get records from.
+            return
+        # can raise RecordsExpired
+        self.iterator_id = self.session.get_shard_iterator(
+            stream_arn=self.stream_arn,
+            shard_id=self.shard_id,
+            iterator_type=self.iterator_type,
+            sequence_number=self.sequence_number)
+        self.buffer.clear()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        # Can't get more elements and buffer is empty
+        if self.exhausted:
+            return None
+
+        record = self._yield_from_buffer()
+        if record:
+            return record
+
+        try:
+            response = self.session.get_stream_records(self.iterator_id)
+            self.buffer.extend(response.get("Records", []))
+            self.iterator_id = response.get("NextShardIterator", None)
+        except RecordsExpired as records_expired:
+            raise RecordsExpired.for_iterator(self) from records_expired
+        except ShardIteratorExpired as shard_expired:
+            # We could call refresh, but it's up to the caller to decide.
+            # It's also not clear what to do when a trim_horizon/latest iterator expires.
+
+            # Most likely, the caller will check self.iterator_type and self.refresh()
+            # on at/after sequence, and raise on trim_horizon/latest.
+            raise ShardIteratorExpired.for_iterator(self) from shard_expired
+
+        return self._yield_from_buffer()
+
+    def _yield_from_buffer(self) -> Optional[Dict]:
+        """Store sequence_number of yielded record so we can rebuild the iterator."""
+        record = None
+        if self.buffer:
+            record = self.buffer.popleft()
+
+        # Can't do this check first in case the popleft above removed the last record
+        if not self.iterator_id and not self.buffer:
+            self.exhausted = True
+
+        # Track last yielded state
+        if record:
+            self.sequence_number = record["dynamodb"]["SequenceNumber"]
+            self.iterator_type = "after_sequence"
+        return record
 
 
 class Coordinator:
-    def __init__(self, session):
+    def __init__(self, session: SessionWrapper):
         self.session = session
         self.buffer = collections.deque()
 
@@ -164,7 +282,7 @@ class Coordinator:
         return
 
     @property
-    def token(self):
+    def token(self) -> Dict:
         """Dict of current state"""
         # TODO the whole all of it
 
@@ -203,7 +321,7 @@ class Stream:
             next_heartbeat = calculate_next_heartbeat()
             stream.heartbeat()
     """
-    def __init__(self, *, engine, model, session):
+    def __init__(self, *, engine, model, session: SessionWrapper):
         self.engine = engine
         self.model = model
         self.coordinator = Coordinator(session)
@@ -225,7 +343,7 @@ class Stream:
         self._unpack(record, "key", meta.keys)
 
     @property
-    def token(self):
+    def token(self) -> Dict:
         """Dict that can be used to reconstruct the current progress of the iterator.
 
         Example
@@ -244,7 +362,7 @@ class Stream:
         """
         return self.coordinator.token
 
-    def heartbeat(self):
+    def heartbeat(self) -> None:
         """Call periodically to ensure iterators without a fixed sequence number don't expire.
 
         You should call this once every ~12 minutes so that your "latest" and "trim_horizon" shard iterators don't
@@ -310,7 +428,8 @@ class Stream:
             raise ValueError("Don't know how to move to position {!r}".format(position))
         move(position)
 
-    def _unpack(self, record, key, expected):
+    def _unpack(self, record: Dict, key: str, expected: List) -> None:
+        """Replaces the attr dict at the given key with an instance of a Model"""
         attrs = record[key]
         if attrs is None:
             return

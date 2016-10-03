@@ -252,6 +252,34 @@ class StreamIterator:
 
 
 class Stream(StreamIterator):
+    """Provides an approximate iterator over all Records in all Shards in a Stream.
+
+    There are no guarantees or bounds on ordering (you can't order records in different shards, in general) but
+    in practice, this will provide a close approximation of the order that changes occurred across an entire Model's
+    table.
+
+    Examples
+    ========
+
+    # This could be part of a replication process, where
+    # most of the table has been copied (+/- the last 12 hours).
+    # Now, this should catch up changes missed during the bulk move,
+    # and apply new changes as they come in.
+
+    stream = engine.stream(Model, position="trim_horizon")
+
+    # Heartbeat slightly more often than the lifetime of an iterator
+    next_heartbeat = lambda: arrow.now().replace(12 * 60)
+
+    heartbeat_at = next_heartbeat()
+    for records in stream:
+        if records:
+            for record in records:
+                replicate(record)
+        if arrow.now() > next_heartbeat:
+            next_heartbeat = calculate_next_heartbeat()
+            stream.heartbeat()
+    """
     def __init__(self, *, engine, model, **kwargs):
         self.engine = engine
         self.model = model

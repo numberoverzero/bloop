@@ -1,7 +1,8 @@
 import arrow
 import collections
+import heapq
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from .exceptions import InvalidShardIterator, RecordsExpired, SeekFailed, ShardIteratorExpired
 from .session import SessionWrapper
@@ -84,11 +85,41 @@ class Shard:
         # popleft <- [foo, bar, baz] <- append[extend]
         self.buffer = collections.deque()
 
+        # Used to mark records as consumed.  If Shard.__next__ returned records directly to the consumer,
+        # it would be safe to assume the record is consumed as soon as the value leaves __next__.
+        # In most cases though, the record will enter a Coordinator.buffer (RecordHeap) and be
+        # yielded at some point in the future.
+        #
+        # We don't want to advance this Shard's sequence_number until that record is consumed, or
+        # we could lose a record when creating a token.  For example, Coordinator.__next__ gets a
+        # record from each of it's shard's Shard.__next__ and sorts them in the Coordinator.buffer.
+        # Only the first record (lowest ApproxCreationDateTime) is returned to the user.  If a token
+        # is created now, all of the Shards except the one whose record was actually returned, don't
+        # know if their records were consumed, or are sitting in the buffer.
+        #
+        # A simple fix is to provide a function to ACK the record consumption back to the Shard;
+        # however, the Shard can't reasonably track all outstanding records.  Instead, it trusts
+        # the consumer (usually, Coordinator) to only call with the latest consumed record.
+        # To make things interesting, the Shard can reset, jump, and seek around.  In those cases,
+        # we don't want an old ACK to change the current state of the Shard.  So, this read_version
+        # will be incremented whenever the Shard wants to revoke all outstanding record ACKs.  To
+        # send an ack, the consumer needs to call Shard.mark_consumed(record, read_version) with
+        # the read_version that the Shard had at the time the record was returned.  If the Shard's
+        # read_version is newer (larger) the record being marked is ignored.
+        #
+        # Otherwise, when the read_version matches the Shard's current read_version, the Shard's
+        # sequence_number and iterator_type are updated to point to just after the newly marked record.
+        self._read_version = 0
+
         # Once empty_responses > CALLS_TO_REACH_HEAD, we only need to
         # call get_records once per __next__, to know we're keeping up with head.
         # It's not a problem if the iterator isn't called every 15 minutes because it
         # will expire, and the next refresh() will reset the empty_responses counter.
         self.empty_responses = 0
+
+    @property
+    def read_version(self):
+        return self._read_version
 
     @property
     def has_reached_head(self):
@@ -122,8 +153,33 @@ class Shard:
         self.iterator_id = None
         self.iterator_type = position
         self.sequence_number = None
+        # Since the iterator is potentially moving from its old location,
+        # ignore consume ACKs for records that were yielded before the jump.
+        self._read_version += 1
         self.exhausted = False
         self.refresh()
+
+    def mark_read(self, *, sequence_number: int, read_version: int) -> None:
+        """Acknowledge that a previously yielded record has been consumed.
+
+        If read_version doesn't match the Shard's current read_version, the ACK is discarded.
+
+        WARNING: read_version MUST be the Shard's read_version at the time the record was retrieved.
+        This is very important.  Shard doesn't track the read_version a record was returned with,
+        which means you can force an update by calling this with the Shard's current read_version.
+        That would be a Probably Very Bad Idea, as the Shard may have moved since the record was returned
+        (ie. a jump or seek) and marking an old record as read (by using the current read_version)
+        would cause the Shard iterator to revert back to that record when it's next refreshed.
+
+        The sequence_number isn't consumed except to create tokens and refresh expired
+        iterators, so it would be quite frustrating to track down (for a consumer keeping up
+        with the stream, it would rarely need to refresh).  When you reload the stream state,
+        one of your shard iterators would appear to have jumped to a totally random location.
+        """
+        if read_version != self.read_version:
+            return
+        self.sequence_number = sequence_number
+        self.iterator_type = "after_sequence"
 
     def refresh(self) -> None:
         if self.exhausted:
@@ -136,13 +192,20 @@ class Shard:
             shard_id=self.shard_id,
             iterator_type=self.iterator_type,
             sequence_number=self.sequence_number)
-        self.buffer.clear()
         self.empty_responses = 0
+        # Just as refresh doesn't change sequence_number, it also doesn't increment read_version.
+        # Refresh doesn't move the iterator position, so after a refresh it must be possible to
+        # mark a record that was yielded before the refresh.  It's irrelevant that we're clearing
+        # the buffer, which only contains future, also-not-consumed records.
+        self.buffer.clear()
 
     def seek(self, position: arrow.Arrow) -> None:
         self.iterator_id = None
         self.iterator_type = "trim_horizon"
         self.sequence_number = None
+        # Since the iterator is potentially moving from its old location,
+        # ignore consume ACKs for records that were yielded before the seek.
+        self._read_version += 1
         self.exhausted = False
         self.refresh()
 
@@ -216,14 +279,10 @@ class Shard:
         if not self.iterator_id and not self.buffer:
             self.exhausted = True
 
-        # The iterator's sequence_number can't change until the record clears the buffer and
-        # is returned to the user.  There's no guarantee that a buffered record has been
-        # seen.  For example, a __next__ finds 10 records and pops 1, and then the user saves
-        # a token.  If the token rebuilds a new stream, it won't know about the 9 buffered
-        # items from the previous shard.
-        if record:
-            self.sequence_number = record["dynamodb"]["SequenceNumber"]
-            self.iterator_type = "after_sequence"
+        # The sequence_number and iterator_type aren't changed here; popping the shard's buffer
+        # isn't enough to know it reached the end consumer.  Instead, an explicit Shard.mark_read(...)
+        # call must be made to confirm the shard iterator's new state.
+
         return record
 
     def _advance(self) -> None:
@@ -273,10 +332,31 @@ class Shard:
             raise ShardIteratorExpired.for_iterator(self) from shard_expired
 
 
+class RecordHeap:
+    def __init__(self):
+        self._heap = []
+
+    def push(self, record: Dict, shard: Shard, read_version: int) -> None:
+        key = record["dynamodb"]["ApproximateCreationDateTime"]
+        heapq.heappush(self._heap, (key, (record, shard, read_version)))
+
+    def pop(self) -> Optional[Tuple[Dict, Shard, int]]:
+        return heapq.heappop(self._heap)[1]
+
+    def clear(self):
+        self._heap.clear()
+
+    def __len__(self) -> int:
+        return len(self._heap)
+
+
 class Coordinator:
-    def __init__(self, session: SessionWrapper):
+    def __init__(self, session: SessionWrapper, stream_arn: str):
         self.session = session
-        self.buffer = collections.deque()
+        self.stream_arn = stream_arn
+
+        self.root_shards = []
+        self.buffer = RecordHeap()
 
     def __iter__(self):
         return self
@@ -291,7 +371,28 @@ class Coordinator:
                 "event_type": Union["insert", "modify", "delete"]
             }]
         """
+        # Simple case: still have records buffered from the last time we checked shard iterators
+        if self.buffer:
+            record, shard, read_version = self.buffer.pop()
+            # Mark the record read, so the shard can update
+            # its sequence_number for refreshing and storing a token.
+            shard.mark_read(
+                sequence_number=record["dynamodb"]["SequenceNumber"],
+                read_version=read_version
+            )
+            # push the next record from the shard into the queue so we maintain
+            # the approximate ordering by creation time
+
+            # TODO move into private helper to handle expired, exhausted
+            next_record = next(shard)
+            if next_record:
+                self.buffer.push(next_record, shard, shard.read_version)
+            return record
+
         # TODO THE MAGIC GOES HERE
+        # - Call next on open shards, push results into buffer
+        # - handle expired shards (refresh, log on latest/trim)
+        # - get child shards of exhausted shards, insert into trees
         # Buffer where there's more results
         return {}
 
@@ -310,8 +411,9 @@ class Coordinator:
         StreamIterator.  Leaf shards aren't necessarily open (ie. a disabled stream, or a reduction in provisioned
         throughput).
         """
+        self.root_shards = build_shard_forest(self.session, stream_arn=self.stream_arn)
+        self.buffer.clear()
         # TODO
-        return
 
     def load(self, token: collections.Mapping) -> None:
         """Update the stream to match the token's state as closely as possible.
@@ -322,8 +424,9 @@ class Coordinator:
           - When a sequence number is past that shard's trim_horizon, the iterator is set to trim_horizon
           - When the stream includes a shard not referenced in the token, its iterator is set to trim_horizon
         """
+        self.root_shards = build_shard_forest(self.session, stream_arn=self.stream_arn)
+        self.buffer.clear()
         # TODO
-        return
 
     def seek(self, position: arrow.Arrow) -> None:
         """Seek through the stream for the desired position in time.
@@ -333,17 +436,17 @@ class Coordinator:
         over both open and closed shards.  A more clever algorithm could use probing to cut down the search space,
         but still has worst case O(N) performance and in practice won't save that many calls.  Open shards
         """
+        self.root_shards = build_shard_forest(self.session, stream_arn=self.stream_arn)
+        self.buffer.clear()
         # TODO
-        return
 
     @property
     def token(self) -> Dict:
         """Dict of current state"""
         # TODO the whole all of it
-
-        # TODO warn when including ``trim_horizon`` or ``latest`` iterators, since they
-        # TODO   represent an abstract time; ``latest`` when the token is created would be
-        # TODO   very different from ``latest`` when the token is re-used a day later.
+        # - warn when including ``trim_horizon`` or ``latest`` iterators, since they
+        # - represent an abstract time; ``latest`` when the token is created would be
+        # - very different from ``latest`` when the token is re-used a day later.
         return {}
 
 
@@ -379,7 +482,7 @@ class Stream:
     def __init__(self, *, engine, model, session: SessionWrapper):
         self.engine = engine
         self.model = model
-        self.coordinator = Coordinator(session)
+        self.coordinator = Coordinator(session, stream_arn=model.Meta.stream["arn"])
 
     def __repr__(self):
         # <Stream[User]>

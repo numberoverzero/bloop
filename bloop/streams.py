@@ -80,6 +80,21 @@ class Shard:
         # popleft <- [foo, bar, baz] <- append[extend]
         self.buffer = collections.deque()
 
+        # Once empty_responses > CALLS_TO_REACH_HEAD, we only need to
+        # call get_records once per __next__, to know we're keeping up with head.
+        # It's not a problem if the iterator isn't called every 15 minutes because it
+        # will expire, and the next refresh() will reset the empty_responses counter.
+        self.empty_responses = 0
+
+    def __repr__(self):
+        # <Shard[id="shardId-00000001475475436061-b4e1705f"]>
+        return "<{}[id={!r}]>".format(self.__class__.__name__, self.shard_id)
+
+    @property
+    def has_reached_head(self):
+        """Effectively reached head after CALLS_TO_REACH_HEAD empty responses, or the iterator is exhausted."""
+        return self.empty_responses >= CALLS_TO_REACH_HEAD or self.exhausted
+
     def heartbeat(self) -> None:
         # No way to keep the iterator alive, there's nothing
         # to do after it becomes exhausted
@@ -117,13 +132,10 @@ class Shard:
         self.exhausted = False
         self.refresh()
 
-        # This doesn't iter over self because the per-record overhead of manipulating the
-        # shard state is huge in the cases where iterating the Shard is already taxing
-        # (that is, a Shard with millions of records).  Instead, we can shortcut by
-        # checking records[-1] and then iterating the first record set that
-        # has a record created after the position.
-        total_empty_responses = 0
-        while total_empty_responses < CALLS_TO_REACH_HEAD:
+        # This method will possibly iterate the entire stream, going through thousands (millions?)
+        # of records.  That means we don't want to touch the buffer until we find a chunk of records
+        # that are past the position.  This eliminates __next__, _yield_from_buffer, _advance, and _fetch_records.
+        while not self.has_reached_head:
             try:
                 response = self.session.get_stream_records(self.iterator_id)
                 records = response.get("Records", [])
@@ -134,17 +146,17 @@ class Shard:
                     if arrow.get(last_create_time) >= position:
                         # Found a record set that overlaps position!
                         # Now to find the earliest record that overlaps.
-                        first_after = first_overlap(records, position)
-                        self.buffer.extend(records[first_after:])
+                        first_after_position = first_overlap(records, position)
+                        self.buffer.extend(records[first_after_position:])
                         self.iterator_type = "at_sequence"
-                        self.sequence_number = records[first_after]["dynamodb"]["SequenceNumber"]
+                        self.sequence_number = records[first_after_position]["dynamodb"]["SequenceNumber"]
                         return
                 else:
                     # No results. increment count so we can stop searching an open shard after a reasonable
                     # effort. total_empty_responses is never reset, because after we reach CALLS_TO_REACH_HEAD,
                     # we would be at the head of a shard even in the pathological case of a closed, empty shard.
                     # (A closed empty shard takes approximately CALLS_TO_REACH_HEAD calls to fully traverse)
-                    total_empty_responses += 1
+                    self.empty_responses += 1
 
                 # This MUST be after the if records: block above.  Otherwise, we might break on the last
                 # record set, when the desired position was within that record set.
@@ -157,7 +169,6 @@ class Shard:
                 raise RecordsExpired.for_iterator(self) from records_expired
             except ShardIteratorExpired as shard_expired:
                 raise ShardIteratorExpired.for_iterator(self) from shard_expired
-
         raise SeekFailed.for_iterator(self)
 
     def refresh(self) -> None:
@@ -172,11 +183,12 @@ class Shard:
             iterator_type=self.iterator_type,
             sequence_number=self.sequence_number)
         self.buffer.clear()
+        self.empty_responses = 0
 
     def __iter__(self):
         return self
 
-    def __next__(self):
+    def __next__(self) -> Optional[Dict]:
         # Can't get more elements and buffer is empty
         if self.exhausted:
             return None
@@ -185,37 +197,76 @@ class Shard:
         if record:
             return record
 
-        try:
-            response = self.session.get_stream_records(self.iterator_id)
-            self.buffer.extend(response.get("Records", []))
-            self.iterator_id = response.get("NextShardIterator", None)
-        except RecordsExpired as records_expired:
-            raise RecordsExpired.for_iterator(self) from records_expired
-        except ShardIteratorExpired as shard_expired:
-            # We could call refresh, but it's up to the caller to decide.
-            # It's also not clear what to do when a trim_horizon/latest iterator expires.
-
-            # Most likely, the caller will check self.iterator_type and self.refresh()
-            # on at/after sequence, and raise on trim_horizon/latest.
-            raise ShardIteratorExpired.for_iterator(self) from shard_expired
-
+        # Advance the iterator, applying catch up logic if necessary.
+        # Not guaranteed to find a record.
+        self._advance()
         return self._yield_from_buffer()
 
     def _yield_from_buffer(self) -> Optional[Dict]:
-        """Store sequence_number of yielded record so we can rebuild the iterator."""
+        """Internal function.  Do not call directly."""
         record = None
         if self.buffer:
             record = self.buffer.popleft()
 
-        # Can't do this check first in case the popleft above removed the last record
+        # This has to come AFTER the popleft, in case that's the last record
         if not self.iterator_id and not self.buffer:
             self.exhausted = True
 
-        # Track last yielded state
+        # The iterator's sequence_number can't change until the record clears the buffer and
+        # is returned to the user.  There's no guarantee that a buffered record has been
+        # seen.  For example, a __next__ finds 10 records and pops 1, and then the user saves
+        # a token.  If the token rebuilds a new stream, it won't know about the 9 buffered
+        # items from the previous shard.
         if record:
             self.sequence_number = record["dynamodb"]["SequenceNumber"]
             self.iterator_type = "after_sequence"
         return record
+
+    def _advance(self) -> None:
+        """Internal function.  Do not call directly."""
+        # Don't try to fetch if the
+        if self.exhausted or self.buffer:
+            return
+
+        # Only try to get records once when we've reached HEAD
+        if self.has_reached_head:
+            self._fetch_records()
+            return
+
+        while not self.has_reached_head:
+            self._fetch_records()
+            # Found some records!  Stop trying to catch up for now.
+            if self.buffer:
+                return
+
+    def _fetch_records(self) -> None:
+        """Internal function.  Do not call directly."""
+
+        # No need to fetch records when the buffer isn't empty
+        # Can't fetch records when there's no iterator_id
+        if self.buffer or not self.iterator_id:
+            return
+        try:
+            response = self.session.get_stream_records(self.iterator_id)
+            records = response.get("Records", [])
+            if records:
+                self.buffer.extend(records)
+                return
+            # No luck :(
+            self.empty_responses += 1
+            self.iterator_id = response.get("NextShardIterator", None)
+
+            if self.iterator_id is None:
+                # exhaust the iterator, because:
+                #   1) The buffer had to be empty to call session.get_stream_records
+                #   2) The call found no records, so the buffer is still empty
+                #   3) There's no next iterator_id
+                self.exhausted = True
+
+        except RecordsExpired as records_expired:
+            raise RecordsExpired.for_iterator(self) from records_expired
+        except ShardIteratorExpired as shard_expired:
+            raise ShardIteratorExpired.for_iterator(self) from shard_expired
 
 
 class Coordinator:

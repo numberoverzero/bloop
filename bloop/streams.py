@@ -86,10 +86,6 @@ class Shard:
         # will expire, and the next refresh() will reset the empty_responses counter.
         self.empty_responses = 0
 
-    def __repr__(self):
-        # <Shard[id="shardId-00000001475475436061-b4e1705f"]>
-        return "<{}[id={!r}]>".format(self.__class__.__name__, self.shard_id)
-
     @property
     def has_reached_head(self):
         """Effectively reached head after CALLS_TO_REACH_HEAD empty responses, or the iterator is exhausted."""
@@ -124,6 +120,20 @@ class Shard:
         self.sequence_number = None
         self.exhausted = False
         self.refresh()
+
+    def refresh(self) -> None:
+        if self.exhausted:
+            # There's no point to refreshing an exhausted iterator, since
+            # there won't be another iterator id to get records from.
+            return
+        # can raise RecordsExpired
+        self.iterator_id = self.session.get_shard_iterator(
+            stream_arn=self.stream_arn,
+            shard_id=self.shard_id,
+            iterator_type=self.iterator_type,
+            sequence_number=self.sequence_number)
+        self.buffer.clear()
+        self.empty_responses = 0
 
     def seek(self, position: arrow.Arrow) -> None:
         self.iterator_id = None
@@ -171,19 +181,9 @@ class Shard:
                 raise ShardIteratorExpired.for_iterator(self) from shard_expired
         raise SeekFailed.for_iterator(self)
 
-    def refresh(self) -> None:
-        if self.exhausted:
-            # There's no point to refreshing an exhausted iterator, since
-            # there won't be another iterator id to get records from.
-            return
-        # can raise RecordsExpired
-        self.iterator_id = self.session.get_shard_iterator(
-            stream_arn=self.stream_arn,
-            shard_id=self.shard_id,
-            iterator_type=self.iterator_type,
-            sequence_number=self.sequence_number)
-        self.buffer.clear()
-        self.empty_responses = 0
+    def __repr__(self):
+        # <Shard[id="shardId-00000001475475436061-b4e1705f"]>
+        return "<{}[id={!r}]>".format(self.__class__.__name__, self.shard_id)
 
     def __iter__(self):
         return self
@@ -309,17 +309,6 @@ class Coordinator:
         # TODO
         return
 
-    def seek(self, position: arrow.Arrow) -> None:
-        """Seek through the stream for the desired position in time.
-
-        This is an *expensive* operation.  Seeking to an arbitrary position in time will require partially
-        or fully iterating most (or all) Shards in the Stream.  At the moment, seek is O(N) for GetRecords calls
-        over both open and closed shards.  A more clever algorithm could use probing to cut down the search space,
-        but still has worst case O(N) performance and in practice won't save that many calls.  Open shards
-        """
-        # TODO
-        return
-
     def load(self, token: collections.Mapping) -> None:
         """Update the stream to match the token's state as closely as possible.
 
@@ -328,6 +317,17 @@ class Coordinator:
           - When the token references a non-existent (moved past trim_horizon) shard, that shard is ignored
           - When a sequence number is past that shard's trim_horizon, the iterator is set to trim_horizon
           - When the stream includes a shard not referenced in the token, its iterator is set to trim_horizon
+        """
+        # TODO
+        return
+
+    def seek(self, position: arrow.Arrow) -> None:
+        """Seek through the stream for the desired position in time.
+
+        This is an *expensive* operation.  Seeking to an arbitrary position in time will require partially
+        or fully iterating most (or all) Shards in the Stream.  At the moment, seek is O(N) for GetRecords calls
+        over both open and closed shards.  A more clever algorithm could use probing to cut down the search space,
+        but still has worst case O(N) performance and in practice won't save that many calls.  Open shards
         """
         # TODO
         return

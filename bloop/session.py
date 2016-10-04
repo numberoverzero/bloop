@@ -107,7 +107,7 @@ class SessionWrapper:
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
         table_validated.send(self, model=model, actual_description=actual, expected_description=expected)
 
-    def describe_stream(self, stream_arn, first_shard=None) -> Dict[str, str]:
+    def describe_stream(self, stream_arn, first_shard=None) -> Dict:
         description = {"Shards": []}
         next_shard = first_shard
         # Can't use None here, it's the most common value for first_shard

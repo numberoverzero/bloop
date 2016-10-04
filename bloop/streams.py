@@ -30,9 +30,7 @@ Benchmarking: https://gist.github.com/numberoverzero/8bde1089b5def6cc8c6d5fba618
 
 
 def first_overlap(records: List[Dict], position: arrow.Arrow) -> int:
-    """Return the index of the first value with a time after position.
-
-    """
+    """Return the index of the first value with a time after position."""
     i = len(records)
     while i > 0:
         i -= 1
@@ -46,24 +44,27 @@ def first_overlap(records: List[Dict], position: arrow.Arrow) -> int:
     return 0
 
 
-def list_shards(session: SessionWrapper, stream: Dict[str, str], first_shard: str=None) -> List[Dict]:
-    """Flat list of shards with unknown sort stability"""
-    return session.describe_stream(
-        stream_arn=stream["stream_arn"],
-        first_shard=first_shard
-    )["Shards"]
-
-
-def rebuild_shard_forest(session: SessionWrapper, stream: Dict[str, str]) -> None:
-    """Clean up shards that rolled off, unpack flat list into existing (or empty) shard forest"""
-    list_shards(session=session, stream=stream)
-    # TODO unpack shards
-    pass
+def build_shard_forest(session: SessionWrapper, stream_arn: str) -> List["Shard"]:
+    """Create Shard instances for the full stream, re-construct lineages."""
+    shards = [
+        (Shard(session, stream_arn=stream_arn, shard_id=shard_dict["ShardId"]),
+         shard_dict.get("ParentShardId"))
+        for shard_dict in session.describe_stream(stream_arn=stream_arn, first_shard=None)
+    ]
+    by_id = {shard.shard_id: shard for shard, _ in shards}
+    roots = []
+    for shard, parent_id in shards:
+        if parent_id:
+            shard.parent = by_id[parent_id]
+            shard.parent.children.append(shard)
+        else:
+            roots.append(shard)
+    return roots
 
 
 class Shard:
     def __init__(self, session: SessionWrapper, *,
-                 stream_arn: str, shard_id: str, iterator_type: str,
+                 stream_arn: str, shard_id: str, iterator_type: str=None,
                  sequence_number: str=None, iterator_id: str=None):
         """Call ``shard.refresh()`` before ``next(shard)`` or the shard will immediately be exhausted"""
         self.session = session
@@ -72,6 +73,9 @@ class Shard:
         self.iterator_id = iterator_id
         self.iterator_type = iterator_type
         self.sequence_number = sequence_number
+
+        self.children = []
+        self.parent = None
 
         # True when GetRecords didn't return an iterator_id and the buffer is empty
         # Can't use iterator_id is None, since that will be true before the first iterator is created

@@ -177,6 +177,7 @@ class Shard:
         one of your shard iterators would appear to have jumped to a totally random location.
         """
         if read_version != self.read_version:
+            # TODO log at WARN about version mismatch; this SHOULD NOT happen.
             return
         self.sequence_number = sequence_number
         self.iterator_type = "after_sequence"

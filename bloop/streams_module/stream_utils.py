@@ -13,7 +13,7 @@ last_iterator = Sentinel("LastIterator")
 
 def walk_shards(*shards: Shard):
     """Generator that visits all shards in a shard tree"""
-    shards = collections.deque([shards])
+    shards = collections.deque(shards)
     while shards:
         shard = shards.popleft()
         yield shard

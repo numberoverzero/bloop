@@ -715,7 +715,7 @@ def test_describe_stream_combines_results(shard_list, session, streams_client):
     assert description["Shards"] == ["first", "second"]
 
     assert streams_client.describe_stream.call_count == 2
-    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId=None)
+    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn)
     streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId="second-token")
 
 
@@ -796,8 +796,7 @@ def test_get_shard_iterator_latest(streams_client, session):
     streams_client.get_shard_iterator.assert_called_once_with(
         StreamArn="arn",
         ShardId="shard_id",
-        ShardIteratorType="LATEST",
-        SequenceNumber=None
+        ShardIteratorType="LATEST"
     )
 
 
@@ -818,7 +817,7 @@ def test_get_records_expired_iterator(streams_client, session):
     streams_client.get_records.side_effect = client_error("ExpiredIteratorException")
     with pytest.raises(ShardIteratorExpired) as excinfo:
         session.get_stream_records("some-iterator")
-    assert excinfo.value.iterator_id == "some-iterator"
+    assert excinfo.value
 
 
 def test_get_shard_records_unknown_error(streams_client, session):

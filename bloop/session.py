@@ -125,7 +125,7 @@ class SessionWrapper:
             # Docs aren't clear if the terminal value is null, or won't exist.
             # Since we don't terminate the loop on None, the "or missing" here
             # will ensure we stop on a falsey value.
-            request["ExclusiveStartShardId"] = response.get("LastEvaluatedShardId", missing)
+            request["ExclusiveStartShardId"] = response.pop("LastEvaluatedShardId", None) or missing
             description["Shards"].extend(response.pop("Shards", []))
             description.update(response)
         return description

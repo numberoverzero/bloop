@@ -3,7 +3,7 @@ from typing import Dict, List, Mapping, Optional
 from ..session import SessionWrapper
 from .models import Coordinator, Shard, new_shard
 from .stream_utils import get_with_catchup, is_exhausted, walk_shards
-from .tokens import load_coordinator_state
+from .tokens import load_coordinator
 
 
 def move_coordinator(coordinator: Coordinator, position) -> None:
@@ -21,7 +21,9 @@ def move_coordinator(coordinator: Coordinator, position) -> None:
             coordinator.active.extend(coordinator.roots)
         else:
             # latest
-            leaf_shards = [shard for shard in walk_shards(coordinator.root_shards) if not shard.children]
+            leaf_shards = [
+                shard for shard in walk_shards(*coordinator.root_shards)
+                if not shard.children]
             for shard in leaf_shards:
                 jump_to(coordinator, shard, "latest")
             coordinator.active.extend(leaf_shards)
@@ -30,7 +32,9 @@ def move_coordinator(coordinator: Coordinator, position) -> None:
         # TODO
         ...
     elif isinstance(position, Mapping):
-        load_coordinator_state(coordinator, position)
+        load_coordinator(coordinator, position)
+        # TODO prune, validate iterators, get new ids, etc.
+
     else:
         raise ValueError("Don't know how to move to position {!r}".format(position))
 
@@ -79,14 +83,14 @@ def advance_coordinator(coordinator: Coordinator) -> Optional[Dict]:
 
 
 def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict]:
-    # TODO RecordsExpired
-    # TODO ShardIteratorExpired
+    # TODO handle RecordsExpired
+    # TODO handle ShardIteratorExpired -> session.get_shard_iterator and retry
     return get_with_catchup(coordinator.session, shard)
 
 
 def remove_shard(coordinator: Coordinator, shard: Shard) -> None:
     # Try to load children.  If we find any, the Coordinator needs to
-    # remove this shard from the active set and add the children.
+    # remove this Shard from the active set and add the children.
     children = fetch_children(coordinator.session, shard)
 
     # This was a root; remove it from the root set
@@ -96,13 +100,13 @@ def remove_shard(coordinator: Coordinator, shard: Shard) -> None:
         if children:
             coordinator.roots.extend(children)
 
-    # If the shard was active, remove it and set its children to active.
+    # If the Shard was active, remove it and set its children to active.
     if shard in coordinator.active:
         coordinator.active.remove(shard)
         if children:
             coordinator.active.extend(children)
             for child in children:
-                # Pick up right where the removed shard left off
+                # Pick up right where the removed Shard left off
                 jump_to(coordinator, child, "trim_horizon")
 
 
@@ -117,7 +121,7 @@ def fetch_children(session: SessionWrapper, shard: Shard) -> List[Shard]:
     children = [
         s for s in session.describe_stream(
             stream_arn=shard.stream_arn,
-            first_shard=shard.shard_id)
+            first_shard=shard.shard_id)["Shards"]
         if s.get("ParentShardId") == shard.shard_id]
     for child in children:
         child = new_shard(
@@ -128,25 +132,22 @@ def fetch_children(session: SessionWrapper, shard: Shard) -> List[Shard]:
     return shard.children
 
 
-def load_all_shards(session: SessionWrapper, stream_arn: str) -> List[Shard]:
-    """Return shard trees for a full stream"""
+def load_all_shards(session: SessionWrapper, stream_arn: str) -> Dict[str, Shard]:
+    """Return Shards indexed by Shard.shard_id"""
     shards = [
         new_shard(stream_arn=stream_arn, shard_id=shard["ShardId"], parent=shard.get("ParentShardId"))
-        for shard in session.describe_stream(stream_arn=stream_arn)
+        for shard in session.describe_stream(stream_arn=stream_arn)["Shards"]
     ]
-    roots = []
     by_id = {shard.shard_id: shard for shard in shards}
     for shard in shards:
         if shard.parent:
             parent = shard.parent = by_id[shard.parent]
             parent.children.append(shard)
-        else:
-            roots.append(shard)
-    return roots
+    return by_id
 
 
 def jump_to(coordinator: Coordinator, shard: Shard, iterator_type: str) -> None:
-    """Move the shard to ``trim_horizon`` or ``latest``, resetting all internal state."""
+    """Move the Shard to ``trim_horizon`` or ``latest``, resetting all internal state."""
     # Don't need to handle RecordsExpired; ``latest`` isn't beyond the trim horizon,
     # and ``trim_horizon`` is *at* the trim horizon, not beyond it.
     iterator_id = coordinator.session.get_shard_iterator(
@@ -169,7 +170,7 @@ def seek_to(coordinator: Coordinator, shard: Shard, position: arrow.Arrow) -> No
 
 
 def remove_buffered_records(coordinator: Coordinator, shard: Shard) -> None:
-    """Remove all records from the shard in the coordinator's buffer"""
+    """Remove all records from the Shard in the coordinator's buffer"""
     heap = coordinator.buffer.heap
     # ( create_time,  ( record,  shard ) )
     #                 |----- x[1] -----|

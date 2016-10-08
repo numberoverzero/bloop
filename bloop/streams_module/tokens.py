@@ -5,12 +5,29 @@ from .stream_utils import walk_shards
 
 def tokenize_coordinator(coordinator: Coordinator) -> Dict:
     """Clean up temporary fields, tokenize active, roots"""
-    # Can't do anything with engine, session, buffer.
+    # 0) Flatten each Shard into a dict with ids for parent/children.
+    #    The returned dict has a single key, the Shard's shard_id.
+    #    This lets us unpack into a dict.  The final structure:
+    #        {
+    #            "shard-id-1": {
+    #                "iterator_type": "at_sequence",
+    #                "sequence_number": None,
+    #                "parent": "shard-id-2"
+    #            },
+    #            "shard-id-2": {
+    #                "iterator_type": "latest",
+    #                "parent": None,
+    #            }
+    #        }
+    shards = {}
+    for shard in walk_shards(*coordinator.root_shards):
+        shards.update(tokenize_shard(shard))
+    active = [shard.shard_id for shard in coordinator.active]
+
     return {
         "stream_arn": coordinator.stream_arn,
-        "shard_trees": [tokenize_shard(shard) for shard in coordinator.roots],
-        # All the shards are captured in "shard_trees", just list the shard ids
-        "active_shard_ids": [shard.shard_id for shard in coordinator.active]
+        "shards": shards,
+        "active": active
     }
 
 
@@ -18,34 +35,36 @@ def tokenize_shard(shard: Shard) -> Dict:
     """Clean up temporary fields, recurse through children"""
     # Don't need stream_arn, coordinator will have that
     # Don't need empty_responses, will have to seek on ``trim_horizon``, ``latest`` anyway.
+    # We could store iterator_id, but we'll need to get iterators in the case of expired ones;
+    #   it's simpler to just always get them.
     return {
-        "shard_id": shard.shard_id,
-        "iterator_id": shard.iterator_id,
-        "iterator_type": shard.iterator_type,
-        "sequence_number": shard.sequence_number,
-        "parent": shard.parent["shard_id"] if shard.parent else None,
-        "children": [tokenize_shard(child) for child in shard.children]
+        shard.shard_id: {
+            "iterator_type": shard.iterator_type,
+            "sequence_number": shard.sequence_number,
+            "parent": shard.parent.shard_id if shard.parent else None,
+            "children": [child.shard_id for child in shard.children]
+        }
     }
 
 
-def load_shard_state(stream_arn: str, shard_dict: Mapping) -> Shard:
-    shard = Shard(
+def load_shard(stream_arn: str, shard_dict: Mapping) -> Shard:
+    # Does not populate Shard.shard_id
+    # Does not expand parent, children from shard_ids into Shards
+    return Shard(
         stream_arn=stream_arn,
-        shard_id=shard_dict["shard_id"],
-        iterator_id=shard_dict["iterator_id"],
+        # Will be set by whatever unpacks each shard dict
+        shard_id=None,
+        iterator_id=None,
         iterator_type=shard_dict["iterator_type"],
         sequence_number=shard_dict["sequence_number"],
-        parent=None,
-        children=[load_shard_state(stream_arn, child_dict) for child_dict in shard_dict["children"]],
-        empty_responses=0)
-    for child in shard.children:
-        child.parent = shard
-
-    return shard
+        parent=shard_dict["parent"],
+        children=shard_dict["children"],
+        empty_responses=0
+    )
 
 
-def load_coordinator_state(coordinator: Coordinator, token: Mapping) -> None:
-    """Load the state described by the token into the Coordinator."""
+def load_coordinator(coordinator: Coordinator, token: Mapping) -> None:
+    """Load the state described by the token into the Coordinator. Does not prune against real stream state."""
     stream_arn = coordinator.stream_arn = token["stream_arn"]
 
     # Clear out state - we're not replacing the lists in case users keep references to them
@@ -53,16 +72,16 @@ def load_coordinator_state(coordinator: Coordinator, token: Mapping) -> None:
     coordinator.active.clear()
     coordinator.buffer.clear()
 
-    coordinator.roots.extend(load_shard_state(stream_arn, shard) for shard in token["shard_trees"])
+    by_id = {
+        shard_id: load_shard(stream_arn, shard_dict)
+        for shard_id, shard_dict in token["shards"].items()}
 
-    # Build shard index in O(N), N = number of shards in all trees
-    all_shards = {
-        shard.shard_id: shard
-        for root_shard in coordinator.roots
-        for shard in walk_shards(root_shard)}
+    for shard_id, shard in by_id.items():
+        shard.shard_id = shard_id
+        shard.parent = by_id[shard.parent] if shard.parent else None
+        shard.children = [by_id[child_id] for child_id in shard.children]
+        # Take care of coordinator roots while we're here; avoid another list allocation
+        if not shard.parent:
+            coordinator.roots.append(shard)
 
-    # Associate active shards in O(A), A = number of active shards
-    coordinator.active.extend(all_shards[shard_id] for shard_id in token["active_shard_ids"])
-
-    # TODO try to get iterators and describe the stream to fail early on missing/expired objects
-    return
+    coordinator.active.extend(by_id[shard_id] for shard_id in token["active"])

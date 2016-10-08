@@ -109,14 +109,15 @@ class SessionWrapper:
 
     def describe_stream(self, stream_arn, first_shard=None) -> Dict:
         description = {"Shards": []}
-        next_shard = first_shard
-        # Can't use None here, it's the most common value for first_shard
-        while next_shard is not missing:
+
+        request = {"StreamArn": stream_arn, "ExclusiveStartShardId": first_shard}
+        # boto3 isn't down with literal Nones.
+        if first_shard is None:
+            request.pop("ExclusiveStartShardId")
+
+        while request.get("ExclusiveStartShardId") is not missing:
             try:
-                response = self._stream_client.describe_stream(
-                    StreamArn=stream_arn,
-                    ExclusiveStartShardId=next_shard
-                )["StreamDescription"]
+                response = self._stream_client.describe_stream(**request)["StreamDescription"]
             except botocore.exceptions.ClientError as error:
                 if error.response["Error"]["Code"] == "ResourceNotFoundException":
                     raise InvalidStream("The stream arn {!r} does not exist.".format(stream_arn)) from error
@@ -124,20 +125,24 @@ class SessionWrapper:
             # Docs aren't clear if the terminal value is null, or won't exist.
             # Since we don't terminate the loop on None, the "or missing" here
             # will ensure we stop on a falsey value.
-            next_shard = response.pop("LastEvaluatedShardId", None) or missing
+            request["ExclusiveStartShardId"] = response.get("LastEvaluatedShardId", missing)
             description["Shards"].extend(response.pop("Shards", []))
             description.update(response)
         return description
 
     def get_shard_iterator(self, *, stream_arn, shard_id, iterator_type, sequence_number=None) -> str:
         real_iterator_type = validate_stream_iterator_type(iterator_type)
+        request = {
+            "StreamArn": stream_arn,
+            "ShardId": shard_id,
+            "ShardIteratorType": real_iterator_type,
+            "SequenceNumber": sequence_number
+        }
+        # boto3 isn't down with literal Nones.
+        if sequence_number is None:
+            request.pop("SequenceNumber")
         try:
-            return self._stream_client.get_shard_iterator(
-                StreamArn=stream_arn,
-                ShardId=shard_id,
-                ShardIteratorType=real_iterator_type,
-                SequenceNumber=sequence_number
-            )["ShardIterator"]
+            return self._stream_client.get_shard_iterator(**request)["ShardIterator"]
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "TrimmedDataAccessException":
                 raise RecordsExpired.for_id(None) from error

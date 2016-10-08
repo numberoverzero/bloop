@@ -6,7 +6,7 @@ from ..session import SessionWrapper
 __all__ = ["Coordinator", "RecordBuffer", "Shard"]
 
 
-def heap_item(record: Dict, shard: "Shard") -> Tuple[int, [Dict, "Shard"]]:
+def heap_item(record: Dict, shard: "Shard") -> Tuple[int, Tuple[Dict, "Shard"]]:
     key = record["dynamodb"]["ApproximateCreationDateTime"]
     return key, (record, shard)
 
@@ -42,6 +42,7 @@ class RecordBuffer:
 
     def __len__(self) -> int:
         return len(self._heap)
+
 
 Shard = NamedTuple("Shard", [
     # Set once on creation, never changes
@@ -92,6 +93,7 @@ Shard = NamedTuple("Shard", [
     # (which provide no SequenceNumber or ApproximateCreationDateTime to approximate our location in the Stream).
     ("empty_responses", int)
 ])
+
 
 Coordinator = NamedTuple("Coordinator", [
     # Set once on creation, never changes

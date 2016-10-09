@@ -1,7 +1,6 @@
+import collections
 import heapq
-from typing import Dict, List, Optional, Tuple, Any
-
-from .stream_utils import walk_shards
+from typing import Dict, List, Optional, Tuple, Any, Iterator
 
 from ..session import SessionWrapper
 from ..util import Sentinel
@@ -154,6 +153,14 @@ class Shard:
             "parent": self.parent.shard_id if self.parent else None
         }
 
+    def walk_tree(self) -> Iterator["Shard"]:
+        """Generator that visits all shards in a shard tree"""
+        shards = collections.deque(self)
+        while shards:
+            shard = shards.popleft()
+            yield shard
+            shards.extend(shard.children)
+
 
 class Coordinator:
     def __init__(self, *, engine, session: SessionWrapper, stream_arn: str):
@@ -179,7 +186,7 @@ class Coordinator:
     def token(self) -> Dict[str, Any]:
         shard_tokens = []
         for root in self.roots:
-            for shard in walk_shards(root):
+            for shard in root.walk_tree():
                 token = shard.token
                 token.pop("stream_arn")
                 shard_tokens.append(token)

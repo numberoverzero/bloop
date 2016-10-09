@@ -1,9 +1,7 @@
-import collections
 from ..session import SessionWrapper
 from ..util import Sentinel
-from .models import Shard
 
-from typing import Dict, List, Iterator
+from typing import Dict, List
 
 # Approximate number of calls to fully traverse an empty shard
 CALLS_TO_REACH_HEAD = 5
@@ -11,16 +9,7 @@ CALLS_TO_REACH_HEAD = 5
 last_iterator = Sentinel("LastIterator")
 
 
-def walk_shards(*shards: Shard) -> Iterator[Shard]:
-    """Generator that visits all shards in a shard tree"""
-    shards = collections.deque(shards)
-    while shards:
-        shard = shards.popleft()
-        yield shard
-        shards.extend(shard.children)
-
-
-def get_with_catchup(session: SessionWrapper, shard: Shard) -> List[Dict]:
+def get_with_catchup(session: SessionWrapper, shard: "Shard") -> List[Dict]:
     """Call GetRecords and apply catch-up logic.  Updates shard.iterator_id.  No exception handling."""
     # Won't be able to find new records.
     if shard.iterator_id is last_iterator:
@@ -43,7 +32,7 @@ def get_with_catchup(session: SessionWrapper, shard: Shard) -> List[Dict]:
     return []
 
 
-def _apply_response(shard: Shard, response: Dict) -> List[Dict]:
+def _apply_response(shard: "Shard", response: Dict) -> List[Dict]:
     records = response.get("Records", [])
     shard.iterator_id = response.get("NextShardIterator", last_iterator)
 

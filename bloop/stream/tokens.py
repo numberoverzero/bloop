@@ -1,39 +1,5 @@
-from typing import Dict, Mapping
+from typing import Mapping
 from .models import Coordinator, Shard
-from .stream_utils import walk_shards
-
-
-def tokenize_coordinator(coordinator: Coordinator) -> Dict:
-    """Clean up temporary fields, tokenize active, roots"""
-    # 0) Flatten each Shard into a dict with ids for parent/children.
-    #    The returned dict has a single key, the Shard's shard_id.
-    #    This lets us unpack into a dict.  The final structure:
-    #        {
-    #            "shard-id-1": {
-    #                "iterator_type": "at_sequence",
-    #                "sequence_number": None,
-    #                "parent": "shard-id-2"
-    #            },
-    #            "shard-id-2": {
-    #                "iterator_type": "latest",
-    #                "parent": None,
-    #            }
-    #        }
-    shards = {}
-    for root in coordinator.roots:
-        for shard in walk_shards(root):
-            token = shard.token
-            # Redundant fields, the coordinator token will contain these
-            token.pop("shard_id")
-            token.pop("stream_arn")
-            shards.update({shard.shard_id: token})
-    active = [shard.shard_id for shard in coordinator.active]
-
-    return {
-        "stream_arn": coordinator.stream_arn,
-        "shards": shards,
-        "active": active
-    }
 
 
 def load_shard(stream_arn: str, shard_dict: Mapping) -> Shard:

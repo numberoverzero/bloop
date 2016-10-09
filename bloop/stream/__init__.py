@@ -6,7 +6,6 @@ from ..util import unpack_from_dynamodb
 
 from .models import Coordinator
 from .processing import advance_coordinator, heartbeat, move_coordinator
-from .tokens import tokenize_coordinator
 
 __all__ = ["Stream"]
 
@@ -79,7 +78,7 @@ class Stream:
 
         stream = engine.stream(MyModel, at=token)
         """
-        return tokenize_coordinator(self.coordinator)
+        return self.coordinator.token
 
     def heartbeat(self) -> None:
         """Call periodically to ensure iterators without a fixed sequence number don't expire.

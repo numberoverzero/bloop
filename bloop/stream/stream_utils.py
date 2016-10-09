@@ -3,7 +3,7 @@ from ..session import SessionWrapper
 from ..util import Sentinel
 from .models import Shard
 
-from typing import Dict, List
+from typing import Dict, List, Iterator
 
 # Approximate number of calls to fully traverse an empty shard
 CALLS_TO_REACH_HEAD = 5
@@ -11,7 +11,7 @@ CALLS_TO_REACH_HEAD = 5
 last_iterator = Sentinel("LastIterator")
 
 
-def walk_shards(*shards: Shard):
+def walk_shards(*shards: Shard) -> Iterator[Shard]:
     """Generator that visits all shards in a shard tree"""
     shards = collections.deque(shards)
     while shards:

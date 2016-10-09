@@ -1,5 +1,7 @@
 import heapq
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
+
+from .stream_utils import walk_shards
 
 from ..session import SessionWrapper
 from ..util import Sentinel
@@ -119,7 +121,7 @@ class Shard:
         return self.iterator_id is last_iterator
 
     @property
-    def token(self):
+    def token(self) -> Dict[str, Any]:
         """Does not recursively tokenize children.
 
         Returns fields that may be redundant for generating a Stream token,
@@ -159,3 +161,17 @@ class Coordinator:
         #   shard.sequence_number = record["dynamodb"]["SequenceNumber"]
         #   shard.iterator_type = "after_record"
         self.buffer = RecordBuffer()
+
+    @property
+    def token(self) -> Dict[str, Any]:
+        shard_tokens = []
+        for root in self.roots:
+            for shard in walk_shards(root):
+                token = shard.token
+                token.pop("stream_arn")
+                shard_tokens.append(token)
+        return {
+            "stream_arn": self.stream_arn,
+            "active": [shard.shard_id for shard in self.active],
+            "shards": shard_tokens
+        }

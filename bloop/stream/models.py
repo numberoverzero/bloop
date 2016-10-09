@@ -1,9 +1,11 @@
 import collections
 import heapq
-from typing import Dict, List, Optional, Tuple, Any, Iterator
+from typing import Dict, List, Optional, Tuple, Any, Iterator, Iterable
 
+from ..exceptions import ShardIteratorExpired
 from ..session import SessionWrapper
 from ..util import Sentinel
+from .stream_utils import get_with_catchup
 
 last_iterator = Sentinel("LastIterator")
 
@@ -56,7 +58,7 @@ class RecordBuffer:
     def push(self, record: Dict, shard: "Shard") -> None:
         heapq.heappush(self._heap, heap_item(self.clock, record, shard))
 
-    def push_all(self, record_shard_pairs: List[Tuple[Dict, "Shard"]]) -> None:
+    def push_all(self, record_shard_pairs: Iterable[Tuple[Dict, "Shard"]]) -> None:
         # Faster than inserting one at a time, just dump them in the list
         # and then heapify the whole thing.
         for pair in record_shard_pairs:
@@ -182,6 +184,23 @@ class Coordinator:
         #   shard.iterator_type = "after_record"
         self.buffer = RecordBuffer()
 
+    def heartbeat(self):
+        # Try to keep active shards with ``latest`` and ``trim_horizon`` iterators alive.
+        # Ideally, this will find records and make them ``at_sequence`` or ``after_sequence`` iterators.
+        for shard in self.active:
+            if shard.iterator_type in {"latest", "trim_horizon"}:
+
+                # There's no safe default when advance_shard raises ShardIteratorExpired
+                # because resetting to the new trim_horizon/latest could miss records.
+                # Had the user called Stream.heartbeat() within 15 minutes, this wouldn't happen.
+
+                # Don't need to handle RecordsExpired because only sequence_number-based
+                # iterators can fall behind the trim_horizon.
+                records = advance_shard(self, shard)
+                # Success!  This shard now has an ``at_sequence`` iterator
+                if records:
+                    self.buffer.push_all((record, shard) for record in records)
+
     @property
     def token(self) -> Dict[str, Any]:
         shard_tokens = []
@@ -204,3 +223,35 @@ class Coordinator:
         coordinator.roots = [shard for shard in by_id.values() if not shard.parent]
         coordinator.active = [by_id[shard_id] for shard_id in token["active"]]
         return coordinator
+
+
+# TODO move this somewhere
+def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict]:
+    try:
+        return get_with_catchup(coordinator.session, shard)
+    except ShardIteratorExpired:
+        # Refreshing a sequence_number-based Shard iterator is deterministic;
+        # if the iterator type is latest or trim_horizon, it's up to the caller to
+        # decide how to proceed.
+        if shard.iterator_type in {"trim_horizon", "latest"}:
+            raise
+
+    # Since the expired iterator has a sequence_number, try to refresh automatically.
+    # This could still raise RecordsExpired, if the desired position fell behind the
+    # the trim_horizon since it expired.
+    jump_to(coordinator, shard, shard.iterator_type, shard.sequence_number)
+
+    # If it didn't expire, let's try returning records once more.
+    return get_with_catchup(coordinator.session, shard)
+
+
+# TODO move this somewhere
+def jump_to(coordinator: Coordinator, shard: Shard, iterator_type: str, sequence_number: str=None) -> None:
+    # Just a simple wrapper; let the caller handle RecordsExpired
+    shard.iterator_id = coordinator.session.get_shard_iterator(
+        stream_arn=shard.stream_arn,
+        shard_id=shard.shard_id,
+        iterator_type=iterator_type,
+        sequence_number=sequence_number)
+    shard.iterator_type = iterator_type
+    shard.sequence_number = sequence_number

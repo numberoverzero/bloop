@@ -1,10 +1,9 @@
 import arrow
 import collections
 from typing import Dict, List, Mapping, Optional
-from ..exceptions import InvalidStream, RecordsExpired, ShardIteratorExpired
+from ..exceptions import InvalidStream, RecordsExpired
 from ..session import SessionWrapper
-from .models import Coordinator, Shard, unpack_shards
-from .stream_utils import get_with_catchup
+from .models import Coordinator, Shard, unpack_shards, advance_shard, jump_to
 from .tokens import load_coordinator
 
 
@@ -172,25 +171,6 @@ def reformat(record: Dict) -> Dict:
     }
 
 
-def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict]:
-    try:
-        return get_with_catchup(coordinator.session, shard)
-    except ShardIteratorExpired:
-        # Refreshing a sequence_number-based Shard iterator is deterministic;
-        # if the iterator type is latest or trim_horizon, it's up to the caller to
-        # decide how to proceed.
-        if shard.iterator_type in {"trim_horizon", "latest"}:
-            raise
-
-    # Since the expired iterator has a sequence_number, try to refresh automatically.
-    # This could still raise RecordsExpired, if the desired position fell behind the
-    # the trim_horizon since it expired.
-    jump_to(coordinator, shard, shard.iterator_type, shard.sequence_number)
-
-    # If it didn't expire, let's try returning records once more.
-    return get_with_catchup(coordinator.session, shard)
-
-
 def remove_shard(coordinator: Coordinator, shard: Shard) -> List[Shard]:
     # try/catch avoids the O(N) search of using `if shard in ...`
 
@@ -241,17 +221,6 @@ def fetch_children(session: SessionWrapper, shard: Shard) -> List[Shard]:
             parent=shard)
         shard.children.append(child)
     return shard.children
-
-
-def jump_to(coordinator: Coordinator, shard: Shard, iterator_type: str, sequence_number: str=None) -> None:
-    # Just a simple wrapper; let the caller handle RecordsExpired
-    shard.iterator_id = coordinator.session.get_shard_iterator(
-        stream_arn=shard.stream_arn,
-        shard_id=shard.shard_id,
-        iterator_type=iterator_type,
-        sequence_number=sequence_number)
-    shard.iterator_type = iterator_type
-    shard.sequence_number = sequence_number
 
 
 def seek_to(coordinator: Coordinator, shard: Shard, position: arrow.Arrow) -> bool:

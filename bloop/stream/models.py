@@ -1,3 +1,4 @@
+import arrow
 import collections
 import heapq
 from typing import Dict, List, Optional, Tuple, Any, Iterator, Iterable
@@ -46,6 +47,26 @@ def unpack_shards(shards: List[Dict[str, Any]], stream_arn: str) -> Dict[str, "S
             shard.parent = by_id[parent_id]
             shard.parent.children.append(shard)
     return by_id
+
+
+def reformat_record(record: Dict) -> Dict:
+    """Repack a record into a cleaner structure for consumption."""
+    # Unwrap the inner structure, since most of it comes from here
+    return {
+        "key": record["dynamodb"].get("Keys", None),
+        "new": record["dynamodb"].get("NewImage", None),
+        "old": record["dynamodb"].get("OldImage", None),
+
+        "meta": {
+            "created_at": arrow.get(record["dynamodb"]["ApproximateCreationDateTime"]),
+            "event": {
+                "id": record["eventID"],
+                "type": record["eventName"].lower(),
+                "version": record["eventVersion"]
+            },
+            "sequence_number": record["dynamodb"]["SequenceNumber"],
+        }
+    }
 
 
 class RecordBuffer:
@@ -165,7 +186,7 @@ class Shard:
             yield shard
             shards.extend(shard.children)
 
-    def get_with_catchup(self, session: SessionWrapper) -> List[Dict]:
+    def get_records(self, session: SessionWrapper) -> List[Dict]:
         """Call GetRecords and apply catch-up logic.  Updates shard.iterator_id.  No exception handling."""
         # Won't be able to find new records.
         if self.exhausted:
@@ -173,11 +194,11 @@ class Shard:
 
         # Already caught up, just the one call please.
         if self.empty_responses >= CALLS_TO_REACH_HEAD:
-            return self._apply_response(session.get_stream_records(self.iterator_id))
+            return self._apply_get_records_response(session.get_stream_records(self.iterator_id))
 
         # Up to 5 calls to try and find a result
         while self.empty_responses < CALLS_TO_REACH_HEAD and not self.exhausted:
-            records = self._apply_response(session.get_stream_records(self.iterator_id))
+            records = self._apply_get_records_response(session.get_stream_records(self.iterator_id))
             if records:
                 # Stop working the first time we find results.
                 return records
@@ -187,7 +208,7 @@ class Shard:
         # Failed after 5 calls
         return []
 
-    def _apply_response(self, response: Dict) -> List[Dict]:
+    def _apply_get_records_response(self, response: Dict) -> List[Dict]:
         records = response.get("Records", [])
         self.iterator_id = response.get("NextShardIterator", last_iterator)
 
@@ -219,6 +240,55 @@ class Coordinator:
         #   shard.sequence_number = record["dynamodb"]["SequenceNumber"]
         #   shard.iterator_type = "after_record"
         self.buffer = RecordBuffer()
+
+    def __iter__(self):
+        return self
+
+    def __next__(self) -> Optional[Dict]:
+        # Try to get the next record from each shard and push it into the buffer.
+        if not self.buffer:
+            record_shard_pairs = []
+            for shard in self.active:
+                records = advance_shard(self, shard)
+                if records:
+                    record_shard_pairs.extend((record, shard) for record in records)
+            self.buffer.push_all(record_shard_pairs)
+
+            # Clean up exhausted Shards.
+            # Can't modify the active list while iterating it.
+            to_remove = [shard for shard in self.active if shard.exhausted]
+            for shard in to_remove:
+                # 0) Fetch Shard's children if they haven't been loaded
+                #    (perhaps the Shard just closed?)
+                fetch_children(self.session, shard)
+
+                # 1) Remove the shard from the Coordinator.  If the Shard has
+                #    children and was active, those children are added to the active list
+                #    If the Shard was a root, those children become roots.
+                was_active = shard in self.active
+                remove_shard(self, shard)
+
+                # 2) If the shard was active, now its children are active.
+                #    Move each child Shard to its trim_horizon.
+                if was_active:
+                    for child in shard.children:
+                        # Pick up right where the removed Shard left off
+                        jump_to(self, child, "trim_horizon")
+                        # The child's previous empty responses have no
+                        # bearing on its new position at the trim_horizon.
+                        child.empty_responses = 0
+
+        # Still have buffered records from a previous call, or we just refilled the buffer above
+        if self.buffer:
+            record, shard = self.buffer.pop()
+
+            # Now that the record is "consumed", advance the shard's checkpoint
+            shard.sequence_number = record["dynamodb"]["SequenceNumber"]
+            shard.iterator_type = "after_sequence"
+            return reformat_record(record)
+
+        # No records :(
+        return None
 
     def heartbeat(self):
         # Try to keep active shards with ``latest`` and ``trim_horizon`` iterators alive.
@@ -264,7 +334,7 @@ class Coordinator:
 # TODO move this somewhere
 def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict]:
     try:
-        return shard.get_with_catchup(coordinator.session)
+        return shard.get_records(coordinator.session)
     except ShardIteratorExpired:
         # Refreshing a sequence_number-based Shard iterator is deterministic;
         # if the iterator type is latest or trim_horizon, it's up to the caller to
@@ -278,7 +348,7 @@ def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict]:
     jump_to(coordinator, shard, shard.iterator_type, shard.sequence_number)
 
     # If it didn't expire, let's try returning records once more.
-    return shard.get_with_catchup(coordinator.session)
+    return shard.get_records(coordinator.session)
 
 
 # TODO move this somewhere
@@ -291,3 +361,57 @@ def jump_to(coordinator: Coordinator, shard: Shard, iterator_type: str, sequence
         sequence_number=sequence_number)
     shard.iterator_type = iterator_type
     shard.sequence_number = sequence_number
+
+
+# TODO move this somewhere
+def remove_shard(coordinator: Coordinator, shard: Shard) -> List[Shard]:
+    # try/catch avoids the O(N) search of using `if shard in ...`
+
+    try:
+        # If the Shard was a root, remove it and promote its children to roots
+        coordinator.roots.remove(shard)
+        if shard.children:
+            coordinator.roots.extend(shard.children)
+    except ValueError:
+        pass
+
+    try:
+        # If the Shard was active, remove it and set its children to active.
+        coordinator.active.remove(shard)
+        if shard.children:
+            coordinator.active.extend(shard.children)
+    except ValueError:
+        pass
+
+    # Remove any records in the buffer that came from the shard
+    heap = coordinator.buffer.heap
+    # ( ordering,  ( record,  shard ) )
+    #               |----- x[1] -----|
+    #        shard = x[1][1] ---^
+    # TODO can this be improved?  Gets expensive for high-volume streams with large buffers
+    to_remove = [x for x in heap if x[1][1] is shard]
+    for x in to_remove:
+        heap.remove(x)
+
+
+# TODO move this somewhere
+def fetch_children(session: SessionWrapper, shard: Shard) -> List[Shard]:
+    """If a shard doesn't have children, fetches them (if they exist)."""
+    # If a Shard has children, that number will never change.
+    # Children are the result of exactly one event:
+    #   increased throughput -> exactly 2 children
+    #         open for ~4hrs -> at most 1 child
+    if shard.children:
+        return shard.children
+    children = [
+        s for s in session.describe_stream(
+            stream_arn=shard.stream_arn,
+            first_shard=shard.shard_id)["Shards"]
+        if s.get("ParentShardId") == shard.shard_id]
+    for child in children:
+        child = Shard(
+            stream_arn=shard.stream_arn,
+            shard_id=child.get("ShardId"),
+            parent=shard)
+        shard.children.append(child)
+    return shard.children

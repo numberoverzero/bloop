@@ -1,9 +1,8 @@
 import arrow
 import collections
-from typing import Dict, List, Mapping, Optional
+from typing import Mapping
 from ..exceptions import InvalidStream, RecordsExpired
-from ..session import SessionWrapper
-from .models import Coordinator, Shard, unpack_shards, advance_shard, jump_to
+from .models import Coordinator, Shard, unpack_shards, jump_to, remove_shard
 
 
 def move_coordinator(coordinator: Coordinator, position) -> None:
@@ -90,125 +89,6 @@ def update_coordinator_from_token(coordinator: Coordinator, token: Mapping) -> N
         # If the Shard has a sequence_number, it may be beyond trim_horizon.  The records between
         # [sequence_number, current trim_horizon) can never be retrieved, so we can ignore that
         # they exist, and simply jump to the current trim_horizon.
-
-
-def advance_coordinator(coordinator: Coordinator) -> Optional[Dict]:
-    # Try to get the next record from each shard and push it into the buffer.
-    if not coordinator.buffer:
-        record_shard_pairs = []
-        for shard in coordinator.active:
-            records = advance_shard(coordinator, shard)
-            if records:
-                record_shard_pairs.extend((record, shard) for record in records)
-        coordinator.buffer.push_all(record_shard_pairs)
-
-        # Clean up exhausted Shards.
-        # Can't modify the active list while iterating it.
-        to_remove = [shard for shard in coordinator.active if shard.exhausted]
-        for shard in to_remove:
-            # 0) Fetch Shard's children if they haven't been loaded
-            #    (perhaps the Shard just closed?)
-            fetch_children(coordinator.session, shard)
-
-            # 1) Remove the shard from the Coordinator.  If the Shard has
-            #    children and was active, those children are added to the active list
-            #    If the Shard was a root, those children become roots.
-            was_active = shard in coordinator.active
-            remove_shard(coordinator, shard)
-
-            # 2) If the shard was active, now its children are active.
-            #    Move each child Shard to its trim_horizon.
-            if was_active:
-                for child in shard.children:
-                    # Pick up right where the removed Shard left off
-                    jump_to(coordinator, child, "trim_horizon")
-                    # The child's previous empty responses have no
-                    # bearing on its new position at the trim_horizon.
-                    child.empty_responses = 0
-
-    # Still have buffered records from a previous call, or we just refilled the buffer above
-    if coordinator.buffer:
-        record, shard = coordinator.buffer.pop()
-
-        # Now that the record is "consumed", advance the shard's checkpoint
-        shard.sequence_number = record["dynamodb"]["SequenceNumber"]
-        shard.iterator_type = "after_sequence"
-        return reformat(record)
-
-    # No records :(
-    return None
-
-
-def reformat(record: Dict) -> Dict:
-    """Repack a record into a cleaner structure for consumption."""
-    # Unwrap the inner structure, since most of it comes from here
-    return {
-        "key": record["dynamodb"].get("Keys", None),
-        "new": record["dynamodb"].get("NewImage", None),
-        "old": record["dynamodb"].get("OldImage", None),
-
-        "meta": {
-            "created_at": arrow.get(record["dynamodb"]["ApproximateCreationDateTime"]),
-            "event": {
-                "id": record["eventID"],
-                "type": record["eventName"].lower(),
-                "version": record["eventVersion"]
-            },
-            "sequence_number": record["dynamodb"]["SequenceNumber"],
-        }
-    }
-
-
-def remove_shard(coordinator: Coordinator, shard: Shard) -> List[Shard]:
-    # try/catch avoids the O(N) search of using `if shard in ...`
-
-    try:
-        # If the Shard was a root, remove it and promote its children to roots
-        coordinator.roots.remove(shard)
-        if shard.children:
-            coordinator.roots.extend(shard.children)
-    except ValueError:
-        pass
-
-    try:
-        # If the Shard was active, remove it and set its children to active.
-        coordinator.active.remove(shard)
-        if shard.children:
-            coordinator.active.extend(shard.children)
-    except ValueError:
-        pass
-
-    # Remove any records in the buffer that came from the shard
-    heap = coordinator.buffer.heap
-    # ( ordering,  ( record,  shard ) )
-    #               |----- x[1] -----|
-    #        shard = x[1][1] ---^
-    # TODO can this be improved?  Gets expensive for high-volume streams with large buffers
-    to_remove = [x for x in heap if x[1][1] is shard]
-    for x in to_remove:
-        heap.remove(x)
-
-
-def fetch_children(session: SessionWrapper, shard: Shard) -> List[Shard]:
-    """If a shard doesn't have children, fetches them (if they exist)."""
-    # If a Shard has children, that number will never change.
-    # Children are the result of exactly one event:
-    #   increased throughput -> exactly 2 children
-    #         open for ~4hrs -> at most 1 child
-    if shard.children:
-        return shard.children
-    children = [
-        s for s in session.describe_stream(
-            stream_arn=shard.stream_arn,
-            first_shard=shard.shard_id)["Shards"]
-        if s.get("ParentShardId") == shard.shard_id]
-    for child in children:
-        child = Shard(
-            stream_arn=shard.stream_arn,
-            shard_id=child.get("ShardId"),
-            parent=shard)
-        shard.children.append(child)
-    return shard.children
 
 
 def seek_to(coordinator: Coordinator, shard: Shard, position: arrow.Arrow) -> bool:

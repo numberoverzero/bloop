@@ -5,7 +5,7 @@ from ..signals import object_loaded
 from ..util import unpack_from_dynamodb
 
 from .models import Coordinator
-from .processing import advance_coordinator, move_coordinator
+from .processing import move_coordinator
 
 __all__ = ["Stream"]
 
@@ -52,7 +52,7 @@ class Stream:
         return self
 
     def __next__(self):
-        record = advance_coordinator(self.coordinator)
+        record = next(self.coordinator)
         if record:
             meta = self.model.Meta
             self._unpack(record, "new", meta.columns)

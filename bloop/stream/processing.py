@@ -3,7 +3,7 @@ import collections
 from typing import Dict, List, Mapping, Optional
 from ..exceptions import InvalidStream, RecordsExpired, ShardIteratorExpired
 from ..session import SessionWrapper
-from .models import Coordinator, Shard
+from .models import Coordinator, Shard, unpack_shards
 from .stream_utils import get_with_catchup, walk_shards
 from .tokens import load_coordinator
 
@@ -14,19 +14,20 @@ def move_coordinator(coordinator: Coordinator, position) -> None:
         coordinator.active.clear()
         coordinator.buffer.clear()
 
+        latest_shards = unpack_shards(
+            coordinator.session.describe_stream(
+                stream_arn=coordinator.stream_arn)["Shards"])
         coordinator.roots.extend(
             shard
-            for shard in load_all_shards(
-                coordinator.session,
-                coordinator.stream_arn).values()
+            for shard in latest_shards.values()
             if not shard.parent)
 
         if position == "trim_horizon":
             for shard in coordinator.roots:
                 jump_to(coordinator, shard, "trim_horizon")
             coordinator.active.extend(coordinator.roots)
+        # latest
         else:
-            # latest
             for root in coordinator.roots:
                 for shard in walk_shards(root):
                     if not shard.children:
@@ -49,7 +50,7 @@ def update_coordinator_from_token(coordinator: Coordinator, token: Mapping) -> N
 
     # 1) Load the Stream's actual Shards from DynamoDBStreams for validation and updates.
     #    (this is a mapping of {shard_id: shard})
-    by_id = load_all_shards(coordinator.session, coordinator.stream_arn)
+    by_id = unpack_shards(coordinator.session.describe_stream(stream_arn=coordinator.stream_arn)["Shards"])
 
     # 2) Walk each root shard's tree, to find an intersection with the actual shards that exist.
     #    If there's any Shard with no children AND it's not part of the returned shards from DynamoDBStreams,
@@ -205,7 +206,15 @@ def remove_shard(coordinator: Coordinator, shard: Shard) -> List[Shard]:
     except ValueError:
         pass
 
-    remove_buffered_records(coordinator, shard)
+    # Remove any records in the buffer that came from the shard
+    heap = coordinator.buffer.heap
+    # ( ordering,  ( record,  shard ) )
+    #               |----- x[1] -----|
+    #        shard = x[1][1] ---^
+    # TODO can this be improved?  Gets expensive for high-volume streams with large buffers
+    to_remove = [x for x in heap if x[1][1] is shard]
+    for x in to_remove:
+        heap.remove(x)
 
 
 def fetch_children(session: SessionWrapper, shard: Shard) -> List[Shard]:
@@ -230,20 +239,6 @@ def fetch_children(session: SessionWrapper, shard: Shard) -> List[Shard]:
     return shard.children
 
 
-def load_all_shards(session: SessionWrapper, stream_arn: str) -> Dict[str, Shard]:
-    """Return Shards indexed by Shard.shard_id"""
-    shards = [
-        Shard(stream_arn=stream_arn, shard_id=shard["ShardId"], parent=shard.get("ParentShardId"))
-        for shard in session.describe_stream(stream_arn=stream_arn)["Shards"]
-    ]
-    by_id = {shard.shard_id: shard for shard in shards}
-    for shard in shards:
-        if shard.parent:
-            parent = shard.parent = by_id[shard.parent]
-            parent.children.append(shard)
-    return by_id
-
-
 def jump_to(coordinator: Coordinator, shard: Shard, iterator_type: str, sequence_number: str=None) -> None:
     # Just a simple wrapper; let the caller handle RecordsExpired
     shard.iterator_id = coordinator.session.get_shard_iterator(
@@ -262,15 +257,3 @@ def seek_to(coordinator: Coordinator, shard: Shard, position: arrow.Arrow) -> bo
     """
     # TODO
     return None
-
-
-def remove_buffered_records(coordinator: Coordinator, shard: Shard) -> None:
-    """Remove all records from the Shard in the coordinator's buffer"""
-    heap = coordinator.buffer.heap
-    # ( create_time,  ( record,  shard ) )
-    #                 |----- x[1] -----|
-    #           shard = x[1][1] ---^
-    # TODO can this be improved?  Gets expensive for high-volume streams with large buffers
-    to_remove = [x for x in heap if x[1][1] is shard]
-    for x in to_remove:
-        heap.remove(x)

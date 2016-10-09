@@ -26,6 +26,25 @@ def heap_item(clock: int, record: Dict, shard: "Shard") -> Tuple[int, Tuple[Dict
     return (ordering, second_ordering, clock), (record, shard)
 
 
+def unpack_shards(shards: List[Dict[str, Any]], stream_arn: str) -> Dict[str, "Shard"]:
+    """List[Dict] -> Dict[shard_id, Shard].
+
+    Each Shards' parent/children are hooked up with the other Shards in the list.
+    """
+    by_id = {shard_token["shard_id"]:
+             Shard(stream_arn=stream_arn, shard_id=shard_token["shard_id"],
+                   iterator_type=shard_token["iterator_type"], sequence_number=shard_token["sequence_number"])
+             for shard_token in shards}
+
+    for shard_token in shards:
+        shard = by_id[shard_token["shard_id"]]
+        parent_id = shard_token.get("parent")
+        if parent_id:
+            shard.parent = by_id[parent_id]
+            shard.parent.children.append(shard)
+    return by_id
+
+
 class RecordBuffer:
     def __init__(self):
         # (total_ordering, (record, shard))
@@ -132,41 +151,22 @@ class Shard:
             "shard_id": self.shard_id,
             "iterator_type": self.iterator_type,
             "sequence_number": self.sequence_number,
-            "parent": self.parent.shard_id if self.parent else None,
-            "children": [child.shard_id for child in self.children]
+            "parent": self.parent.shard_id if self.parent else None
         }
-
-    @classmethod
-    def from_token(cls, token: Dict[str, Any]) -> "Shard":
-        """Does not fill out Shard.children from the token.
-
-        Generally, unpacking the shard's children [shard_id] -> [Shard] requires
-        all of the shards to exist first.
-        """
-        return cls(
-            stream_arn=token["stream_arn"], shard_id=token["shard_id"],
-            iterator_type=token["iterator_type"], sequence_number=token["sequence_number"],
-            parent=token["parent"]
-        )
 
 
 class Coordinator:
     def __init__(self, *, engine, session: SessionWrapper, stream_arn: str):
         # Set once on creation, never changes
         self.engine = engine
-
         # Set once on creation, never changes
         self.session = session
-
         # Set once on creation, never changes
         self.stream_arn = stream_arn
-
         # Changes infrequently, set initially
         self.roots = []
-
         # Changes infrequently, set initially
         self.active = []
-
         # Single buffer for the lifetime of the Coordinator, but mutates frequently
         # Records in the buffer aren't considered read.  When a Record popped from the buffer is
         # consumed, the Coordinator MUST notify the Shard by updating the sequence_number and iterator_type.
@@ -188,3 +188,12 @@ class Coordinator:
             "active": [shard.shard_id for shard in self.active],
             "shards": shard_tokens
         }
+
+    @classmethod
+    def from_token(cls, engine, session: SessionWrapper, token: Dict[str, Any]) -> "Coordinator":
+        by_id = unpack_shards(token["shards"], token["stream_arn"])
+
+        coordinator = cls(engine=engine, session=session, stream_arn=token["stream_arn"])
+        coordinator.roots = [shard for shard in by_id.values() if not shard.parent]
+        coordinator.active = [by_id[shard_id] for shard_id in token["active"]]
+        return coordinator

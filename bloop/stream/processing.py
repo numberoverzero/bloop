@@ -2,7 +2,8 @@ import arrow
 import collections
 from typing import Mapping
 from ..exceptions import InvalidStream, RecordsExpired
-from .models import Coordinator, Shard, unpack_shards, jump_to, remove_shard
+from .coordinator import Coordinator, jump_to, remove_shard
+from .shard import Shard, unpack_shards
 
 
 def move_coordinator(coordinator: Coordinator, position) -> None:

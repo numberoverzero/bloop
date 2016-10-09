@@ -4,7 +4,7 @@ from ..session import SessionWrapper
 from ..signals import object_loaded
 from ..util import unpack_from_dynamodb
 
-from .models import Coordinator
+from .coordinator import Coordinator
 from .processing import move_coordinator
 
 __all__ = ["Stream"]

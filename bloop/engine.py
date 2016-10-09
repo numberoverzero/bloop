@@ -21,7 +21,7 @@ from .signals import (
     object_loaded,
     object_saved,
 )
-from .streams_module import Stream
+from .stream import Stream
 from .util import missing, unpack_from_dynamodb, walk_subclasses
 
 

@@ -8,6 +8,8 @@ from .models import Coordinator
 from .processing import advance_coordinator, heartbeat, move_coordinator
 from .tokens import tokenize_coordinator
 
+__all__ = ["Stream"]
+
 
 class Stream:
     """Provides an approximate iterator over all Records in all Shards in a Stream.

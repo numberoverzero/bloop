@@ -5,7 +5,9 @@ from typing import Dict, List, Optional, Tuple, Any, Iterator, Iterable
 from ..exceptions import ShardIteratorExpired
 from ..session import SessionWrapper
 from ..util import Sentinel
-from .stream_utils import get_with_catchup
+
+# Approximate number of calls to fully traverse an empty shard
+CALLS_TO_REACH_HEAD = 5
 
 last_iterator = Sentinel("LastIterator")
 
@@ -163,6 +165,40 @@ class Shard:
             yield shard
             shards.extend(shard.children)
 
+    def get_with_catchup(self, session: SessionWrapper) -> List[Dict]:
+        """Call GetRecords and apply catch-up logic.  Updates shard.iterator_id.  No exception handling."""
+        # Won't be able to find new records.
+        if self.exhausted:
+            return []
+
+        # Already caught up, just the one call please.
+        if self.empty_responses >= CALLS_TO_REACH_HEAD:
+            return self._apply_response(session.get_stream_records(self.iterator_id))
+
+        # Up to 5 calls to try and find a result
+        while self.empty_responses < CALLS_TO_REACH_HEAD and not self.exhausted:
+            records = self._apply_response(session.get_stream_records(self.iterator_id))
+            if records:
+                # Stop working the first time we find results.
+                return records
+            # Keep looking.
+            self.empty_responses += 1
+
+        # Failed after 5 calls
+        return []
+
+    def _apply_response(self, response: Dict) -> List[Dict]:
+        records = response.get("Records", [])
+        self.iterator_id = response.get("NextShardIterator", last_iterator)
+
+        # The iterator state should ONLY be updated if there's no sequence_number already.
+        # This ensures we can refresh from a fixed point, which is unnecessary if we have a number.
+        # If sequence_number is set, we're risking data loss by skipping the existing checkpoint.
+        if records and self.sequence_number is None:
+            self.sequence_number = records[0]["dynamodb"]["SequenceNumber"]
+            self.iterator_type = "at_sequence"
+        return records
+
 
 class Coordinator:
     def __init__(self, *, engine, session: SessionWrapper, stream_arn: str):
@@ -228,7 +264,7 @@ class Coordinator:
 # TODO move this somewhere
 def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict]:
     try:
-        return get_with_catchup(coordinator.session, shard)
+        return shard.get_with_catchup(coordinator.session)
     except ShardIteratorExpired:
         # Refreshing a sequence_number-based Shard iterator is deterministic;
         # if the iterator type is latest or trim_horizon, it's up to the caller to
@@ -242,7 +278,7 @@ def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict]:
     jump_to(coordinator, shard, shard.iterator_type, shard.sequence_number)
 
     # If it didn't expire, let's try returning records once more.
-    return get_with_catchup(coordinator.session, shard)
+    return shard.get_with_catchup(coordinator.session)
 
 
 # TODO move this somewhere

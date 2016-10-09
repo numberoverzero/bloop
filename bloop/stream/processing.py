@@ -3,7 +3,7 @@ import collections
 from typing import Mapping, Any
 from ..exceptions import InvalidStream, RecordsExpired
 from .coordinator import Coordinator
-from .shard import Shard, unpack_shards
+from .shard import unpack_shards
 
 
 def move_coordinator(coordinator: Coordinator, position) -> None:
@@ -89,12 +89,3 @@ def update_coordinator_from_token(coordinator: Coordinator, token: Mapping[str, 
         # If the Shard has a sequence_number, it may be beyond trim_horizon.  The records between
         # [sequence_number, current trim_horizon) can never be retrieved, so we can ignore that
         # they exist, and simply jump to the current trim_horizon.
-
-
-def seek_to(coordinator: Coordinator, shard: Shard, position: arrow.Arrow) -> bool:
-    """Move the Shard's iterator to the earliest record that after the given time.
-
-    Returns whether a record matching the criteria was found.
-    """
-    # TODO
-    return None

@@ -1,3 +1,4 @@
+import arrow
 import collections
 from typing import Optional, Dict, Any, Iterator, List, Mapping
 
@@ -117,6 +118,14 @@ class Shard:
             sequence_number=sequence_number)
         self.iterator_type = iterator_type
         self.sequence_number = sequence_number
+
+    def seek_to(self, position: arrow.Arrow) -> bool:
+        """Move the Shard's iterator to the earliest record that after the given time.
+
+        Returns whether a record matching the criteria was found.
+        """
+        # TODO
+        pass
 
     def load_children(self) -> None:
         """Try to load the shard's children from DynamoDB if it doesn't have any."""

@@ -5,7 +5,6 @@ from ..signals import object_loaded
 from ..util import unpack_from_dynamodb
 
 from .coordinator import Coordinator
-from .processing import move_coordinator
 
 __all__ = ["Stream"]
 
@@ -136,7 +135,7 @@ class Stream:
         - Moving to a specific time is slow.
         - Moving to a previous stream's token is somewhere in the middle.
         """
-        move_coordinator(self.coordinator, position)
+        self.coordinator.move_to(position)
 
     def _unpack(self, record: MutableMapping[str, Any], key: str, expected: List) -> None:
         """Replaces the attr dict at the given key with an instance of a Model"""

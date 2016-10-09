@@ -4,7 +4,7 @@ from typing import Dict, List, Mapping, Optional
 from ..exceptions import InvalidStream, RecordsExpired, ShardIteratorExpired
 from ..session import SessionWrapper
 from .models import Coordinator, Shard
-from .stream_utils import get_with_catchup, is_exhausted, walk_shards
+from .stream_utils import get_with_catchup, walk_shards
 from .tokens import load_coordinator
 
 
@@ -113,7 +113,7 @@ def advance_coordinator(coordinator: Coordinator) -> Optional[Dict]:
 
         # Clean up exhausted Shards.
         # Can't modify the active list while iterating it.
-        to_remove = [shard for shard in coordinator.active if is_exhausted(shard)]
+        to_remove = [shard for shard in coordinator.active if shard.exhausted]
         for shard in to_remove:
             # 0) Fetch Shard's children if they haven't been loaded
             #    (perhaps the Shard just closed?)

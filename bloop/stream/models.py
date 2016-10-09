@@ -2,6 +2,9 @@ import heapq
 from typing import Dict, List, Optional, Tuple
 
 from ..session import SessionWrapper
+from ..util import Sentinel
+
+last_iterator = Sentinel("LastIterator")
 
 __all__ = ["Coordinator", "RecordBuffer", "Shard"]
 
@@ -24,7 +27,7 @@ def heap_item(clock: int, record: Dict, shard: "Shard") -> Tuple[int, Tuple[Dict
 class RecordBuffer:
     def __init__(self):
         # (total_ordering, (record, shard))
-        #   ^--sort key      ^--data  ^--data src
+        #  ^--sort         ^--data  ^--src
         self._heap = []
 
         # Used by the total ordering clock
@@ -118,6 +121,10 @@ class Shard:
         # This dictates how hard we need to work to "catch up" a new iterator, in the face of empty results
         # (which provide no SequenceNumber or ApproximateCreationDateTime to approximate our location in the Stream).
         self.empty_responses = 0
+
+    @property
+    def exhausted(self):
+        return self.iterator_id is last_iterator
 
 
 class Coordinator:

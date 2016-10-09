@@ -20,11 +20,6 @@ def walk_shards(*shards: Shard):
         shards.extend(shard.children)
 
 
-def is_exhausted(shard: Shard) -> bool:
-    """True if there is no next iterator_id"""
-    return shard.iterator_id is last_iterator
-
-
 def get_with_catchup(session: SessionWrapper, shard: Shard) -> List[Dict]:
     """Call GetRecords and apply catch-up logic.  Updates shard.iterator_id.  No exception handling."""
     # Won't be able to find new records.

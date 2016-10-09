@@ -4,7 +4,7 @@ from ..session import SessionWrapper
 from ..signals import object_loaded
 from ..util import unpack_from_dynamodb
 
-from .models import new_coordinator
+from .models import Coordinator
 from .processing import advance_coordinator, heartbeat, move_coordinator
 from .tokens import tokenize_coordinator
 
@@ -41,11 +41,11 @@ class Stream:
     def __init__(self, *, engine, model, session: SessionWrapper):
         self.engine = engine
         self.model = model
-        self.coordinator = new_coordinator(engine, session, model.Meta.stream["arn"])
+        self.coordinator = Coordinator(engine=engine, session=session, stream_arn=model.Meta.stream["arn"])
 
     def __repr__(self):
         # <Stream[User]>
-        return "<{}[{}]>".format(self.__class__, self.model.__name__)
+        return "<{}[{}]>".format(self.__class__.__name__, self.model.__name__)
 
     def __iter__(self):
         return self

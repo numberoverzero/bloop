@@ -228,7 +228,7 @@ class BaseModel(metaclass=ModelMetaclass):
             type_engine.register(column.typedef)
 
     def __repr__(self):
-        attrs = ", ".join("{}={}".format(*item) for item in loaded_columns(self))
+        attrs = ", ".join("{}={!r}".format(*item) for item in loaded_columns(self))
         return "{}({})".format(self.__class__.__name__, attrs)
 
 

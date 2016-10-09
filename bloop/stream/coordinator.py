@@ -3,7 +3,6 @@ from typing import Dict, List, Optional, Any, Mapping
 
 from .buffer import RecordBuffer
 from .shard import Shard, unpack_shards
-from ..exceptions import ShardIteratorExpired
 from ..session import SessionWrapper
 
 
@@ -36,9 +35,9 @@ class Coordinator:
         # Set once on creation, never changes
         self.stream_arn = stream_arn
         # Changes infrequently, set initially
-        self.roots = []
+        self.roots = []  # type: List[Shard]
         # Changes infrequently, set initially
-        self.active = []
+        self.active = []  # type: List[Shard]
         # Single buffer for the lifetime of the Coordinator, but mutates frequently
         # Records in the buffer aren't considered read.  When a Record popped from the buffer is
         # consumed, the Coordinator MUST notify the Shard by updating the sequence_number and iterator_type.
@@ -55,7 +54,7 @@ class Coordinator:
         if not self.buffer:
             record_shard_pairs = []
             for shard in self.active:
-                records = advance_shard(self, shard)
+                records = next(shard)
                 if records:
                     record_shard_pairs.extend((record, shard) for record in records)
             self.buffer.push_all(record_shard_pairs)
@@ -66,7 +65,7 @@ class Coordinator:
             for shard in to_remove:
                 # 0) Fetch Shard's children if they haven't been loaded
                 #    (perhaps the Shard just closed?)
-                shard.load_children(self.session)
+                shard.load_children()
 
                 # 1) Remove the shard from the Coordinator.  If the Shard has
                 #    children and was active, those children are added to the active list
@@ -79,7 +78,7 @@ class Coordinator:
                 if was_active:
                     for child in shard.children:
                         # Pick up right where the removed Shard left off
-                        jump_to(self, child, "trim_horizon")
+                        child.jump_to(self.session, iterator_type="trim_horizon")
                         # The child's previous empty responses have no
                         # bearing on its new position at the trim_horizon.
                         child.empty_responses = 0
@@ -108,7 +107,7 @@ class Coordinator:
 
                 # Don't need to handle RecordsExpired because only sequence_number-based
                 # iterators can fall behind the trim_horizon.
-                records = advance_shard(self, shard)
+                records = next(shard)
                 # Success!  This shard now has an ``at_sequence`` iterator
                 if records:
                     self.buffer.push_all((record, shard) for record in records)
@@ -129,44 +128,12 @@ class Coordinator:
 
     @classmethod
     def from_token(cls, engine, session: SessionWrapper, token: Mapping[str, Any]) -> "Coordinator":
-        by_id = unpack_shards(token["shards"], token["stream_arn"])
+        by_id = unpack_shards(token["shards"], stream_arn=token["stream_arn"], session=session)
 
         coordinator = cls(engine=engine, session=session, stream_arn=token["stream_arn"])
         coordinator.roots = [shard for shard in by_id.values() if not shard.parent]
         coordinator.active = [by_id[shard_id] for shard_id in token["active"]]
         return coordinator
-
-
-# TODO move this somewhere
-def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict[str, Any]]:
-    try:
-        return shard.get_records(coordinator.session)
-    except ShardIteratorExpired:
-        # Refreshing a sequence_number-based Shard iterator is deterministic;
-        # if the iterator type is latest or trim_horizon, it's up to the caller to
-        # decide how to proceed.
-        if shard.iterator_type in {"trim_horizon", "latest"}:
-            raise
-
-    # Since the expired iterator has a sequence_number, try to refresh automatically.
-    # This could still raise RecordsExpired, if the desired position fell behind the
-    # the trim_horizon since it expired.
-    jump_to(coordinator, shard, shard.iterator_type, shard.sequence_number)
-
-    # If it didn't expire, let's try returning records once more.
-    return shard.get_records(coordinator.session)
-
-
-# TODO move this somewhere
-def jump_to(coordinator: Coordinator, shard: Shard, iterator_type: str, sequence_number: Optional[str]=None) -> None:
-    # Just a simple wrapper; let the caller handle RecordsExpired
-    shard.iterator_id = coordinator.session.get_shard_iterator(
-        stream_arn=shard.stream_arn,
-        shard_id=shard.shard_id,
-        iterator_type=iterator_type,
-        sequence_number=sequence_number)
-    shard.iterator_type = iterator_type
-    shard.sequence_number = sequence_number
 
 
 # TODO move this somewhere

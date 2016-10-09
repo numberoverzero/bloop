@@ -2,7 +2,7 @@ import arrow
 import collections
 from typing import Mapping, Any
 from ..exceptions import InvalidStream, RecordsExpired
-from .coordinator import Coordinator, jump_to, remove_shard
+from .coordinator import Coordinator, remove_shard
 from .shard import Shard, unpack_shards
 
 
@@ -15,7 +15,8 @@ def move_coordinator(coordinator: Coordinator, position) -> None:
         latest_shards = unpack_shards(
             coordinator.session.describe_stream(
                 stream_arn=coordinator.stream_arn)["Shards"],
-            coordinator.stream_arn)
+            coordinator.stream_arn,
+            coordinator.session)
         coordinator.roots.extend(
             shard
             for shard in latest_shards.values()
@@ -23,14 +24,14 @@ def move_coordinator(coordinator: Coordinator, position) -> None:
 
         if position == "trim_horizon":
             for shard in coordinator.roots:
-                jump_to(coordinator, shard, "trim_horizon")
+                shard.jump_to(iterator_type="trim_horizon")
             coordinator.active.extend(coordinator.roots)
         # latest
         else:
             for root in coordinator.roots:
                 for shard in root.walk_tree():
                     if not shard.children:
-                        jump_to(coordinator, shard, "latest")
+                        shard.jump_to(iterator_type="latest")
                         coordinator.active.append(shard)
 
     elif isinstance(position, arrow.Arrow):
@@ -51,15 +52,13 @@ def update_coordinator_from_token(coordinator: Coordinator, token: Mapping[str, 
     coordinator.active.clear()
     coordinator.buffer.clear()
 
-    by_id = unpack_shards(token["shards"], stream_arn)
+    by_id = unpack_shards(token["shards"], stream_arn, coordinator.session)
     coordinator.roots = [shard for shard in by_id.values() if not shard.parent]
     coordinator.active.extend(by_id[shard_id] for shard_id in token["active"])
 
     # 1) Load the Stream's actual Shards from DynamoDBStreams for
     #    validation and updates. (this is a mapping of {shard_id: shard})
-    by_id = unpack_shards(
-        coordinator.session.describe_stream(stream_arn)["Shards"],
-        stream_arn)
+    by_id = unpack_shards(coordinator.session.describe_stream(stream_arn)["Shards"], stream_arn, coordinator.session)
 
     # 2) Walk each root shard's tree, to find an intersection with the actual shards that exist.
     #    If there's any Shard with no children AND it's not part of the returned shards from DynamoDBStreams,
@@ -83,10 +82,10 @@ def update_coordinator_from_token(coordinator: Coordinator, token: Mapping[str, 
     # 3) Now that everything's verified, grab new iterators for the coordinator's active Shards.
     for shard in coordinator.active:
         try:
-            jump_to(coordinator, shard, shard.iterator_type, shard.sequence_number)
+            shard.jump_to(iterator_type=shard.iterator_type, sequence_number=shard.sequence_number)
         except RecordsExpired:
             # TODO logger.info "SequenceNumber from token was past trim_horizon, moving to trim_horizon instead"
-            jump_to(coordinator, shard, "trim_horizon", None)
+            shard.jump_to(iterator_type="trim_horizon")
         # If the Shard has a sequence_number, it may be beyond trim_horizon.  The records between
         # [sequence_number, current trim_horizon) can never be retrieved, so we can ignore that
         # they exist, and simply jump to the current trim_horizon.

@@ -22,29 +22,17 @@ def tokenize_coordinator(coordinator: Coordinator) -> Dict:
     shards = {}
     for root in coordinator.roots:
         for shard in walk_shards(root):
-            shards.update(tokenize_shard(shard))
+            token = shard.token
+            # Redundant fields, the coordinator token will contain these
+            token.pop("shard_id")
+            token.pop("stream_arn")
+            shards.update({shard.shard_id: token})
     active = [shard.shard_id for shard in coordinator.active]
 
     return {
         "stream_arn": coordinator.stream_arn,
         "shards": shards,
         "active": active
-    }
-
-
-def tokenize_shard(shard: Shard) -> Dict:
-    """Clean up temporary fields, recurse through children"""
-    # Don't need stream_arn, coordinator will have that
-    # Don't need empty_responses, will have to seek on ``trim_horizon``, ``latest`` anyway.
-    # We could store iterator_id, but we'll need to get iterators in the case of expired ones;
-    #   it's simpler to just always get them.
-    return {
-        shard.shard_id: {
-            "iterator_type": shard.iterator_type,
-            "sequence_number": shard.sequence_number,
-            "parent": shard.parent.shard_id if shard.parent else None,
-            "children": [child.shard_id for child in shard.children]
-        }
     }
 
 

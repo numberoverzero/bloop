@@ -118,6 +118,22 @@ class Shard:
     def exhausted(self):
         return self.iterator_id is last_iterator
 
+    @property
+    def token(self):
+        """Does not recursively tokenize children.
+
+        Returns fields that may be redundant for generating a Stream token,
+        such as stream_arn and shard_id.
+        """
+        return {
+            "stream_arn": self.stream_arn,
+            "shard_id": self.shard_id,
+            "iterator_type": self.iterator_type,
+            "sequence_number": self.sequence_number,
+            "parent": self.parent.shard_id if self.parent else None,
+            "children": [child.shard_id for child in self.children]
+        }
+
 
 class Coordinator:
     def __init__(self, *, engine, session: SessionWrapper, stream_arn: str):

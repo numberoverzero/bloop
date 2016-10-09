@@ -1,10 +1,13 @@
 from datetime import datetime
 import heapq
-from typing import Dict, Tuple, List, Iterable
+from typing import Tuple, List, Iterable, Mapping, Any
 from .shard import Shard
 
 
-def heap_item(clock: int, record: Dict, shard: Shard) -> Tuple[int, Tuple[Dict, Shard]]:
+def heap_item(
+        clock: int,
+        record: Mapping[str, Any],
+        shard: Shard) -> Tuple[Tuple[datetime, str, int], Tuple[Mapping[str, Any], Shard]]:
     # Primary ordering is by event creation time.
     # However, creation time is *approximate* and has whole-second resolution.
     # This means two events in the same shard within one second can't be ordered.
@@ -28,27 +31,27 @@ class RecordBuffer:
         # Used by the total ordering clock
         self.__monotonic_integer = 0
 
-    def push(self, record: Dict, shard: Shard) -> None:
+    def push(self, record: Mapping[str, Any], shard: Shard) -> None:
         heapq.heappush(self._heap, heap_item(self.clock, record, shard))
 
-    def push_all(self, record_shard_pairs: Iterable[Tuple[Dict, Shard]]) -> None:
+    def push_all(self, record_shard_pairs: Iterable[Tuple[Mapping[str, Any], Shard]]) -> None:
         # Faster than inserting one at a time, just dump them in the list
         # and then heapify the whole thing.
         for pair in record_shard_pairs:
             self._heap.append(heap_item(self.clock, *pair))
         heapq.heapify(self._heap)
 
-    def pop(self) -> Tuple[Dict, Shard]:
+    def pop(self) -> Tuple[Mapping[str, Any], Shard]:
         return heapq.heappop(self._heap)[1]
 
-    def peek(self) -> Tuple[Dict, Shard]:
+    def peek(self) -> Tuple[Mapping[str, Any], Shard]:
         return self._heap[0][1]
 
     def clear(self) -> None:
         self._heap.clear()
 
     @property
-    def heap(self) -> List[Tuple[Tuple[datetime, str, int], Tuple[Dict, Shard]]]:
+    def heap(self) -> List[Tuple[Tuple[datetime, str, int], Tuple[Mapping[str, Any], Shard]]]:
         return self._heap
 
     def __len__(self) -> int:

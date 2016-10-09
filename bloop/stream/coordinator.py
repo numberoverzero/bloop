@@ -1,5 +1,5 @@
 import arrow
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Mapping
 
 from .buffer import RecordBuffer
 from .shard import Shard, unpack_shards
@@ -7,7 +7,7 @@ from ..exceptions import ShardIteratorExpired
 from ..session import SessionWrapper
 
 
-def reformat_record(record: Dict) -> Dict:
+def reformat_record(record: Mapping[str, Any]) -> Dict[str, Any]:
     """Repack a record into a cleaner structure for consumption."""
     # Unwrap the inner structure, since most of it comes from here
     return {
@@ -50,7 +50,7 @@ class Coordinator:
     def __iter__(self):
         return self
 
-    def __next__(self) -> Optional[Dict]:
+    def __next__(self) -> Optional[Dict[str, Any]]:
         # Try to get the next record from each shard and push it into the buffer.
         if not self.buffer:
             record_shard_pairs = []
@@ -96,7 +96,7 @@ class Coordinator:
         # No records :(
         return None
 
-    def heartbeat(self):
+    def heartbeat(self) -> None:
         # Try to keep active shards with ``latest`` and ``trim_horizon`` iterators alive.
         # Ideally, this will find records and make them ``at_sequence`` or ``after_sequence`` iterators.
         for shard in self.active:
@@ -128,7 +128,7 @@ class Coordinator:
         }
 
     @classmethod
-    def from_token(cls, engine, session: SessionWrapper, token: Dict[str, Any]) -> "Coordinator":
+    def from_token(cls, engine, session: SessionWrapper, token: Mapping[str, Any]) -> "Coordinator":
         by_id = unpack_shards(token["shards"], token["stream_arn"])
 
         coordinator = cls(engine=engine, session=session, stream_arn=token["stream_arn"])
@@ -138,7 +138,7 @@ class Coordinator:
 
 
 # TODO move this somewhere
-def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict]:
+def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict[str, Any]]:
     try:
         return shard.get_records(coordinator.session)
     except ShardIteratorExpired:
@@ -158,7 +158,7 @@ def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict]:
 
 
 # TODO move this somewhere
-def jump_to(coordinator: Coordinator, shard: Shard, iterator_type: str, sequence_number: str=None) -> None:
+def jump_to(coordinator: Coordinator, shard: Shard, iterator_type: str, sequence_number: Optional[str]=None) -> None:
     # Just a simple wrapper; let the caller handle RecordsExpired
     shard.iterator_id = coordinator.session.get_shard_iterator(
         stream_arn=shard.stream_arn,

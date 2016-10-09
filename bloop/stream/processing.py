@@ -1,6 +1,6 @@
 import arrow
 import collections
-from typing import Mapping
+from typing import Mapping, Any
 from ..exceptions import InvalidStream, RecordsExpired
 from .coordinator import Coordinator, jump_to, remove_shard
 from .shard import Shard, unpack_shards
@@ -42,7 +42,7 @@ def move_coordinator(coordinator: Coordinator, position) -> None:
         raise ValueError("Don't know how to move to position {!r}".format(position))
 
 
-def update_coordinator_from_token(coordinator: Coordinator, token: Mapping) -> None:
+def update_coordinator_from_token(coordinator: Coordinator, token: Mapping[str, Any]) -> None:
     stream_arn = coordinator.stream_arn = token["stream_arn"]
 
     # 0) Load the token into the coordinator so we can re-use the normal

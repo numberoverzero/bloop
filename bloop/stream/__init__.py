@@ -1,4 +1,4 @@
-from typing import Dict, List, MutableMapping
+from typing import Dict, List, MutableMapping, Any, Mapping, Optional
 
 from ..session import SessionWrapper
 from ..signals import object_loaded
@@ -51,7 +51,7 @@ class Stream:
     def __iter__(self):
         return self
 
-    def __next__(self):
+    def __next__(self) -> Optional[Mapping[str, Any]]:
         record = next(self.coordinator)
         if record:
             meta = self.model.Meta
@@ -61,7 +61,7 @@ class Stream:
         return record
 
     @property
-    def token(self) -> Dict:
+    def token(self) -> Dict[str, Any]:
         """Dict that can be used to reconstruct the current progress of the iterator.
 
         Example
@@ -138,7 +138,7 @@ class Stream:
         """
         move_coordinator(self.coordinator, position)
 
-    def _unpack(self, record: MutableMapping, key: str, expected: List) -> None:
+    def _unpack(self, record: MutableMapping[str, Any], key: str, expected: List) -> None:
         """Replaces the attr dict at the given key with an instance of a Model"""
         attrs = record.get(key)
         if attrs is None:

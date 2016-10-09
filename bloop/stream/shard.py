@@ -1,5 +1,5 @@
 import collections
-from typing import Optional, Dict, Any, Iterator, List
+from typing import Optional, Dict, Any, Iterator, List, Mapping
 
 from ..session import SessionWrapper
 from ..util import Sentinel
@@ -56,7 +56,7 @@ class Shard:
         self.empty_responses = 0
 
     @property
-    def exhausted(self):
+    def exhausted(self) -> bool:
         return self.iterator_id is last_iterator
 
     @property
@@ -82,7 +82,7 @@ class Shard:
             yield shard
             shards.extend(shard.children)
 
-    def get_records(self, session: SessionWrapper) -> List[Dict]:
+    def get_records(self, session: SessionWrapper) -> List[Dict[str, Any]]:
         """Call GetRecords and apply catch-up logic.  Updates shard.iterator_id.  No exception handling."""
         # Won't be able to find new records.
         if self.exhausted:
@@ -104,7 +104,7 @@ class Shard:
         # Failed after 5 calls
         return []
 
-    def _apply_get_records_response(self, response: Dict) -> List[Dict]:
+    def _apply_get_records_response(self, response: Mapping[str, Any]) -> List[Dict[str, Any]]:
         records = response.get("Records", [])
         self.iterator_id = response.get("NextShardIterator", last_iterator)
 
@@ -117,7 +117,7 @@ class Shard:
         return records
 
 
-def unpack_shards(shards: List[Dict[str, Any]], stream_arn: str) -> Dict[str, Shard]:
+def unpack_shards(shards: List[Mapping[str, Any]], stream_arn: str) -> Dict[str, Shard]:
     """List[Dict] -> Dict[shard_id, Shard].
 
     Each Shards' parent/children are hooked up with the other Shards in the list.

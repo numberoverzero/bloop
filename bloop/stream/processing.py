@@ -2,7 +2,7 @@ import arrow
 import collections
 from typing import Mapping, Any
 from ..exceptions import InvalidStream, RecordsExpired
-from .coordinator import Coordinator, remove_shard
+from .coordinator import Coordinator
 from .shard import Shard, unpack_shards
 
 
@@ -75,7 +75,7 @@ def update_coordinator_from_token(coordinator: Coordinator, token: Mapping[str, 
         if shard.children:
             unverified.extend(shard.children)
             # This shard doesn't exist, so prune it and promote its children to its position(s)
-            remove_shard(coordinator, shard)
+            coordinator.remove_shard(shard)
             continue
         raise InvalidStream("The Stream token contains an unresolvable Shard.")
 

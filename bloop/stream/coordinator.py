@@ -2,7 +2,7 @@ import arrow
 from typing import Dict, List, Optional, Any, Mapping
 
 from .buffer import RecordBuffer
-from .shard import Shard, unpack_shards
+from .shard import Shard
 from ..session import SessionWrapper
 
 
@@ -71,7 +71,7 @@ class Coordinator:
                 #    children and was active, those children are added to the active list
                 #    If the Shard was a root, those children become roots.
                 was_active = shard in self.active
-                remove_shard(self, shard)
+                self.remove_shard(shard)
 
                 # 2) If the shard was active, now its children are active.
                 #    Move each child Shard to its trim_horizon.
@@ -126,33 +126,31 @@ class Coordinator:
             "shards": shard_tokens
         }
 
+    def remove_shard(self, shard: Shard) -> None:
+        # try/catch avoids the O(N) search of using `if shard in ...`
 
-# TODO move this somewhere
-def remove_shard(coordinator: Coordinator, shard: Shard) -> List[Shard]:
-    # try/catch avoids the O(N) search of using `if shard in ...`
+        try:
+            # If the Shard was a root, remove it and promote its children to roots
+            self.roots.remove(shard)
+            if shard.children:
+                self.roots.extend(shard.children)
+        except ValueError:
+            pass
 
-    try:
-        # If the Shard was a root, remove it and promote its children to roots
-        coordinator.roots.remove(shard)
-        if shard.children:
-            coordinator.roots.extend(shard.children)
-    except ValueError:
-        pass
+        try:
+            # If the Shard was active, remove it and set its children to active.
+            self.active.remove(shard)
+            if shard.children:
+                self.active.extend(shard.children)
+        except ValueError:
+            pass
 
-    try:
-        # If the Shard was active, remove it and set its children to active.
-        coordinator.active.remove(shard)
-        if shard.children:
-            coordinator.active.extend(shard.children)
-    except ValueError:
-        pass
-
-    # Remove any records in the buffer that came from the shard
-    heap = coordinator.buffer.heap
-    # ( ordering,  ( record,  shard ) )
-    #               |----- x[1] -----|
-    #        shard = x[1][1] ---^
-    # TODO can this be improved?  Gets expensive for high-volume streams with large buffers
-    to_remove = [x for x in heap if x[1][1] is shard]
-    for x in to_remove:
-        heap.remove(x)
+        # Remove any records in the buffer that came from the shard
+        heap = self.buffer.heap
+        # ( ordering,  ( record,  shard ) )
+        #               |----- x[1] -----|
+        #        shard = x[1][1] ---^
+        # TODO can this be improved?  Gets expensive for high-volume streams with large buffers
+        to_remove = [x for x in heap if x[1][1] is shard]
+        for x in to_remove:
+            heap.remove(x)

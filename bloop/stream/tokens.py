@@ -20,8 +20,9 @@ def tokenize_coordinator(coordinator: Coordinator) -> Dict:
     #            }
     #        }
     shards = {}
-    for shard in walk_shards(*coordinator.root_shards):
-        shards.update(tokenize_shard(shard))
+    for root in coordinator.roots:
+        for shard in walk_shards(root):
+            shards.update(tokenize_shard(shard))
     active = [shard.shard_id for shard in coordinator.active]
 
     return {
@@ -58,8 +59,7 @@ def load_shard(stream_arn: str, shard_dict: Mapping) -> Shard:
         iterator_type=shard_dict["iterator_type"],
         sequence_number=shard_dict["sequence_number"],
         parent=shard_dict["parent"],
-        children=shard_dict["children"],
-        empty_responses=0
+        children=shard_dict["children"]
     )
 
 

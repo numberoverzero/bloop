@@ -31,7 +31,7 @@ def get_with_catchup(session: SessionWrapper, shard: Shard) -> List[Dict]:
         return _apply_response(shard, session.get_stream_records(shard.iterator_id))
 
     # Up to 5 calls to try and find a result
-    while shard.empty_responses < CALLS_TO_REACH_HEAD and not is_exhausted(shard):
+    while shard.empty_responses < CALLS_TO_REACH_HEAD and not shard.exhausted:
         records = _apply_response(shard, session.get_stream_records(shard.iterator_id))
         if records:
             # Stop working the first time we find results.

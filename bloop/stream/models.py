@@ -70,16 +70,13 @@ class RecordBuffer:
 
 
 class Shard:
-    def __init__(
-            self, *, stream_arn: str, shard_id: str,
-            iterator_id: Optional[str]=None, iterator_type: Optional[str]=None, sequence_number: Optional[str]=None,
-            parent: Optional["Shard"]=None):
+    def __init__(self, *, stream_arn: str, shard_id: str,
+                 iterator_id: Optional[str]=None, iterator_type: Optional[str]=None,
+                 sequence_number: Optional[str]=None, parent: Optional["Shard"]=None):
         # Set once on creation, never changes
         self.stream_arn = stream_arn
-
         # Set once on creation, never changes
         self.shard_id = shard_id
-
         # Changes frequently, not set initially
         # Iterators have a 15 minute lifetime, and need to be refreshed before then.
         # If they expire, a new one can be created deterministically IFF the Shard has
@@ -87,23 +84,19 @@ class Shard:
         # Iterators also change on nearly every GetRecords call.
         # When the end of a closed Shard is reached, this becomes None.
         self.iterator_id = iterator_id
-
         # Changes infrequently, not set initially
         # This will change on seek/jump, and the first time a record is encountered
         # (usually, from "trim_horizon" or "latest" to "at_sequence")
         self.iterator_type = iterator_type
-
         # Changes frequently, not set initially
         # See iterator_type
         self.sequence_number = sequence_number
-
         # Changes very infrequently, set initially
         # This will only change when the parent Shard previously existed, but has
         # since passed the 24 hour trim horizon.
         # After the initial set, this will never go from None -> Shard,
         # since Shards do not re-parent.
         self.parent = parent
-
         # Changes infrequently, set initially
         # Unlike parent, new children are added periodically (~4hrs) and as throughput
         # requires splitting a Shard.  A Shard will have exactly 0, 1, or 2 children.
@@ -114,7 +107,6 @@ class Shard:
         #   be written to the same child Shard (updates to record A will only go to one child, and not
         #   bounce back and forth).
         self.children = []
-
         # Changes infrequently, 0 initially
         # Tracks how many times a GetRecords call has returned no results, but a next iterator_id.
         # After ~5 empty responses, we can reasonably expect that the iterator is near the HEAD of an open Shard.

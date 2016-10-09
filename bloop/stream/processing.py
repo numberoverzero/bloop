@@ -27,12 +27,11 @@ def move_coordinator(coordinator: Coordinator, position) -> None:
             coordinator.active.extend(coordinator.roots)
         else:
             # latest
-            leaf_shards = [
-                shard for shard in walk_shards(*coordinator.roots)
-                if not shard.children]
-            for shard in leaf_shards:
-                jump_to(coordinator, shard, "latest")
-            coordinator.active.extend(leaf_shards)
+            for root in coordinator.roots:
+                for shard in walk_shards(root):
+                    if not shard.children:
+                        jump_to(coordinator, shard, "latest")
+                        coordinator.active.append(shard)
 
     elif isinstance(position, arrow.Arrow):
         # TODO

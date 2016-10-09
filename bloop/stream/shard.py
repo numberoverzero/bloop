@@ -104,6 +104,27 @@ class Shard:
         # Failed after 5 calls
         return []
 
+    def load_children(self, session: SessionWrapper) -> None:
+        """Try to load the shard's children from DynamoDB if it doesn't have any."""
+        # If a Shard has children, that number will never change.
+        # Children are the result of exactly one event:
+        #   increased throughput -> exactly 2 children
+        #         open for ~4hrs -> at most 1 child
+        if self.children:
+            return self.children
+        children = [
+            s for s in session.describe_stream(
+                stream_arn=self.stream_arn,
+                first_shard=self.shard_id)["Shards"]
+            if s.get("ParentShardId") == self.shard_id]
+        for child in children:
+            child = Shard(
+                stream_arn=self.stream_arn,
+                shard_id=child.get("ShardId"),
+                parent=self)
+            self.children.append(child)
+        return self.children
+
     def _apply_get_records_response(self, response: Mapping[str, Any]) -> List[Dict[str, Any]]:
         records = response.get("Records", [])
         self.iterator_id = response.get("NextShardIterator", last_iterator)

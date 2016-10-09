@@ -66,7 +66,7 @@ class Coordinator:
             for shard in to_remove:
                 # 0) Fetch Shard's children if they haven't been loaded
                 #    (perhaps the Shard just closed?)
-                fetch_children(self.session, shard)
+                shard.load_children(self.session)
 
                 # 1) Remove the shard from the Coordinator.  If the Shard has
                 #    children and was active, those children are added to the active list
@@ -198,26 +198,3 @@ def remove_shard(coordinator: Coordinator, shard: Shard) -> List[Shard]:
     to_remove = [x for x in heap if x[1][1] is shard]
     for x in to_remove:
         heap.remove(x)
-
-
-# TODO move this somewhere
-def fetch_children(session: SessionWrapper, shard: Shard) -> List[Shard]:
-    """If a shard doesn't have children, fetches them (if they exist)."""
-    # If a Shard has children, that number will never change.
-    # Children are the result of exactly one event:
-    #   increased throughput -> exactly 2 children
-    #         open for ~4hrs -> at most 1 child
-    if shard.children:
-        return shard.children
-    children = [
-        s for s in session.describe_stream(
-            stream_arn=shard.stream_arn,
-            first_shard=shard.shard_id)["Shards"]
-        if s.get("ParentShardId") == shard.shard_id]
-    for child in children:
-        child = Shard(
-            stream_arn=shard.stream_arn,
-            shard_id=child.get("ShardId"),
-            parent=shard)
-        shard.children.append(child)
-    return shard.children

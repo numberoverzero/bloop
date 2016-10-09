@@ -136,6 +136,19 @@ class Shard:
             "children": [child.shard_id for child in self.children]
         }
 
+    @classmethod
+    def from_token(cls, token: Dict[str, Any]) -> "Shard":
+        """Does not fill out Shard.children from the token.
+
+        Generally, unpacking the shard's children [shard_id] -> [Shard] requires
+        all of the shards to exist first.
+        """
+        return cls(
+            stream_arn=token["stream_arn"], shard_id=token["shard_id"],
+            iterator_type=token["iterator_type"], sequence_number=token["sequence_number"],
+            parent=token["parent"]
+        )
+
 
 class Coordinator:
     def __init__(self, *, engine, session: SessionWrapper, stream_arn: str):

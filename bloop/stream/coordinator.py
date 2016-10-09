@@ -1,5 +1,5 @@
 import arrow
-from typing import Dict, List, Optional, Any, Mapping
+from typing import Dict, List, Optional, Any, Mapping  # noqa
 
 from .buffer import RecordBuffer
 from .shard import Shard

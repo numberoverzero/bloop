@@ -126,15 +126,6 @@ class Coordinator:
             "shards": shard_tokens
         }
 
-    @classmethod
-    def from_token(cls, engine, session: SessionWrapper, token: Mapping[str, Any]) -> "Coordinator":
-        by_id = unpack_shards(token["shards"], stream_arn=token["stream_arn"], session=session)
-
-        coordinator = cls(engine=engine, session=session, stream_arn=token["stream_arn"])
-        coordinator.roots = [shard for shard in by_id.values() if not shard.parent]
-        coordinator.active = [by_id[shard_id] for shard_id in token["active"]]
-        return coordinator
-
 
 # TODO move this somewhere
 def remove_shard(coordinator: Coordinator, shard: Shard) -> List[Shard]:

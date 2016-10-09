@@ -3,7 +3,7 @@ import collections
 from typing import Dict, List, Mapping, Optional
 from ..exceptions import InvalidStream, RecordsExpired, ShardIteratorExpired
 from ..session import SessionWrapper
-from .models import Coordinator, Shard, new_shard
+from .models import Coordinator, Shard
 from .stream_utils import get_with_catchup, is_exhausted, walk_shards
 from .tokens import load_coordinator
 
@@ -142,10 +142,30 @@ def advance_coordinator(coordinator: Coordinator) -> Optional[Dict]:
         # Now that the record is "consumed", advance the shard's checkpoint
         shard.sequence_number = record["dynamodb"]["SequenceNumber"]
         shard.iterator_type = "after_sequence"
-        return record
+        return reformat(record)
 
     # No records :(
     return None
+
+
+def reformat(record: Dict) -> Dict:
+    """Repack a record into a cleaner structure for consumption."""
+    # Unwrap the inner structure, since most of it comes from here
+    return {
+        "key": record["dynamodb"].get("Keys", None),
+        "new": record["dynamodb"].get("NewImage", None),
+        "old": record["dynamodb"].get("OldImage", None),
+
+        "meta": {
+            "created_at": arrow.get(record["dynamodb"]["ApproximateCreationDateTime"]),
+            "event": {
+                "id": record["eventID"],
+                "type": record["eventName"].lower(),
+                "version": record["eventVersion"]
+            },
+            "sequence_number": record["dynamodb"]["SequenceNumber"],
+        }
+    }
 
 
 def advance_shard(coordinator: Coordinator, shard: Shard) -> List[Dict]:
@@ -203,7 +223,7 @@ def fetch_children(session: SessionWrapper, shard: Shard) -> List[Shard]:
             first_shard=shard.shard_id)["Shards"]
         if s.get("ParentShardId") == shard.shard_id]
     for child in children:
-        child = new_shard(
+        child = Shard(
             stream_arn=shard.stream_arn,
             shard_id=child.get("ShardId"),
             parent=shard)
@@ -214,7 +234,7 @@ def fetch_children(session: SessionWrapper, shard: Shard) -> List[Shard]:
 def load_all_shards(session: SessionWrapper, stream_arn: str) -> Dict[str, Shard]:
     """Return Shards indexed by Shard.shard_id"""
     shards = [
-        new_shard(stream_arn=stream_arn, shard_id=shard["ShardId"], parent=shard.get("ParentShardId"))
+        Shard(stream_arn=stream_arn, shard_id=shard["ShardId"], parent=shard.get("ParentShardId"))
         for shard in session.describe_stream(stream_arn=stream_arn)["Shards"]
     ]
     by_id = {shard.shard_id: shard for shard in shards}

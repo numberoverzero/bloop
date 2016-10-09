@@ -5,7 +5,7 @@ from ..signals import object_loaded
 from ..util import unpack_from_dynamodb
 
 from .models import Coordinator
-from .processing import advance_coordinator, heartbeat, move_coordinator
+from .processing import advance_coordinator, move_coordinator
 
 __all__ = ["Stream"]
 
@@ -127,7 +127,7 @@ class Stream:
                     time.sleep(NO_RECORDS_BACKOFF)
 
         """
-        heartbeat(self.coordinator)
+        self.coordinator.heartbeat()
 
     def move_to(self, position) -> None:
         """Updates the StreamIterator to point to the endpoint, time, or token provided.

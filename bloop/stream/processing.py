@@ -92,24 +92,6 @@ def update_coordinator_from_token(coordinator: Coordinator, token: Mapping) -> N
         # they exist, and simply jump to the current trim_horizon.
 
 
-def heartbeat(coordinator: Coordinator) -> None:
-    # Try to keep active shards with ``latest`` and ``trim_horizon`` iterators alive.
-    # Ideally, this will find records and make them ``at_sequence`` or ``after_sequence`` iterators.
-    for shard in coordinator.active:
-        if shard.iterator_type in {"latest", "trim_horizon"}:
-
-            # There's no safe default when advance_shard raises ShardIteratorExpired
-            # because resetting to the new trim_horizon/latest could miss records.
-            # Had the user called Stream.heartbeat() within 15 minutes, this wouldn't happen.
-
-            # Don't need to handle RecordsExpired because only sequence_number-based
-            # iterators can fall behind the trim_horizon.
-            records = advance_shard(coordinator, shard)
-            # Success!  This shard now has an ``at_sequence`` iterator
-            if records:
-                coordinator.buffer.push_all((record, shard) for record in records)
-
-
 def advance_coordinator(coordinator: Coordinator) -> Optional[Dict]:
     # Try to get the next record from each shard and push it into the buffer.
     if not coordinator.buffer:

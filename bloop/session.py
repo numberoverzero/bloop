@@ -145,7 +145,7 @@ class SessionWrapper:
             return self._stream_client.get_shard_iterator(**request)["ShardIterator"]
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "TrimmedDataAccessException":
-                raise RecordsExpired.for_id(None) from error
+                raise RecordsExpired from error
             raise BloopException("Unexpected error while creating shard iterator") from error
 
     def get_stream_records(self, iterator_id):
@@ -153,9 +153,9 @@ class SessionWrapper:
             return self._stream_client.get_records(ShardIterator=iterator_id)
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "TrimmedDataAccessException":
-                raise RecordsExpired.for_id(iterator_id) from error
+                raise RecordsExpired from error
             elif error.response["Error"]["Code"] == "ExpiredIteratorException":
-                raise ShardIteratorExpired.for_id(iterator_id) from error
+                raise ShardIteratorExpired from error
             raise BloopException("Unexpected error while getting records.") from error
 
 

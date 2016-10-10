@@ -119,14 +119,43 @@ class Shard:
             sequence_number=sequence_number)
         self.iterator_type = iterator_type
         self.sequence_number = sequence_number
+        self.empty_responses = 0
 
-    def seek_to(self, position: arrow.Arrow) -> bool:
+    def seek_to(self, position: arrow.Arrow) -> List[Dict[str, Any]]:
         """Move the Shard's iterator to the earliest record that after the given time.
 
-        Returns whether a record matching the criteria was found.
+        Returns the first records at or past ``position``.  If the list is empty,
+        the seek failed to find records, either because the Shard is exhausted or it
+        reached the HEAD of an open Shard.
         """
-        # TODO
-        pass
+        # Make comparisons a little faster by converting to a timestamp (which all records are passed as.
+        # Otherwise, we'll have to use arrow.get for comparisons.
+        position = position.timestamp
+
+        # 0) We have no way to associate the date with a position, so we simply have to go through
+        #    the entire Shard until we find a set of records with at least one with ApproxCreateDate >= position.
+        self.jump_to(iterator_type="trim_horizon")
+
+        # Stop once the Shard is exhausted (can't possibly find the record)
+        # or we've somewhat confidently caught the HEAD of an open Shard.
+        while (not self.exhausted) and (self.empty_responses < CALLS_TO_REACH_HEAD):
+            # Don't need to worry about RecordsExpired, since we're starting at trim_horizon.
+            # Don't need to worry about ShardIteratorExpired, since we just created this one at trim_horizon.
+            records = self.get_records()
+            # Shortcut: we need AT LEAST one record to be after the position, so check the last record.
+            # if it's before the position, all of the records in this response are.
+            if records and records[-1]["dynamodb"]["ApproximateCreationDateTime"] >= position:
+                # Reverse search is faster (on average; they're still both O(n) worst),
+                # since we're looking for the first number *below* the position.
+                for index, record in enumerate(reversed(records)):
+                    if record["dynamodb"]["ApproximateCreationDateTime"] < position:
+                        return records[len(records) - index:]
+                # If the loop above finished, it means ALL the records are after the position.
+                return records
+
+        # Either exhausted the Shard, or caught up to HEAD.
+        # It's only a failure to seek if the Shard is exhausted.
+        return []
 
     def load_children(self) -> None:
         """Try to load the shard's children from DynamoDB if it doesn't have any."""

@@ -73,7 +73,7 @@ class Stream:
         with open(".stream-state", "r") as f:
             token = json.load(f)
 
-        stream = engine.stream(MyModel, at=token)
+        stream = engine.stream(MyModel, position=token)
         """
         return self.coordinator.token
 
@@ -81,10 +81,10 @@ class Stream:
         """Call periodically to ensure iterators without a fixed sequence number don't expire.
 
         You should call this once every ~12 minutes so that your "latest" and "trim_horizon" shard iterators don't
-        expire.  While iterators have an advertised lifetime of 15 minutes, it would be good to call more frequently
-        so you aren't caught by clock skew expiring an iterator.
+        expire.  While iterators have an advertised lifetime of 15 minutes, calling more frequently can avoid
+        expiration due to clock skew.
 
-        When an iterator with a sequence_number expires, it can be re-created deterministically (although that
+        When an iterator with a sequence_number expires, it can be recreated deterministically (although that
         create may raise ``RecordsExpired`` if the iterator is now beyond the trim horizon).  However, "latest" and
         "trim_horizon" iterators don't refer to a fixed point in a Shard and so can't be re-created without either:
             (1) possibly missing records between "latest" at 15 minutes ago and "latest" now
@@ -127,7 +127,7 @@ class Stream:
         self.coordinator.heartbeat()
 
     def move_to(self, position) -> None:
-        """Updates the StreamIterator to point to the endpoint, time, or token provided.
+        """Updates the Stream to point to the endpoint, time, or token provided.
 
         - Moving to ``trim_horizon`` or ``latest`` is very fast.
         - Moving to a specific time is slow.

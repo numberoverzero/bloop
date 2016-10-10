@@ -159,85 +159,116 @@ class Coordinator:
 
     def move_to(self, position) -> None:
         if position in {"latest", "trim_horizon"}:
-            self.roots.clear()
-            self.active.clear()
-            self.buffer.clear()
-
-            latest_shards = unpack_shards(
-                self.session.describe_stream(
-                    stream_arn=self.stream_arn)["Shards"],
-                self.stream_arn,
-                self.session)
-            self.roots.extend(
-                shard
-                for shard in latest_shards.values()
-                if not shard.parent)
-
-            if position == "trim_horizon":
-                for shard in self.roots:
-                    shard.jump_to(iterator_type="trim_horizon")
-                    self.active.extend(self.roots)
-            # latest
-            else:
-                for root in self.roots:
-                    for shard in root.walk_tree():
-                        if not shard.children:
-                            shard.jump_to(iterator_type="latest")
-                            self.active.append(shard)
-
+            _move_stream_endpoint(self, position)
         elif isinstance(position, arrow.Arrow):
             # TODO
             raise NotImplementedError
         elif isinstance(position, Mapping):
-            update_coordinator_from_token(self, position)
+            _move_stream_token(self, position)
         else:
             raise ValueError("Don't know how to move to position {!r}".format(position))
 
 
-# TODO move this somewhere
-def update_coordinator_from_token(coordinator: Coordinator, token: Mapping[str, Any]) -> None:
-    stream_arn = coordinator.stream_arn = token["stream_arn"]
-
-    # 0) Load the token into the coordinator so we can re-use the normal
-    #    processing utilities to prune and add Shards as necessary.
+def _move_stream_endpoint(coordinator: Coordinator, position: str) -> None:
+    """Move to the whole stream's ``trim_horizon`` or ``latest``."""
+    # 0) Clear everything; all shards will be rebuilt from the most
+    #    recent values in DynamoDBStreams, so there's no
+    #    need to keep any previous state.
+    stream_arn = coordinator.stream_arn
     coordinator.roots.clear()
     coordinator.active.clear()
     coordinator.buffer.clear()
 
-    by_id = unpack_shards(token["shards"], stream_arn, coordinator.session)
-    coordinator.roots = [shard for shard in by_id.values() if not shard.parent]
-    coordinator.active.extend(by_id[shard_id] for shard_id in token["active"])
+    # 1) Build a Dict[str, Shard] of the current Stream from a DescribeStream call
+    current_shards = coordinator.session.describe_stream(stream_arn=stream_arn)["Shards"]
+    current_shards = unpack_shards(current_shards, stream_arn, coordinator.session)
 
-    # 1) Load the Stream's actual Shards from DynamoDBStreams for
-    #    validation and updates. (this is a mapping of {shard_id: shard})
-    by_id = unpack_shards(coordinator.session.describe_stream(stream_arn)["Shards"], stream_arn, coordinator.session)
+    # 2) Extract the roots, which are any shards without parents
+    coordinator.roots.extend(shard for shard in current_shards.values() if not shard.parent)
 
-    # 2) Walk each root shard's tree, to find an intersection with the actual shards that exist.
-    #    If there's any Shard with no children AND it's not part of the returned shards from DynamoDBStreams,
-    #    there's no way to relate the token structure to the existing structure so we bail.  If it has children,
-    #    prune the Shard from the Coordinator and try to find its children.
+    # 3) The Stream's trim_horizon is the combined trim_horizon of all root Shards.
+    #    Move all the roots to their trim_horizon, and promote them all to active.
+    if position == "trim_horizon":
+        for shard in coordinator.roots:
+            shard.jump_to(iterator_type="trim_horizon")
+            coordinator.active.extend(coordinator.roots)
+    # 4) Similarly, the combined ``latest`` of all Shards without
+    #    children defines the Stream ``latest``.
+    else:
+        for root in coordinator.roots:
+            for shard in root.walk_tree():
+                if not shard.children:
+                    shard.jump_to(iterator_type="latest")
+                    coordinator.active.append(shard)
+
+
+def _move_stream_token(coordinator: Coordinator, token: Mapping[str, Any]) -> None:
+    """Move to the Stream position described by the token.
+
+    The following rules are applied when interpolation is required:
+    - if a shard does not exist (past the trim_horizon) but the token includes
+      children of that shard that do exist, that shard is moved to the trim_horizon
+      of the first descendant that exists.
+    - if a shard does not exist and none of the children defined in the token are
+      present in the current Stream, the move fails.  There is not enough information
+      in the token to rebuild the expected state for the current Shards in the Stream.
+    - if a Shard expects its iterator to point to a SequenceNumber that is now past
+      that Shard's trim_horizon, the Shard instead points to trim_horizon.
+    """
+    stream_arn = coordinator.stream_arn = token["stream_arn"]
+    coordinator.roots.clear()
+    coordinator.active.clear()
+    coordinator.buffer.clear()
+
+    # 0) Load the token into the coordinator so we can re-use the normal
+    #    processing utilities to prune and add Shards as necessary.
+    token_shards = unpack_shards(token["shards"], stream_arn, coordinator.session)
+    coordinator.roots = [shard for shard in token_shards.values() if not shard.parent]
+    coordinator.active.extend(token_shards[shard_id] for shard_id in token["active"])
+
+    # 1) Build a Dict[str, Shard] of the current Stream from a DescribeStream call
+    current_shards = coordinator.session.describe_stream(stream_arn=stream_arn)["Shards"]
+    current_shards = unpack_shards(current_shards, stream_arn, coordinator.session)
+
+    # 2) Walk each the Shard tree of each root shard from the token, to find an intersection with the actual
+    #    shards that exist. If there's any Shard with no children AND it's not part of the returned shards
+    #    from DynamoDBStreams, there's no way to relate the token structure to the existing structure so we
+    #    bail.  If it has children, prune the Shard from the Coordinator and try to find its children.
     unverified = collections.deque(coordinator.roots)
     while unverified:
         shard = unverified.popleft()
         # Found an intersection; no need to keep searching this branch.
-        if shard.shard_id in by_id:
+        if shard.shard_id in current_shards:
             continue
 
-        # No worries, we'll just try to verify the children
+        # No intersection, so we'll try to verify its children
         if shard.children:
             unverified.extend(shard.children)
-            # This shard doesn't exist, so prune it and promote its children to its position(s)
+            # This shard doesn't exist, so prune it and promote its children
             coordinator.remove_shard(shard)
             continue
+
+        # No intersection and no children, no way to resolve this Shard from the token
+        # against the Shards that actually exist from the DescribeStream call.
         raise InvalidStream("The Stream token contains an unresolvable Shard.")
 
     # 3) Now that everything's verified, grab new iterators for the coordinator's active Shards.
     for shard in coordinator.active:
+        if shard.iterator_type in {"trim_horizon", "latest"}:
+            # TODO logger.info "iterator was ``latest`` or ``trim_horizon`` - data may have been lost"
+            # There's not enough info in the token to find out where the token *wanted* latest or trim_horizon
+            # to mean.  There's not much use raising for the user to solve, since there's not enough information
+            # in the token to resolve its position deterministically.
+            pass
         try:
+            # Move right back to where we left off.
             shard.jump_to(iterator_type=shard.iterator_type, sequence_number=shard.sequence_number)
         except RecordsExpired:
-            # TODO logger.info "SequenceNumber from token was past trim_horizon, moving to trim_horizon instead"
+            # The sequence_number that this iterator was on is beyond the trim_horizon.
+            # There's no way to recover the records between the expected sequence_number and the
+            # trim_horizon, so just jump to the trim_horizon.  This is the same interpolation
+            # performed for descendants of unknown Shards, just applied at the SequenceNumber level.
             shard.jump_to(iterator_type="trim_horizon")
-        # If the Shard has a sequence_number, it may be beyond trim_horizon.  The records between
-        # [sequence_number, current trim_horizon) can never be retrieved, so we can ignore that
-        # they exist, and simply jump to the current trim_horizon.
+            # TODO logger.info "SequenceNumber from token was past trim_horizon, moving to trim_horizon instead"
+
+    # Done!  Each shard is now at its last state

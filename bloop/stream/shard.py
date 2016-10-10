@@ -93,6 +93,7 @@ class Shard:
         Returns fields that may be redundant for generating a Stream token,
         such as stream_arn and shard_id.
         """
+        # TODO logger.info when iterator_type is "trim_horizon" or "latest"
         return {
             "stream_arn": self.stream_arn,
             "shard_id": self.shard_id,

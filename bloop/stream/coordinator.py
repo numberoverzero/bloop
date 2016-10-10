@@ -161,7 +161,7 @@ class Coordinator:
         if position in {"latest", "trim_horizon"}:
             _move_stream_endpoint(self, position)
         elif isinstance(position, arrow.Arrow):
-            # TODO
+            _move_stream_time(self, position.timestamp)
             raise NotImplementedError
         elif isinstance(position, Mapping):
             _move_stream_token(self, position)
@@ -200,6 +200,20 @@ def _move_stream_endpoint(coordinator: Coordinator, position: str) -> None:
                 if not shard.children:
                     shard.jump_to(iterator_type="latest")
                     coordinator.active.append(shard)
+
+
+def _move_stream_time(coordinator: Coordinator, time: arrow.Arrow) -> None:
+    """Scan through the *entire* Stream for the first record after ``time``.
+
+    This is an extremely expensive, naive algorithm that starts at trim_horizon and simply
+    dumps records into the void until the first hit.  General improvements in performance are
+    tough; we can use the fact that Shards have a max life of 24hr to pick a pretty-good starting
+    point for any Shard trees with 6 generations.  Even then we can't know how close the oldest one
+    is to rolling off so we either hit trim_horizon, or iterate an extra Shard more than we need to.
+
+    The corner cases are worse; short trees, recent splits, trees with different branch heights.
+    """
+    # TODO depends on coordinator peek, advance methods.
 
 
 def _move_stream_token(coordinator: Coordinator, token: Mapping[str, Any]) -> None:

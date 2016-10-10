@@ -35,8 +35,8 @@ class RecordBuffer:
         heapq.heappush(self._heap, heap_item(self.clock, record, shard))
 
     def push_all(self, record_shard_pairs: Iterable[Tuple[Mapping[str, Any], Shard]]) -> None:
-        # Faster than inserting one at a time, just dump them in the list
-        # and then heapify the whole thing.
+        # Faster than inserting one at a time;
+        # the heap is sorted once after all inserts.
         for pair in record_shard_pairs:
             self._heap.append(heap_item(self.clock, *pair))
         heapq.heapify(self._heap)

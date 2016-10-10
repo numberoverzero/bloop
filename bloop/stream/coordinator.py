@@ -54,38 +54,10 @@ class Coordinator:
     def __next__(self) -> Optional[Dict[str, Any]]:
         # Try to get the next record from each shard and push it into the buffer.
         if not self.buffer:
-            record_shard_pairs = []
-            for shard in self.active:
-                records = next(shard)
-                if records:
-                    record_shard_pairs.extend((record, shard) for record in records)
-            self.buffer.push_all(record_shard_pairs)
+            self.advance_shards()
 
-            # Clean up exhausted Shards.
-            # Can't modify the active list while iterating it.
-            to_remove = [shard for shard in self.active if shard.exhausted]
-            for shard in to_remove:
-                # 0) Fetch Shard's children if they haven't been loaded
-                #    (perhaps the Shard just closed?)
-                shard.load_children()
-
-                # 1) Remove the shard from the Coordinator.  If the Shard has
-                #    children and was active, those children are added to the active list
-                #    If the Shard was a root, those children become roots.
-                was_active = shard in self.active
-                self.remove_shard(shard)
-
-                # 2) If the shard was active, now its children are active.
-                #    Move each child Shard to its trim_horizon.
-                if was_active:
-                    for child in shard.children:
-                        # Pick up right where the removed Shard left off
-                        child.jump_to(self.session, iterator_type="trim_horizon")
-                        # The child's previous empty responses have no
-                        # bearing on its new position at the trim_horizon.
-                        child.empty_responses = 0
-
-        # Still have buffered records from a previous call, or we just refilled the buffer above
+        # Still have buffered records from a previous call,
+        # or we just refilled the buffer above.
         if self.buffer:
             record, shard = self.buffer.pop()
 
@@ -96,6 +68,48 @@ class Coordinator:
 
         # No records :(
         return None
+
+    def advance_shards(self) -> None:
+        """Tries to refill the buffer by collecting records from the active shards.
+
+        Rotates exhausted shards.
+        Returns immediately if the buffer isn't empty.
+        """
+        # Don't poll shards when there are pending records.
+        if self.buffer:
+            return
+
+        # 0) Collect new records from all active shards.
+        record_shard_pairs = []
+        for shard in self.active:
+            records = next(shard)
+            if records:
+                record_shard_pairs.extend((record, shard) for record in records)
+        self.buffer.push_all(record_shard_pairs)
+
+        # 1) Clean up exhausted Shards.
+        #    Can't modify the active list while iterating it.
+        to_remove = [shard for shard in self.active if shard.exhausted]
+        for shard in to_remove:
+            # A) Fetch Shard's children if they haven't been loaded
+            #    (perhaps the Shard just closed?)
+            shard.load_children()
+
+            # B) Remove the shard from the Coordinator.  If the Shard has
+            #    children and was active, those children are added to the active list
+            #    If the Shard was a root, those children become roots.
+            was_active = shard in self.active
+            self.remove_shard(shard)
+
+            # C) If the shard was active, now its children are active.
+            #    Move each child Shard to its trim_horizon.
+            if was_active:
+                for child in shard.children:
+                    # Pick up right where the removed Shard left off
+                    child.jump_to(self.session, iterator_type="trim_horizon")
+                    # The child's previous empty responses have no
+                    # bearing on its new position at the trim_horizon.
+                    child.empty_responses = 0
 
     def heartbeat(self) -> None:
         # Try to keep active shards with ``latest`` and ``trim_horizon`` iterators alive.

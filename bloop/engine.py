@@ -238,6 +238,7 @@ class Engine:
         return iter(s.prepare())
 
     def stream(self, model, position) -> Stream:
+        validate_not_abstract(model)
         s = Stream(engine=self, model=model, session=self.session)
         s.move_to(position=position)
         return s

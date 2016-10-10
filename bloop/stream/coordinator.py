@@ -105,11 +105,7 @@ class Coordinator:
             #    Move each child Shard to its trim_horizon.
             if was_active:
                 for child in shard.children:
-                    # Pick up right where the removed Shard left off
-                    child.jump_to(self.session, iterator_type="trim_horizon")
-                    # The child's previous empty responses have no
-                    # bearing on its new position at the trim_horizon.
-                    child.empty_responses = 0
+                    child.jump_to(iterator_type="trim_horizon")
 
     def heartbeat(self) -> None:
         # Try to keep active shards with ``latest`` and ``trim_horizon`` iterators alive.
@@ -146,27 +142,27 @@ class Coordinator:
         # try/catch avoids the O(N) search of using `if shard in ...`
 
         try:
-            # If the Shard was a root, remove it and promote its children to roots
             self.roots.remove(shard)
-            if shard.children:
-                self.roots.extend(shard.children)
         except ValueError:
+            # Wasn't a root Shard
             pass
+        else:
+            self.roots.extend(shard.children)
 
         try:
-            # If the Shard was active, remove it and set its children to active.
             self.active.remove(shard)
-            if shard.children:
-                self.active.extend(shard.children)
         except ValueError:
+            # Wasn't an active Shard
             pass
+        else:
+            self.active.extend(shard.children)
 
         # Remove any records in the buffer that came from the shard
-        heap = self.buffer.heap
         # ( ordering,  ( record,  shard ) )
         #               |----- x[1] -----|
         #        shard = x[1][1] ---^
         # TODO can this be improved?  Gets expensive for high-volume streams with large buffers
+        heap = self.buffer.heap
         to_remove = [x for x in heap if x[1][1] is shard]
         for x in to_remove:
             heap.remove(x)
@@ -205,7 +201,7 @@ def _move_stream_endpoint(coordinator: Coordinator, position: str) -> None:
     if position == "trim_horizon":
         for shard in coordinator.roots:
             shard.jump_to(iterator_type="trim_horizon")
-            coordinator.active.extend(coordinator.roots)
+        coordinator.active.extend(coordinator.roots)
     # 4) Similarly, the combined ``latest`` of all Shards without
     #    children defines the Stream ``latest``.
     else:
@@ -227,7 +223,32 @@ def _move_stream_time(coordinator: Coordinator, time: arrow.Arrow) -> None:
 
     The corner cases are worse; short trees, recent splits, trees with different branch heights.
     """
-    # TODO depends on coordinator peek, advance methods.
+    # This isn't a general "wait until time" method,
+    # it's for jumping to a time on the range [-24h, now].
+    if time > arrow.now():
+        _move_stream_endpoint(coordinator, "latest")
+        return
+
+    # Start at the beginning
+    _move_stream_endpoint(coordinator, "trim_horizon")
+    shard_trees = collections.deque(coordinator.roots)
+    while shard_trees:
+        shard = shard_trees.popleft()
+        records = shard.seek_to(time)
+
+        # Success!  This section of some Shard tree is at the desired time.
+        if records:
+            coordinator.buffer.push_all((record, shard) for record in records)
+
+        # Closed shard, we need to go through its children next.
+        elif shard.exhausted:
+            coordinator.remove_shard(shard)
+            shard_trees.extend(shard.children)
+            for child in shard.children:
+                child.jump_to(iterator_type="trim_horizon")
+
+        # Nothing to do if the shard didn't seek to the time AND isn't exhausted,
+        # since that means it's open and the target could still appear in its future.
 
 
 def _move_stream_token(coordinator: Coordinator, token: Mapping[str, Any]) -> None:

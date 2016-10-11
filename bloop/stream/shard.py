@@ -1,6 +1,6 @@
 import arrow
 import collections
-from typing import Optional, Dict, Any, Iterator, List, Mapping
+from typing import Optional, Dict, Any, List, Mapping, Iterable
 
 from ..exceptions import ShardIteratorExpired
 from ..session import SessionWrapper
@@ -71,7 +71,7 @@ class Shard:
             # Refreshing a sequence_number-based Shard iterator is deterministic;
             # if the iterator type is latest or trim_horizon, it's up to the caller to
             # decide how to proceed.
-            if self.iterator_type in {"trim_horizon", "latest"}:
+            if self.iterator_type in ["trim_horizon", "latest"]:
                 raise
 
         # Since the expired iterator has a sequence_number, try to refresh automatically.
@@ -102,9 +102,9 @@ class Shard:
             "parent": self.parent.shard_id if self.parent else None
         }
 
-    def walk_tree(self) -> Iterator["Shard"]:
+    def walk_tree(self) -> Iterable["Shard"]:
         """Generator that visits all shards in a shard tree"""
-        shards = collections.deque(self)
+        shards = collections.deque([self])
         while shards:
             shard = shards.popleft()
             yield shard
@@ -128,10 +128,6 @@ class Shard:
         the seek failed to find records, either because the Shard is exhausted or it
         reached the HEAD of an open Shard.
         """
-        # Make comparisons a little faster by converting to a timestamp (which all records are passed as.
-        # Otherwise, we'll have to use arrow.get for comparisons.
-        position = position.timestamp
-
         # 0) We have no way to associate the date with a position, so we simply have to go through
         #    the entire Shard until we find a set of records with at least one with ApproxCreateDate >= position.
         self.jump_to(iterator_type="trim_horizon")
@@ -144,11 +140,11 @@ class Shard:
             records = self.get_records()
             # Shortcut: we need AT LEAST one record to be after the position, so check the last record.
             # if it's before the position, all of the records in this response are.
-            if records and records[-1]["dynamodb"]["ApproximateCreationDateTime"] >= position:
+            if records and records[-1]["meta"]["created_at"] >= position:
                 # Reverse search is faster (on average; they're still both O(n) worst),
                 # since we're looking for the first number *below* the position.
                 for index, record in enumerate(reversed(records)):
-                    if record["dynamodb"]["ApproximateCreationDateTime"] < position:
+                    if record["meta"]["created_at"] < position:
                         return records[len(records) - index:]
                 # If the loop above finished, it means ALL the records are after the position.
                 return records
@@ -203,15 +199,36 @@ class Shard:
 
     def _apply_get_records_response(self, response: Mapping[str, Any]) -> List[Dict[str, Any]]:
         records = response.get("Records", [])
+        records = [reformat_record(record) for record in records]
         self.iterator_id = response.get("NextShardIterator", last_iterator)
 
         # The iterator state should ONLY be updated if there's no sequence_number already.
         # This ensures we can refresh from a fixed point, which is unnecessary if we have a number.
         # If sequence_number is set, we're risking data loss by skipping the existing checkpoint.
         if records and self.sequence_number is None:
-            self.sequence_number = records[0]["dynamodb"]["SequenceNumber"]
+            self.sequence_number = records[0]["meta"]["sequence_number"]
             self.iterator_type = "at_sequence"
         return records
+
+
+def reformat_record(record: Mapping[str, Any]) -> Dict[str, Any]:
+    """Repack a record into a cleaner structure for consumption."""
+    # Unwrap the inner structure, since most of it comes from here
+    return {
+        "key": record["dynamodb"].get("Keys", None),
+        "new": record["dynamodb"].get("NewImage", None),
+        "old": record["dynamodb"].get("OldImage", None),
+
+        "meta": {
+            "created_at": arrow.get(record["dynamodb"]["ApproximateCreationDateTime"]),
+            "event": {
+                "id": record["eventID"],
+                "type": record["eventName"].lower(),
+                "version": record["eventVersion"]
+            },
+            "sequence_number": record["dynamodb"]["SequenceNumber"],
+        }
+    }
 
 
 def unpack_shards(shards: List[Mapping[str, Any]], stream_arn: str, session: SessionWrapper) -> Dict[str, Shard]:
@@ -219,16 +236,33 @@ def unpack_shards(shards: List[Mapping[str, Any]], stream_arn: str, session: Ses
 
     Each Shards' parent/children are hooked up with the other Shards in the list.
     """
+    # When unpacking tokens, shard id key is "shard_id"
+    # When unpacking DescribeStream responses, shard id key is "ShardId"
+    if not shards:
+        return {}
+    if "ShardId" in shards[0]:
+        shards = _translate_shards(shards)
+
     by_id = {shard_token["shard_id"]:
              Shard(stream_arn=stream_arn, shard_id=shard_token["shard_id"],
                    iterator_type=shard_token["iterator_type"], sequence_number=shard_token["sequence_number"],
-                   session=session)
+                   parent=shard_token.get("parent"), session=session)
              for shard_token in shards}
 
-    for shard_token in shards:
-        shard = by_id[shard_token["shard_id"]]
-        parent_id = shard_token.get("parent")
-        if parent_id:
-            shard.parent = by_id[parent_id]
+    for shard in by_id.values():
+        if shard.parent:
+            shard.parent = by_id[shard.parent]
             shard.parent.children.append(shard)
     return by_id
+
+
+def _translate_shards(shards: List[Mapping[str, Any]]) -> Iterable[Mapping[str, Any]]:
+    """Converts the dicts from DescribeStream to the internal Shard format."""
+    for shard in shards:
+        yield {
+            "shard_id": shard["ShardId"],
+            "iterator_type": None,
+            "sequence_number": None,
+            "iterator_id": None,
+            "parent": shard.get("ParentShardId")
+        }

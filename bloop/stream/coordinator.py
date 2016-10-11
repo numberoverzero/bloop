@@ -8,26 +8,6 @@ from ..exceptions import InvalidStream, RecordsExpired
 from ..session import SessionWrapper
 
 
-def reformat_record(record: Mapping[str, Any]) -> Dict[str, Any]:
-    """Repack a record into a cleaner structure for consumption."""
-    # Unwrap the inner structure, since most of it comes from here
-    return {
-        "key": record["dynamodb"].get("Keys", None),
-        "new": record["dynamodb"].get("NewImage", None),
-        "old": record["dynamodb"].get("OldImage", None),
-
-        "meta": {
-            "created_at": arrow.get(record["dynamodb"]["ApproximateCreationDateTime"]),
-            "event": {
-                "id": record["eventID"],
-                "type": record["eventName"].lower(),
-                "version": record["eventVersion"]
-            },
-            "sequence_number": record["dynamodb"]["SequenceNumber"],
-        }
-    }
-
-
 class Coordinator:
     def __init__(self, *, engine, session: SessionWrapper, stream_arn: str):
         # Set once on creation, never changes
@@ -44,7 +24,7 @@ class Coordinator:
         # Records in the buffer aren't considered read.  When a Record popped from the buffer is
         # consumed, the Coordinator MUST notify the Shard by updating the sequence_number and iterator_type.
         # The new values should be:
-        #   shard.sequence_number = record["dynamodb"]["SequenceNumber"]
+        #   shard.sequence_number = record["meta"]["sequence_number"]
         #   shard.iterator_type = "after_record"
         self.buffer = RecordBuffer()
 
@@ -62,9 +42,9 @@ class Coordinator:
             record, shard = self.buffer.pop()
 
             # Now that the record is "consumed", advance the shard's checkpoint
-            shard.sequence_number = record["dynamodb"]["SequenceNumber"]
+            shard.sequence_number = record["meta"]["sequence_number"]
             shard.iterator_type = "after_sequence"
-            return reformat_record(record)
+            return record
 
         # No records :(
         return None
@@ -111,7 +91,7 @@ class Coordinator:
         # Try to keep active shards with ``latest`` and ``trim_horizon`` iterators alive.
         # Ideally, this will find records and make them ``at_sequence`` or ``after_sequence`` iterators.
         for shard in self.active:
-            if shard.iterator_type in {"latest", "trim_horizon"}:
+            if shard.iterator_type in ["latest", "trim_horizon"]:
 
                 # There's no safe default when advance_shard raises ShardIteratorExpired
                 # because resetting to the new trim_horizon/latest could miss records.
@@ -168,15 +148,15 @@ class Coordinator:
             heap.remove(x)
 
     def move_to(self, position) -> None:
-        if position in {"latest", "trim_horizon"}:
-            _move_stream_endpoint(self, position)
+        if isinstance(position, Mapping):
+            move = _move_stream_token
         elif isinstance(position, arrow.Arrow):
-            _move_stream_time(self, position.timestamp)
-            raise NotImplementedError
-        elif isinstance(position, Mapping):
-            _move_stream_token(self, position)
+            move = _move_stream_time
+        elif position in ["latest", "trim_horizon"]:
+            move = _move_stream_endpoint
         else:
             raise ValueError("Don't know how to move to position {!r}".format(position))
+        move(self, position)
 
 
 def _move_stream_endpoint(coordinator: Coordinator, position: str) -> None:

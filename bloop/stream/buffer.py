@@ -1,11 +1,11 @@
 from datetime import datetime
 import heapq
-from typing import Tuple, List, Iterable, Mapping, Any
+from typing import Tuple, List, Iterable, Mapping, Any, Callable
 from .shard import Shard
 
 
 def heap_item(
-        clock: int,
+        clock: Callable[[], int],
         record: Mapping[str, Any],
         shard: Shard) -> Tuple[Tuple[datetime, str, int], Tuple[Mapping[str, Any], Shard]]:
     # Primary ordering is by event creation time.
@@ -19,7 +19,7 @@ def heap_item(
     # It's possible though unlikely, that sequence numbers will collide across
     # multiple shards, within the same second.  The final tie-breaker is
     # a monotonically increasing integer from the buffer.
-    return (ordering, second_ordering, clock), (record, shard)
+    return (ordering, second_ordering, clock()), (record, shard)
 
 
 class RecordBuffer:
@@ -57,7 +57,6 @@ class RecordBuffer:
     def __len__(self) -> int:
         return len(self._heap)
 
-    @property
     def clock(self) -> int:
         """A monotonically increasing integer."""
         # The return value is in between previous and new, so that __monotonic_integer

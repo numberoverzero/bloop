@@ -10,6 +10,7 @@ from ..util import Sentinel
 CALLS_TO_REACH_HEAD = 5
 
 last_iterator = Sentinel("LastIterator")
+missing = Sentinel("missing")
 
 
 class Shard:
@@ -61,8 +62,26 @@ class Shard:
         # Convenience so the Coordinator's session isn't explicitly needed for every call
         self.session = session
 
-    def __iter__(self):
-        return self
+    def __repr__(self):
+        if self.exhausted:
+            # <Shard[exhausted, id='shardId-00000001414562045508-2bac9cd2']>
+            details = "exhausted"
+        elif self.iterator_type == "at_sequence":
+            # <Shard[at=300000000000000499659, id='shardId-00000001414562045508-2bac9cd2']>
+            details = "at_seq=" + str(self.sequence_number)
+        elif self.iterator_type == "after_sequence":
+            # <Shard[after=300000000000000499659, id='shardId-00000001414562045508-2bac9cd2']>
+            details = "after_seq=" + str(self.sequence_number)
+        elif self.iterator_type in ["trim_horizon", "latest"]:
+            # <Shard[latest, id='shardId-00000001414562045508-2bac9cd2']>
+            # <Shard[trim_horizon, id='shardId-00000001414562045508-2bac9cd2']>
+            details = self.iterator_type
+        else:
+            # <Shard[id='shardId-00000001414562045508-2bac9cd2']>
+            details = ""
+        if details:
+            details += ", "
+        return "<{}[{}id={!r}]>".format(self.__class__.__name__, details, self.shard_id)
 
     def __next__(self) -> List[Dict[str, Any]]:
         try:
@@ -81,6 +100,21 @@ class Shard:
 
         # If it didn't expire, let's try returning records once more.
         return self.get_records()
+
+    def __eq__(self, other):
+        try:
+            for attr in ["stream_arn", "shard_id",
+                         "iterator_id", "iterator_type",
+                         "sequence_number",
+                         "parent"]:
+                if getattr(self, attr, missing) != getattr(other, attr, missing):
+                    return False
+                if {child.shard_id for child in self.children} != {child.shard_id for child in other.children}:
+                    return False
+        except (AttributeError, TypeError):
+            return False
+        else:
+            return True
 
     @property
     def exhausted(self) -> bool:
@@ -236,10 +270,11 @@ def unpack_shards(shards: List[Mapping[str, Any]], stream_arn: str, session: Ses
 
     Each Shards' parent/children are hooked up with the other Shards in the list.
     """
-    # When unpacking tokens, shard id key is "shard_id"
-    # When unpacking DescribeStream responses, shard id key is "ShardId"
     if not shards:
         return {}
+
+    # When unpacking tokens, shard id key is "shard_id"
+    # When unpacking DescribeStream responses, shard id key is "ShardId"
     if "ShardId" in shards[0]:
         shards = _translate_shards(shards)
 

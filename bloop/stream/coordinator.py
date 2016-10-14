@@ -28,9 +28,6 @@ class Coordinator:
         #   shard.iterator_type = "after_record"
         self.buffer = RecordBuffer()
 
-    def __iter__(self):
-        return self
-
     def __next__(self) -> Optional[Dict[str, Any]]:
         # Try to get the next record from each shard and push it into the buffer.
         if not self.buffer:

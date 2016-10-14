@@ -5,8 +5,13 @@ import arrow
 from unittest.mock import Mock
 from bloop.session import SessionWrapper
 from bloop.stream.buffer import RecordBuffer, heap_item
-from bloop.stream.shard import Shard, reformat_record, unpack_shards
+from bloop.stream.shard import Shard, last_iterator, reformat_record, unpack_shards
 from typing import Dict, List, Union, Any
+
+
+@pytest.fixture
+def shard(session):
+    return Shard(stream_arn="stream_arn", shard_id="shard_id", session=session)
 
 
 def random_str(prefix="", length=8):
@@ -70,6 +75,40 @@ new = ("NewImage", {
 old = ("OldImage", {
     "ForumName": {"S": "DynamoDB"},
     "Subject": {"S": "DynamoDB Thread 1"}})
+
+
+@pytest.mark.parametrize("expected, kwargs", [
+    ("<Shard[exhausted, id='shard-id']>", {"iterator_id": last_iterator}),
+    ("<Shard[at_seq='sequence', id='shard-id']>",
+     {"sequence_number": "sequence", "iterator_type": "at_sequence"}),
+    ("<Shard[after_seq='sequence', id='shard-id']>",
+     {"sequence_number": "sequence", "iterator_type": "after_sequence"}),
+    ("<Shard[latest, id='shard-id']>", {"iterator_type": "latest"}),
+    ("<Shard[trim_horizon, id='shard-id']>", {"iterator_type": "trim_horizon"}),
+    ("<Shard[id='shard-id']>", {}),
+])
+def test_repr(expected, kwargs):
+    shard = Shard(stream_arn="stream-arn", shard_id="shard-id", **kwargs)
+    assert repr(shard) == expected
+
+
+def test_exhausted(shard):
+    assert shard.iterator_id is None
+    assert not shard.exhausted
+
+    shard.iterator_id = last_iterator
+    assert shard.exhausted
+
+    shard.iterator_id = None
+    assert not shard.exhausted
+
+
+def test_get_records_exhausted(shard, session):
+    shard.iterator_id = last_iterator
+
+    records = shard.get_records()
+    assert not records
+    session.get_stream_records.assert_not_called()
 
 
 @pytest.mark.parametrize("include", [(new,), (old,), (new, old), (keys,)])

@@ -68,10 +68,10 @@ class Shard:
             details = "exhausted"
         elif self.iterator_type == "at_sequence":
             # <Shard[at=300000000000000499659, id='shardId-00000001414562045508-2bac9cd2']>
-            details = "at_seq=" + str(self.sequence_number)
+            details = "at_seq=" + repr(self.sequence_number)
         elif self.iterator_type == "after_sequence":
             # <Shard[after=300000000000000499659, id='shardId-00000001414562045508-2bac9cd2']>
-            details = "after_seq=" + str(self.sequence_number)
+            details = "after_seq=" + repr(self.sequence_number)
         elif self.iterator_type in ["trim_horizon", "latest"]:
             # <Shard[latest, id='shardId-00000001414562045508-2bac9cd2']>
             # <Shard[trim_horizon, id='shardId-00000001414562045508-2bac9cd2']>

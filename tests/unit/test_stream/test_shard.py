@@ -92,6 +92,40 @@ def test_repr(expected, kwargs):
     assert repr(shard) == expected
 
 
+@pytest.mark.parametrize("attr",
+                         ["stream_arn", "shard_id", "iterator_id", "iterator_type",
+                          "sequence_number", "parent"])
+def test_eq_not_set_or_different(attr):
+    parent = Shard(stream_arn="parent-arn", shard_id="parent-id")
+    children = [Shard(stream_arn="child-arn", shard_id="child-id") for _ in range(2)]
+    kwargs = {
+        "stream_arn": "stream-arn",
+        "shard_id": "shard-id",
+        "iterator_id": "iterator-id",
+        "iterator_type": "iterator-type",
+        "sequence_number": "sequence-number",
+        "parent": parent
+    }
+    shard = Shard(**kwargs)
+    other = Shard(**kwargs)
+    # Initially equal
+    assert shard == other
+    assert other == shard
+
+    shard.children.extend(children)
+    assert not shard == other
+    assert not other == shard
+
+    # Compare equal regardless of order
+    other.children.extend(children[::-1])
+    assert shard == other
+    assert other == shard
+
+    setattr(other, attr, random_str())
+    assert not shard == other
+    assert not other == shard
+
+
 def test_exhausted(shard):
     assert shard.iterator_id is None
     assert not shard.exhausted
@@ -166,6 +200,7 @@ def test_unpack_shards_from_describe_stream(session):
     random.shuffle(shards)
     unpacked = unpack_shards(shards, "stream_arn", session=session)
 
+    assert by_id.keys() == unpacked.keys()
     for shard_id, shard in unpacked.items():
         if shard.parent is None:
             assert "ParentShardId" not in by_id[shard_id]

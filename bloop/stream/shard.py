@@ -103,18 +103,13 @@ class Shard:
 
     def __eq__(self, other):
         try:
-            for attr in ["stream_arn", "shard_id",
-                         "iterator_id", "iterator_type",
-                         "sequence_number",
-                         "parent"]:
-                if getattr(self, attr, missing) != getattr(other, attr, missing):
-                    return False
-                if {child.shard_id for child in self.children} != {child.shard_id for child in other.children}:
-                    return False
+            return (
+                (self.token == other.token) and
+                (self.iterator_id == other.iterator_id) and
+                ({child.shard_id for child in self.children} == {child.shard_id for child in other.children})
+            )
         except (AttributeError, TypeError):
             return False
-        else:
-            return True
 
     @property
     def exhausted(self) -> bool:

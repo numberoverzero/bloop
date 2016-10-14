@@ -29,17 +29,19 @@ def build_shards(n: int, shape: Dict[int, Union[int, List[int]]],
 
     build_shards(session, 6, {0: 1, 1: [2, 3], 2: 4, 3: 5})
     """
-    shard_id = lambda i: random_str("shard_id-{}-".format(i), 4)
+    shard_id = lambda i: random_str("shard-id-{}-".format(i), 4)
     shards = [
         Shard(stream_arn=stream_arn, shard_id=shard_id(i), session=session)
         for i in range(n)
     ]
     for shard_index, child_indexes in shape.items():
         if isinstance(child_indexes, int):
-            child_indexes = [child_indexes]
-        for child_index in child_indexes:
-            shards[shard_index].children.append(shards[child_index])
-            shards[child_index].parent = shards[shard_index]
+            shards[shard_index].children.append(shards[child_indexes])
+            shards[child_indexes].parent = shards[shard_index]
+        else:
+            for child_index in child_indexes:
+                shards[shard_index].children.append(shards[child_index])
+                shards[child_index].parent = shards[shard_index]
 
     return shards
 
@@ -57,9 +59,10 @@ def stream_description(n: int, shape: Dict[int, Union[int, List[int]]], stream_a
 
     for shard_index, child_indexes in shape.items():
         if isinstance(child_indexes, int):
-            child_indexes = [child_indexes]
-        for child_index in child_indexes:
-            shards[child_index]["ParentShardId"] = shard_ids[shard_index]
+            shards[child_indexes]["ParentShardId"] = shard_ids[shard_index]
+        else:
+            for child_index in child_indexes:
+                shards[child_index]["ParentShardId"] = shard_ids[shard_index]
     return {
         "Shards": shards,
         "StreamArn": stream_arn
@@ -135,6 +138,47 @@ def test_exhausted(shard):
 
     shard.iterator_id = None
     assert not shard.exhausted
+
+
+def test_walk_tree():
+    shards = build_shards(10, {
+        0: 1,
+        1: [2, 3],
+        2: [4, 5, 6],
+        3: [7, 8],
+        4: 9
+    })
+
+    shard_ids = [shard.shard_id for shard in shards]
+
+    root = shards[0]
+
+    walked_shard_ids = [shard.shard_id for shard in root.walk_tree()]
+    assert set(shard_ids) == set(walked_shard_ids)
+
+
+def test_jump_to(shard, session):
+    shard.empty_responses = 3
+    shard.shard_id = "shard-id"
+    shard.iterator_id = "iterator-id"
+    shard.iterator_type = "iterator-type"
+    shard.sequence_number = "sequence-number"
+    shard.stream_arn = "stream-arn"
+
+    session.get_shard_iterator.return_value = "new-shard-id"
+
+    shard.jump_to(iterator_type="latest", sequence_number="different-sequence-number")
+
+    assert shard.iterator_id == "new-shard-id"
+    assert shard.iterator_type == "latest"
+    assert shard.sequence_number == "different-sequence-number"
+    assert shard.empty_responses == 0
+
+    session.get_shard_iterator.assert_called_once_with(
+            stream_arn="stream-arn",
+            shard_id="shard-id",
+            iterator_type="latest",
+            sequence_number="different-sequence-number")
 
 
 def test_get_records_exhausted(shard, session):

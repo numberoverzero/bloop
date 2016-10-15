@@ -1,10 +1,8 @@
 import pytest
 import random
 import string
-import arrow
-from unittest.mock import Mock
+# import arrow
 from bloop.session import SessionWrapper
-from bloop.stream.buffer import RecordBuffer, heap_item
 from bloop.stream.shard import Shard, last_iterator, reformat_record, unpack_shards
 from typing import Dict, List, Union, Any
 
@@ -197,10 +195,10 @@ def test_jump_to(shard, session):
     assert shard.empty_responses == 0
 
     session.get_shard_iterator.assert_called_once_with(
-            stream_arn="stream-arn",
-            shard_id="shard-id",
-            iterator_type="latest",
-            sequence_number="different-sequence-number")
+        stream_arn="stream-arn",
+        shard_id="shard-id",
+        iterator_type="latest",
+        sequence_number="different-sequence-number")
 
 
 def test_load_existing_children(session):
@@ -293,8 +291,14 @@ def test_reformat_record(include):
         "old": "OldImage",
         "key": "Keys"
     }
-    for field in include:
-        assert record[field] is raw["dynamodb"][renames[field]]
+    for field in {"new", "old", "key"}:
+        if field in include:
+            assert record[field] is raw["dynamodb"][renames[field]]
+        else:
+            assert record[field] is None
+
+    assert record["meta"]["created_at"].timestamp == raw["dynamodb"]["ApproximateCreationDateTime"]
+    assert record["meta"]["event"]["type"] == raw["eventName"].lower()
 
 
 def test_unpack_empty_shards_list(session):

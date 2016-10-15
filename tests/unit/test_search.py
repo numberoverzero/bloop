@@ -201,7 +201,7 @@ def next_non_zero_index(chain, start=0):
     """Return the next index >= start of a non-zero value. -1 on failure to find"""
     non_zeros = filter(lambda x: x, chain[start:])
     value = next(non_zeros, None)
-    return chain.index(value) if value else -1
+    return chain.index(value, start) if value else -1
 
 
 def calls_for_current_steps(chain, current_steps):

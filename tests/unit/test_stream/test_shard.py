@@ -3,7 +3,7 @@ import random
 import string
 # import arrow
 from bloop.session import SessionWrapper
-from bloop.stream.shard import Shard, last_iterator, reformat_record, unpack_shards
+from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator, reformat_record, unpack_shards
 from typing import Dict, List, Union, Any
 
 
@@ -98,6 +98,67 @@ def record_with(key=False, new=False, old=False, sequence_number=None):
     if not old:
         del template["dynamodb"]["OldImage"]
     return template
+
+
+def build_get_records_responses(*chain):
+    """Return an iterable of responses for session.get_stream_records calls.
+
+    Chain is the number of results to include in each page.
+    For example: [0, 2, 1] expands into (0 results, proceed) -> (2 results, proceed) -> (1 result, stop).
+    Very similar to the build_responses helper in test_search.py
+    """
+    sequence_number = 0
+    responses = []
+    for i, count in enumerate(chain):
+        responses.append({
+            "Records": [record_with(key=True, sequence_number=sequence_number + offset) for offset in range(count)],
+            "NextShardIterator": "continue-from-response-{}".format(i)
+        })
+        sequence_number += count
+    # Last response doesn't point to a new iterator
+    del responses[-1]["NextShardIterator"]
+
+    return responses
+
+
+def expected_get_calls(chain):
+    """Returns the expected number of get_records calls including catch-up logic, to exhaust the chain.
+
+    For example, [3, 0, 1, 0, 0, 0, 1] will take 3 calls:
+        - call 1 stops after page 1 (3 records) (no empty responses)
+        - call 2 stops after page 3 (1 record)  (1 empty response) <- catch-up applied
+        - call 3 stops after page 7 (1 record)  (4 empty responses) <- catch-up applied
+    Or, [0, 0, 0, 1, 0, 0, 0, 1] will take 4 calls:
+        - call 1 stops after page 4 (1 record)  (3 empty responses)
+        - call 2 stops after page 6 (0 record)  (5 empty response) <- stopped due to catch-up limit
+        - call 3 stops after page 7 (0 record)  (6 empty responses) <- only 1 try since catch-up reached
+        - call 4 stops after page 8 (1 record)  (6 empty responses)
+    """
+    count = 0
+
+    # 0) Every non-empty page is another Shard.get_records() call
+    empty_pages = chain.count(0)
+    non_empty = len(chain) - empty_pages
+
+    count += non_empty
+
+    # 1) If calls_to_reach_head is 5, every empty page after the 4th
+    #    is another Shard.get_records() call
+    has_free_empty_pages = True
+    if empty_pages >= CALLS_TO_REACH_HEAD:
+        has_free_empty_pages = False
+        count += empty_pages - (CALLS_TO_REACH_HEAD - 1)
+
+    # 2) If the last page is empty and we're out of free empty pages,
+    #    then the last page has already been counted.
+    #
+    #    But if we still have free pages, the last empty page needs to be
+    #    explicitly counted, since we had to call Shard.get_records()
+    #    to learn that there were no more pages, and it wasn't really free.
+    if chain[-1] == 0 and has_free_empty_pages:
+        count += 1
+
+    return count
 
 
 @pytest.mark.parametrize("expected, kwargs", [
@@ -247,6 +308,77 @@ def test_get_records_exhausted(shard, session):
     records = shard.get_records()
     assert not records
     session.get_stream_records.assert_not_called()
+
+
+def test_get_records_after_head(shard, session):
+    """Once the shard has reached head, get_stream_records is called once per get_records."""
+    shard.empty_responses = CALLS_TO_REACH_HEAD
+
+    # Intentionally provide more than one page to ensure
+    # the call isn't stopping because there is only one page.
+    records = build_get_records_responses(1, 1)
+    session.get_stream_records.side_effect = records
+
+    returned_records = shard.get_records()
+
+    assert len(returned_records) == 1
+    assert returned_records[0]["meta"]["sequence_number"] == 0
+    assert session.get_stream_records.called_once_with(shard.iterator_id)
+
+    assert shard.iterator_type == "at_sequence"
+    assert shard.sequence_number == 0
+
+
+@pytest.mark.parametrize("chain", [
+    # === 0 records on every page, from 1 - CALLS_TO_REACH_HEAD + 1 pages
+    *[[0] * i for i in range(1, CALLS_TO_REACH_HEAD + 1)],
+
+    # === 1 record on every page, from 1 - CALLS_TO_REACH_HEAD + 1 pages
+    *[[1] * i for i in range(1, CALLS_TO_REACH_HEAD + 1)],
+
+    # === 1 record, CALLS_TO_REACH_HEAD - 1 pages ===
+    *[([0] * i) + [1] + ([0] * (CALLS_TO_REACH_HEAD - 2 - i)) for i in range(CALLS_TO_REACH_HEAD - 1)],
+
+    # === 1 record, CALLS_TO_REACH_HEAD pages ===
+    *[([0] * i) + [1] + ([0] * (CALLS_TO_REACH_HEAD - 1 - i)) for i in range(CALLS_TO_REACH_HEAD)],
+
+    # === 1 record, CALLS_TO_REACH_HEAD + 1 pages ===
+    *[([0] * i) + [1] + ([0] * (CALLS_TO_REACH_HEAD - 0 - i)) for i in range(CALLS_TO_REACH_HEAD + 1)],
+
+    # Contains every permutation of 3-page runs:
+    # (first value is 00 to align the comment)
+    # 0, 0, 0
+    #    0, 0, 1
+    #       0, 1, 1
+    #          1, 1, 1
+    #             1, 1, 0
+    #                1, 0, 1
+    #                   0, 1, 0
+    #                      1, 0, 0
+    [00, 0, 0, 1, 1, 1, 0, 1, 0, 0],
+
+])
+def test_get_records_shard(chain, shard, session):
+    """Catchup logic is applied until the CALLS_TO_REACH_HEAD limit, or shard is exhausted.
+
+    This holds even when there are non-empty calls in between.  The catch
+    up logic will be applied on the next empty response."""
+    #
+    responses = build_get_records_responses(*chain)
+    session.get_stream_records.side_effect = responses
+
+    records = []
+    get_records_call_count = 0
+    while not shard.exhausted:
+        get_records_call_count += 1
+        records.extend(shard.get_records())
+
+    # Calls to shard.get_records() to exhaust the shard
+    assert get_records_call_count == expected_get_calls(chain)
+
+    # Call until exhausted, means we always reach the end of the chain
+    assert session.get_stream_records.call_count == len(chain)
+    assert len(records) == sum(chain)
 
 
 @pytest.mark.parametrize("initial_sequence_number", [None, "sequence-number"])

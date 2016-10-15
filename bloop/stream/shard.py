@@ -161,6 +161,11 @@ class Shard:
         #    the entire Shard until we find a set of records with at least one with ApproxCreateDate >= position.
         self.jump_to(iterator_type="trim_horizon")
 
+        # The timestamps from DynamoDBStreams are integers; truncate the
+        # input position so we don't see 1476528055 < 1476528055.3 and
+        # have an off-by-one index in the reverse enumeration.
+        position = position.timestamp
+
         # Stop once the Shard is exhausted (can't possibly find the record)
         # or we've somewhat confidently caught the HEAD of an open Shard.
         while (not self.exhausted) and (self.empty_responses < CALLS_TO_REACH_HEAD):
@@ -169,12 +174,13 @@ class Shard:
             records = self.get_records()
             # Shortcut: we need AT LEAST one record to be after the position, so check the last record.
             # if it's before the position, all of the records in this response are.
-            if records and records[-1]["meta"]["created_at"] >= position:
-                # Reverse search is faster (on average; they're still both O(n) worst),
+            if records and records[-1]["meta"]["created_at"].timestamp >= position:
+                # Reverse search is faster (on average; they're still both O(n) worst).
                 # since we're looking for the first number *below* the position.
-                for index, record in enumerate(reversed(records)):
-                    if record["meta"]["created_at"] < position:
-                        return records[len(records) - index:]
+                for offset, record in enumerate(reversed(records)):
+                    if record["meta"]["created_at"].timestamp < position:
+                        index = len(records) - offset
+                        return records[index:]
                 # If the loop above finished, it means ALL the records are after the position.
                 return records
 

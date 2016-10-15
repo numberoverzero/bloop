@@ -1,7 +1,7 @@
 import pytest
 import random
 import string
-# import arrow
+import arrow
 from bloop.exceptions import ShardIteratorExpired
 from bloop.session import SessionWrapper
 from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator, reformat_record, unpack_shards
@@ -11,7 +11,7 @@ from unittest.mock import call
 
 @pytest.fixture
 def shard(session):
-    return Shard(stream_arn="stream_arn", shard_id="shard_id", session=session)
+    return Shard(stream_arn="stream-arn", shard_id="shard-id", session=session)
 
 
 def random_str(prefix="", length=8):
@@ -207,7 +207,7 @@ def test_next_refreshes_expired_with_sequence(iterator_type, shard, session):
     shard.iterator_id = "expired-iterator-id"
 
     # Single response with 4 records
-    response = build_get_records_responses(4)[0]
+    [response] = build_get_records_responses(4)
     session.get_stream_records.side_effect = [ShardIteratorExpired(), response]
     session.get_shard_iterator.return_value = "new-iterator-id"
 
@@ -311,6 +311,67 @@ def test_jump_to(shard, session):
         shard_id="shard-id",
         iterator_type="latest",
         sequence_number="different-sequence-number")
+
+
+def test_seek_exhausted(shard, session):
+    """Shard is exhausted before finding the target time"""
+    position = arrow.now().replace(minutes=-2)
+
+    session.get_shard_iterator.return_value = "new-iterator-id"
+    session.get_stream_records.side_effect = build_get_records_responses(0)
+
+    records = shard.seek_to(position)
+
+    assert not records
+    assert shard.exhausted
+    session.get_stream_records.assert_called_once_with("new-iterator-id")
+
+
+def test_seek_catches_head(shard, session):
+    """Shard is still open, and seek stops after catching up to head"""
+    position = arrow.now().replace(hours=2)
+
+    session.get_shard_iterator.return_value = "new-iterator-id"
+    session.get_stream_records.side_effect = build_get_records_responses(*([0] * (CALLS_TO_REACH_HEAD + 1)))
+
+    shard.seek_to(position)
+
+    # Not exhausted; just gave up after the number of empty responses required to reach head.
+    # The shard is probably still open, and the target time may be in the future.
+    assert not shard.exhausted
+    assert session.get_stream_records.call_count == CALLS_TO_REACH_HEAD
+
+
+@pytest.mark.parametrize("time_offset", [0, -10])
+@pytest.mark.parametrize("record_index", [0, 5, 9])
+def test_seek_finds_position(time_offset, record_index, shard, session):
+    session.get_shard_iterator.return_value = "new-iterator-id"
+
+    # The value that will be inserted in the records, that we will find
+    exact_target = arrow.now()
+    # The value we will use to find the exact_target with
+    with_offset = exact_target.replace(seconds=time_offset)
+
+    # Build a list of Records, then inject the appropriate spread of create times
+    [response] = build_get_records_responses(10)
+    records = response["Records"]
+    # Reverse the iterator so that the offset can increase
+    # as we move backwards from the target point on the left side
+    for offset, record in enumerate(reversed(records[:record_index])):
+        record["dynamodb"]["ApproximateCreationDateTime"] = exact_target.replace(hours=-(offset + 1)).timestamp
+    # Same thing going forward for records after the target
+    for offset, record in enumerate(records[record_index + 1:]):
+        record["dynamodb"]["ApproximateCreationDateTime"] = exact_target.replace(hours=offset + 1).timestamp
+    # Set target record's exact value
+    records[record_index]["dynamodb"]["ApproximateCreationDateTime"] = exact_target.timestamp
+
+    session.get_stream_records.return_value = response
+
+    results = shard.seek_to(with_offset)
+
+    assert len(results) == len(records[record_index:])
+
+    session.get_stream_records.assert_called_once_with("new-iterator-id")
 
 
 def test_load_existing_children(session):

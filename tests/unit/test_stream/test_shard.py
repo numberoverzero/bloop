@@ -69,15 +69,37 @@ def stream_description(n: int, shape: Dict[int, Union[int, List[int]]], stream_a
     }
 
 
-keys = ("Keys", {
-    "ForumName": {"S": "DynamoDB"},
-    "Subject": {"S": "DynamoDB Thread 1"}})
-new = ("NewImage", {
-    "ForumName": {"S": "DynamoDB"},
-    "Subject": {"S": "DynamoDB Thread 1"}})
-old = ("OldImage", {
-    "ForumName": {"S": "DynamoDB"},
-    "Subject": {"S": "DynamoDB Thread 1"}})
+def record_with(key=False, new=False, old=False, sequence_number=None):
+    template = {
+        "awsRegion": "us-west-2",
+        "dynamodb": {
+            "ApproximateCreationDateTime": 1.46480527E9,
+            "SequenceNumber": sequence_number if sequence_number is not None else "400000000000000499660",
+            "SizeBytes": 41,
+            "StreamViewType": "KEYS_ONLY",
+
+            "Keys": {
+                "ForumName": {"S": "DynamoDB"},
+                "Subject": {"S": "DynamoDB Thread 1"}},
+            "NewImage": {
+                "ForumName": {"S": "DynamoDB"},
+                "Subject": {"S": "DynamoDB Thread 1"}},
+            "OldImage": {
+                "ForumName": {"S": "DynamoDB"},
+                "Subject": {"S": "DynamoDB Thread 1"}}
+        },
+        "eventID": "4b25bd0da9a181a155114127e4837252",
+        "eventName": "MODIFY",
+        "eventSource": "aws:dynamodb",
+        "eventVersion": "1.0"
+    }
+    if not key:
+        del template["dynamodb"]["Keys"]
+    if not new:
+        del template["dynamodb"]["NewImage"]
+    if not old:
+        del template["dynamodb"]["OldImage"]
+    return template
 
 
 @pytest.mark.parametrize("expected, kwargs", [
@@ -221,6 +243,38 @@ def test_load_children(session):
     session.describe_stream.assert_called_once_with(stream_arn="stream-arn", first_shard=root.shard_id)
 
 
+@pytest.mark.parametrize("initial_sequence_number", [None, "sequence-number"])
+@pytest.mark.parametrize("record_count", [0, 1, 2])
+def test_apply_records(initial_sequence_number, record_count, session):
+    # Temporarily ignoring that an iterator should never be "latest" and have a sequence_number..
+    shard = Shard(stream_arn="stream-arn", shard_id="shard-id", iterator_type="initial-iterator-type",
+                  sequence_number=initial_sequence_number, session=session)
+
+    records = [record_with(key=True, sequence_number=i) for i in range(record_count)]
+    response = {
+        "Records": records,
+        "NextShardIterator": "next-iterator-id"
+    }
+    shard._apply_get_records_response(response)
+    session.get_stream_records.assert_not_called()
+
+    if records:
+        if initial_sequence_number:
+            # Don't overwrite; found records but already had a sequence_number
+            assert shard.iterator_type == "initial-iterator-type"
+            assert shard.sequence_number == initial_sequence_number
+        else:
+            # Remember first sequence_number; found records and no existing sequence_number
+            assert shard.iterator_type == "at_sequence"
+            assert shard.sequence_number == records[0]["dynamodb"]["SequenceNumber"] == 0
+        assert shard.empty_responses == 0
+    else:
+        # No records, no change
+        assert shard.iterator_type == "initial-iterator-type"
+        assert shard.sequence_number == initial_sequence_number
+        assert shard.empty_responses == 1
+
+
 def test_get_records_exhausted(shard, session):
     shard.iterator_id = last_iterator
 
@@ -229,33 +283,18 @@ def test_get_records_exhausted(shard, session):
     session.get_stream_records.assert_not_called()
 
 
-@pytest.mark.parametrize("include", [(new,), (old,), (new, old), (keys,)])
+@pytest.mark.parametrize("include", [{"new"}, {"old"}, {"old", "new"}, {"key"}])
 def test_reformat_record(include):
-    raw = {
-            "awsRegion": "us-west-2",
-            "dynamodb": {
-                "ApproximateCreationDateTime": 1.46480527E9,
-                "SequenceNumber": "400000000000000499660",
-                "SizeBytes": 41,
-                "StreamViewType": "KEYS_ONLY"
-            },
-            "eventID": "4b25bd0da9a181a155114127e4837252",
-            "eventName": "MODIFY",
-            "eventSource": "aws:dynamodb",
-            "eventVersion": "1.0"
-        }
-    for key, obj in include:
-        raw["dynamodb"][key] = obj
+    raw = record_with(**{field: True for field in include})
 
     record = reformat_record(raw)
     renames = {
-        "NewImage": "new",
-        "OldImage": "old",
-        "Keys": "key"
+        "new": "NewImage",
+        "old": "OldImage",
+        "key": "Keys"
     }
-
-    for key, obj in include:
-        assert record[renames[key]] == obj
+    for field in include:
+        assert record[field] is raw["dynamodb"][renames[field]]
 
 
 def test_unpack_empty_shards_list(session):

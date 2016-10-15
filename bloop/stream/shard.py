@@ -241,8 +241,6 @@ class Shard:
             if records:
                 # Stop working the first time we find results.
                 return records
-            # Keep looking.
-            self.empty_responses += 1
 
         # Failed after 5 calls
         return []
@@ -258,6 +256,8 @@ class Shard:
         if records and self.sequence_number is None:
             self.sequence_number = records[0]["meta"]["sequence_number"]
             self.iterator_type = "at_sequence"
+        elif not records:
+            self.empty_responses += 1
         return records
 
 

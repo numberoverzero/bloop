@@ -28,6 +28,10 @@ class Coordinator:
         #   shard.iterator_type = "after_record"
         self.buffer = RecordBuffer()
 
+    def __repr__(self):
+        # <Coordinator[.../StreamCreation-travis-661.2/stream/2016-10-03T06:17:12.741]>
+        return "<{}[{}]>".format(self.__class__.__name__, self.stream_arn)
+
     def __next__(self) -> Optional[Dict[str, Any]]:
         # Try to get the next record from each shard and push it into the buffer.
         if not self.buffer:

@@ -2,9 +2,11 @@ import pytest
 import random
 import string
 # import arrow
+from bloop.exceptions import ShardIteratorExpired
 from bloop.session import SessionWrapper
 from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator, reformat_record, unpack_shards
 from typing import Dict, List, Union, Any
+from unittest.mock import call
 
 
 @pytest.fixture
@@ -176,9 +178,58 @@ def test_repr(expected, kwargs):
     assert repr(shard) == expected
 
 
-@pytest.mark.parametrize("attr",
-                         ["stream_arn", "shard_id", "iterator_id", "iterator_type",
-                          "sequence_number", "parent"])
+@pytest.mark.parametrize("iterator_type", ["latest", "trim_horizon"])
+def test_next_raises_expired_without_sequence(iterator_type, shard, session):
+    """If the iterator expires and didn't have a sequence_number, there's no way to safely re-create it."""
+    shard.sequence_number = None
+    shard.iterator_type = iterator_type
+    shard.iterator_id = "iterator-id"
+
+    exception = session.get_stream_records.side_effect = ShardIteratorExpired()
+
+    with pytest.raises(ShardIteratorExpired) as excinfo:
+        next(shard)
+
+    # Exception is raised directly
+    assert excinfo.value is exception
+    session.get_stream_records.assert_called_once_with("iterator-id")
+    # Didn't try to get a new iterator
+    session.get_shard_iterator.assert_not_called()
+
+
+@pytest.mark.parametrize("iterator_type", ["at_sequence", "after_sequence"])
+def test_next_refreshes_expired_with_sequence(iterator_type, shard, session):
+    """If the iterator expires and has a sequence_number, it will try to refresh."""
+    shard.stream_arn = "stream-arn"
+    shard.shard_id = "shard-id"
+    shard.sequence_number = "sequence-number"
+    shard.iterator_type = iterator_type
+    shard.iterator_id = "expired-iterator-id"
+
+    # Single response with 4 records
+    response = build_get_records_responses(4)[0]
+    session.get_stream_records.side_effect = [ShardIteratorExpired(), response]
+    session.get_shard_iterator.return_value = "new-iterator-id"
+
+    records = next(shard)
+    # Don't need to deep validate here; that's covered by get_records and reformat_record tests.
+    assert len(records) == len(response["Records"])
+
+    # Only jumped once
+    session.get_shard_iterator.assert_called_once_with(
+        stream_arn=shard.stream_arn, shard_id=shard.shard_id,
+        iterator_type=iterator_type, sequence_number="sequence-number"
+    )
+    # First call raised Expired, second call returned records
+    session.get_stream_records.assert_has_calls([
+        call("expired-iterator-id"),
+        call("new-iterator-id")
+    ])
+
+
+@pytest.mark.parametrize("attr", [
+    "stream_arn", "shard_id", "iterator_id", "iterator_type",
+    "sequence_number", "parent"])
 def test_eq_not_set_or_different(attr):
     parent = Shard(stream_arn="parent-arn", shard_id="parent-id")
     children = [Shard(stream_arn="child-arn", shard_id="child-id") for _ in range(2)]

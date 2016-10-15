@@ -47,7 +47,7 @@ def build_shards(n: int, shape: Dict[int, Union[int, List[int]]],
 
 
 def stream_description(n: int, shape: Dict[int, Union[int, List[int]]], stream_arn=None) -> Dict[str, Any]:
-    """Build a DsecribeStream response with the given number of shards"""
+    """Build a DescribeStream response with the given number of shards"""
     shard_ids = [random_str("shard_id-{}-".format(i), 4) for i in range(n)]
     template = {
         "SequenceNumberRange": {
@@ -179,6 +179,46 @@ def test_jump_to(shard, session):
             shard_id="shard-id",
             iterator_type="latest",
             sequence_number="different-sequence-number")
+
+
+def test_load_existing_children(session):
+    shards = build_shards(3, {0: [1, 2]}, session=session)
+    root = shards[0]
+
+    children = root.children[:]
+    root.load_children()
+    assert root.children == children
+    session.describe_stream.assert_not_called()
+
+
+def test_load_children(session):
+    description = stream_description(5, {0: 1, 1: [2, 3]}, stream_arn="stream-arn")
+    session.describe_stream.return_value = description
+
+    # First shard in the description is unrelated to the root
+    root = Shard(
+        stream_arn="stream-arn",
+        shard_id=description["Shards"][0]["ShardId"],
+        session=session)
+    assert not root.children
+
+    # 0 -> 1 -> 2
+    #        -> 3
+    # 4
+    child_id = description["Shards"][1]["ShardId"]
+    first_grandchild_id = description["Shards"][2]["ShardId"]
+    second_grandchild_id = description["Shards"][3]["ShardId"]
+
+    # Loading shouldn't rely on implicit ordering
+    random.shuffle(description["Shards"])
+    root.load_children()
+
+    assert set(s.shard_id for s in root.children) == {child_id}
+    assert root.children[0].shard_id == child_id
+    grandchild_ids = [s.shard_id for s in root.children[0].children]
+    assert set(grandchild_ids) == {first_grandchild_id, second_grandchild_id}
+
+    session.describe_stream.assert_called_once_with(stream_arn="stream-arn", first_shard=root.shard_id)
 
 
 def test_get_records_exhausted(shard, session):

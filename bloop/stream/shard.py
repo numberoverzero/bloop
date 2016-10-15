@@ -183,25 +183,46 @@ class Shard:
         return []
 
     def load_children(self) -> None:
-        """Try to load the shard's children from DynamoDB if it doesn't have any."""
+        """Try to load the shard's children from DynamoDB if it doesn't have any.
+
+        Loads all shards that have this shard as an ancestor.
+        """
         # If a Shard has children, that number will never change.
         # Children are the result of exactly one event:
         #   increased throughput -> exactly 2 children
         #         open for ~4hrs -> at most 1 child
         if self.children:
             return self.children
-        children = [
-            s for s in self.session.describe_stream(
+
+        # ParentShardId -> [Shard, ...]
+        by_parent = collections.defaultdict(list)
+        # ShardId -> Shard
+        by_id = {}
+        for shard in self.session.describe_stream(
                 stream_arn=self.stream_arn,
-                first_shard=self.shard_id)["Shards"]
-            if s.get("ParentShardId") == self.shard_id]
-        for child in children:
-            child = Shard(
+                first_shard=self.shard_id)["Shards"]:
+            parent_list = by_parent[shard.get("ParentShardId")]
+            shard = Shard(
                 stream_arn=self.stream_arn,
-                shard_id=child.get("ShardId"),
-                parent=self,
+                shard_id=shard["ShardId"],
+                parent=shard.get("ParentShardId"),
                 session=self.session)
-            self.children.append(child)
+            parent_list.append(shard)
+            by_id[shard.shard_id] = shard
+
+        # Find this shard when looking up shards by ParentShardId
+        by_id[self.shard_id] = self
+
+        # Insert this shard's children, then handle its child's descendants etc.
+        to_insert = collections.deque(by_parent[self.shard_id])
+        while to_insert:
+            shard = to_insert.popleft()
+            # ParentShardId -> Shard
+            shard.parent = by_id[shard.parent]
+            shard.parent.children.append(shard)
+            # Continue for any shards that have this shard as their parent
+            to_insert.extend(by_parent[shard.shard_id])
+
         return self.children
 
     def get_records(self) -> List[Dict[str, Any]]:

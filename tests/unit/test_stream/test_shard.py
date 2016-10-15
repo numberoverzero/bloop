@@ -241,6 +241,14 @@ def test_load_children(session):
     session.describe_stream.assert_called_once_with(stream_arn="stream-arn", first_shard=root.shard_id)
 
 
+def test_get_records_exhausted(shard, session):
+    shard.iterator_id = last_iterator
+
+    records = shard.get_records()
+    assert not records
+    session.get_stream_records.assert_not_called()
+
+
 @pytest.mark.parametrize("initial_sequence_number", [None, "sequence-number"])
 @pytest.mark.parametrize("record_count", [0, 1, 2])
 def test_apply_records(initial_sequence_number, record_count, session):
@@ -271,14 +279,6 @@ def test_apply_records(initial_sequence_number, record_count, session):
         assert shard.iterator_type == "initial-iterator-type"
         assert shard.sequence_number == initial_sequence_number
         assert shard.empty_responses == 1
-
-
-def test_get_records_exhausted(shard, session):
-    shard.iterator_id = last_iterator
-
-    records = shard.get_records()
-    assert not records
-    session.get_stream_records.assert_not_called()
 
 
 @pytest.mark.parametrize("include", [{"new"}, {"old"}, {"old", "new"}, {"key"}])

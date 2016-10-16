@@ -10,8 +10,61 @@ def test_coordinator_repr(coordinator):
     assert repr(coordinator) == "<Coordinator[repr-stream-arn]>"
 
 
+def test_next_no_records_or_shards(coordinator):
+    """next(coordinator) returns None when the buffer is empty and active shards find nothing"""
+    result = next(coordinator)
+    assert result is None
+
+
+def test_next_from_buffer(coordinator, shard, session):
+    """next(coordinator) doesn't call GetRecords when the buffer has records"""
+    shard.iterator_type = "latest"
+    shard.sequence_number = None
+    coordinator.active.append(shard)
+
+    record = local_record(sequence_number="record-sequence-number")
+    coordinator.buffer.push(record, shard)
+
+    returned_record = next(coordinator)
+
+    assert returned_record is record
+    assert shard.iterator_type == "after_sequence"
+    assert shard.sequence_number == "record-sequence-number"
+    assert not coordinator.buffer
+    # No outbound calls
+    session.get_stream_records.assert_not_called()
+    session.get_shard_iterator.assert_not_called()
+    session.describe_stream.assert_not_called()
+
+    assert shard in coordinator.active
+
+
+def test_next_advances_all_shards(coordinator, session):
+    """next(coordinator) advances all active shards, and removes exhausted shards"""
+    [has_records, will_expire] = build_shards(2, session=session, stream_arn=coordinator.stream_arn)
+    coordinator.active = [has_records, will_expire]
+    has_records.iterator_id = "has-records-id"
+    will_expire.iterator_id = "will-expire"
+
+    def mock_get_stream_records(iterator_id):
+        if iterator_id == "will-expire":
+            return {"Records": [], "NextShardIterator": last_iterator}
+        return {
+            "Records": [dynamodb_record_with(key=True)],
+            "NextShardIterator": "next-iterator-id"}
+    session.get_stream_records.side_effect = mock_get_stream_records
+    # Don't find children for will_expire
+    session.describe_stream.return_value = {"StreamArn": coordinator.stream_arn, "Shards": []}
+
+    result = next(coordinator)
+
+    assert result
+    assert has_records in coordinator.active
+    assert will_expire not in coordinator.active
+
+
 def test_advance_shards_with_buffer(coordinator, shard, session):
-    """The coordinator always drains the buffer before pulling from active shards."""
+    """The coordinator always drains the buffer before pulling from active shards"""
     coordinator.active.append(shard)
     record = local_record()
     coordinator.buffer.push(record, shard)

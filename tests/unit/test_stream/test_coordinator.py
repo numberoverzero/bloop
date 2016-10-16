@@ -3,7 +3,7 @@ import functools
 from bloop.exceptions import InvalidPosition
 from bloop.stream.shard import Shard, CALLS_TO_REACH_HEAD, last_iterator
 from bloop.util import ordered
-from . import build_get_records_responses, build_shards, local_record, dynamodb_record_with
+from . import build_get_records_responses, build_shards, local_record, dynamodb_record_with, stream_description
 
 
 def test_coordinator_repr(coordinator):
@@ -295,3 +295,95 @@ def test_remove_shard(is_active, is_root, has_buffered, coordinator):
 def test_move_to_unknown(position, coordinator):
     with pytest.raises(InvalidPosition):
         coordinator.move_to(position)
+
+
+def test_move_to_trim_horizon(coordinator, session):
+    """Moving to the trim_horizon clears existing state and adds new shards"""
+    # All of these should be cleaned up entirely
+    previous_shards = build_shards(3, {0: 1}, session=session, stream_arn=coordinator.stream_arn)
+    coordinator.roots.extend((previous_shards[0], previous_shards[2]))
+    coordinator.active.append(previous_shards[1])
+    coordinator.buffer.push(local_record(), previous_shards[1])
+
+    # -----------
+    # 0 -> 1 -> 2
+    #        -> 3
+    # -----------
+    # 4 -> 5
+    #   -> 6 -> 7
+    # -----------
+    description = session.describe_stream.return_value = stream_description(
+        8, {0: 1, 1: [2, 3], 4: [5, 6], 6: 7},
+        stream_arn=coordinator.stream_arn)
+    expected_root_ids = [description["Shards"][i]["ShardId"] for i in [0, 4]]
+    expected_active_ids = expected_root_ids
+    session.get_shard_iterator.return_value = "child-iterator-id"
+
+    coordinator.move_to("trim_horizon")
+
+    # Remote calls - no new records fetched, loaded child shards and jumped to their trim_horizons
+    session.get_stream_records.assert_not_called()
+    session.describe_stream.assert_called_once_with(stream_arn=coordinator.stream_arn)
+    assert session.get_shard_iterator.call_count == len(expected_active_ids)
+    for expected_shard_id in expected_active_ids:
+        session.get_shard_iterator.assert_any_call(
+            stream_arn=coordinator.stream_arn,
+            shard_id=expected_shard_id,
+            iterator_type="trim_horizon",
+            sequence_number=None
+        )
+
+    # Previous local state is cleared
+    assert all(shard not in coordinator.active for shard in previous_shards)
+    assert all(shard not in coordinator.roots for shard in previous_shards)
+    assert not coordinator.buffer
+
+    # Current local state; trim_horizon sets roots to active
+    assert set(s.shard_id for s in coordinator.active) == set(expected_active_ids)
+    assert set(s.shard_id for s in coordinator.roots) == set(expected_root_ids)
+
+
+def test_move_to_latest(coordinator, session):
+    """Moving to the trim_horizon clears existing state and adds new shards"""
+    # All of these should be cleaned up entirely
+    previous_shards = build_shards(3, {0: 1}, session=session, stream_arn=coordinator.stream_arn)
+    coordinator.roots.extend((previous_shards[0], previous_shards[2]))
+    coordinator.active.append(previous_shards[1])
+    coordinator.buffer.push(local_record(), previous_shards[1])
+
+    # -----------
+    # 0 -> 1 -> 2
+    #        -> 3
+    # -----------
+    # 4 -> 5
+    #   -> 6 -> 7
+    # -----------
+    description = session.describe_stream.return_value = stream_description(
+        8, {0: 1, 1: [2, 3], 4: [5, 6], 6: 7},
+        stream_arn=coordinator.stream_arn)
+    expected_root_ids = [description["Shards"][i]["ShardId"] for i in [0, 4]]
+    expected_active_ids = [description["Shards"][i]["ShardId"] for i in [2, 3, 5, 7]]
+    session.get_shard_iterator.return_value = "child-iterator-id"
+
+    coordinator.move_to("latest")
+
+    # Remote calls - no new records fetched, loaded child shards and jumped to their latest
+    session.get_stream_records.assert_not_called()
+    session.describe_stream.assert_called_once_with(stream_arn=coordinator.stream_arn)
+    assert session.get_shard_iterator.call_count == len(expected_active_ids)
+    for expected_shard_id in expected_active_ids:
+        session.get_shard_iterator.assert_any_call(
+            stream_arn=coordinator.stream_arn,
+            shard_id=expected_shard_id,
+            iterator_type="latest",
+            sequence_number=None
+        )
+
+    # Previous local state is cleared
+    assert all(shard not in coordinator.active for shard in previous_shards)
+    assert all(shard not in coordinator.roots for shard in previous_shards)
+    assert not coordinator.buffer
+
+    # Current local state: latest sets shards without children to active
+    assert set(s.shard_id for s in coordinator.active) == set(expected_active_ids)
+    assert set(s.shard_id for s in coordinator.roots) == set(expected_root_ids)

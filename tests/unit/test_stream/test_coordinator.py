@@ -287,16 +287,6 @@ def test_remove_shard(is_active, is_root, has_buffered, coordinator):
         assert record_shard is not shard
 
 
-@pytest.mark.parametrize("position", [
-    None,
-    "start", "end", "head", "front", "back",
-    "at_sequence", ("after_sequence", "sequence-number"),
-])
-def test_move_to_unknown(position, coordinator):
-    with pytest.raises(InvalidPosition):
-        coordinator.move_to(position)
-
-
 def test_move_to_trim_horizon(coordinator, session):
     """Moving to the trim_horizon clears existing state and adds new shards"""
     # All of these should be cleaned up entirely
@@ -387,3 +377,13 @@ def test_move_to_latest(coordinator, session):
     # Current local state: latest sets shards without children to active
     assert set(s.shard_id for s in coordinator.active) == set(expected_active_ids)
     assert set(s.shard_id for s in coordinator.roots) == set(expected_root_ids)
+
+
+@pytest.mark.parametrize("position", [
+    None,
+    "start", "end", "head", "front", "back",
+    "at_sequence", ("after_sequence", "sequence-number"),
+])
+def test_move_to_unknown(position, coordinator):
+    with pytest.raises(InvalidPosition):
+        coordinator.move_to(position)

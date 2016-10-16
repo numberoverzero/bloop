@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Any, Mapping  # noqa
 
 from .buffer import RecordBuffer
 from .shard import Shard, unpack_shards
-from ..exceptions import InvalidStream, RecordsExpired
+from ..exceptions import InvalidStream, RecordsExpired, InvalidPosition
 from ..session import SessionWrapper
 
 
@@ -149,10 +149,10 @@ class Coordinator:
             move = _move_stream_token
         elif isinstance(position, arrow.Arrow):
             move = _move_stream_time
-        elif position in ["latest", "trim_horizon"]:
+        elif isinstance(position, str) and position.lower() in ["latest", "trim_horizon"]:
             move = _move_stream_endpoint
         else:
-            raise ValueError("Don't know how to move to position {!r}".format(position))
+            raise InvalidPosition("Don't know how to move to position {!r}".format(position))
         move(self, position)
 
 

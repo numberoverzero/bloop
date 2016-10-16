@@ -1,5 +1,6 @@
 import pytest
 import functools
+from bloop.exceptions import InvalidPosition
 from bloop.stream.shard import Shard, CALLS_TO_REACH_HEAD, last_iterator
 from bloop.util import ordered
 from . import build_get_records_responses, build_shards, local_record, dynamodb_record_with
@@ -282,3 +283,13 @@ def test_remove_shard(is_active, is_root, has_buffered, coordinator):
     while coordinator.buffer:
         record, record_shard = coordinator.buffer.pop()
         assert record_shard is not shard
+
+
+@pytest.mark.parametrize("position", [
+    None,
+    "start", "end", "head", "front", "back",
+    "at_sequence", ("after_sequence", "sequence-number"),
+])
+def test_move_to_unknown(position, coordinator):
+    with pytest.raises(InvalidPosition):
+        coordinator.move_to(position)

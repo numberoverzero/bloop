@@ -83,3 +83,7 @@ class InvalidFilterCondition(BloopException, ValueError):
 
 class InvalidProjection(BloopException, ValueError):
     """This is not a valid projection option for the Model and Index."""
+
+
+class InvalidPosition(BloopException, ValueError):
+    """This is not a valid position for a Stream."""

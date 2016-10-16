@@ -8,7 +8,7 @@ def test_coordinator_repr(coordinator):
     assert repr(coordinator) == "<Coordinator[repr-stream-arn]>"
 
 
-def test_heartbeat_latest(coordinator, session):
+def test_heartbeat(coordinator, session):
     find_records_id = "id-find-records"
     no_records_id = "id-no-records"
     has_sequence_id = "id-has-sequence"
@@ -44,3 +44,22 @@ def test_heartbeat_latest(coordinator, session):
     pairs = [coordinator.buffer.pop() for _ in range(len(coordinator.buffer))]
     sequence_numbers = [record["meta"]["sequence_number"] for (record, _) in pairs]
     assert sequence_numbers == [0, 1, 2]
+
+
+def test_heartbeat_until_sequence_number(coordinator, session):
+    """After heartbeat() finds records for a shard, the shard doens't check during the next heartbeat."""
+    shard = Shard(stream_arn=coordinator.stream_arn, shard_id="shard-id", session=session,
+                  iterator_id="iterator-id", iterator_type="latest")
+    coordinator.active.append(shard)
+
+    session.get_stream_records.side_effect = build_get_records_responses(1)
+
+    # First call fetches records from DynamoDB
+    coordinator.heartbeat()
+    assert coordinator.buffer
+    assert shard.sequence_number is not None
+    session.get_stream_records.assert_called_once_with("iterator-id")
+
+    # Second call ships the shard, since it now has a sequence_number.
+    coordinator.heartbeat()
+    assert session.get_stream_records.call_count == 1

@@ -24,7 +24,7 @@ def build_shards(n: int, shape: Optional[Dict[int, Union[int, List[int]]]]=None,
 
     build_shards(session, 6, {0: 1, 1: [2, 3], 2: 4, 3: 5})
     """
-    # Default to flat shards, no heirarchy
+    # Default to flat shards, no hierarchy
     shape = shape or {}
     shard_id = lambda i: random_str("shard-id-{}-".format(i), 4)
     shards = [

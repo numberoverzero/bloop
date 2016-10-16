@@ -1,8 +1,12 @@
+import arrow
 import random
 import string
+from bloop.util import Sentinel
 from bloop.session import SessionWrapper
 from bloop.stream.shard import Shard
 from typing import Union, List, Dict, Any, Optional
+
+missing = Sentinel("missing")
 
 
 def random_str(prefix="", length=8):
@@ -62,7 +66,7 @@ def stream_description(n: int, shape: Dict[int, Union[int, List[int]]], stream_a
     }
 
 
-def record_with(key=False, new=False, old=False, sequence_number=None):
+def dynamodb_record_with(key=False, new=False, old=False, sequence_number=None):
     template = {
         "awsRegion": "us-west-2",
         "dynamodb": {
@@ -95,6 +99,17 @@ def record_with(key=False, new=False, old=False, sequence_number=None):
     return template
 
 
+def local_record(created_at=missing, sequence_number="default-sequence-number"):
+    if created_at is missing:
+        created_at = arrow.now()
+    return {
+        "meta": {
+            "created_at": created_at,
+            "sequence_number": sequence_number
+        }
+    }
+
+
 def build_get_records_responses(*chain):
     """Return an iterable of responses for session.get_stream_records calls.
 
@@ -106,7 +121,9 @@ def build_get_records_responses(*chain):
     responses = []
     for i, count in enumerate(chain):
         responses.append({
-            "Records": [record_with(key=True, sequence_number=sequence_number + offset) for offset in range(count)],
+            "Records": [
+                dynamodb_record_with(key=True, sequence_number=sequence_number + offset)
+                for offset in range(count)],
             "NextShardIterator": "continue-from-response-{}".format(i)
         })
         sequence_number += count

@@ -5,7 +5,7 @@ from bloop.exceptions import ShardIteratorExpired
 from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator, reformat_record, unpack_shards
 from unittest.mock import call
 
-from . import build_shards, build_get_records_responses, random_str, stream_description, record_with
+from . import build_shards, build_get_records_responses, random_str, stream_description, dynamodb_record_with
 
 
 def expected_get_calls(chain):
@@ -405,7 +405,7 @@ def test_apply_records(initial_sequence_number, record_count, session):
     shard = Shard(stream_arn="stream-arn", shard_id="shard-id", iterator_type="initial-iterator-type",
                   sequence_number=initial_sequence_number, session=session)
 
-    records = [record_with(key=True, sequence_number=i) for i in range(record_count)]
+    records = [dynamodb_record_with(key=True, sequence_number=i) for i in range(record_count)]
     response = {
         "Records": records,
         "NextShardIterator": "next-iterator-id"
@@ -432,7 +432,7 @@ def test_apply_records(initial_sequence_number, record_count, session):
 
 @pytest.mark.parametrize("include", [{"new"}, {"old"}, {"old", "new"}, {"key"}])
 def test_reformat_record(include):
-    raw = record_with(**{field: True for field in include})
+    raw = dynamodb_record_with(**{field: True for field in include})
 
     record = reformat_record(raw)
     renames = {

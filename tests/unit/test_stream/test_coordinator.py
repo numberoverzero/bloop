@@ -1,7 +1,8 @@
+import pytest
 import functools
 from bloop.stream.shard import Shard
 from bloop.util import ordered
-from . import build_get_records_responses, build_shards
+from . import build_get_records_responses, build_shards, local_record
 
 
 def test_coordinator_repr(coordinator):
@@ -86,3 +87,37 @@ def test_token(coordinator):
         del shard_token["stream_arn"]
 
     assert ordered(expected_token) == ordered(coordinator.token)
+
+
+@pytest.mark.parametrize("is_active", [True, False])
+@pytest.mark.parametrize("is_root", [True, False])
+@pytest.mark.parametrize("has_buffered", [True, False])
+def test_remove_shard(is_active, is_root, has_buffered, coordinator):
+    shard = Shard(stream_arn=coordinator.stream_arn, shard_id="shard-id",
+                  iterator_type="at_sequence", sequence_number="sequence-number")
+    # Always has a buffered record
+    other = Shard(stream_arn=coordinator.stream_arn, shard_id="other-shard-id",
+                  iterator_type="after_sequence", sequence_number="other-sequence-number")
+    children = [Shard(stream_arn="child-arn", shard_id="child-" + str(i)) for i in range(4)]
+    shard.children.extend(children)
+
+    if is_active:
+        coordinator.active.append(shard)
+    if is_root:
+        coordinator.roots.append(shard)
+    if has_buffered:
+        records = [local_record(sequence_number=i) for i in range(7)]
+        coordinator.buffer.push_all((r, shard) for r in records)
+    coordinator.buffer.push(local_record(sequence_number="other-record"), other)
+
+    coordinator.remove_shard(shard)
+
+    if is_active:
+        assert all(child in coordinator.active for child in children)
+    if is_root:
+        assert all(child in coordinator.roots for child in children)
+
+    # Any records that were buffered from the removed shard are gone.
+    while coordinator.buffer:
+        record, record_shard = coordinator.buffer.pop()
+        assert record_shard is not shard

@@ -68,22 +68,7 @@ class Coordinator:
                 record_shard_pairs.extend((record, shard) for record in records)
         self.buffer.push_all(record_shard_pairs)
 
-        # 1) Clean up exhausted Shards.
-        #    Can't modify the active list while iterating it.
-        to_remove = [shard for shard in self.active if shard.exhausted]
-        for shard in to_remove:
-            # A) Fetch Shard's children if they haven't been loaded
-            #    (perhaps the Shard just closed?)
-            shard.load_children()
-
-            # B) Remove the shard from the Coordinator.  If the Shard has
-            #    children, those children are now active.
-            #    If the Shard was a root, those children become roots.
-            self.remove_shard(shard)
-
-            # C) Move each child Shard to its trim_horizon.
-            for child in shard.children:
-                child.jump_to(iterator_type="trim_horizon")
+        self._handle_exhausted()
 
     def heartbeat(self) -> None:
         # Try to keep active shards with ``latest`` and ``trim_horizon`` iterators alive.
@@ -101,6 +86,25 @@ class Coordinator:
                 # Success!  This shard now has an ``at_sequence`` iterator
                 if records:
                     self.buffer.push_all((record, shard) for record in records)
+        self._handle_exhausted()
+
+    def _handle_exhausted(self):
+        # 1) Clean up exhausted Shards.
+        #    Can't modify the active list while iterating it.
+        to_remove = [shard for shard in self.active if shard.exhausted]
+        for shard in to_remove:
+            # A) Fetch Shard's children if they haven't been loaded
+            #    (perhaps the Shard just closed?)
+            shard.load_children()
+
+            # B) Remove the shard from the Coordinator.  If the Shard has
+            #    children, those children are now active.
+            #    If the Shard was a root, those children become roots.
+            self.remove_shard(shard)
+
+            # C) Move each child Shard to its trim_horizon.
+            for child in shard.children:
+                child.jump_to(iterator_type="trim_horizon")
 
     @property
     def token(self) -> Dict[str, Any]:

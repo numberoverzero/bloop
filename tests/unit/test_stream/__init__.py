@@ -43,9 +43,14 @@ def build_shards(n: int, shape: Optional[Dict[int, Union[int, List[int]]]]=None,
     return shards
 
 
-def stream_description(n: int, shape: Dict[int, Union[int, List[int]]], stream_arn=None) -> Dict[str, Any]:
+def stream_description(
+        n: int, shape: Optional[Dict[int, Union[int, List[int]]]]=None,
+        stream_arn=None) -> Dict[str, Any]:
     """Build a DescribeStream response with the given number of shards"""
-    shard_ids = [random_str("shard_id-{}-".format(i), 4) for i in range(n)]
+    # Default to flat shards, no hierarchy
+    shape = shape or {}
+
+    shard_ids = [random_str("shard-id-{}-".format(i), 4) for i in range(n)]
     template = {
         "SequenceNumberRange": {
             "EndingSequenceNumber": "820400000000000001192334",

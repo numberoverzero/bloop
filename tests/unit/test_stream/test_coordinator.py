@@ -187,6 +187,8 @@ def test_heartbeat(coordinator, session):
             has_sequence_id: {}
         }[iterator_id]
     session.get_stream_records.side_effect = mock_get_records
+    # None of the shards have children
+    session.describe_stream.return_value = {"StreamArn": coordinator.stream_arn, "Shards": []}
 
     make_shard = functools.partial(Shard, stream_arn=coordinator.stream_arn, shard_id="shard-id", session=session)
     coordinator.active = [
@@ -211,12 +213,12 @@ def test_heartbeat(coordinator, session):
 
 
 def test_heartbeat_until_sequence_number(coordinator, session):
-    """After heartbeat() finds records for a shard, the shard doens't check during the next heartbeat."""
+    """After heartbeat() finds records for a shard, the shard doesn't check during the next heartbeat."""
     shard = Shard(stream_arn=coordinator.stream_arn, shard_id="shard-id", session=session,
                   iterator_id="iterator-id", iterator_type="latest")
     coordinator.active.append(shard)
 
-    session.get_stream_records.side_effect = build_get_records_responses(1)
+    session.get_stream_records.side_effect = build_get_records_responses(1, 0)
 
     # First call fetches records from DynamoDB
     coordinator.heartbeat()
@@ -224,7 +226,7 @@ def test_heartbeat_until_sequence_number(coordinator, session):
     assert shard.sequence_number is not None
     session.get_stream_records.assert_called_once_with("iterator-id")
 
-    # Second call ships the shard, since it now has a sequence_number.
+    # Second call skips the shard, since it now has a sequence_number.
     coordinator.heartbeat()
     assert session.get_stream_records.call_count == 1
 

@@ -92,7 +92,7 @@ class Coordinator:
         # Try to keep active shards with ``latest`` and ``trim_horizon`` iterators alive.
         # Ideally, this will find records and make them ``at_sequence`` or ``after_sequence`` iterators.
         for shard in self.active:
-            if shard.iterator_type in ["latest", "trim_horizon"]:
+            if shard.sequence_number is None:
 
                 # There's no safe default when advance_shard raises ShardIteratorExpired
                 # because resetting to the new trim_horizon/latest could miss records.

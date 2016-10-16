@@ -1,13 +1,121 @@
 import pytest
 import functools
-from bloop.stream.shard import Shard
+from bloop.stream.shard import Shard, CALLS_TO_REACH_HEAD, last_iterator
 from bloop.util import ordered
-from . import build_get_records_responses, build_shards, local_record
+from . import build_get_records_responses, build_shards, local_record, dynamodb_record_with
 
 
 def test_coordinator_repr(coordinator):
     coordinator.stream_arn = "repr-stream-arn"
     assert repr(coordinator) == "<Coordinator[repr-stream-arn]>"
+
+
+def test_advance_shards_with_buffer(coordinator, shard, session):
+    """The coordinator always drains the buffer before pulling from active shards."""
+    coordinator.active.append(shard)
+    record = local_record()
+    coordinator.buffer.push(record, shard)
+
+    coordinator.advance_shards()
+    session.get_stream_records.assert_not_called()
+
+
+def test_advance_pulls_from_all_active_shards(coordinator, session):
+    """The coordinator checks all active shards, and doesn't stop on the first active one."""
+    [has_records, no_records] = build_shards(2, session=session, stream_arn=coordinator.stream_arn)
+    has_records.iterator_id = "has-records-id"
+    no_records.iterator_id = "no-records-id"
+    coordinator.active = [has_records, no_records]
+
+    def mock_get_stream_records(iterator_id):
+        response = {
+            "Records": [dynamodb_record_with(key=True, sequence_number="record-number")],
+            "NextShardIterator": "next-iterator-id"
+        }
+        if iterator_id != "has-records-id":
+            response["Records"].clear()
+        return response
+    session.get_stream_records.side_effect = mock_get_stream_records
+
+    assert not coordinator.buffer
+    coordinator.advance_shards()
+
+    assert coordinator.buffer
+    # 1 from has-records-id, and CALLS_TO_REACH_HEAD from no-records-id since it contains no records
+    assert session.get_stream_records.call_count == 1 + CALLS_TO_REACH_HEAD
+    session.get_stream_records.assert_any_call("has-records-id")
+    session.get_stream_records.assert_any_call("no-records-id")
+    session.get_stream_records.assert_any_call("next-iterator-id")
+
+    assert [has_records, no_records] == coordinator.active
+
+
+@pytest.mark.parametrize("has_children, loads_children", [(True, False), (False, False), (False, True)])
+def test_advance_removes_exhausted(has_children, loads_children, coordinator, shard, session):
+    """Exhausted shards are removed; any children are promoted, and reset to trim_horizon"""
+    shard.iterator_id = last_iterator
+    shard.iterator_type = "latest"
+
+    coordinator.active.append(shard)
+
+    if has_children:
+        # Already loaded, doesn't need to call DescribeStream
+        child = Shard(
+            stream_arn=coordinator.stream_arn, shard_id="child-id", parent=shard,
+            iterator_type="at_sequence", sequence_number="sequence-number",
+            session=session)
+        shard.children.append(child)
+    elif loads_children:
+        # Child exists, but isn't known locally
+        session.describe_stream.return_value = {
+            "Shards": [{
+                "SequenceNumberRange": {
+                    "EndingSequenceNumber": "820400000000000001192334",
+                    "StartingSequenceNumber": "820400000000000001192334"
+                },
+                "ShardId": "child-id",
+                "ParentShardId": "shard-id"
+            }],
+            "StreamArn": coordinator.stream_arn
+        }
+    else:
+        # No children
+        session.describe_stream.return_value = {
+            "Shards": [],
+            "StreamArn": coordinator.stream_arn
+        }
+
+    coordinator.advance_shards()
+
+    # No records found
+    assert not coordinator.buffer
+    # No longer active
+    assert shard not in coordinator.active
+
+    if has_children:
+        # Children are already loaded, no need to DescribeStream
+        session.describe_stream.assert_not_called()
+    else:
+        # No children locally, DescribeStream tried to find some
+        session.describe_stream.assert_called_once_with(
+            stream_arn=coordinator.stream_arn,
+            first_shard=shard.shard_id)
+
+    # Children (pre-existing or found in DescribeStream) are active
+    if has_children or loads_children:
+        assert len(coordinator.active) == 1
+        assert coordinator.active[0].parent is shard
+
+        # Part of promoting the child is resetting it to trim_horizon
+        session.get_shard_iterator.assert_called_once_with(
+            stream_arn=coordinator.stream_arn,
+            shard_id="child-id",
+            iterator_type="trim_horizon",
+            sequence_number=None
+        )
+    # Without a child, there's no need to get a new iterator
+    else:
+        session.get_shard_iterator.assert_not_called()
 
 
 def test_heartbeat(coordinator, session):
@@ -27,14 +135,14 @@ def test_heartbeat(coordinator, session):
     session.get_stream_records.side_effect = mock_get_records
 
     make_shard = functools.partial(Shard, stream_arn=coordinator.stream_arn, shard_id="shard-id", session=session)
-    coordinator.active.extend([
+    coordinator.active = [
         # Has a sequence number, should not be called during a heartbeat
         make_shard(iterator_id=has_sequence_id, iterator_type="at_sequence", sequence_number="sequence-number"),
         # No sequence number, should find records during a heartbeat
         make_shard(iterator_id=find_records_id, iterator_type="trim_horizon"),
         # No sequence number, should not find records during a heartbeat
         make_shard(iterator_id=no_records_id, iterator_type="latest"),
-    ])
+    ]
 
     coordinator.heartbeat()
 

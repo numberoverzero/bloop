@@ -123,13 +123,15 @@ class Shard:
         such as stream_arn and shard_id.
         """
         # TODO logger.info when iterator_type is "trim_horizon" or "latest"
-        return {
+        token = {
             "stream_arn": self.stream_arn,
             "shard_id": self.shard_id,
             "iterator_type": self.iterator_type,
             "sequence_number": self.sequence_number,
-            "parent": self.parent.shard_id if self.parent else None
         }
+        if self.parent:
+            token["parent"] = self.parent.shard_id
+        return token
 
     def walk_tree(self) -> Iterable["Shard"]:
         """Generator that visits all shards in a shard tree"""

@@ -110,9 +110,8 @@ class Coordinator:
         shard_tokens = []
         for root in self.roots:
             for shard in root.walk_tree():
-                token = shard.token
-                token.pop("stream_arn")
-                shard_tokens.append(token)
+                shard_tokens.append(shard.token)
+                shard_tokens[-1].pop("stream_arn")
         return {
             "stream_arn": self.stream_arn,
             "active": [shard.shard_id for shard in self.active],

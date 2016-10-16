@@ -157,6 +157,26 @@ def test_exhausted(shard):
     assert not shard.exhausted
 
 
+def test_token():
+    parent = Shard(stream_arn="parent-stream-arn", shard_id="parent-id")
+    shard = Shard(stream_arn="stream-arn", shard_id="shard-id",
+                  iterator_id="iterator-id", iterator_type="at_sequence",
+                  sequence_number="sequence-number", parent=parent)
+    expected = {
+        "stream_arn": "stream-arn",
+        "shard_id": "shard-id",
+        "iterator_type": "at_sequence",
+        "sequence_number": "sequence-number",
+        "parent": "parent-id"
+    }
+    assert shard.token == expected
+
+    # Removing parent omits it from the token entirely
+    shard.parent = None
+    expected.pop("parent")
+    assert shard.token == expected
+
+
 def test_walk_tree():
     shards = build_shards(10, {
         0: 1,

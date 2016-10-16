@@ -77,16 +77,13 @@ class Coordinator:
             shard.load_children()
 
             # B) Remove the shard from the Coordinator.  If the Shard has
-            #    children and was active, those children are added to the active list
+            #    children, those children are now active.
             #    If the Shard was a root, those children become roots.
-            was_active = shard in self.active
             self.remove_shard(shard)
 
-            # C) If the shard was active, now its children are active.
-            #    Move each child Shard to its trim_horizon.
-            if was_active:
-                for child in shard.children:
-                    child.jump_to(iterator_type="trim_horizon")
+            # C) Move each child Shard to its trim_horizon.
+            for child in shard.children:
+                child.jump_to(iterator_type="trim_horizon")
 
     def heartbeat(self) -> None:
         # Try to keep active shards with ``latest`` and ``trim_horizon`` iterators alive.

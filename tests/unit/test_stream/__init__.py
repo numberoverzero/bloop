@@ -71,11 +71,17 @@ def stream_description(
     }
 
 
-def dynamodb_record_with(key=False, new=False, old=False, sequence_number=None):
+def dynamodb_record_with(
+        key=False, new=False, old=False,
+        sequence_number=None, creation_time: Optional[arrow.Arrow]=None):
+    if creation_time is None:
+        creation_time = 1.46480527E9
+    else:
+        creation_time = creation_time.timestamp
     template = {
         "awsRegion": "us-west-2",
         "dynamodb": {
-            "ApproximateCreationDateTime": 1.46480527E9,
+            "ApproximateCreationDateTime": creation_time,
             "SequenceNumber": sequence_number if sequence_number is not None else "400000000000000499660",
             "SizeBytes": 41,
             "StreamViewType": "KEYS_ONLY",

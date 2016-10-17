@@ -83,7 +83,7 @@ def validate_stream(stream):
     # ["keys", "old"]
     if include == {"new", "keys"} or include == {"old", "keys"}:
         raise InvalidStream("The option 'keys' cannot be used with either 'old' or 'new'.")
-    stream["arn"] = None
+    stream.setdefault("arn", None)
 
 
 class ModelMetaclass(declare.ModelMetaclass):

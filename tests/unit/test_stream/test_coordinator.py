@@ -2,7 +2,7 @@ import arrow
 import collections
 import pytest
 import functools
-from bloop.exceptions import InvalidPosition
+from bloop.exceptions import InvalidPosition, InvalidStream
 from bloop.stream.shard import Shard, CALLS_TO_REACH_HEAD, last_iterator
 from bloop.util import ordered
 from . import build_get_records_responses, build_shards, local_record, dynamodb_record_with, stream_description
@@ -289,6 +289,22 @@ def test_remove_shard(is_active, is_root, has_buffered, coordinator):
         assert record_shard is not shard
 
 
+def test_move_to_old_token(coordinator, shard, session):
+    """Can't rebuild from a token with shards that have no connection to the current generation"""
+    root = Shard(stream_arn=coordinator.stream_arn, shard_id="parent-shard")
+    shard.parent = root
+    root.children.append(shard)
+    coordinator.active.append(shard)
+    coordinator.roots.append(root)
+    token = coordinator.token
+
+    # There is no lineage that connects the shard_id from the token to the shards in the stream description.
+    session.describe_stream.return_value = stream_description(1)
+
+    with pytest.raises(InvalidStream):
+        coordinator.move_to(token)
+
+
 def test_move_to_future_time(coordinator, session):
     """Moving to a time in the future simply moves to Stream latest."""
     # -----------
@@ -301,7 +317,7 @@ def test_move_to_future_time(coordinator, session):
     description = session.describe_stream.return_value = stream_description(
         8, {0: 1, 1: [2, 3], 4: [5, 6], 6: 7},
         stream_arn=coordinator.stream_arn)
-    expected_active_ids = [description["Shards"][i]["ShardId"] for i in [2, 3, 5, 7]]
+    expected_active_ids = ["shard-id-{}".format(i) for i in [2, 3, 5, 7]]
     session.get_shard_iterator.return_value = "child-iterator-id"
 
     coordinator.move_to(arrow.now().replace(hours=1))
@@ -331,11 +347,11 @@ def test_move_to_datetime(coordinator, session):
     #           ^ Never searched for a record, since record is found in 2
     description = stream_description(4, {0: [1, 2], 2: 3}, stream_arn=coordinator.stream_arn)
     # No shards in the root, and it's exhausted
-    root_id = description["Shards"][0]["ShardId"]
+    root_id = "shard-id-0"
     # No shards in one child, but it's still open
-    fail_to_seek = description["Shards"][1]["ShardId"]
+    fail_to_seek = "shard-id-1"
     # Shards in the other child, and it's still open
-    find_records = description["Shards"][2]["ShardId"]
+    find_records = "shard-id-2"
 
     # Hand back the same iterator id for fail_to_seek to simplify responses table
     continue_response = {"Records": [], "NextShardIterator": fail_to_seek}
@@ -407,7 +423,10 @@ def test_move_to_datetime(coordinator, session):
 def test_move_to_trim_horizon(coordinator, session):
     """Moving to the trim_horizon clears existing state and adds new shards"""
     # All of these should be cleaned up entirely
-    previous_shards = build_shards(3, {0: 1}, session=session, stream_arn=coordinator.stream_arn)
+    previous_shards = build_shards(3, {0: 1},
+                                   session=session,
+                                   stream_arn=coordinator.stream_arn,
+                                   shard_id_prefix="previous")
     coordinator.roots.extend((previous_shards[0], previous_shards[2]))
     coordinator.active.append(previous_shards[1])
     coordinator.buffer.push(local_record(), previous_shards[1])
@@ -419,10 +438,10 @@ def test_move_to_trim_horizon(coordinator, session):
     # 4 -> 5
     #   -> 6 -> 7
     # -----------
-    description = session.describe_stream.return_value = stream_description(
+    session.describe_stream.return_value = stream_description(
         8, {0: 1, 1: [2, 3], 4: [5, 6], 6: 7},
         stream_arn=coordinator.stream_arn)
-    expected_root_ids = [description["Shards"][i]["ShardId"] for i in [0, 4]]
+    expected_root_ids = ["shard-id-0", "shard-id-4"]
     expected_active_ids = expected_root_ids
     session.get_shard_iterator.return_value = "child-iterator-id"
 
@@ -453,7 +472,10 @@ def test_move_to_trim_horizon(coordinator, session):
 def test_move_to_latest(coordinator, session):
     """Moving to the trim_horizon clears existing state and adds new shards"""
     # All of these should be cleaned up entirely
-    previous_shards = build_shards(3, {0: 1}, session=session, stream_arn=coordinator.stream_arn)
+    previous_shards = build_shards(3, {0: 1},
+                                   session=session,
+                                   stream_arn=coordinator.stream_arn,
+                                   shard_id_prefix="previous")
     coordinator.roots.extend((previous_shards[0], previous_shards[2]))
     coordinator.active.append(previous_shards[1])
     coordinator.buffer.push(local_record(), previous_shards[1])
@@ -465,11 +487,11 @@ def test_move_to_latest(coordinator, session):
     # 4 -> 5
     #   -> 6 -> 7
     # -----------
-    description = session.describe_stream.return_value = stream_description(
+    session.describe_stream.return_value = stream_description(
         8, {0: 1, 1: [2, 3], 4: [5, 6], 6: 7},
         stream_arn=coordinator.stream_arn)
-    expected_root_ids = [description["Shards"][i]["ShardId"] for i in [0, 4]]
-    expected_active_ids = [description["Shards"][i]["ShardId"] for i in [2, 3, 5, 7]]
+    expected_root_ids = ["shard-id-0", "shard-id-4"]
+    expected_active_ids = ["shard-id-{}".format(i) for i in [2, 3, 5, 7]]
     session.get_shard_iterator.return_value = "child-iterator-id"
 
     coordinator.move_to("latest")

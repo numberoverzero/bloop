@@ -1,6 +1,4 @@
 import arrow
-import random
-import string
 from bloop.util import Sentinel
 from bloop.session import SessionWrapper
 from bloop.stream.shard import Shard
@@ -9,12 +7,8 @@ from typing import Union, List, Dict, Any, Optional
 missing = Sentinel("missing")
 
 
-def random_str(prefix="", length=8):
-    return prefix + "".join(random.choice(string.ascii_lowercase) for _ in range(length))
-
-
 def build_shards(n: int, shape: Optional[Dict[int, Union[int, List[int]]]]=None,
-                 session: SessionWrapper=None, stream_arn=None) -> List[Shard]:
+                 session: SessionWrapper=None, stream_arn=None, shard_id_prefix: Optional[str]="") -> List[Shard]:
     """Shape describes the parent/child relationships.
 
     a -> b -> c -> d
@@ -26,7 +20,7 @@ def build_shards(n: int, shape: Optional[Dict[int, Union[int, List[int]]]]=None,
     """
     # Default to flat shards, no hierarchy
     shape = shape or {}
-    shard_id = lambda i: random_str("shard-id-{}-".format(i), 4)
+    shard_id = lambda i: "{}shard-id-{}".format(shard_id_prefix + "-" if shard_id_prefix else "", i)
     shards = [
         Shard(stream_arn=stream_arn, shard_id=shard_id(i), session=session)
         for i in range(n)
@@ -50,7 +44,7 @@ def stream_description(
     # Default to flat shards, no hierarchy
     shape = shape or {}
 
-    shard_ids = [random_str("shard-id-{}-".format(i), 4) for i in range(n)]
+    shard_ids = ["shard-id-{}".format(i) for i in range(n)]
     template = {
         "SequenceNumberRange": {
             "EndingSequenceNumber": "820400000000000001192334",

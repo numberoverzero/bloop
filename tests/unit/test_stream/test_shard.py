@@ -5,7 +5,7 @@ from bloop.exceptions import ShardIteratorExpired
 from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator, reformat_record, unpack_shards
 from unittest.mock import call
 
-from . import build_shards, build_get_records_responses, random_str, stream_description, dynamodb_record_with
+from . import build_shards, build_get_records_responses, stream_description, dynamodb_record_with
 
 
 def expected_get_calls(chain):
@@ -141,7 +141,7 @@ def test_eq_not_set_or_different(attr):
     assert shard == other
     assert other == shard
 
-    setattr(other, attr, random_str())
+    setattr(other, attr, "something else")
     assert not shard == other
     assert not other == shard
 

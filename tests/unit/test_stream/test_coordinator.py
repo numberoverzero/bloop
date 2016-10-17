@@ -338,7 +338,7 @@ def test_move_to_future_time(coordinator, session):
     # 4 -> 5
     #   -> 6 -> 7
     # -----------
-    description = session.describe_stream.return_value = stream_description(
+    session.describe_stream.return_value = stream_description(
         8, {0: 1, 1: [2, 3], 4: [5, 6], 6: 7},
         stream_arn=coordinator.stream_arn)
     expected_active_ids = ["shard-id-{}".format(i) for i in [2, 3, 5, 7]]

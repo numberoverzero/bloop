@@ -88,7 +88,23 @@ def validate_stream(stream):
 
 class ModelMetaclass(declare.ModelMetaclass):
     def __new__(mcs, name, bases, attrs):
+        hash_fn = attrs.get("__hash__", missing)
+        if hash_fn is None:
+            raise InvalidModel("Models must be hashable.")
+        elif hash_fn is missing:
+            # Any base class's explicit (not object.__hash__)
+            # hash function has priority over the default.
+            # If there aren't any bases with explicit hash functions,
+            # just use object.__hash__
+            hash_fn = object.__hash__
+            for base in bases:
+                if base.__hash__ is not hash_fn:
+                    hash_fn = base.__hash__
+                    break
+            attrs["__hash__"] = hash_fn
+
         model = super().__new__(mcs, name, bases, attrs)
+
         meta = model.Meta
         meta.model = model
         # new_class will set abstract to true, all other models are assumed

@@ -382,6 +382,54 @@ def test_valid_stream(valid_stream):
         id = Column(Integer, hash_key=True)
     assert Model.Meta.stream["include"] == set(valid_stream["include"])
 
+
+def test_require_hash():
+    """Models must be hashable."""
+    with pytest.raises(InvalidModel):
+        class Model(BaseModel):
+            id = Column(Integer, hash_key=True)
+            __hash__ = None
+
+
+def test_custom_eq():
+    """Custom eq method without __hash__ is ok; metaclass will find its parents __hash__"""
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+
+        def __eq__(self, other):
+            return self.id == other.id
+    same = Model(id=3)
+    other = Model(id=3)
+    assert same == other
+    assert Model.__hash__ is object.__hash__
+
+
+def test_defined_hash():
+    """Custom __hash__ isn't replaced"""
+    def hash_fn(self):
+        return id(self)
+
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+        __hash__ = hash_fn
+    assert Model.__hash__ is hash_fn
+
+
+def test_parent_hash():
+    """Parent __hash__ function is used, not object __hash__"""
+    class OtherBase:
+        pass
+
+    class BaseWithHash:
+        def __hash__(self):
+            print("BWH")
+            return id(self)
+
+    class Model(OtherBase, BaseWithHash, BaseModel):
+        id = Column(Integer, hash_key=True)
+    assert Model.__hash__ is BaseWithHash.__hash__
+
+
 # END BASE MODEL ======================================================================================= END BASE MODEL
 
 

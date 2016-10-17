@@ -305,6 +305,30 @@ def test_move_to_old_token(coordinator, shard, session):
         coordinator.move_to(token)
 
 
+def test_move_to_valid_token(coordinator, session):
+    """Moving to a token validates and clears unknown shards, and gets iterators for active shards"""
+    # .______________.
+    # | <TOKEN>      |
+    # |    _0_       |     # 0: token root no longer exists
+    # |   / ._\______|__.
+    # |  1  |  \     |  |  # 1: branch no longer exists
+    # |     |   2    |  |  # 2: first shard in token that exists; new Coordinator root
+    # |     |    \   |  |
+    # |     |     3  |  |  # 3: last shard the token knows exists
+    # ._____|____/_\_.  |
+    #       |   /   \   |  # 4: unknown descendant of token
+    #       |  4     5  |  # 5: unknown descendant of token
+    #       |           |
+    #       | <CURRENT> |
+    #       .___________.
+    pass
+
+
+def test_move_to_token_with_old_sequence_number(coordinator, session):
+    """If a token shard's sequence_number is past the trim_horizon, it moves to trim_horizon."""
+    pass
+
+
 def test_move_to_future_time(coordinator, session):
     """Moving to a time in the future simply moves to Stream latest."""
     # -----------

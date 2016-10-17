@@ -225,8 +225,6 @@ def _move_stream_time(coordinator: Coordinator, time: arrow.Arrow) -> None:
         elif shard.exhausted:
             coordinator.remove_shard(shard)
             shard_trees.extend(shard.children)
-            for child in shard.children:
-                child.jump_to(iterator_type="trim_horizon")
 
         # Nothing to do if the shard didn't seek to the time AND isn't exhausted,
         # since that means it's open and the target could still appear in its future.

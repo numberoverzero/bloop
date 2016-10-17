@@ -131,6 +131,10 @@ class Shard:
         }
         if self.parent:
             token["parent"] = self.parent.shard_id
+        if not self.iterator_type:
+            del token["iterator_type"]
+        if not self.sequence_number:
+            del token["sequence_number"]
         return token
 
     def walk_tree(self) -> Iterable["Shard"]:
@@ -304,7 +308,7 @@ def unpack_shards(shards: List[Mapping[str, Any]], stream_arn: str, session: Ses
 
     by_id = {shard_token["shard_id"]:
              Shard(stream_arn=stream_arn, shard_id=shard_token["shard_id"],
-                   iterator_type=shard_token["iterator_type"], sequence_number=shard_token["sequence_number"],
+                   iterator_type=shard_token.get("iterator_type"), sequence_number=shard_token.get("sequence_number"),
                    parent=shard_token.get("parent"), session=session)
              for shard_token in shards}
 

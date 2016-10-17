@@ -1,10 +1,18 @@
 from typing import Dict, List, MutableMapping, Any, Mapping, Optional
 
-from ..session import SessionWrapper
+from ..exceptions import InvalidStream
 from ..signals import object_loaded
 from ..util import unpack_from_dynamodb
 
 from .coordinator import Coordinator
+
+
+def stream_for(engine, model):
+    if not model.Meta.stream or not model.Meta.stream.get("arn"):
+        raise InvalidStream("{!r} does not have a stream arn".format(model))
+    coordinator = Coordinator(engine=engine, session=engine.session, stream_arn=model.Meta.stream["arn"])
+    stream = Stream(model=model, engine=engine, coordinator=coordinator)
+    return stream
 
 
 class Stream:
@@ -36,10 +44,10 @@ class Stream:
             next_heartbeat = calculate_next_heartbeat()
             stream.heartbeat()
     """
-    def __init__(self, *, engine, model, session: SessionWrapper):
-        self.engine = engine
+    def __init__(self, *, model, engine, coordinator: Coordinator):
         self.model = model
-        self.coordinator = Coordinator(engine=engine, session=session, stream_arn=model.Meta.stream["arn"])
+        self.engine = engine
+        self.coordinator = coordinator
 
     def __repr__(self):
         # <Stream[User]>

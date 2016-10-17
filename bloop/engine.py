@@ -21,7 +21,7 @@ from .signals import (
     object_loaded,
     object_saved,
 )
-from .stream import Stream
+from .stream import stream_for, Stream
 from .util import missing, unpack_from_dynamodb, walk_subclasses
 
 
@@ -239,6 +239,6 @@ class Engine:
 
     def stream(self, model, position) -> Stream:
         validate_not_abstract(model)
-        s = Stream(engine=self, model=model, session=self.session)
-        s.move_to(position=position)
-        return s
+        stream = stream_for(self, model)
+        stream.move_to(position=position)
+        return stream

@@ -277,12 +277,6 @@ def _move_stream_token(coordinator: Coordinator, token: Mapping[str, Any]) -> No
 
     # 4) Now that everything's verified, grab new iterators for the coordinator's active Shards.
     for shard in coordinator.active:
-        if shard.iterator_type in {"trim_horizon", "latest"}:
-            # TODO logger.info "iterator was ``latest`` or ``trim_horizon`` - data may have been lost"
-            # There's not enough info in the token to find out where the token *wanted* latest or trim_horizon
-            # to mean.  There's not much use raising for the user to solve, since there's not enough information
-            # in the token to resolve its position deterministically.
-            pass
         try:
             # Move right back to where we left off.
             shard.jump_to(iterator_type=shard.iterator_type, sequence_number=shard.sequence_number)

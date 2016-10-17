@@ -2,7 +2,8 @@ import arrow
 import collections
 import pytest
 import functools
-from bloop.exceptions import InvalidPosition, InvalidStream
+from unittest.mock import call
+from bloop.exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from bloop.stream.shard import Shard, CALLS_TO_REACH_HEAD, last_iterator
 from bloop.util import ordered
 from . import build_get_records_responses, build_shards, local_record, dynamodb_record_with, stream_description
@@ -326,7 +327,34 @@ def test_move_to_valid_token(coordinator, session):
 
 def test_move_to_token_with_old_sequence_number(coordinator, session):
     """If a token shard's sequence_number is past the trim_horizon, it moves to trim_horizon."""
-    pass
+    description = stream_description(1)
+    stream_arn = coordinator.stream_arn
+    shard_id = description["Shards"][0]["ShardId"]
+    token = {
+        "stream_arn": stream_arn,
+        "active": [shard_id],
+        "shards": [{"shard_id": shard_id,
+                    "sequence_number": "beyond-trim-horizon",
+                    "iterator_type": "at_sequence"}]
+    }
+
+    def mock_get_shard_iterator(sequence_number, **kwargs):
+        if sequence_number == "beyond-trim-horizon":
+            raise RecordsExpired
+        else:
+            return "at-trim-horizon"
+    session.get_shard_iterator.side_effect = mock_get_shard_iterator
+    session.describe_stream.return_value = description
+
+    coordinator.move_to(token)
+
+    session.describe_stream.assert_called_once_with(stream_arn=stream_arn)
+    session.get_shard_iterator.assert_has_calls([
+        call(stream_arn=stream_arn, shard_id=shard_id,
+             sequence_number="beyond-trim-horizon", iterator_type="at_sequence"),
+        call(stream_arn=stream_arn, shard_id=shard_id,
+             sequence_number=None, iterator_type="trim_horizon")
+    ])
 
 
 def test_move_to_future_time(coordinator, session):

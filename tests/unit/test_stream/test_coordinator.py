@@ -308,21 +308,40 @@ def test_move_to_old_token(coordinator, shard, session):
 
 def test_move_to_valid_token(coordinator, session):
     """Moving to a token validates and clears unknown shards, and gets iterators for active shards"""
-    # .______________.
-    # | <TOKEN>      |
-    # |    _0_       |     # 0: token root no longer exists
-    # |   / ._\______|__.
-    # |  1  |  \     |  |  # 1: branch no longer exists
-    # |     |   2    |  |  # 2: first shard in token that exists; new Coordinator root
-    # |     |    \   |  |
-    # |     |     3  |  |  # 3: last shard the token knows exists
-    # ._____|____/_\_.  |
-    #       |   /   \   |  # 4: unknown descendant of token
-    #       |  4     5  |  # 5: unknown descendant of token
-    #       |           |
-    #       | <CURRENT> |
-    #       .___________.
-    pass
+    # +--------------+
+    # | <TOKEN>      |       # 0: token root no longer exists; was active
+    # |   __0__      |       # 1: branch no longer exists
+    # |  / +---\-----|----+  # 2: first shard in token that exists
+    # | 1  |    2    |    |  #    new Coordinator root
+    # |    |     3   |    |  # 3: last shard the token knows exists
+    # +----|----/-\--+    |  #
+    #      |   4   5      |  # 4: unknown descendant of token
+    #      |    <CURRENT> |  # 5: unknown descendant of token
+    #      +--------------+
+    token_shards = build_shards(4, {0: [1, 2], 2: 3}, stream_arn=coordinator.stream_arn)
+    token_root = token_shards[0]
+    coordinator.roots = coordinator.active = [token_root]
+    token_root.iterator_type = "at_sequence"
+    token_root.sequence_number = "root-sequence-number"
+    token = coordinator.token
+
+    # Easier to build the whole shard and then pop the token-only shards
+    description = stream_description(6, {0: [1, 2], 2: 3, 3: [4, 5]}, stream_arn=coordinator.stream_arn)
+    description["Shards"][2].pop("ParentShardId")
+    description["Shards"] = description["Shards"][2:]
+
+    session.describe_stream.return_value = description
+    session.get_shard_iterator.return_value = "current-root-iterator"
+
+    coordinator.move_to(token)
+
+    session.describe_stream.assert_called_once_with(stream_arn=coordinator.stream_arn)
+    session.get_shard_iterator.assert_called_once_with(
+        stream_arn=coordinator.stream_arn,
+        shard_id="shard-id-2",
+        iterator_type="trim_horizon",
+        sequence_number=None
+    )
 
 
 def test_move_to_token_with_old_sequence_number(coordinator, session):

@@ -278,6 +278,11 @@ def _move_stream_token(coordinator: Coordinator, token: Mapping[str, Any]) -> No
     # 4) Now that everything's verified, grab new iterators for the coordinator's active Shards.
     for shard in coordinator.active:
         try:
+            # If an active shard from the token doesn't exist but its descendant does,
+            # that descendant becomes active.  The descendant's token wouldn't have an iterator type.
+            # The descendant's trim_horizon is the closest to the ancestor's point that we can get.
+            if shard.iterator_type is None:
+                shard.iterator_type = "trim_horizon"
             # Move right back to where we left off.
             shard.jump_to(iterator_type=shard.iterator_type, sequence_number=shard.sequence_number)
         except RecordsExpired:

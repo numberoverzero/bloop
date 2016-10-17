@@ -234,13 +234,10 @@ def _move_stream_token(coordinator: Coordinator, token: Mapping[str, Any]) -> No
     """Move to the Stream position described by the token.
 
     The following rules are applied when interpolation is required:
-    - if a shard does not exist (past the trim_horizon) but the token includes
-      children of that shard that do exist, that shard is moved to the trim_horizon
-      of the first descendant that exists.
-    - if a shard does not exist and none of the children defined in the token are
-      present in the current Stream, the move fails.  There is not enough information
-      in the token to rebuild the expected state for the current Shards in the Stream.
-    - if a Shard expects its iterator to point to a SequenceNumber that is now past
+    - If a shard does not exist (past the trim_horizon) it is ignored.  If that
+      shard had children, its children are also checked against the existing shards.
+    - If none of the shards in the token exist, then InvalidStream is raised.
+    - If a Shard expects its iterator to point to a SequenceNumber that is now past
       that Shard's trim_horizon, the Shard instead points to trim_horizon.
     """
     stream_arn = coordinator.stream_arn = token["stream_arn"]
@@ -260,27 +257,25 @@ def _move_stream_token(coordinator: Coordinator, token: Mapping[str, Any]) -> No
 
     # 2) Walk each the Shard tree of each root shard from the token, to find an intersection with the actual
     #    shards that exist. If there's any Shard with no children AND it's not part of the returned shards
-    #    from DynamoDBStreams, there's no way to relate the token structure to the existing structure so we
-    #    bail.  If it has children, prune the Shard from the Coordinator and try to find its children.
+    #    from DynamoDBStreams, that branch of the shard tree is pruned.  If none of the token was recognized,
+    #    (all the shards were pruned) then InvalidStream is raised; there's no way to associate that token
+    #    with the current Stream.
     unverified = collections.deque(coordinator.roots)
     while unverified:
         shard = unverified.popleft()
-        # Found an intersection; no need to keep searching this branch.
-        if shard.shard_id in current_shards:
-            continue
-
-        # No intersection, so we'll try to verify its children
-        if shard.children:
-            unverified.extend(shard.children)
-            # This shard doesn't exist, so prune it and promote its children
+        if shard.shard_id not in current_shards:
+            # TODO: log at WARNING for unrecognized shard id
             coordinator.remove_shard(shard)
-            continue
+            # Keep trying to verify the children; maybe one of them links to the current Stream?
+            unverified.extend(shard.children)
 
-        # No intersection and no children, no way to resolve this Shard from the token
-        # against the Shards that actually exist from the DescribeStream call.
-        raise InvalidStream("The Stream token contains an unresolvable Shard.")
+    # 3) If *none* of the shard ids in the token exist, then the coordinator won't have any roots.
+    #    We can guess that dead branches should be ignored (Provisioned Throughput decreases) but
+    #    there needs to be *some* link to the current Stream.
+    if not coordinator.roots:
+        raise InvalidStream("This token has no relation to the actual Stream.")
 
-    # 3) Now that everything's verified, grab new iterators for the coordinator's active Shards.
+    # 4) Now that everything's verified, grab new iterators for the coordinator's active Shards.
     for shard in coordinator.active:
         if shard.iterator_type in {"trim_horizon", "latest"}:
             # TODO logger.info "iterator was ``latest`` or ``trim_horizon`` - data may have been lost"

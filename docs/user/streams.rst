@@ -258,11 +258,12 @@ one active shard, but there would be 5 other closed shards that form the lineage
 Moving Around
 -------------
 
-This function takes the same position arguments as ``engine.stream``:
+This function takes the same ``position`` argument as ``engine.stream``:
 
 .. code-block:: python
 
-    # Rebuilds the stream in its current location
+    # Any stream token; this one rebuilds the
+    # stream in its current location
     stream.move_to(stream.token)
 
     # Jump back in time 2 hours

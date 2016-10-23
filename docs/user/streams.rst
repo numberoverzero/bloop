@@ -9,21 +9,28 @@ adjacent shards, and saving and loading processing state.
 
 .. warning::
 
-    As with any distributed system, DynamoDB **does not guarantee** chronological ordering of changes across shards.
-    This limitation is not specific to Bloop, and exists for any high-throughput stream processing.
+    In general, DynamoDB **does not guarantee** chronological ordering of changes **across shards**. Chronological
+    ordering for the entire stream is only guaranteed for a table with a **single partition**; exactly one shard
+    will be open at any time.
 
-    In practice, Bloop **can** guarantee chronological ordering for **single partition** tables,
-    which will only have a single open shard at any time.
+    Bloop creates a total ordering across shards using DynamoDB's ordering rules
+    and each record's |ApproximateCreationDateTime|_ and |SequenceNumber|_.
 
-    For a detailed explanation, see :ref:`stream-merging`.
+    For a detailed explanation, see :ref:`Stream Internals<internal-streams>`.
 
 
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html
 __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/Welcome.html
 .. |ApproximateCreationDateTime| replace:: ``ApproximateCreationDateTime``
-.. _ApproximateCreationDateTime: https://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_GetRecords.html#API_GetRecords_ResponseSyntax
+.. _ApproximateCreationDateTime: https://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamRecord.html#DDB-Type-StreamRecord-ApproximateCreationDateTime
+.. |SequenceNumber| replace:: ``SequenceNumber``
+.. _SequenceNumber: https://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamRecord.html#DDB-Type-StreamRecord-SequenceNumber
 
-Add a stream in the model's ``Meta`` section:
+================
+Enable Streaming
+================
+
+To add a stream that includes new and old images in each record, add the following to a model's meta:
 
 .. code-block:: python
 
@@ -32,9 +39,11 @@ Add a stream in the model's ``Meta`` section:
             stream = {
                 "include": ["new", "old"]
             }
-        id = Column(UUID, hash_key=True)
+        id = Column(Integer, hash_key=True)
         email = Column(String)
         verified = Column(Boolean)
+
+    engine.bind(User)
 
 ``"include"`` has four possible values, matching `StreamViewType`__:
 
@@ -44,34 +53,169 @@ Add a stream in the model's ``Meta`` section:
 
 __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamDescription.html#DDB-Type-StreamDescription-StreamViewType
 
-Next, create a stream.  This example starts at ``"trim_horizon"`` to get all records from the last 24 hours, but
-could also be ``"latest"`` to only get records created after the stream will be retrieved.
+
+.. _stream-create:
+
+===============
+Create a Stream
+===============
+
+Next, create a stream on the model.  This example starts at ``"trim_horizon"`` to get all records from the last
+24 hours, but could also be ``"latest"`` to only return records created after the stream was instantiated.
 
 .. code-block:: python
 
     stream = engine.stream(User, "trim_horizon")
 
-Then, add a user that will show up in the stream:
+If you want to start at a certain point in time, you can also use an :py:class:`arrow.arrow.Arrow` datetime:
 
 .. code-block:: python
 
-    user = User(id=uuid.uuid4(), email="user@domain.com")
+    stream = engine.stream(User, arrow.now().replace(hours=-12))
+
+Creating streams at a specific time is **very expensive**, and will iterate all records since the stream's
+trim_horizon until the target time.
+
+If you are trying to resume processing from the same position as another
+stream, you should persist the ``Stream.token`` and load from that instead of using a specific time:
+
+.. code-block:: python
+
+    previous_stream = engine.stream(User, "trim_horizon")
+    # Do a bunch of processing...
+    ...
+
+    # Save the state to a file
+    with open("/tmp/state", "w") as f:
+        json.dump(previous_stream.token, f)
+
+    ...
+    # Some time later, resume processing from the same point
+    with open("/tmp/state", "r") as f:
+        previous_token = json.load(f)
+    stream = engine.stream(User, previous_token)
+
+See :ref:`stream-resume` for an example of a stream token.
+
+================
+Retrieve Records
+================
+
+You only need to call :py:func:`next` on a Stream to get the next record:
+
+.. code-block:: python
+
+    record = next(stream)
+
+If there are no records at the current position, record will be ``None``.  A common pattern is to poll immediately
+when a record is found, but to wait a small amount when no record is found.  Which you use will depend on how
+aggressively you want to process new records:
+
+.. code-block:: python
+
+    while True:
+        record = next(stream)
+        if not record:
+            time.sleep(0.2)
+        else:
+            process(record)
+
+.. _stream-records:
+
+----------------
+Record Structure
+----------------
+
+Each record is a dict with an instance of the stream model in one or more of ``"key"``, ``"old"``, and ``"new"``.
+This will depend on the stream declaration above, as well as the record type.  A key-only stream will have
+``None`` in the ``"old"`` and ``"new"`` fields.  If a stream includes both ``old`` and ``new`` images but the
+record type is delete, ``"new"`` will be ``None`` because there is no new value.
+
+Save a new user, and then update the email address:
+
+.. code-block:: python
+
+    user = User(id=3, email="user@domain.com")
     engine.save(user)
 
-Finally, poll the stream and display the first record:
+    user.email = "admin@domain.com"
+    engine.save(user)
+
+The first record won't have an ``old`` value, since it was the first time this item was saved:
 
 .. code-block:: python
 
-    record = None
-    while not record:
-        record = next(stream)
+    first = next(stream)
+    print(json.dumps(first, indent=4, default=repr))
 
-    if record["old"]:
-        print("user {} updated from {}".format(
-            record["new"], record["old"]))
-    else:
-        print("new user {} created {}".format(
-            record["new"], record["meta"]["created_at"].humanize()))
+    {
+        "key": null,
+        "old": null,
+        "new": "User(email='user@domain.com', id=3, verified=None)",
+        "meta": {
+            "created_at": "<Arrow [2016-10-23T00:28:00-07:00]>",
+            "event": {
+                "id": "3fe6d339b7cb19a1474b3d853972c12a",
+                "type": "insert",
+                "version": "1.1"
+            },
+            "sequence_number": "700000000007366876916"
+        },
+    }
+
+The second record shows the change to email, and has both ``old`` and ``new``:
+
+.. code-block:: python
+
+    second = next(stream)
+    print(json.dumps(second, indent=4, default=repr))
+
+    {
+        "key": null,
+        "old": "User(email='user@domain.com', id=3, verified=None)",
+        "new": "User(email='admin@domain.com', id=3, verified=None)",
+        "meta": {
+            "created_at": "<Arrow [2016-10-23T00:28:00-07:00]>",
+            "event": {
+                "id": "73a4b8568a85a0bcac25799f806df239",
+                "type": "modify",
+                "version": "1.1"
+            },
+            "sequence_number": "800000000007366876936"
+        },
+    }
+
+-------------------
+Periodic Heartbeats
+-------------------
+
+You should call ``stream.heartbeat()`` every 12 minutes in your processing loop.
+
+Iterators only last 15 minutes which means they need to be refreshed periodically.  There's no way to
+safely refresh an iterator that hasn't found a record; refreshing an iterator at "latest" could miss records since
+the time that the previous iterator was at "latest".
+
+``Stream.heartbeat`` only refreshes iterators that it needs to.  Once a shard finds a record it's
+skipped on every subsequent heartbeat.  In practice the overhead of ``heartbeat()`` is very low,
+about one call per shard.
+
+The following pattern will call heartbeat every 12 minutes if ``process`` is quick:
+
+.. code-block:: python
+
+    next_heartbeat = arrow.now()
+    while True:
+        record = next(stream)
+        process(record)
+        if arrow.now() > next_heartbeat:
+            next_heartbeat = arrow.now().replace(minutes=12)
+            stream.heartbeat()
+
+.. _stream-resume:
+
+--------------------
+Pausing and Resuming
+--------------------
 
 Use ``Stream.token`` to save the current state and resume processing later:
 
@@ -86,7 +230,35 @@ Use ``Stream.token`` to save the current state and resume processing later:
         token = json.load(f)
     stream = engine.stream(User, token)
 
-``Stream.move_to`` can take a token, time, or either end of the stream:
+When reloading from a token, Bloop will automatically prune shards that have expired, and extend the state to include
+new shards.  Any iterators that fell behind the current trim_horizon will be moved to their childrens' trim_horizons.
+
+Here is the token from the stream in :ref:`stream-records`:
+
+.. code-block:: python
+
+    {
+        "active": [
+            "shardId-00000001477207595861-d35d208d"
+        ],
+        "shards": [
+            {
+                "iterator_type": "after_sequence",
+                "sequence_number": "800000000007366876936",
+                "shard_id": "shardId-00000001477207595861-d35d208d"
+            }
+        ],
+        "stream_arn": "arn:.../stream/2016-10-23T07:26:33.312"
+    }
+
+There is only one shard because the stream was created less than 4 hours ago.  After 24 hours there will still be
+one active shard, but there would be 5 other closed shards that form the lineage of the stream.
+
+-------------
+Moving Around
+-------------
+
+This function takes the same position arguments as ``engine.stream``:
 
 .. code-block:: python
 
@@ -99,225 +271,4 @@ Use ``Stream.token`` to save the current state and resume processing later:
     # Move to the oldest record in the stream
     stream.move_to("trim_horizon")
 
-While polling, it's important to periodically call ``Stream.heartbeat``, which will keep iterators from expiring.
-Iterators expire every 15 minutes, but due to clock skew it's usually safer to call every 12 minutes.
-
-.. code-block:: python
-
-    next_heartbeat = arrow.now().replace(minutes=12)
-    while True:
-        record = next(stream)
-        process(record)
-        if arrow.now() > next_heartbeat:
-            next_heartbeat = arrow.now().replace(minutes=12)
-            stream.heartbeat()
-
-It's safe to call ``heartbeat`` in a tight loop.  On average, it will only result in a single call
-to DynamoDB every four hours per shard.
-
-======================
-Implementation Details
-======================
-
---------
-Notation
---------
-
-This section uses a number of conventions to describe complex relationships between shards and records within a stream:
-
-* ``Sn`` and ``Rn`` represent shards and records, where ``n`` is an integer. ::
-
-    R11, R13, R32  # In general, RnX comes from Sn
-    S1, S12, S23   # In general, SnX is a child of Sn
-
-* ``<`` represents chronological ordering between records. ::
-
-    R12 < R13  # In general, RX < RX when X < Y
-
-* ``=>`` represents parent/child relationships between shards. ::
-
-    S1 => {}          # S1 has no children
-    S2 => S21         # S2 has one child
-    # In general, SnX and SnY are adjacent children of Sn
-    S3 => {S31, S32}
-
-* ``~`` represents two shards that are not within the same lineage.  ::
-
-    S1 ~ S2  # Not related
-
-    S1 => S12 => S13; S4 => S41
-    # Both child shards, but of different lineages
-    S12 ~ S41
-
-* ``:`` represents a set of records from a single shard. ::
-
-    S1: R11, R12   # no guaranteed order
-    S2: R23 < R24  # guaranteed order
-
-
---------
-Ordering
---------
-
-Guarantees
-==========
-
-DynamoDB only offers three guarantees for chronological ordering:
-
-1. All records **within a single Shard**.
-2. All **parent** shard records are before all **child** shard records.
-3. Changes to the **same hash** will always go to the same shard.  When a parent splits,
-   further changes to that hash will go to **only one child** of that shard, and **always the same child**.
-
-Given the following::
-
-    S1 ~ S2
-    S1: R11 < R12 < R13
-    R2: R24 < R25 < R26
-
-The first rule offers no guarantees between ``R1x`` and ``R2x`` for any ``x``.
-
-Given the following::
-
-    S1 => {S12, S13}
-    S1:  R111 < R112
-    S12: R124 < R125
-    S13: R136 < R137
-
-The second rule guarantees both of the following::
-
-    R111 < R112 < R124 < R125
-    R111 < R112 < R136 < R137
-
-but does not guarantee any ordering between ``R12x`` and ``R13x`` for any ``x``.
-
-Given the following::
-
-    S1 => {S2, S3}
-    R40, R41, R42  # all modify the same hash key
-    R5, R7, R9     # modify different hash keys
-
-    S1: R40, R5
-
-The third rule guarantees that ``R41`` and ``R42`` will both be in either ``S2`` or ``S3``.  Meanwhile, it offers no
-guarantee about where ``R7`` and ``R9`` will be.  Both of the following are possible::
-
-    S1: R40, R5
-    S2: R41, R42, R7
-    S3: R9
-
-    S1: R40, R5
-    S2: R7, R9
-    S3: R41, R42
-
-But the following is not possible::
-
-    S1: R40, R5
-    S2: R41, R7
-    S3: R42, R9
-
-.. _stream-merging:
-
-Merging Shards
-==============
-
-Low-throughput tables will only have a single open shard at any time, and can rely on the first and second guarantees
-above for rebuilding the exact order of changes to the table.
-
-For high throughput tables, there can be more than one root shard, and each shard lineage can have more than one
-child open at once.  In this case, Bloop's streaming interface can't guarantees ordering for all records in the
-stream, because there is no absolute chronological ordering across a partitioned table.  Instead, Bloop will fall
-back to a total ordering scheme that uses each record's ``ApproximateCreationDateTime`` and, when two records have
-the same creation time, a monotonically increasing integral clock to break ties.
-
-Consider the following stream::
-
-    S0 => {S1, S2}
-    S0: R00
-    S1: R11 < R12 < R13
-    S2: R24 < R25 < R26
-
-Where each record has the following (simplified) creation times:
-
-======= ===============================
-Record  ``ApproximateCreationDateTime``
-======= ===============================
-``R00`` 7 hours ago
-``R11`` 6 hours ago
-``R12`` 4 hours ago
-``R13`` 2 hours ago
-``R24`` 4 hours ago
-``R25`` 3 hours ago
-``R26`` 3 hours ago
-======= ===============================
-
-Bloop performs the following in one step:
-
-1. The second guarantee says all records in ``S0`` are before records in that shard's children::
-
-    R00 < (R11, R12, R13, R24, R25, R26)
-
-2. The first guarantee says all records in the same shard are ordered::
-
-    R00 < ((R11 < R12 < R13), (R24 < R25 < R26)
-
-3. Then, ``ApproximateCreationDateTime`` is used to partially merge ``S1`` and ``S2`` records::
-
-    R00 < R11 < (R12, R24) < (R25 < R26) < R13
-
-4. There were still two collisions after using ``ApproximateCreationDateTime``: ``R12, R24`` and ``R25, R26``.
-
-    1. To resolve ``(R12, R24)`` Bloop breaks the tie with an incrementing clock, and assigns ``R12 < R24``.
-    2. ``(R25, R26)`` is resolved because the records are in the same shard.
-
-The final ordering is::
-
-    R00 < R11 < R12 < R24 < R25 < R26 < R13
-
-
------------
-Record Gaps
------------
-
-Bloop initially performs up to 5 "catch up" calls to GetRecords when advancing an iterator.  If a GetRecords call
-returns a ``NextShardIterator`` but no records it's either due to being nearly caught up to ``"latest"`` in an open
-shard, or from traversing a period of time in the shard with no activity.  Endlessly polling until a record comes back
-would cause every open shard to hang for up to 4 hours, while only calling GetRecords once could desynchronize one
-shard's iterator from others.
-
-By retrying up to 5 times on an empty GetRecords response (that still has a NextShardIterator) Bloop is confident
-that any gaps in the shard have been advanced.  This is because it takes approximately 4-5 calls to traverse an
-empty shard completely.  In other words, the 6th empty response almost certainly indicates that the iterator is
-caught up to latest in an open shard, and it's safe to cut back to one call at a time.
-
-Why 5 Calls
-===========
-
-This number came from `extensive testing`__ which compared the number of empty responses returned for shards with
-various activity cadences.  It's reasonable to assume that this number would only decrease with time, as advances in
-software and hardware would enable DynamoDB to cover larger periods in time with the same time investment.
-Because each call from a customer incurs overhead of creating and indexing each new iterator id, as well as the usual
-expensive signature-based authentication, it's in DynamoDB's interest to minimize the number of calls a customer needs
-to traverse a sparsely populated shard.
-
-At worst DynamoDB starts requiring more calls to fully traverse an empty shard, which could result in reordering
-between records in shards with vastly different activity patterns.  Since the creation-time-based ordering
-is approximate, this doesn't relax the guarantees that Bloop's streaming interface provides.
-
-Change the Limit
-================
-
-In general you should not need to worry about this value, and leave it alone.  In the unlikely case that DynamoDB
-**does** increase the number of calls required to traverse an empty shard, Bloop will be updated soon after.
-
-If you still need to tune this value:
-
-.. code-block:: python
-
-    import bloop.stream.shard
-    bloop.stream.shard.CALLS_TO_REACH_HEAD = 5
-
-The exact value of this parameter will have almost no impact on performance in high-activity streams, and there are
-so few shards in low-activity streams that the total cost will be on par with the other calls to set up the stream.
-
-__ https://gist.github.com/numberoverzero/8bde1089b5def6cc8c6d5fba61866702
+As noted in :ref:`stream-create`, moving to a specific time is **very expensive**.

@@ -3,18 +3,18 @@ import collections.abc
 import declare
 
 from .conditions import ComparisonMixin
-from .exceptions import InvalidIndex, InvalidModel
-from .util import missing, printable_column_name, signal, unpack_from_dynamodb
+from .exceptions import InvalidIndex, InvalidModel, InvalidStream
+from .signals import model_created, object_modified, table_validated
+from .util import missing, printable_column_name, unpack_from_dynamodb
 
 
-__all__ = [
-    "BaseModel", "Column",
-    "GlobalSecondaryIndex", "LocalSecondaryIndex",
-    "model_created"]
+__all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 
-# Signals!
-model_created = signal("model_created")
-object_modified = signal("object_modified")
+
+@table_validated.connect
+def on_table_validated(_, model, actual_description, **kwargs):
+    if model.Meta.stream:
+        model.Meta.stream["arn"] = actual_description["LatestStreamArn"]
 
 
 def loaded_columns(obj):
@@ -60,9 +60,51 @@ def validate_projection(projection):
     return validated_projection
 
 
+def validate_stream(stream):
+    if stream is None:
+        return
+
+    if not isinstance(stream, collections.abc.MutableMapping):
+        raise InvalidStream("Stream must be None or a dict.")
+
+    if "include" not in stream:
+        raise InvalidStream("Specify what the stream will return with the 'include' key.")
+    include = stream["include"] = set(stream["include"])
+
+    # []
+    if not include:
+        raise InvalidStream("Must include at least one of 'keys', 'old', or 'new'.")
+
+    # ["what is this", "keys"]
+    for value in include:
+        if value not in {"new", "keys", "old"}:
+            raise InvalidStream("Streams can only contain 'keys', 'old', and/or 'new'.")
+
+    # ["keys", "old"]
+    if include == {"new", "keys"} or include == {"old", "keys"}:
+        raise InvalidStream("The option 'keys' cannot be used with either 'old' or 'new'.")
+    stream.setdefault("arn", None)
+
+
 class ModelMetaclass(declare.ModelMetaclass):
     def __new__(mcs, name, bases, attrs):
+        hash_fn = attrs.get("__hash__", missing)
+        if hash_fn is None:
+            raise InvalidModel("Models must be hashable.")
+        elif hash_fn is missing:
+            # Any base class's explicit (not object.__hash__)
+            # hash function has priority over the default.
+            # If there aren't any bases with explicit hash functions,
+            # just use object.__hash__
+            hash_fn = object.__hash__
+            for base in bases:
+                if base.__hash__ is not hash_fn:
+                    hash_fn = base.__hash__
+                    break
+            attrs["__hash__"] = hash_fn
+
         model = super().__new__(mcs, name, bases, attrs)
+
         meta = model.Meta
         meta.model = model
         # new_class will set abstract to true, all other models are assumed
@@ -80,6 +122,9 @@ class ModelMetaclass(declare.ModelMetaclass):
         # arguments that returns an instance of the class
         setdefault(meta, "init", model)
         setdefault(meta, "table_name", model.__name__)
+        setdefault(meta, "stream", None)
+
+        validate_stream(meta.stream)
 
         model_created.send(model=model)
         return model
@@ -199,7 +244,7 @@ class BaseModel(metaclass=ModelMetaclass):
             type_engine.register(column.typedef)
 
     def __repr__(self):
-        attrs = ", ".join("{}={}".format(*item) for item in loaded_columns(self))
+        attrs = ", ".join("{}={!r}".format(*item) for item in loaded_columns(self))
         return "{}({})".format(self.__class__.__name__, attrs)
 
 

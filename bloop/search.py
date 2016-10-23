@@ -11,15 +11,14 @@ from .exceptions import (
     UnknownSearchMode,
 )
 from .models import Column, GlobalSecondaryIndex
+from .signals import object_loaded
 from .util import (
     printable_column_name,
     printable_query,
-    signal,
     unpack_from_dynamodb,
 )
 
 
-object_loaded = signal("object_loaded")
 __all__ = ["Scan", "Query", "ScanIterator", "QueryIterator"]
 
 
@@ -411,7 +410,7 @@ class SearchModelIterator(SearchIterator):
             expected=self.projected,
             model=self.model,
             engine=self.engine)
-        object_loaded.send(self.engine, obj=self)
+        object_loaded.send(self.engine, obj=obj)
         return obj
 
 

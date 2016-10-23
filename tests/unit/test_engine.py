@@ -539,6 +539,21 @@ def test_scan(engine):
     assert model_scan.index is None
 
 
+def test_stream(engine, session):
+    class StreamModel(BaseModel):
+        class Meta:
+            stream = {
+                "include": {"new"},
+                "arn": "test-arn-manually-set"
+            }
+        id = Column(String, hash_key=True)
+    engine.bind(StreamModel)
+    session.describe_stream.return_value = {"Shards": []}
+
+    stream = engine.stream(StreamModel, "latest")
+    assert stream.model is StreamModel
+
+
 def test_bind_non_model(engine):
     """Can't bind things that don't subclass BaseModel"""
     with pytest.raises(InvalidModel):

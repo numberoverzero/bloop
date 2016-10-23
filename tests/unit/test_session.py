@@ -5,23 +5,30 @@ import pytest
 from bloop.exceptions import (
     BloopException,
     ConstraintViolation,
+    InvalidShardIterator,
+    InvalidStream,
+    RecordsExpired,
+    ShardIteratorExpired,
     TableMismatch,
     UnknownSearchMode,
 )
-from bloop.models import Column
+from bloop.models import BaseModel, Column
 from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,
     SessionWrapper,
     create_table_request,
     expected_table_description,
     ready,
-    sanitized_table_description,
+    sanitize_table_description,
     simple_table_status,
 )
+from bloop.signals import table_validated
 from bloop.types import String
-from bloop.util import ordered
+from bloop.util import Sentinel, ordered
 
 from ..helpers.models import ComplexModel, SimpleModel, User
+
+missing = Sentinel("missing")
 
 
 @pytest.fixture
@@ -33,11 +40,43 @@ def dynamodb_client():
 
 
 @pytest.fixture
-def session(dynamodb_client):
+def streams_client():
+    # No spec since clients are generated dynamically.
+    return Mock()
+
+
+@pytest.fixture
+def session(dynamodb_client, streams_client):
     class Session:
         def client(self, name):
-            return dynamodb_client
+            assert name in {"dynamodb", "dynamodbstreams"}
+            if name == "dynamodb":
+                return dynamodb_client
+            elif name == "dynamodbstreams":
+                return streams_client
+            raise RuntimeError("Mock session asked for unexpected client {!r}".format(name))
     return SessionWrapper(Session())
+
+
+def build_describe_stream_response(shards=missing, next_id=missing):
+    description = {
+        "StreamDescription": {
+            "CreationRequestDateTime": "now",
+            "KeySchema": [{"AttributeName": "string", "KeyType": "string"}],
+            "LastEvaluatedShardId": next_id,
+            "Shards": shards,
+            "StreamArn": "string",
+            "StreamLabel": "string",
+            "StreamStatus": "string",
+            "StreamViewType": "string",
+            "TableName": "string"
+        }
+    }
+    if shards is missing:
+        description["StreamDescription"].pop("Shards")
+    if next_id is missing:
+        description["StreamDescription"].pop("LastEvaluatedShardId")
+    return description
 
 
 def client_error(code):
@@ -47,6 +86,68 @@ def client_error(code):
             "Message": "FooMessage"}}
     operation_name = "OperationName"
     return botocore.exceptions.ClientError(error_response, operation_name)
+
+
+# SAVE ITEM ================================================================================================= SAVE ITEM
+
+
+def test_save_item(session, dynamodb_client):
+    request = {"foo": "bar"}
+    session.save_item(request)
+    dynamodb_client.update_item.assert_called_once_with(**request)
+
+
+def test_save_item_unknown_error(session, dynamodb_client):
+    request = {"foo": "bar"}
+    cause = dynamodb_client.update_item.side_effect = client_error("FooError")
+
+    with pytest.raises(BloopException) as excinfo:
+        session.save_item(request)
+    assert excinfo.value.__cause__ is cause
+    dynamodb_client.update_item.assert_called_once_with(**request)
+
+
+def test_save_item_condition_failed(session, dynamodb_client):
+    request = {"foo": "bar"}
+    dynamodb_client.update_item.side_effect = client_error("ConditionalCheckFailedException")
+
+    with pytest.raises(ConstraintViolation):
+        session.save_item(request)
+    dynamodb_client.update_item.assert_called_once_with(**request)
+
+
+# END SAVE ITEM ========================================================================================= END SAVE ITEM
+
+
+# DELETE ITEM ============================================================================================= DELETE ITEM
+
+
+def test_delete_item(session, dynamodb_client):
+    request = {"foo": "bar"}
+    session.delete_item(request)
+    dynamodb_client.delete_item.assert_called_once_with(**request)
+
+
+def test_delete_item_unknown_error(session, dynamodb_client):
+    request = {"foo": "bar"}
+    cause = dynamodb_client.delete_item.side_effect = client_error("FooError")
+
+    with pytest.raises(BloopException) as excinfo:
+        session.delete_item(request)
+    assert excinfo.value.__cause__ is cause
+    dynamodb_client.delete_item.assert_called_once_with(**request)
+
+
+def test_delete_item_condition_failed(session, dynamodb_client):
+    request = {"foo": "bar"}
+    dynamodb_client.delete_item.side_effect = client_error("ConditionalCheckFailedException")
+
+    with pytest.raises(ConstraintViolation):
+        session.delete_item(request)
+    dynamodb_client.delete_item.assert_called_once_with(**request)
+
+
+# END DELETE ITEM ===================================================================================== END DELETE ITEM
 
 
 # LOAD ITEMS =============================================================================================== LOAD ITEMS
@@ -226,6 +327,45 @@ def test_batch_get_unprocessed(session, dynamodb_client):
 # END LOAD ITEMS ======================================================================================= END LOAD ITEMS
 
 
+# QUERY SCAN SEARCH ================================================================================= QUERY SCAN SEARCH
+
+
+@pytest.mark.parametrize("response, expected", [
+    ({}, (0, 0)),
+    ({"Count": -1}, (-1, -1)),
+    ({"ScannedCount": -1}, (0, -1)),
+    ({"Count": 1, "ScannedCount": 2}, (1, 2))
+], ids=str)
+def test_query_scan(session, dynamodb_client, response, expected):
+    dynamodb_client.query.return_value = response
+    dynamodb_client.scan.return_value = response
+
+    expected = {"Count": expected[0], "ScannedCount": expected[1]}
+    assert session.query_items({}) == expected
+    assert session.scan_items({}) == expected
+
+
+def test_query_scan_raise(session, dynamodb_client):
+    cause = dynamodb_client.query.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.query_items({})
+    assert excinfo.value.__cause__ is cause
+
+    cause = dynamodb_client.scan.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.scan_items({})
+    assert excinfo.value.__cause__ is cause
+
+
+def test_search_unknown(session):
+    with pytest.raises(UnknownSearchMode) as excinfo:
+        session.search_items(mode="foo", request={})
+    assert "foo" in str(excinfo.value)
+
+
+# END QUERY SCAN SEARCH ======================================================================== END QUERY SCAN SEARCH
+
+
 # CREATE TABLE =========================================================================================== CREATE TABLE
 
 
@@ -306,108 +446,19 @@ def test_create_already_exists(session, dynamodb_client):
 # END CREATE TABLE =================================================================================== END CREATE TABLE
 
 
-# DELETE ITEM ============================================================================================= DELETE ITEM
-
-
-def test_delete_item(session, dynamodb_client):
-    request = {"foo": "bar"}
-    session.delete_item(request)
-    dynamodb_client.delete_item.assert_called_once_with(**request)
-
-
-def test_delete_item_unknown_error(session, dynamodb_client):
-    request = {"foo": "bar"}
-    cause = dynamodb_client.delete_item.side_effect = client_error("FooError")
-
-    with pytest.raises(BloopException) as excinfo:
-        session.delete_item(request)
-    assert excinfo.value.__cause__ is cause
-    dynamodb_client.delete_item.assert_called_once_with(**request)
-
-
-def test_delete_item_condition_failed(session, dynamodb_client):
-    request = {"foo": "bar"}
-    dynamodb_client.delete_item.side_effect = client_error("ConditionalCheckFailedException")
-
-    with pytest.raises(ConstraintViolation):
-        session.delete_item(request)
-    dynamodb_client.delete_item.assert_called_once_with(**request)
-
-
-# END DELETE ITEM ===================================================================================== END DELETE ITEM
-
-
-# SAVE ITEM ================================================================================================= SAVE ITEM
-
-
-def test_save_item(session, dynamodb_client):
-    request = {"foo": "bar"}
-    session.save_item(request)
-    dynamodb_client.update_item.assert_called_once_with(**request)
-
-
-def test_save_item_unknown_error(session, dynamodb_client):
-    request = {"foo": "bar"}
-    cause = dynamodb_client.update_item.side_effect = client_error("FooError")
-
-    with pytest.raises(BloopException) as excinfo:
-        session.save_item(request)
-    assert excinfo.value.__cause__ is cause
-    dynamodb_client.update_item.assert_called_once_with(**request)
-
-
-def test_save_item_condition_failed(session, dynamodb_client):
-    request = {"foo": "bar"}
-    dynamodb_client.update_item.side_effect = client_error("ConditionalCheckFailedException")
-
-    with pytest.raises(ConstraintViolation):
-        session.save_item(request)
-    dynamodb_client.update_item.assert_called_once_with(**request)
-
-
-# END SAVE ITEM ========================================================================================= END SAVE ITEM
-
-
-# QUERY SCAN SEARCH ================================================================================= QUERY SCAN SEARCH
-
-
-@pytest.mark.parametrize("response, expected", [
-    ({}, (0, 0)),
-    ({"Count": -1}, (-1, -1)),
-    ({"ScannedCount": -1}, (0, -1)),
-    ({"Count": 1, "ScannedCount": 2}, (1, 2))
-], ids=str)
-def test_query_scan(session, dynamodb_client, response, expected):
-    dynamodb_client.query.return_value = response
-    dynamodb_client.scan.return_value = response
-
-    expected = {"Count": expected[0], "ScannedCount": expected[1]}
-    assert session.query_items({}) == expected
-    assert session.scan_items({}) == expected
-
-
-def test_query_scan_raise(session, dynamodb_client):
-    cause = dynamodb_client.query.side_effect = client_error("FooError")
-    with pytest.raises(BloopException) as excinfo:
-        session.query_items({})
-    assert excinfo.value.__cause__ is cause
-
-    cause = dynamodb_client.scan.side_effect = client_error("FooError")
-    with pytest.raises(BloopException) as excinfo:
-        session.scan_items({})
-    assert excinfo.value.__cause__ is cause
-
-
-def test_search_unknown(session):
-    with pytest.raises(UnknownSearchMode) as excinfo:
-        session.search_items(mode="foo", request={})
-    assert "foo" in str(excinfo.value)
-
-
-# VALIDATION HELPERS =============================================================================== VALIDATION HELPERS
+# VALIDATE TABLE ====================================================================================== VALIDATE TABLE
 
 
 def test_validate_compares_tables(session, dynamodb_client):
+    validated = False
+
+    @table_validated.connect
+    def assert_validated(sender, model, actual_description, expected_description):
+        assert sender is session
+        assert model is User
+        nonlocal validated
+        validated = True
+
     description = expected_table_description(User)
     description["TableStatus"] = "ACTIVE"
     description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
@@ -415,6 +466,7 @@ def test_validate_compares_tables(session, dynamodb_client):
     dynamodb_client.describe_table.return_value = {"Table": description}
     session.validate_table(User)
     dynamodb_client.describe_table.assert_called_once_with(TableName="User")
+    assert validated
 
 
 def test_validate_checks_status(session, dynamodb_client):
@@ -437,7 +489,7 @@ def test_validate_checks_status(session, dynamodb_client):
 
 
 def test_validate_invalid_table(session, dynamodb_client):
-    """dynamo returns an invalid json document"""
+    """DynamoDB returns an invalid json document"""
     dynamodb_client.describe_table.return_value = \
         {"Table": {"TableStatus": "ACTIVE"}}
     with pytest.raises(TableMismatch):
@@ -457,6 +509,103 @@ def test_validate_simple_model(session, dynamodb_client):
     session.validate_table(SimpleModel)
     dynamodb_client.describe_table.assert_called_once_with(
         TableName="Simple")
+
+
+def test_validate_stream_exists(session, dynamodb_client):
+    """Model expects a stream that exists and matches"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"]
+            }
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "LatestStreamArn": "table/stream_both/stream/2016-08-29T03:30:15.582",
+        "LatestStreamLabel": "2016-08-29T03:30:15.582",
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "StreamSpecification": {
+            "StreamEnabled": True,
+            "StreamViewType": "KEYS_ONLY"},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    session.validate_table(Model)
+
+
+def test_validate_stream_wrong_view_type(session, dynamodb_client):
+    """Model expects a stream that doesn't exist"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"]
+            }
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "StreamSpecification": {
+            "StreamEnabled": True,
+            "StreamViewType": "NEW_IMAGE"},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    with pytest.raises(TableMismatch):
+        session.validate_table(Model)
+
+
+def test_validate_stream_missing(session, dynamodb_client):
+    """Model expects a stream that doesn't exist"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["keys"]
+            }
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    with pytest.raises(TableMismatch):
+        session.validate_table(Model)
+
+
+def test_validate_stream_unexpected(session, dynamodb_client):
+    """It's ok if the model doesn't expect a stream that exists"""
+    class Model(BaseModel):
+        class Meta:
+            stream = None
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "LatestStreamArn": "table/stream_both/stream/2016-08-29T03:30:15.582",
+        "LatestStreamLabel": "2016-08-29T03:30:15.582",
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "StreamSpecification": {
+            "StreamEnabled": True,
+            "StreamViewType": "KEYS_ONLY"},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb_client.describe_table.return_value = {"Table": full}
+    session.validate_table(Model)
 
 
 def test_validate_wrong_table(session, dynamodb_client):
@@ -479,7 +628,212 @@ def test_validate_raises(session, dynamodb_client):
     assert excinfo.value.__cause__ is cause
 
 
-# END VALIDATION HELPERS ======================================================================= END VALIDATION HELPERS
+def test_validate_unexpected_index(session, dynamodb_client):
+    """Validation doesn't fail when the backing table has an extra GSI and named attribute"""
+    full = expected_table_description(ComplexModel)
+    full["AttributeDefinitions"].append(
+        {"AttributeType": "N", "AttributeName": "extra_attribute"}
+    )
+    full["GlobalSecondaryIndexes"].append({
+        "IndexName": "extra_gsi",
+        "Projection": {"ProjectionType": "KEYS_ONLY"},
+        "KeySchema": [{"KeyType": "HASH", "AttributeName": "date"}],
+        "ProvisionedThroughput": {"WriteCapacityUnits": 1, "ReadCapacityUnits": 1},
+    })
+
+    full["LocalSecondaryIndexes"].append({
+        "IndexName": "extra_lsi",
+        "Projection": {"ProjectionType": "KEYS_ONLY"},
+        "KeySchema": [{"KeyType": "RANGE", "AttributeName": "date"}],
+        "ProvisionedThroughput": {"WriteCapacityUnits": 1, "ReadCapacityUnits": 1}
+    })
+    dynamodb_client.describe_table.return_value = {"Table": full}
+
+    full["TableStatus"] = "ACTIVE"
+    for gsi in full["GlobalSecondaryIndexes"]:
+        gsi["IndexStatus"] = "ACTIVE"
+    # Validation passes even though there are extra Indexes and AttributeDefinitions
+    session.validate_table(ComplexModel)
+
+
+# END VALIDATE TABLE ============================================================================== END VALIDATE TABLE
+
+
+# DESCRIBE STREAM ==================================================================================== DESCRIBE STREAM
+
+
+def test_describe_stream_unknown_error(session, streams_client):
+    request = {"StreamArn": "arn", "ExclusiveStartShardId": "shard id"}
+    cause = streams_client.describe_stream.side_effect = client_error("FooError")
+
+    with pytest.raises(BloopException) as excinfo:
+        session.describe_stream("arn", "shard id")
+    assert excinfo.value.__cause__ is cause
+    streams_client.describe_stream.assert_called_once_with(**request)
+
+
+def test_describe_stream_not_found(session, streams_client):
+    request = {"StreamArn": "arn", "ExclusiveStartShardId": "shard id"}
+    cause = streams_client.describe_stream.side_effect = client_error("ResourceNotFoundException")
+
+    with pytest.raises(InvalidStream) as excinfo:
+        session.describe_stream("arn", "shard id")
+    assert excinfo.value.__cause__ is cause
+    streams_client.describe_stream.assert_called_once_with(**request)
+
+
+@pytest.mark.parametrize("no_shards", [missing, list()])
+@pytest.mark.parametrize("next_ids", [(missing, ), (None, ), ("two pages", None)])
+def test_describe_stream_no_results(no_shards, next_ids, session, streams_client):
+    stream_arn = "arn"
+    responses = [build_describe_stream_response(shards=no_shards, next_id=next_id) for next_id in next_ids]
+    streams_client.describe_stream.side_effect = responses
+
+    description = session.describe_stream(stream_arn=stream_arn, first_shard="first-token")
+    assert description["Shards"] == []
+
+    empty_response = build_describe_stream_response(shards=[])["StreamDescription"]
+    assert ordered(description) == ordered(empty_response)
+
+    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId="first-token")
+    assert streams_client.describe_stream.call_count == len(next_ids)
+
+
+@pytest.mark.parametrize("shard_list", [
+    # results followed by empty
+    (["first", "second"], []),
+    # empty followed by results
+    ([], ["first", "second"])
+])
+def test_describe_stream_combines_results(shard_list, session, streams_client):
+    stream_arn = "arn"
+    responses = [build_describe_stream_response(shards=shard_list[0], next_id="second-token"),
+                 build_describe_stream_response(shards=shard_list[1], next_id=missing)]
+    streams_client.describe_stream.side_effect = responses
+
+    description = session.describe_stream(stream_arn)
+    assert description["Shards"] == ["first", "second"]
+
+    assert streams_client.describe_stream.call_count == 2
+    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn)
+    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId="second-token")
+
+
+# END DESCRIBE STREAM ============================================================================ END DESCRIBE STREAM
+
+
+# GET SHARD ITERATOR ============================================================================= GET SHARD ITERATOR
+
+
+def test_get_unknown_shard_iterator(streams_client, session):
+    unknown_type = "foo123"
+    with pytest.raises(InvalidShardIterator) as excinfo:
+        session.get_shard_iterator(
+            stream_arn="arn",
+            shard_id="shard_id",
+            iterator_type=unknown_type,
+            sequence_number=None
+        )
+    assert unknown_type in str(excinfo.value)
+    streams_client.get_shard_iterator.assert_not_called()
+
+
+def test_get_trimmed_shard_iterator(streams_client, session):
+    streams_client.get_shard_iterator.side_effect = client_error("TrimmedDataAccessException")
+    with pytest.raises(RecordsExpired):
+        session.get_shard_iterator(
+            stream_arn="arn",
+            shard_id="shard_id",
+            iterator_type="at_sequence",
+            sequence_number="sequence-123"
+        )
+    streams_client.get_shard_iterator.assert_called_once_with(
+        StreamArn="arn",
+        ShardId="shard_id",
+        ShardIteratorType="AT_SEQUENCE_NUMBER",
+        SequenceNumber="sequence-123"
+    )
+
+
+def test_get_shard_iterator_unknown_error(streams_client, session):
+    cause = streams_client.get_shard_iterator.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.get_shard_iterator(stream_arn="arn", shard_id="shard_id", iterator_type="at_sequence")
+    assert excinfo.value.__cause__ is cause
+
+
+def test_get_shard_iterator_after_sequence(streams_client, session):
+    streams_client.get_shard_iterator.return_value = {"ShardIterator": "return value"}
+
+    shard_iterator = session.get_shard_iterator(
+        stream_arn="arn",
+        shard_id="shard_id",
+        iterator_type="after_sequence",
+        sequence_number="sequence-123"
+    )
+    assert shard_iterator == "return value"
+
+    streams_client.get_shard_iterator.assert_called_once_with(
+        StreamArn="arn",
+        ShardId="shard_id",
+        ShardIteratorType="AFTER_SEQUENCE_NUMBER",
+        SequenceNumber="sequence-123"
+    )
+
+
+def test_get_shard_iterator_latest(streams_client, session):
+    streams_client.get_shard_iterator.return_value = {"ShardIterator": "return value"}
+
+    shard_iterator = session.get_shard_iterator(
+        stream_arn="arn",
+        shard_id="shard_id",
+        iterator_type="latest"
+    )
+    assert shard_iterator == "return value"
+
+    streams_client.get_shard_iterator.assert_called_once_with(
+        StreamArn="arn",
+        ShardId="shard_id",
+        ShardIteratorType="LATEST"
+    )
+
+
+# END GET SHARD ITERATOR ====================================================================== END GET SHARD ITERATOR
+
+
+# GET STREAM RECORDS ============================================================================== GET STREAM RECORDS
+
+
+def test_get_trimmed_records(streams_client, session):
+    streams_client.get_records.side_effect = client_error("TrimmedDataAccessException")
+    with pytest.raises(RecordsExpired):
+        session.get_stream_records(iterator_id="iterator-123")
+
+
+def test_get_records_expired_iterator(streams_client, session):
+    streams_client.get_records.side_effect = client_error("ExpiredIteratorException")
+    with pytest.raises(ShardIteratorExpired):
+        session.get_stream_records("some-iterator")
+
+
+def test_get_shard_records_unknown_error(streams_client, session):
+    cause = streams_client.get_records.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.get_stream_records("iterator-123")
+    assert excinfo.value.__cause__ is cause
+
+
+def test_get_records(streams_client, session):
+    # Return structure isn't important, since it's just a passthrough
+    response = streams_client.get_records.return_value = {"return": "value"}
+
+    records = session.get_stream_records(iterator_id="some-iterator")
+    assert records is response
+
+    streams_client.get_records.assert_called_once_with(ShardIterator="some-iterator")
+
+
+# END GET STREAM RECORDS ====================================================================== END GET STREAM RECORDS
 
 
 # TABLE HELPERS ========================================================================================= TABLE HELPERS
@@ -530,6 +884,38 @@ def test_create_complex():
     assert_unordered(create_table_request(ComplexModel), expected)
 
 
+def test_create_table_no_stream():
+    """No StreamSpecification if Model.Meta.stream is None"""
+    class Model(BaseModel):
+        class Meta:
+            stream = None
+        id = Column(String, hash_key=True)
+    table = create_table_request(Model)
+    assert "StreamSpecification" not in table
+
+
+@pytest.mark.parametrize("include, view_type", [
+    (["keys"], "KEYS_ONLY"),
+    (["new"], "NEW_IMAGE"),
+    (["old"], "OLD_IMAGE"),
+    (["new", "old"], "NEW_AND_OLD_IMAGES"),
+])
+def test_create_table_with_stream(include, view_type):
+    """A table that streams only new images"""
+    class Model(BaseModel):
+        class Meta:
+            stream = {
+                "include": include
+            }
+        id = Column(String, hash_key=True)
+
+    table = create_table_request(Model)
+    assert table["StreamSpecification"] == {
+        "StreamEnabled": True,
+        "StreamViewType": view_type
+    }
+
+
 def test_expected_description():
     # Eventually expected_table_description will probably diverge from create_table
     # This will guard against (or coverage should show) if there's drift
@@ -545,7 +931,7 @@ def test_sanitize_drop_empty_lists():
     index = description["GlobalSecondaryIndexes"][0]
     index["Projection"]["NonKeyAttributes"] = []
 
-    assert_unordered(expected, sanitized_table_description(description))
+    assert_unordered(expected, sanitize_table_description(description))
 
 
 def test_sanitize_drop_empty_indexes():
@@ -554,7 +940,7 @@ def test_sanitize_drop_empty_indexes():
     description = expected_table_description(SimpleModel)
     description["GlobalSecondaryIndexes"] = []
 
-    assert_unordered(expected, sanitized_table_description(description))
+    assert_unordered(expected, sanitize_table_description(description))
 
 
 def test_sanitize_expected():
@@ -588,7 +974,7 @@ def test_sanitize_expected():
         'TableName': 'User',
         'TableSizeBytes': 'EXTRA_FIELD',
         'TableStatus': 'EXTRA_FIELD'}
-    sanitized = sanitized_table_description(description)
+    sanitized = sanitize_table_description(description)
     assert_unordered(expected, sanitized)
 
 

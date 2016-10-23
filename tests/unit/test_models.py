@@ -2,7 +2,7 @@ import operator
 
 import arrow
 import pytest
-from bloop.exceptions import InvalidIndex, InvalidModel
+from bloop.exceptions import InvalidIndex, InvalidModel, InvalidStream
 from bloop.models import (
     BaseModel,
     Column,
@@ -12,6 +12,8 @@ from bloop.models import (
     model_created,
     object_modified,
 )
+from bloop.session import expected_table_description
+from bloop.signals import table_validated
 from bloop.types import UUID, Boolean, DateTime, Integer, String
 
 from ..helpers.models import User
@@ -257,6 +259,20 @@ def test_meta_table_name():
     assert Other.Meta.table_name == "table_name"
 
 
+def test_meta_default_stream():
+    """By default, stream is None"""
+    class Model(BaseModel):
+        id = Column(UUID, hash_key=True)
+    assert Model.Meta.stream is None
+
+    class Other(BaseModel):
+        class Meta:
+            stream = None
+
+        id = Column(UUID, hash_key=True)
+    assert Other.Meta.stream is None
+
+
 def test_abstract_not_inherited():
     class Concrete(BaseModel):
         id = Column(UUID, hash_key=True)
@@ -292,6 +308,126 @@ def test_created_signal():
         id = Column(Integer, hash_key=True)
 
     assert new_model is SomeModel
+
+
+def test_table_validated_signal():
+    """Emitted when the backing table for a model is validated"""
+    class NoStream(BaseModel):
+        id = Column(Integer, hash_key=True)
+
+    class HasStream(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["new"]
+            }
+        id = Column(Integer, hash_key=True)
+
+    actual = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "N"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "LatestStreamArn": "table/stream_name/stream/2016-08-29T03:30:15.582",
+        "LatestStreamLabel": "2016-08-29T03:30:15.582",
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
+        "StreamSpecification": {
+            "StreamEnabled": True,
+            "StreamViewType": "KEYS_ONLY"},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+
+    # arn isn't recorded when Meta doesn't expect a stream
+    expected = expected_table_description(NoStream)
+    table_validated.send(None, model=NoStream, actual_description=actual, expected_description=expected)
+    assert NoStream.Meta.stream is None
+
+    assert HasStream.Meta.stream["arn"] is None
+    expected = expected_table_description(HasStream)
+    table_validated.send(None, model=HasStream, actual_description=actual, expected_description=expected)
+    assert HasStream.Meta.stream["arn"] == "table/stream_name/stream/2016-08-29T03:30:15.582"
+
+
+@pytest.mark.parametrize("invalid_stream", [
+    False,
+    True,
+    "new",
+    ["old", "new"],
+    {},
+    {"include": "new"},
+    {"include": []},
+    {"include": ["keys", "old"]},
+    {"include": ["keys", "new"]},
+    {"include": ["KEYS"]},
+])
+def test_invalid_stream(invalid_stream):
+    """Stream must be a dict with include a list containing keys or (new, old) or new or old"""
+    with pytest.raises(InvalidStream):
+        class Model(BaseModel):
+            class Meta:
+                stream = invalid_stream
+            id = Column(Integer, hash_key=True)
+
+
+@pytest.mark.parametrize("valid_stream", [
+    {"include": ["new"]},
+    {"include": ["old"]},
+    {"include": ["new", "old"]},
+    {"include": ["keys"]},
+])
+def test_valid_stream(valid_stream):
+    class Model(BaseModel):
+        class Meta:
+            stream = valid_stream
+
+        id = Column(Integer, hash_key=True)
+    assert Model.Meta.stream["include"] == set(valid_stream["include"])
+
+
+def test_require_hash():
+    """Models must be hashable."""
+    with pytest.raises(InvalidModel):
+        class Model(BaseModel):
+            id = Column(Integer, hash_key=True)
+            __hash__ = None
+
+
+def test_custom_eq():
+    """Custom eq method without __hash__ is ok; metaclass will find its parents __hash__"""
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+
+        def __eq__(self, other):
+            return self.id == other.id
+    same = Model(id=3)
+    other = Model(id=3)
+    assert same == other
+    assert Model.__hash__ is object.__hash__
+
+
+def test_defined_hash():
+    """Custom __hash__ isn't replaced"""
+    def hash_fn(self):
+        return id(self)
+
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+        __hash__ = hash_fn
+    assert Model.__hash__ is hash_fn
+
+
+def test_parent_hash():
+    """Parent __hash__ function is used, not object __hash__"""
+    class OtherBase:
+        pass
+
+    class BaseWithHash:
+        def __hash__(self):
+            print("BWH")
+            return id(self)
+
+    class Model(OtherBase, BaseWithHash, BaseModel):
+        id = Column(Integer, hash_key=True)
+    assert Model.__hash__ is BaseWithHash.__hash__
 
 
 # END BASE MODEL ======================================================================================= END BASE MODEL

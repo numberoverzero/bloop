@@ -1,25 +1,21 @@
 language: python
 python: 3.5
 cache: pip
-
 env:
   global:
-    # AWS_ACCESS_KEY_ID bloop-integ-travis-001
-    - secure: SNhGK6Pyh1dX5J7Q6r/QipXSdG4oxm68S7DJ/nePNQqyXTNmGuT2Q9iXoVnB8UDoAsv82arqSEcu8qCroOv+dJ2rumPmJOkt5pcNk6TaWoSgWCBnvugpbrf4zxm1ZEz48MhmUtwO1bte2FeKas1dMt0YLcj/9WNwwf/u86kr53U=
-    # AWS_SECRET_ACCESS_KEY bloop-integ-travis-001
-    - secure: hQ7C29uZu97jeGLpc12ctbRb01+urXb5kMND4lsVdRslLrBnLAx6OUIrGNude1yEx6G8Qd1zOWuusa5WgGW8BtZ5hIiWzPuZK9jweXMABk9zxOjZ+39YYuCMzPNqPZhaihsEksbtryGZAsKRfwNtXPPDTY1hg/qui2+xP1/39vU=
+  # AWS_ACCESS_KEY_ID bloop-integ-travis-001
+  - secure: fw6+R5mHzcpaex9kmLwWo8DsxlsWGpGBlyKfsPDf7qSqgkLjli65zDiMKKTLKyRzXWo4N3e2VerKY1kZScejPjl2c6i/aGOONsADooH3qQi9/ic1gBwmNOiZwNRgtBgicV3FlL0VukriPtnhO+D7YZGn700JkXxFxu6BCzafBdM=
+  # AWS_SECRET_ACCESS_KEY bloop-integ-travis-001
+  - secure: HiDY8j0bQoPD0dQ5dVn5jaXxQlp/prb1B80Yz9Ji0Ea7KaU+BOA9EoIrVL3lhB7sS9P2R2Mz5nH4z8Yhur76oRfrkHzkn+9AfXmv/KTVSl0tLFZ2kXCGPMa+LYIwt6JlsKNtgkyufs/mGWYZc84sQolA/9G/b0lusAsp/WU67ts=
   matrix:
-    - TOXENV=unit
-    - TOXENV=integ
-    - TOXENV=docs
-
+  - TOXENV=unit
+  - TOXENV=integ
+  - TOXENV=docs
 install: pip install tox coveralls
 script: scripts/travis_script.sh
-
 after_success:
 - test $TOXENV = "unit" && coveralls
 - test $TOXENV = "integ" && coveralls
-
 notifications:
   slack:
     secure: cXjzhmFI0oAWifBilGvTApiL8VSyM7/4v3Ve4TZeU+15EoYf05AhNoHs0FKVcj+ockYPqlj3p+SIUXnGfcI41QFlO09gGvFVB/FA/PHH2n4hb20+zxSx5Ic9ac3B2Nb5u2lWGsSsRTvCHtC0Wcxx878ML5UFrP5yu4vKIgj8AyE=

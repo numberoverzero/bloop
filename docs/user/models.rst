@@ -1,5 +1,3 @@
-..
-
 .. _define-models:
 
 Define Models
@@ -85,14 +83,22 @@ You can customize how the table is created with an inner ``Meta`` class:
 
     class Tweet(BaseModel):
         class Meta:
+            abstract = False
             table_name = "custom_table_name"
             read_units = 1000
             write_units = 300
+            stream = {
+                "include": ["new", "old"]
+            }
 
         user = Column(Integer, hash_key=True)
         created = Column(DateTime, range_key=True)
 
 Available properties:
+
+.. attribute:: Meta.abstract
+
+    True if this model is not backed by a DynamoDB table.  Defaults to False.
 
 .. attribute:: Meta.table_name
 
@@ -106,9 +112,14 @@ Available properties:
 
     The provisioned write units for the table.  Defaults to 1.
 
-.. attribute:: Meta.abstract
+.. attribute:: Meta.stream
 
-    True if this model is not backed by a DynamoDB table.  Defaults to False.
+    Configure this table's `Stream`__.  Must be ``None`` or a dict with the key ``"include"``, with a value of
+    ``{"new"}``, ``{"old"}``, ``{"new", "old"}``, or ``{"keys"}``.
+
+    See :ref:`streams`.
+
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html
 
 Instances of abstract models can't be used with an Engine since there is no table to modify or query.  Their
 columns and indexes are not inherited.

@@ -115,9 +115,9 @@ Iterators expire every 15 minutes, but due to clock skew it's usually safer to c
 It's safe to call ``heartbeat`` in a tight loop.  On average, it will only result in a single call
 to DynamoDB every four hours per shard.
 
-===================
-Internals: Ordering
-===================
+======================
+Implementation Details
+======================
 
 --------
 Notation
@@ -155,9 +155,12 @@ This section uses a number of conventions to describe complex relationships betw
     S2: R23 < R24  # guaranteed order
 
 
-----------
+--------
+Ordering
+--------
+
 Guarantees
-----------
+==========
 
 DynamoDB only offers three guarantees for chronological ordering:
 
@@ -215,9 +218,8 @@ But the following is not possible::
 
 .. _stream-merging:
 
---------------
 Merging Shards
---------------
+==============
 
 Low-throughput tables will only have a single open shard at any time, and can rely on the first and second guarantees
 above for rebuilding the exact order of changes to the table.
@@ -272,3 +274,50 @@ The final ordering is::
 
     R00 < R11 < R12 < R24 < R25 < R26 < R13
 
+
+-----------
+Record Gaps
+-----------
+
+Bloop initially performs up to 5 "catch up" calls to GetRecords when advancing an iterator.  If a GetRecords call
+returns a ``NextShardIterator`` but no records it's either due to being nearly caught up to ``"latest"`` in an open
+shard, or from traversing a period of time in the shard with no activity.  Endlessly polling until a record comes back
+would cause every open shard to hang for up to 4 hours, while only calling GetRecords once could desynchronize one
+shard's iterator from others.
+
+By retrying up to 5 times on an empty GetRecords response (that still has a NextShardIterator) Bloop is confident
+that any gaps in the shard have been advanced.  This is because it takes approximately 4-5 calls to traverse an
+empty shard completely.  In other words, the 6th empty response almost certainly indicates that the iterator is
+caught up to latest in an open shard, and it's safe to cut back to one call at a time.
+
+Why 5 Calls
+===========
+
+This number came from `extensive testing`__ which compared the number of empty responses returned for shards with
+various activity cadences.  It's reasonable to assume that this number would only decrease with time, as advances in
+software and hardware would enable DynamoDB to cover larger periods in time with the same time investment.
+Because each call from a customer incurs overhead of creating and indexing each new iterator id, as well as the usual
+expensive signature-based authentication, it's in DynamoDB's interest to minimize the number of calls a customer needs
+to traverse a sparsely populated shard.
+
+At worst DynamoDB starts requiring more calls to fully traverse an empty shard, which could result in reordering
+between records in shards with vastly different activity patterns.  Since the creation-time-based ordering
+is approximate, this doesn't relax the guarantees that Bloop's streaming interface provides.
+
+Change the Limit
+================
+
+In general you should not need to worry about this value, and leave it alone.  In the unlikely case that DynamoDB
+**does** increase the number of calls required to traverse an empty shard, Bloop will be updated soon after.
+
+If you still need to tune this value:
+
+.. code-block:: python
+
+    import bloop.stream.shard
+    bloop.stream.shard.CALLS_TO_REACH_HEAD = 5
+
+The exact value of this parameter will have almost no impact on performance in high-activity streams, and there are
+so few shards in low-activity streams that the total cost will be on par with the other calls to set up the stream.
+
+__ https://gist.github.com/numberoverzero/8bde1089b5def6cc8c6d5fba61866702

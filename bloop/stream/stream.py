@@ -60,9 +60,11 @@ class Stream:
         record = next(self.coordinator)
         if record:
             meta = self.model.Meta
-            self._unpack(record, "new", meta.columns)
-            self._unpack(record, "old", meta.columns)
-            self._unpack(record, "key", meta.keys)
+            for key, expected in [("new", meta.columns), ("old", meta.columns), ("key", meta.keys)]:
+                if key not in meta.stream["include"]:
+                    record[key] = None
+                else:
+                    self._unpack(record, key, expected)
         return record
 
     @property

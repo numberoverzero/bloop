@@ -12,6 +12,7 @@ from .models import (
     GlobalSecondaryIndex,
     LocalSecondaryIndex,
 )
+from .stream import Stream, stream_for
 from .types import (
     UUID,
     Binary,
@@ -29,7 +30,7 @@ from .types import (
 __all__ = [
     "BaseModel", "Boolean", "Binary", "BloopException", "Column",
     "Condition", "ConstraintViolation", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer",
-    "List", "LocalSecondaryIndex", "Map", "MissingObjects", "Set", "String", "TableMismatch",
-    "UUID"
+    "List", "LocalSecondaryIndex", "Map", "MissingObjects", "Set", "Stream", "String", "TableMismatch",
+    "UUID", "stream_for"
 ]
-__version__ = "0.9.12"
+__version__ = "1.0.0"

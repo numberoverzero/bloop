@@ -25,7 +25,7 @@ def stream(coordinator, engine):
 class Email(BaseModel):
     class Meta:
         stream = {
-            "include": {"new"},
+            "include": {"new", "old"},
             "arn": "stream-arn"
         }
     id = Column(Integer, hash_key=True)
@@ -108,7 +108,8 @@ def test_next_unpacks(stream, coordinator):
             "data": {"S": "some-data"}
         },
         "key": {
-            "id": {"N": "1"}
+            # Omitted because the model only includes "new"
+            "id": {"N": "343"}
         },
         "new": None,
         "meta": meta
@@ -121,5 +122,5 @@ def test_next_unpacks(stream, coordinator):
 
     assert record["new"] is None
 
-    assert record["key"].id == 1
+    assert record["key"] is None
     assert not hasattr(record["key"], "data")

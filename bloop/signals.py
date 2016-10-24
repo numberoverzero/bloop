@@ -1,5 +1,6 @@
 from .util import signal
 
+
 # Last chance to modify the model before its backing table is created
 # sender: Engine
 # model: Model class

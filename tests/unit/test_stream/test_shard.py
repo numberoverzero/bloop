@@ -1,11 +1,23 @@
-import pytest
 import random
-import arrow
-from bloop.exceptions import ShardIteratorExpired
-from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator, reformat_record, unpack_shards
 from unittest.mock import call
 
-from . import build_shards, build_get_records_responses, stream_description, dynamodb_record_with
+import arrow
+import pytest
+from bloop.exceptions import ShardIteratorExpired
+from bloop.stream.shard import (
+    CALLS_TO_REACH_HEAD,
+    Shard,
+    last_iterator,
+    reformat_record,
+    unpack_shards,
+)
+
+from . import (
+    build_get_records_responses,
+    build_shards,
+    dynamodb_record_with,
+    stream_description,
+)
 
 
 def expected_get_calls(chain):

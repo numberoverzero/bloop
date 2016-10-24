@@ -12,11 +12,7 @@ from .exceptions import (
 )
 from .models import Column, GlobalSecondaryIndex
 from .signals import object_loaded
-from .util import (
-    printable_column_name,
-    printable_query,
-    unpack_from_dynamodb,
-)
+from .util import printable_column_name, printable_query, unpack_from_dynamodb
 
 
 __all__ = ["Scan", "Query", "ScanIterator", "QueryIterator"]

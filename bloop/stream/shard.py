@@ -1,10 +1,12 @@
-import arrow
 import collections
-from typing import Optional, Dict, Any, List, Mapping, Iterable
+from typing import Any, Dict, Iterable, List, Mapping, Optional
+
+import arrow
 
 from ..exceptions import ShardIteratorExpired
 from ..session import SessionWrapper
 from ..util import Sentinel
+
 
 # Approximate number of calls to fully traverse an empty shard
 CALLS_TO_REACH_HEAD = 5

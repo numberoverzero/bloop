@@ -1,12 +1,20 @@
-import arrow
 import collections
-import pytest
 import functools
 from unittest.mock import call
+
+import arrow
+import pytest
 from bloop.exceptions import InvalidPosition, InvalidStream, RecordsExpired
-from bloop.stream.shard import Shard, CALLS_TO_REACH_HEAD, last_iterator
+from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator
 from bloop.util import ordered
-from . import build_get_records_responses, build_shards, local_record, dynamodb_record_with, stream_description
+
+from . import (
+    build_get_records_responses,
+    build_shards,
+    dynamodb_record_with,
+    local_record,
+    stream_description,
+)
 
 
 def test_coordinator_repr(coordinator):

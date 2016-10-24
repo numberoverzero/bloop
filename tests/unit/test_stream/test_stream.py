@@ -1,12 +1,14 @@
+from unittest.mock import MagicMock
+
 import arrow
 import pytest
-from bloop.models import BaseModel, Column
 from bloop.exceptions import InvalidStream
-from bloop.stream.stream import stream_for, Stream
+from bloop.models import BaseModel, Column
 from bloop.stream.coordinator import Coordinator
+from bloop.stream.stream import Stream, stream_for
 from bloop.types import Integer, String
 from bloop.util import ordered
-from unittest.mock import MagicMock
+
 from ...helpers.models import User
 from . import build_shards
 

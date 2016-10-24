@@ -6,12 +6,7 @@ from .exceptions import (
     MissingObjects,
     TableMismatch,
 )
-from .models import (
-    BaseModel,
-    Column,
-    GlobalSecondaryIndex,
-    LocalSecondaryIndex,
-)
+from .models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from .stream import Stream, stream_for
 from .types import (
     UUID,

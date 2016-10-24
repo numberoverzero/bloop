@@ -24,7 +24,7 @@ from bloop.conditions import (
     object_deleted,
     object_loaded,
     object_saved,
-    render
+    render,
 )
 
 from ..helpers.models import Document, User

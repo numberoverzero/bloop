@@ -2,10 +2,7 @@ from unittest.mock import Mock
 
 import boto3
 import pytest
-from bloop import (
-    BaseModel,
-    Engine,
-)
+from bloop import BaseModel, Engine
 from bloop.session import SessionWrapper
 from bloop.signals import (
     object_deleted,

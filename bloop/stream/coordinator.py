@@ -1,11 +1,12 @@
-import arrow
 import collections
-from typing import Dict, List, Optional, Any, Mapping  # noqa
+from typing import Any, Dict, List, Mapping, Optional  # noqa
 
+import arrow
+
+from ..exceptions import InvalidPosition, InvalidStream, RecordsExpired
+from ..session import SessionWrapper
 from .buffer import RecordBuffer
 from .shard import Shard, unpack_shards
-from ..exceptions import InvalidStream, RecordsExpired, InvalidPosition
-from ..session import SessionWrapper
 
 
 class Coordinator:

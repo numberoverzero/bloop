@@ -28,6 +28,7 @@ from bloop.util import Sentinel, ordered
 
 from ..helpers.models import ComplexModel, SimpleModel, User
 
+
 missing = Sentinel("missing")
 
 

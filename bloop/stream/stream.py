@@ -1,9 +1,8 @@
-from typing import Dict, List, MutableMapping, Any, Mapping, Optional
+from typing import Any, Dict, List, Mapping, MutableMapping, Optional
 
 from ..exceptions import InvalidStream
 from ..signals import object_loaded
 from ..util import unpack_from_dynamodb
-
 from .coordinator import Coordinator
 
 

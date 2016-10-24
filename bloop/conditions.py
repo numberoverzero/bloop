@@ -4,7 +4,12 @@ import collections
 from typing import Any, NamedTuple
 
 from .exceptions import InvalidCondition
-from .signals import object_deleted, object_loaded, object_modified, object_saved
+from .signals import (
+    object_deleted,
+    object_loaded,
+    object_modified,
+    object_saved,
+)
 from .util import WeakDefaultDictionary, missing, printable_column_name
 
 

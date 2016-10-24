@@ -7,6 +7,7 @@ import boto3
 import pytest
 from bloop import Engine
 from bloop.signals import model_created
+
 from .models import User
 
 

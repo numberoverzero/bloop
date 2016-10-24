@@ -1,8 +1,10 @@
+from typing import Any, Dict, List, Optional, Union
+
 import arrow
-from bloop.util import Sentinel
 from bloop.session import SessionWrapper
 from bloop.stream.shard import Shard
-from typing import Union, List, Dict, Any, Optional
+from bloop.util import Sentinel
+
 
 missing = Sentinel("missing")
 

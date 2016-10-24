@@ -1,6 +1,7 @@
-import pytest
-import arrow
 from unittest.mock import Mock
+
+import arrow
+import pytest
 from bloop.stream.buffer import RecordBuffer, heap_item
 from bloop.stream.shard import Shard
 

@@ -1,6 +1,7 @@
-from datetime import datetime
 import heapq
-from typing import Tuple, List, Iterable, Mapping, Any, Callable
+from datetime import datetime
+from typing import Any, Callable, Iterable, List, Mapping, Tuple
+
 from .shard import Shard
 
 

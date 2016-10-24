@@ -1,8 +1,8 @@
 import collections
+from typing import Dict
+
 import boto3.session
 import botocore.exceptions
-
-from typing import Dict
 
 from .exceptions import (
     BloopException,

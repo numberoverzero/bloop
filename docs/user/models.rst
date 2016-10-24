@@ -3,20 +3,22 @@
 Define Models
 ^^^^^^^^^^^^^
 
-Every model inherits from ``BaseModel``:
+Every model inherits from ``BaseModel``, and needs at least a hash key:
 
 .. code-block:: python
 
-    from bloop import BaseModel
+    from bloop import BaseModel, Column, UUID
 
     class User(BaseModel):
-        pass
+        id = Column(UUID, hash_key=True)
 
-Add some Columns to your model.  You'll need at least a hash key:
+Let's add some columns and a GSI:
 
 .. code-block:: python
 
-    from bloop import Boolean, Column, DateTime, String, UUID
+    from bloop import (
+        BaseModel, Boolean, Column, DateTime,
+        GlobalSecondaryIndex, String, UUID)
 
     class User(BaseModel):
         id = Column(UUID, hash_key=True)
@@ -25,53 +27,51 @@ Add some Columns to your model.  You'll need at least a hash key:
         verified = Column(Boolean)
         profile = Column(String)
 
-Add an Index:
-
-.. code-block:: python
-
-    from bloop import GlobalSecondaryIndex
-
-    class User(BaseModel):
-        ...
-
         by_email = GlobalSecondaryIndex(
             projection="keys", hash_key="email")
 
-Finally, create the table in DynamoDB:
+Then create the table in DynamoDB:
 
 .. code-block:: python
 
-    from bloop import Engine
+    >>> from bloop import Engine
+    >>> engine = Engine()
+    >>> engine.bind(User)
 
-    engine = Engine()
-    engine.bind(BaseModel)
+Calling ``engine.bind(BaseModel)`` will bind all non-:ref:`abstract <meta-abstract>` models.
+If any model doesn't match its backing table, ``TableMismatch`` is raised.
 
-The Engine will bind any subclasses (recursively) of the class passed in.  If your models share the same
-base model, you can create all the tables with one call.
+.. note::
 
-Bind will create tables that don't exist; if a table already exists, bind diffs the actual schema against the
-one our model expects.  Any mismatch will  cause bind to fail.
+    Models :ref:`must be hashable <internal-model-hash>`.  If you implement ``__eq__`` without
+    ``__hash__``, Bloop will locate a hash method in the model's mro.
 
 ==================
 Creating Instances
 ==================
 
-``BaseModel`` provides a kwarg-based ``__init__``, so you can create a new user with:
+``BaseModel`` provides a basic ``__init__``:
 
 .. code-block:: python
 
-    import arrow, uuid
+    >>> import arrow, uuid
+    >>> user = User(
+    ...     id=uuid.uuid4(),
+    ...     email="user@domain.com",
+    ...     created_at=arrow.now())
+    >>> user.email
+    'user@domain.com'
 
-    user = User(id=uuid.uuid4(),
-                email="user@domain.com",
-                created_on=arrow.now())
-
-You need to specify a value for the hash -- and range, if there is one -- keys before you can mutate the object in
-DynamoDB, but locally it's not required.  For local use, this is fine:
+A hash key value isn't required until you're ready to interact with DynamoDB:
 
 .. code-block:: python
 
-    user = User()
+    >>> user = User(email="u@d.com")
+    >>> engine.save(user)
+    MissingKey: User(email='u@d.com') is missing hash_key: 'id'
+
+    >>> user.id = uuid.uuid4()
+    >>> engine.save(user)
 
 ========
 Metadata
@@ -94,11 +94,15 @@ You can customize how the table is created with an inner ``Meta`` class:
         user = Column(Integer, hash_key=True)
         created = Column(DateTime, range_key=True)
 
-Available properties:
+.. _meta-abstract:
 
 .. attribute:: Meta.abstract
 
     True if this model is not backed by a DynamoDB table.  Defaults to False.
+
+    Abstract models can't be used with an Engine since there is no table to modify or query.
+    Their columns and indexes are not inherited.  In the future, abstract models may be usable
+    as mixins; subclasses could inherit their columns and indexes.
 
 .. attribute:: Meta.table_name
 
@@ -114,17 +118,9 @@ Available properties:
 
 .. attribute:: Meta.stream
 
-    Configure this table's `Stream`__.  Must be ``None`` or a dict with the key ``"include"``, with a value of
-    ``{"new"}``, ``{"old"}``, ``{"new", "old"}``, or ``{"keys"}``.
+    Configure this table's Stream.  Defaults to None.
 
     See :ref:`streams`.
-
-    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html
-
-Instances of abstract models can't be used with an Engine since there is no table to modify or query.  Their
-columns and indexes are not inherited.
-
-In the future, abstract models may be usable as mixins; subclasses could inherit their columns and indexes.
 
 =======
 Columns

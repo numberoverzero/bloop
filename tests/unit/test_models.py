@@ -418,11 +418,12 @@ def test_defined_hash():
 def test_parent_hash():
     """Parent __hash__ function is used, not object __hash__"""
     class OtherBase:
-        pass
+        # Explicit __eq__ prevents OtherBase from having a __hash__
+        def __eq__(self, other):
+            pass
 
     class BaseWithHash:
         def __hash__(self):
-            print("BWH")
             return id(self)
 
     class Model(OtherBase, BaseWithHash, BaseModel):

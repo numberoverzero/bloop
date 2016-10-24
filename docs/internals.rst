@@ -1,6 +1,65 @@
 Internals
 ^^^^^^^^^
 
+======
+Models
+======
+
+.. _internal-model-hash:
+
+---------------------
+Locating ``__hash__``
+---------------------
+
+By default, all user classes are hashable:
+
+.. code-block:: python
+
+    >>> class Dict(): pass
+    >>> hash(Dict())
+    8771845190811
+
+
+Classes are unhashable in two cases:
+
+#. The class declares ``__hash__ = None``.
+#. The class implements ``__eq__`` but not ``__hash__``
+
+In the first case, Bloop will simply raise ``InvalidModel``
+
+In the second case, Bloop's ``ModelMetaclass`` manually locates a ``__hash__`` method in the model's base classes:
+
+.. code-block:: python
+
+    for base in bases:
+        hash_fn = getattr(base, "__hash__")
+        if hash_fn:
+            break
+    else:
+        hash_fn = object.__hash__
+    attrs["__hash__"] = hash_fn
+
+This is required because python doesn't provide a default hash method when ``__eq__`` is implemented,
+and won't fall back to a parent class's definition:
+
+.. code-block:: python
+
+    >>> class Base():
+    ...     def __hash__(self):
+    ...         print("Base.__hash__")
+    ...         return 0
+    ...
+    >>> class Derived(Base):
+    ...     def __eq__(self, other):
+    ...         return True
+    ...
+
+    >>> hash(Base())
+    Base.__hash__
+    >>> hash(Derived())
+    TypeError: unhashable type: 'Derived'
+
+
 .. _internal-streams:
 
 =======

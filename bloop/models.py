@@ -96,11 +96,12 @@ class ModelMetaclass(declare.ModelMetaclass):
             # hash function has priority over the default.
             # If there aren't any bases with explicit hash functions,
             # just use object.__hash__
-            hash_fn = object.__hash__
             for base in bases:
-                if base.__hash__ is not hash_fn:
-                    hash_fn = base.__hash__
+                hash_fn = getattr(base, "__hash__")
+                if hash_fn:
                     break
+            else:
+                hash_fn = object.__hash__
             attrs["__hash__"] = hash_fn
 
         model = super().__new__(mcs, name, bases, attrs)

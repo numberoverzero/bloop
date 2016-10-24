@@ -325,7 +325,20 @@ class Index(declare.Field):
         else:
             self.projection["available"] = model.Meta.columns
 
-    # TODO: disallow set/get/del for an index; these don't store values.  Raise AttributeError.
+    def set(self, obj, value):
+        raise AttributeError(
+            "{}.{} is a {}".format(
+                self.model.__name__, self.model_name, self.__class__.__name__))
+
+    def delete(self, obj):
+        raise AttributeError(
+            "{}.{} is a {}".format(
+                self.model.__name__, self.model_name, self.__class__.__name__))
+
+    def get(self, obj):
+        raise AttributeError(
+            "{}.{} is a {}".format(
+                self.model.__name__, self.model_name, self.__class__.__name__))
 
 
 class GlobalSecondaryIndex(Index):

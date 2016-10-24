@@ -602,6 +602,28 @@ def test_index_projection_validation():
     assert index.projection["available"] is None
 
 
+def test_index_unmodifiable():
+    """Can't set/get/del an index"""
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+        other = Column(Integer)
+        by_other = GlobalSecondaryIndex(projection="all", hash_key="other")
+    obj = Model(by_other=2)
+    assert not hasattr(obj, "by_other")
+
+    with pytest.raises(AttributeError) as excinfo:
+        getattr(obj, "by_other")
+    assert "Model.by_other" in str(excinfo.value)
+
+    with pytest.raises(AttributeError) as excinfo:
+        setattr(obj, "by_other", "value")
+    assert "Model.by_other" in str(excinfo.value)
+
+    with pytest.raises(AttributeError) as excinfo:
+        delattr(obj, "by_other")
+    assert "Model.by_other" in str(excinfo.value)
+
+
 def test_lsi_specifies_hash_key():
     with pytest.raises(InvalidIndex):
         LocalSecondaryIndex(hash_key="blah", range_key="foo", projection="keys")

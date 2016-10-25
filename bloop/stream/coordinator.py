@@ -39,6 +39,9 @@ class Coordinator:
         # <Coordinator[.../StreamCreation-travis-661.2/stream/2016-10-03T06:17:12.741]>
         return "<{}[{}]>".format(self.__class__.__name__, self.stream_arn)
 
+    def __iter__(self):
+        return self
+
     def __next__(self) -> Optional[Dict[str, Any]]:
         if not self.buffer:
             self.advance_shards()

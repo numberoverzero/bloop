@@ -1,5 +1,5 @@
 import collections
-from typing import Any, Dict, Iterable, List, Mapping, Optional
+from typing import Any, Dict, Iterable, List, Mapping
 
 import arrow
 
@@ -17,51 +17,43 @@ missing = Sentinel("missing")
 
 class Shard:
     def __init__(self, *, stream_arn: str, shard_id: str,
-                 iterator_id: Optional[str]=None, iterator_type: Optional[str]=None,
-                 sequence_number: Optional[str]=None, parent: Optional["Shard"]=None,
-                 session: Optional[SessionWrapper]=None):
-        # Set once on creation, never changes
+                 iterator_id: str=None, iterator_type: str=None,
+                 sequence_number: str=None, parent: "Shard"=None,
+                 session: SessionWrapper=None):
+
+        #: Set once on creation, never changes
         self.stream_arn = stream_arn
-        # Set once on creation, never changes
+
+        #: Set once on creation, never changes
         self.shard_id = shard_id
-        # Changes frequently, not set initially
-        # Iterators have a 15 minute lifetime, and need to be refreshed before then.
-        # If they expire, a new one can be created deterministically IFF the Shard has
-        # both a sequence_number and iterator_type of "at_sequence" or "after_sequence"
-        # Iterators also change on nearly every GetRecords call.
-        # When the end of a closed Shard is reached, this becomes None.
+
+        #: ID of the current iterator for this shard.
+        #: Changes with every call to :func:`~Shard.get_records`.
         self.iterator_id = iterator_id
-        # Changes infrequently, not set initially
-        # This will change on seek/jump, and the first time a record is encountered
-        # (usually, from "trim_horizon" or "latest" to "at_sequence")
+
+        #: One of "trim_horizon", "latest", "at_sequence", or "after_sequence".
+        #: Changes as the shard jumps around or when the Coordinator
+        #: pops a record from this shard from the buffer.
         self.iterator_type = iterator_type
-        # Changes frequently, not set initially
-        # See iterator_type
+
+        #: Changes when records are consumed.  Used with :attr:`~.iterator_type`.
         self.sequence_number = sequence_number
-        # Changes very infrequently, set initially
-        # This will only change when the parent Shard previously existed, but has
-        # since passed the 24 hour trim horizon.
-        # After the initial set, this will never go from None -> Shard,
-        # since Shards do not re-parent.
+
+        #: The :class:`Shard` that this one spawned off of.  This will become None
+        #: if a Coordinator is pruning expired parents.  It is usually set as part
+        #: of rebuilding a shard tree, soon after the shard is instantiated.
         self.parent = parent
-        # Changes infrequently, set initially
-        # Unlike parent, new children are added periodically (~4hrs) and as throughput
-        # requires splitting a Shard.  A Shard will have exactly 0, 1, or 2 children.
-        # A Shard with 0 children may be open, or there was a reduction in throughput.
-        # A Shard with 1 child is closed, and did not split.
-        # A Shard with 2 children is closed, due to an increase in throughput.  Updates to
-        #   records that were in this Shard may be in either child Shard, but will consistently
-        #   be written to the same child Shard (updates to record A will only go to one child, and not
-        #   bounce back and forth).
+
+        #: Shards have 0, 1, or 2 children.  A shard will have 0 children
+        #: when the shard is still open; if the stream is closed; or the table
+        #: throughput has decreased.
         self.children = []
-        # Changes infrequently, 0 initially
-        # Tracks how many times a GetRecords call has returned no results, but a next iterator_id.
-        # After ~5 empty responses, we can reasonably expect that the iterator is near the HEAD of an open Shard.
-        # This dictates how hard we need to work to "catch up" a new iterator, in the face of empty results
-        # (which provide no SequenceNumber or ApproximateCreationDateTime to approximate our location in the Stream).
+
+        #: Tracks how many times a GetRecords call has an iterator_id without any results.
+        #: After :data:`CALLS_TO_REACH_HEAD` empty responses, we can assume the shard is still open.
+        #: This dictates how hard the shard works to "catch up" a new iterator.
         self.empty_responses = 0
 
-        # Convenience so the Coordinator's session isn't explicitly needed for every call
         self.session = session
 
     def __repr__(self):
@@ -89,21 +81,16 @@ class Shard:
         try:
             return self.get_records()
         except ShardIteratorExpired:
-            # Refreshing a sequence_number-based Shard iterator is deterministic;
-            # if the iterator type is latest or trim_horizon, it's up to the caller to
-            # decide how to proceed.
+            # Refreshing a latest or trim_horizon iterator could lose data.
             if self.iterator_type in ["trim_horizon", "latest"]:
                 raise
 
-        # Since the expired iterator has a sequence_number, try to refresh automatically.
-        # This could still raise RecordsExpired, if the desired position fell behind the
-        # the trim_horizon since it expired.
+        # Automatically refresh at (or after) :attr:`~.sequence_number`. This can still
+        # raise :exc:`RecordsExpired` if the iterator fell behind the the trim_horizon.
         self.jump_to(iterator_type=self.iterator_type, sequence_number=self.sequence_number)
-
-        # If it didn't expire, let's try returning records once more.
         return self.get_records()
 
-    def __eq__(self, other):
+    def __eq__(self, other) -> bool:
         try:
             return (
                 (self.token == other.token) and
@@ -147,7 +134,7 @@ class Shard:
             yield shard
             shards.extend(shard.children)
 
-    def jump_to(self, *, iterator_type: str, sequence_number: Optional[str]=None) -> None:
+    def jump_to(self, *, iterator_type: str, sequence_number: str=None) -> None:
         # Just a simple wrapper; let the caller handle RecordsExpired
         self.iterator_id = self.session.get_shard_iterator(
             stream_arn=self.stream_arn,
@@ -165,35 +152,24 @@ class Shard:
         the seek failed to find records, either because the Shard is exhausted or it
         reached the HEAD of an open Shard.
         """
-        # 0) We have no way to associate the date with a position, so we simply have to go through
-        #    the entire Shard until we find a set of records with at least one with ApproxCreateDate >= position.
+        # 0) We have no way to associate the date with a position,
+        #    so we have to scan the shard from the beginning.
         self.jump_to(iterator_type="trim_horizon")
 
-        # The timestamps from DynamoDBStreams are integers; truncate the
-        # input position so we don't see 1476528055 < 1476528055.3 and
-        # have an off-by-one index in the reverse enumeration.
         position = position.timestamp
 
-        # Stop once the Shard is exhausted (can't possibly find the record)
-        # or we've somewhat confidently caught the HEAD of an open Shard.
         while (not self.exhausted) and (self.empty_responses < CALLS_TO_REACH_HEAD):
-            # Don't need to worry about RecordsExpired, since we're starting at trim_horizon.
-            # Don't need to worry about ShardIteratorExpired, since we just created this one at trim_horizon.
             records = self.get_records()
-            # Shortcut: we need AT LEAST one record to be after the position, so check the last record.
-            # if it's before the position, all of the records in this response are.
+            # We can skip the whole record set if the newest (last) record isn't new enough.
             if records and records[-1]["meta"]["created_at"].timestamp >= position:
-                # Reverse search is faster (on average; they're still both O(n) worst).
-                # since we're looking for the first number *below* the position.
+                # Looking for the first number *below* the position.
                 for offset, record in enumerate(reversed(records)):
                     if record["meta"]["created_at"].timestamp < position:
                         index = len(records) - offset
                         return records[index:]
-                # If the loop above finished, it means ALL the records are after the position.
                 return records
 
-        # Either exhausted the Shard, or caught up to HEAD.
-        # It's only a failure to seek if the Shard is exhausted.
+        # Either exhausted the Shard or caught up to HEAD.
         return []
 
     def load_children(self) -> None:
@@ -201,10 +177,11 @@ class Shard:
 
         Loads all shards that have this shard as an ancestor.
         """
-        # If a Shard has children, that number will never change.
-        # Children are the result of exactly one event:
-        #   increased throughput -> exactly 2 children
-        #         open for ~4hrs -> at most 1 child
+        # Child count is fixed the first time any of the following happen:
+        # 0 :: stream closed or throughput decreased
+        # 1 :: shard was open for ~4 hours
+        # 2 :: throughput increased
+
         if self.children:
             return self.children
 
@@ -212,6 +189,7 @@ class Shard:
         by_parent = collections.defaultdict(list)
         # ShardId -> Shard
         by_id = {}
+
         for shard in self.session.describe_stream(
                 stream_arn=self.stream_arn,
                 first_shard=self.shard_id)["Shards"]:
@@ -240,7 +218,10 @@ class Shard:
         return self.children
 
     def get_records(self) -> List[Dict[str, Any]]:
-        """Call GetRecords and apply catch-up logic.  Updates shard.iterator_id.  No exception handling."""
+        """Get the next set of records in this shard.
+
+        An empty list doesn't guarantee the shard is exhausted.
+        """
         # Won't be able to find new records.
         if self.exhausted:
             return []
@@ -253,10 +234,8 @@ class Shard:
         while self.empty_responses < CALLS_TO_REACH_HEAD and not self.exhausted:
             records = self._apply_get_records_response(self.session.get_stream_records(self.iterator_id))
             if records:
-                # Stop working the first time we find results.
                 return records
 
-        # Failed after 5 calls
         return []
 
     def _apply_get_records_response(self, response: Mapping[str, Any]) -> List[Dict[str, Any]]:
@@ -264,10 +243,8 @@ class Shard:
         records = [reformat_record(record) for record in records]
         self.iterator_id = response.get("NextShardIterator", last_iterator)
 
-        # The iterator state should ONLY be updated if there's no sequence_number already.
-        # This ensures we can refresh from a fixed point, which is unnecessary if we have a number.
-        # If sequence_number is set, we're risking data loss by skipping the existing checkpoint.
         if records and self.sequence_number is None:
+            # ONLY update these if there's no sequence_number.  Overwriting risks data loss.
             self.sequence_number = records[0]["meta"]["sequence_number"]
             self.iterator_type = "at_sequence"
         elif not records:
@@ -277,7 +254,6 @@ class Shard:
 
 def reformat_record(record: Mapping[str, Any]) -> Dict[str, Any]:
     """Repack a record into a cleaner structure for consumption."""
-    # Unwrap the inner structure, since most of it comes from here
     return {
         "key": record["dynamodb"].get("Keys", None),
         "new": record["dynamodb"].get("NewImage", None),

@@ -60,8 +60,8 @@ __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamDesc
 Create a Stream
 ===============
 
-Next, create a stream on the model.  This example starts at ``"trim_horizon"`` to get all records from the last
-24 hours, but could also be ``"latest"`` to only return records created after the stream was instantiated.
+Next, create a stream on the model.  This example starts at "trim_horizon" to get all records from the last
+24 hours, but could also be "latest" to only return records created after the stream was instantiated.
 
 .. code-block:: python
 

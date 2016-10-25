@@ -254,7 +254,7 @@ Record Gaps
 -----------
 
 Bloop initially performs up to 5 "catch up" calls to GetRecords when advancing an iterator.  If a GetRecords call
-returns a ``NextShardIterator`` but no records it's either due to being nearly caught up to ``"latest"`` in an open
+returns a ``NextShardIterator`` but no records it's either due to being nearly caught up to "latest" in an open
 shard, or from traversing a period of time in the shard with no activity.  Endlessly polling until a record comes back
 would cause every open shard to hang for up to 4 hours, while only calling GetRecords once could desynchronize one
 shard's iterator from others.

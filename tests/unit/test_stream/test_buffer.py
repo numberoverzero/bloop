@@ -143,6 +143,5 @@ def test_buffer_heap():
 
     buffer.push(record, shard)
 
-    #  [(sort, (record, shard)]
-    # [0]     [1]      [1]
-    assert buffer.heap[0][1][1] is shard
+    # [(sort, record, shard)]
+    assert buffer.heap[0][2] is shard

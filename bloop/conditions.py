@@ -1,7 +1,6 @@
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import collections
-from typing import Any, NamedTuple
 
 from .exceptions import InvalidCondition
 from .signals import (
@@ -103,10 +102,10 @@ def get_marked(obj):
 # RENDERING ================================================================================================ RENDERING
 
 
-Reference = NamedTuple("Reference", [("name", str), ("type", str), ("value", Any)])
+Reference = collections.namedtuple("Reference", ["name", "type", "value"])
 
 
-def is_empty(ref: Reference):
+def is_empty(ref):
     """True if ref is a value ref with None value"""
     return ref.type == "value" and ref.value is None
 
@@ -168,7 +167,7 @@ class ReferenceTracker:
         self.counts[ref] += 1
         return ref, value
 
-    def any_ref(self, *, column=None, value=missing, dumped=False) -> Reference:
+    def any_ref(self, *, column=None, value=missing, dumped=False):
         """Returns {"type": Union["name", "value"], "ref": str, "value": Optional[Any]}"""
         # Can't use None since it's a legal value for comparisons (attribute_not_exists)
         if value is missing:
@@ -187,7 +186,7 @@ class ReferenceTracker:
             ref_type = "value"
         return Reference(name=name, type=ref_type, value=value)
 
-    def pop_refs(self, *refs: Reference):
+    def pop_refs(self, *refs):
         """Decrement the usage of each ref by 1.
 
         If this was the last use of the ref, pop it from attr_names or attr_values"""
@@ -326,7 +325,7 @@ class BaseCondition:
     def __repr__(self):
         raise NotImplementedError
 
-    def render(self, renderer: ConditionRenderer):
+    def render(self, renderer):
         raise NotImplementedError
 
     def __invert__(self):
@@ -473,7 +472,7 @@ class Condition(BaseCondition):
     def __repr__(self):
         return "()"
 
-    def render(self, renderer: ConditionRenderer):
+    def render(self, renderer):
         raise InvalidCondition("Condition is not renderable")
 
 
@@ -493,7 +492,7 @@ class AndCondition(BaseCondition):
         else:
             return "({})".format(joiner.join(repr(c) for c in self.values))
 
-    def render(self, renderer: ConditionRenderer):
+    def render(self, renderer):
         if not self.values:
             raise InvalidCondition("Invalid Condition: <{!r}> does not contain any Conditions.".format(self))
         rendered_conditions = [c.render(renderer) for c in self.values]
@@ -518,7 +517,7 @@ class OrCondition(BaseCondition):
         else:
             return "({})".format(joiner.join(repr(c) for c in self.values))
 
-    def render(self, renderer: ConditionRenderer):
+    def render(self, renderer):
         if not self.values:
             raise InvalidCondition("Invalid Condition: <{!r}> does not contain any Conditions.".format(self))
         rendered_conditions = [c.render(renderer) for c in self.values]
@@ -537,7 +536,7 @@ class NotCondition(BaseCondition):
     def __repr__(self):
         return "(~{!r})".format(self.values[0])
 
-    def render(self, renderer: ConditionRenderer):
+    def render(self, renderer):
         rendered_condition = self.values[0].render(renderer)
         return "(NOT {})".format(rendered_condition)
 
@@ -554,7 +553,7 @@ class ComparisonCondition(BaseCondition):
             self.column.model.__name__, printable_column_name(self.column),
             self.operation, self.values[0])
 
-    def render(self, renderer: ConditionRenderer):
+    def render(self, renderer):
         column_ref = renderer.refs.any_ref(
             column=self.column, dumped=self.dumped)
         value_ref = renderer.refs.any_ref(
@@ -590,7 +589,7 @@ class BeginsWithCondition(BaseCondition):
             self.column.model.__name__, printable_column_name(self.column),
             self.values[0])
 
-    def render(self, renderer: ConditionRenderer):
+    def render(self, renderer):
         column_ref = renderer.refs.any_ref(
             column=self.column, dumped=self.dumped)
         value_ref = renderer.refs.any_ref(
@@ -614,7 +613,7 @@ class BetweenCondition(BaseCondition):
             self.column.model.__name__, printable_column_name(self.column),
             self.values[0], self.values[1])
 
-    def render(self, renderer: ConditionRenderer):
+    def render(self, renderer):
         column_ref = renderer.refs.any_ref(
             column=self.column, dumped=self.dumped)
         lower_ref = renderer.refs.any_ref(
@@ -640,7 +639,7 @@ class ContainsCondition(BaseCondition):
             self.column.model.__name__, printable_column_name(self.column),
             self.values[0])
 
-    def render(self, renderer: ConditionRenderer):
+    def render(self, renderer):
         column_ref = renderer.refs.any_ref(
             column=self.column, dumped=self.dumped)
         value_ref = renderer.refs.any_ref(
@@ -664,7 +663,7 @@ class InCondition(BaseCondition):
             self.column.model.__name__, printable_column_name(self.column),
             self.values)
 
-    def render(self, renderer: ConditionRenderer):
+    def render(self, renderer):
         if not self.values:
             raise InvalidCondition("Condition <{!r}> is missing values.".format(self))
         value_refs = []
@@ -741,7 +740,7 @@ class ComparisonMixin:
     is_not = __ne__
 
 
-def iter_conditions(condition: BaseCondition):
+def iter_conditions(condition):
     """Yield all conditions within the given condition.
 
     If the root condition is and/or/not, it is not yielded (unless a cyclic reference to it is found)."""
@@ -765,7 +764,7 @@ def iter_conditions(condition: BaseCondition):
             conditions.extend(reversed(condition.values))
 
 
-def iter_columns(condition: BaseCondition):
+def iter_columns(condition):
     """Yield all columns in the condition or its inner conditions."""
     # Like iter_conditions, this can't live in each condition without going possibly infinite on the
     # recursion, or passing the visited set through every call.  That makes the signature ugly, so we

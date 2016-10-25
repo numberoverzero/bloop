@@ -1,7 +1,5 @@
 import collections
-from typing import Dict
 
-import boto3.session
 import botocore.exceptions
 
 from .exceptions import (
@@ -34,7 +32,11 @@ SHARD_ITERATOR_TYPES = {
 
 
 class SessionWrapper:
-    def __init__(self, session: boto3.session.Session):
+    def __init__(self, session):
+        """
+        :param session: underlying boto3 session to wrap
+        :type session: boto3.session.Session
+        """
         self._dynamodb_client = session.client("dynamodb")
         self._stream_client = session.client("dynamodbstreams")
 
@@ -107,7 +109,7 @@ class SessionWrapper:
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
         table_validated.send(self, model=model, actual_description=actual, expected_description=expected)
 
-    def describe_stream(self, stream_arn, first_shard=None) -> Dict:
+    def describe_stream(self, stream_arn, first_shard=None):
         description = {"Shards": []}
 
         request = {"StreamArn": stream_arn, "ExclusiveStartShardId": first_shard}
@@ -130,7 +132,7 @@ class SessionWrapper:
             description.update(response)
         return description
 
-    def get_shard_iterator(self, *, stream_arn, shard_id, iterator_type, sequence_number=None) -> str:
+    def get_shard_iterator(self, *, stream_arn, shard_id, iterator_type, sequence_number=None):
         real_iterator_type = validate_stream_iterator_type(iterator_type)
         request = {
             "StreamArn": stream_arn,

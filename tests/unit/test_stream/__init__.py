@@ -1,7 +1,4 @@
-from typing import Any, Dict, List, Optional, Union
-
 import arrow
-from bloop.session import SessionWrapper
 from bloop.stream.shard import Shard
 from bloop.util import Sentinel
 
@@ -9,8 +6,7 @@ from bloop.util import Sentinel
 missing = Sentinel("missing")
 
 
-def build_shards(n: int, shape: Optional[Dict[int, Union[int, List[int]]]]=None,
-                 session: SessionWrapper=None, stream_arn=None, shard_id_prefix: Optional[str]="") -> List[Shard]:
+def build_shards(n, shape=None, session=None, stream_arn=None, shard_id_prefix=""):
     """Shape describes the parent/child relationships.
 
     a -> b -> c -> d
@@ -39,9 +35,7 @@ def build_shards(n: int, shape: Optional[Dict[int, Union[int, List[int]]]]=None,
     return shards
 
 
-def stream_description(
-        n: int, shape: Optional[Dict[int, Union[int, List[int]]]]=None,
-        stream_arn=None) -> Dict[str, Any]:
+def stream_description(n, shape=None, stream_arn=None):
     """Build a DescribeStream response with the given number of shards"""
     # Default to flat shards, no hierarchy
     shape = shape or {}
@@ -67,9 +61,7 @@ def stream_description(
     }
 
 
-def dynamodb_record_with(
-        key=False, new=False, old=False,
-        sequence_number=None, creation_time: Optional[arrow.Arrow]=None):
+def dynamodb_record_with(key=False, new=False, old=False, sequence_number=None, creation_time=None):
     if creation_time is None:
         creation_time = 1.46480527E9
     else:

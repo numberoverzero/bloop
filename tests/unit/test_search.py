@@ -265,16 +265,19 @@ def build_responses(chain, items=None):
 
 @pytest.fixture
 def simple_iter(engine, session):
-    def _simple_iter(cls=SearchIterator):
-        return cls(
-            engine=engine,
-            session=session,
-            model=User,
-            index=None,
-            limit=None,
-            request={},
-            projected=set()
-        )
+    def _simple_iter(cls=SearchIterator, model=User, index=None):
+        kwargs = {
+            "engine": engine,
+            "session": session,
+            "model": model,
+            "index": index,
+            "limit": None,
+            "request": {},
+            "projected": set()
+        }
+        if cls is SearchIterator:
+            kwargs.pop("engine")
+        return cls(**kwargs)
     return _simple_iter
 
 
@@ -618,7 +621,7 @@ def test_search_repr():
         assert search_repr(cls, has_model and model, has_index and index) == expected
 
 
-def test_reprs():
+def test_reprs(simple_iter):
     assert repr(Search(model=User, index=None)) == "<Search[User]>"
     assert repr(Scan(model=User, index=User.by_email)) == "<Scan[User.by_email]>"
     assert repr(Query(model=None, index=None)) == "<Query[None]>"
@@ -627,15 +630,10 @@ def test_reprs():
     prepared_search.index = User.by_email
     assert repr(prepared_search) == "<PreparedSearch[None.by_email]>"
 
-    def iterator(cls, model, index):
-        return cls(
-            engine=None, session=None, model=model,
-            index=index, limit=None, request=None, projected=None)
-
-    assert repr(iterator(SearchIterator, User, None)) == "<SearchIterator[User]>"
-    assert repr(iterator(SearchModelIterator, User, User.by_email)) == "<SearchModelIterator[User.by_email]>"
-    assert repr(iterator(QueryIterator, None, None)) == "<QueryIterator[None]>"
-    assert repr(iterator(ScanIterator, None, User.by_email)) == "<ScanIterator[None.by_email]>"
+    assert repr(simple_iter(SearchIterator, User, None)) == "<SearchIterator[User]>"
+    assert repr(simple_iter(SearchModelIterator, User, User.by_email)) == "<SearchModelIterator[User.by_email]>"
+    assert repr(simple_iter(QueryIterator, None, None)) == "<QueryIterator[None]>"
+    assert repr(simple_iter(ScanIterator, None, User.by_email)) == "<ScanIterator[None.by_email]>"
 
 
 # ITERATOR TESTS ======================================================================================= ITERATOR TESTS

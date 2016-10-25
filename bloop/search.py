@@ -323,7 +323,7 @@ class PreparedSearch:
 class SearchIterator:
     mode = "<mode-placeholder>"
 
-    def __init__(self, *, session, model, index, limit, request, projected, **kwargs):
+    def __init__(self, *, session, model, index, limit, request, projected):
         self.session = session
         self.request = request
         self.limit = limit
@@ -395,9 +395,10 @@ class SearchIterator:
 
 
 class SearchModelIterator(SearchIterator):
-    def __init__(self, *, engine, **kwargs):
+    def __init__(self, *, engine, session, model, index, limit, request, projected):
         self.engine = engine
-        super().__init__(**kwargs)
+        super().__init__(session=session, model=model, index=index,
+                         limit=limit, request=request, projected=projected)
 
     def __next__(self):
         attrs = super().__next__()

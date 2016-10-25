@@ -28,13 +28,13 @@ DYNAMODB_CONTEXT = decimal.Context(
 
 class Type(declare.TypeDefinition):
     def _load(self, value, **kwargs):
-        """take a {type: value} dictionary (or None) from dynamo and return a python value"""
+        """take a {type: value} dictionary (or None) from DynamoDB and return a python value"""
         if value is not None:
             value = next(iter(value.values()))
         return self.dynamo_load(value, **kwargs)
 
     def _dump(self, value, **kwargs):
-        """dump a python value to a {type: value} dictionary for dynamo storage"""
+        """dump a python value to a {type: value} dictionary for DynamoDB storage"""
         value = self.dynamo_dump(value, **kwargs)
         if value is None:
             return value
@@ -194,10 +194,10 @@ class Boolean(Type):
         return bool(value)
 
 
-def subclassof(C, B):
+def subclassof(c, b):
     """Wrap issubclass to return True/False without throwing TypeError"""
     try:
-        return issubclass(C, B)
+        return issubclass(c, b)
     except TypeError:
         return False
 

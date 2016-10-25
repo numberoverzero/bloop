@@ -9,7 +9,7 @@ __all__ = ["signal"]
 # De-dupe dict for Sentinel
 _symbols = {}
 
-# Isolate to avoid collisions with other modules
+# Isolate to avoid collisions with other modules.
 # Don't expose the namespace.
 __signals = blinker.Namespace()
 signal = __signals.signal
@@ -24,8 +24,7 @@ def ordered(obj):
     """
     if isinstance(obj, collections.abc.Mapping):
         return sorted((k, ordered(v)) for k, v in obj.items())
-    # Special case str since it's a collections.abc.Iterable,
-    # and causes infinite recursion
+    # Special case str since it's a collections.abc.Iterable
     elif isinstance(obj, str):
         return obj
     elif isinstance(obj, collections.abc.Iterable):
@@ -37,7 +36,8 @@ def ordered(obj):
 def printable_column_name(column, path=None):
     """Provided for debug output when rendering conditions.
 
-    User.name[3]["foo"][0]["bar"] -> name[3].foo[0].bar"""
+    User.name[3]["foo"][0]["bar"] -> name[3].foo[0].bar
+    """
     pieces = [column.model_name]
     path = path or column._path or []
     for segment in path:
@@ -118,5 +118,7 @@ class WeakDefaultDictionary(weakref.WeakKeyDictionary):
     def __missing__(self, key):
         self[key] = value = self.default_factory()
         return value
+
+    __iter__ = weakref.WeakKeyDictionary.__iter__
 
 missing = Sentinel("missing")

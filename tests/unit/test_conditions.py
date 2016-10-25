@@ -726,7 +726,7 @@ def test_render_update_set_and_remove(renderer):
 # CONDITIONS ============================================================================================== CONDITIONS
 
 
-def test_abstract_base():
+def test_abstract_base(renderer):
     """BaseCondition requires 4 methods for subclasses"""
     condition = BaseCondition(None)
     with pytest.raises(NotImplementedError):
@@ -734,7 +734,7 @@ def test_abstract_base():
     with pytest.raises(NotImplementedError):
         repr(condition)
     with pytest.raises(NotImplementedError):
-        condition.render(None)
+        condition.render(renderer)
 
 
 def test_empty_condition():
@@ -752,10 +752,10 @@ def test_iter_empty():
     assert next(iter_columns(condition), None) is None
 
 
-def test_render_empty():
+def test_render_empty(renderer):
     condition = Condition()
     with pytest.raises(InvalidCondition):
-        condition.render(None)
+        condition.render(renderer)
 
 
 @pytest.mark.parametrize("condition", non_meta_conditions())

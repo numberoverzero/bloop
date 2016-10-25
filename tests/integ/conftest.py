@@ -28,7 +28,7 @@ def pytest_configure(config):
     nonce = config.getoption("--nonce")
 
     @model_created.connect_via(sender=blinker.ANY, weak=False)
-    def nonce_table_name(_, *, model, **__):
+    def nonce_table_name(_, *, model, **kwargs):
         table_name = model.Meta.table_name
         if nonce not in table_name:
             model.Meta.table_name += nonce
@@ -48,6 +48,7 @@ def pytest_unconfigure(config):
     for table in tables:
         if nonce not in table:
             continue
+        # noinspection PyBroadException
         try:
             dynamodb_client.delete_table(TableName=table)
         except Exception:

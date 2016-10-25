@@ -454,7 +454,7 @@ def test_validate_compares_tables(session, dynamodb_client):
     validated = False
 
     @table_validated.connect
-    def assert_validated(sender, model, actual_description, expected_description):
+    def assert_validated(sender, model, **kwargs):
         assert sender is session
         assert model is User
         nonlocal validated

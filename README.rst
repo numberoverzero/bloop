@@ -14,7 +14,7 @@
     :target: https://github.com/numberoverzero/bloop/blob/master/LICENSE
 
 
-DynamoDB object mapper for python 3.4+
+DynamoDB object mapper for python 3.5+
 
 Installation
 ------------

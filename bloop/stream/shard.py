@@ -1,10 +1,8 @@
 import collections
-from typing import Any, Dict, Iterable, List, Mapping
 
 import arrow
 
 from ..exceptions import ShardIteratorExpired
-from ..session import SessionWrapper
 from ..util import Sentinel
 
 
@@ -16,10 +14,8 @@ missing = Sentinel("missing")
 
 
 class Shard:
-    def __init__(self, *, stream_arn: str, shard_id: str,
-                 iterator_id: str=None, iterator_type: str=None,
-                 sequence_number: str=None, parent: "Shard"=None,
-                 session: SessionWrapper=None):
+    def __init__(self, *, stream_arn, shard_id, iterator_id=None,
+                 iterator_type=None, sequence_number=None, parent=None, session=None):
 
         #: Set once on creation, never changes
         self.stream_arn = stream_arn
@@ -77,7 +73,7 @@ class Shard:
             details += ", "
         return "<{}[{}id={!r}]>".format(self.__class__.__name__, details, self.shard_id)
 
-    def __next__(self) -> List[Dict[str, Any]]:
+    def __next__(self):
         try:
             return self.get_records()
         except ShardIteratorExpired:
@@ -90,7 +86,7 @@ class Shard:
         self.jump_to(iterator_type=self.iterator_type, sequence_number=self.sequence_number)
         return self.get_records()
 
-    def __eq__(self, other) -> bool:
+    def __eq__(self, other):
         try:
             return (
                 (self.token == other.token) and
@@ -105,7 +101,7 @@ class Shard:
         return self.iterator_id is last_iterator
 
     @property
-    def token(self) -> Dict[str, Any]:
+    def token(self):
         """Does not recursively tokenize children.
 
         Returns fields that may be redundant for generating a Stream token,
@@ -126,7 +122,7 @@ class Shard:
             del token["sequence_number"]
         return token
 
-    def walk_tree(self) -> Iterable["Shard"]:
+    def walk_tree(self):
         """Generator that visits all shards in a shard tree"""
         shards = collections.deque([self])
         while shards:
@@ -134,7 +130,7 @@ class Shard:
             yield shard
             shards.extend(shard.children)
 
-    def jump_to(self, *, iterator_type: str, sequence_number: str=None) -> None:
+    def jump_to(self, *, iterator_type, sequence_number=None) -> None:
         # Just a simple wrapper; let the caller handle RecordsExpired
         self.iterator_id = self.session.get_shard_iterator(
             stream_arn=self.stream_arn,
@@ -145,7 +141,7 @@ class Shard:
         self.sequence_number = sequence_number
         self.empty_responses = 0
 
-    def seek_to(self, position: arrow.Arrow) -> List[Dict[str, Any]]:
+    def seek_to(self, position: arrow.Arrow):
         """Move the Shard's iterator to the earliest record that after the given time.
 
         Returns the first records at or past ``position``.  If the list is empty,
@@ -217,7 +213,7 @@ class Shard:
 
         return self.children
 
-    def get_records(self) -> List[Dict[str, Any]]:
+    def get_records(self):
         """Get the next set of records in this shard.
 
         An empty list doesn't guarantee the shard is exhausted.
@@ -238,7 +234,7 @@ class Shard:
 
         return []
 
-    def _apply_get_records_response(self, response: Mapping[str, Any]) -> List[Dict[str, Any]]:
+    def _apply_get_records_response(self, response):
         records = response.get("Records", [])
         records = [reformat_record(record) for record in records]
         self.iterator_id = response.get("NextShardIterator", last_iterator)
@@ -252,7 +248,7 @@ class Shard:
         return records
 
 
-def reformat_record(record: Mapping[str, Any]) -> Dict[str, Any]:
+def reformat_record(record):
     """Repack a record into a cleaner structure for consumption."""
     return {
         "key": record["dynamodb"].get("Keys", None),
@@ -271,7 +267,7 @@ def reformat_record(record: Mapping[str, Any]) -> Dict[str, Any]:
     }
 
 
-def unpack_shards(shards: List[Mapping[str, Any]], stream_arn: str, session: SessionWrapper) -> Dict[str, Shard]:
+def unpack_shards(shards, stream_arn, session):
     """List[Dict] -> Dict[shard_id, Shard].
 
     Each Shards' parent/children are hooked up with the other Shards in the list.
@@ -297,7 +293,7 @@ def unpack_shards(shards: List[Mapping[str, Any]], stream_arn: str, session: Ses
     return by_id
 
 
-def _translate_shards(shards: List[Mapping[str, Any]]) -> Iterable[Mapping[str, Any]]:
+def _translate_shards(shards):
     """Converts the dicts from DescribeStream to the internal Shard format."""
     for shard in shards:
         yield {

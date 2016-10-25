@@ -1,16 +1,7 @@
 import heapq
-from typing import Any, Callable, Iterable, List, Mapping, Tuple, TypeVar, Union
-
-import arrow
-
-from .shard import Shard
 
 
-Record = TypeVar("Record", bound=Mapping[str, Union[arrow.Arrow, str, Any]])
-TotalOrdering = TypeVar("TotalOrdering", bound=Tuple[arrow.Arrow, str, int])
-
-
-def heap_item(clock: Callable[[], int], record: Record, shard: Shard) -> Tuple[TotalOrdering, Record, Shard]:
+def heap_item(clock, record, shard):
     """Create a tuple of (ordering, (record, shard)) for use in a RecordBuffer."""
     # Primary ordering is by event creation time.
     # However, creation time is *approximate* and has whole-second resolution.
@@ -34,33 +25,33 @@ class RecordBuffer:
         # Used by the total ordering clock
         self.__monotonic_integer = 0
 
-    def push(self, record: Record, shard: Shard) -> None:
+    def push(self, record, shard):
         heapq.heappush(self._heap, heap_item(self.clock, record, shard))
 
-    def push_all(self, record_shard_pairs: Iterable[Tuple[Record, Shard]]) -> None:
+    def push_all(self, record_shard_pairs):
         # Faster than inserting one at a time; the heap is sorted once after all inserts.
         for record, shard in record_shard_pairs:
             item = heap_item(self.clock, record, shard)
             self._heap.append(item)
         heapq.heapify(self._heap)
 
-    def pop(self) -> Tuple[Record, Shard]:
+    def pop(self):
         return heapq.heappop(self._heap)[1:]
 
-    def peek(self) -> Tuple[Record, Shard]:
+    def peek(self):
         return self._heap[0][1:]
 
-    def clear(self) -> None:
+    def clear(self):
         self._heap.clear()
 
     @property
-    def heap(self) -> List[Tuple[TotalOrdering, Record, Shard]]:
+    def heap(self):
         return self._heap
 
-    def __len__(self) -> int:
+    def __len__(self):
         return len(self._heap)
 
-    def clock(self) -> int:
+    def clock(self):
         """Returns a monotonically increasing integer."""
         # Try to avoid collisions from someone accessing the underlying int.
         self.__monotonic_integer += 2

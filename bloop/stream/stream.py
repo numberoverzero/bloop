@@ -1,7 +1,3 @@
-from typing import Any, Dict, List, Mapping, MutableMapping, Optional, Union
-
-import arrow
-
 from ..exceptions import InvalidStream
 from ..signals import object_loaded
 from ..util import unpack_from_dynamodb
@@ -48,7 +44,7 @@ class Stream:
                 next_heartbeat = arrow.now().replace(minutes=12)
                 stream.heartbeat()
     """
-    def __init__(self, *, model, engine, coordinator: Coordinator):
+    def __init__(self, *, model, engine, coordinator):
 
         #: The :class:`BaseModel` of the Stream to iterate.
         self.model = model
@@ -66,7 +62,7 @@ class Stream:
     def __iter__(self):
         return self
 
-    def __next__(self) -> Optional[Mapping[str, Any]]:
+    def __next__(self):
         record = next(self.coordinator)
         if record:
             meta = self.model.Meta
@@ -78,7 +74,7 @@ class Stream:
         return record
 
     @property
-    def token(self) -> Dict[str, Any]:
+    def token(self):
         """Dict that can be used to reconstruct the current progress of the iterator.
 
         .. code-block:: python
@@ -96,7 +92,7 @@ class Stream:
         """
         return self.coordinator.token
 
-    def heartbeat(self) -> None:
+    def heartbeat(self):
         """Call periodically to ensure iterators without a fixed sequence number don't expire.
 
         You should call this once every ~12 minutes so that your "latest" and "trim_horizon" shard iterators don't
@@ -120,7 +116,7 @@ class Stream:
         """
         self.coordinator.heartbeat()
 
-    def move_to(self, position: Union[Mapping, arrow.Arrow, str]) -> None:
+    def move_to(self, position):
         """Move to either endpoint of the stream, a stream token, or a specific time.
 
         Moving to "trim_horizon" or "latest" is fast; moving to a point in time is very slow.
@@ -135,7 +131,7 @@ class Stream:
         """
         self.coordinator.move_to(position)
 
-    def _unpack(self, record: MutableMapping[str, Any], key: str, expected: List) -> None:
+    def _unpack(self, record, key, expected):
         """Replaces the attr dict at the given key with an instance of a Model"""
         attrs = record.get(key)
         if attrs is None:

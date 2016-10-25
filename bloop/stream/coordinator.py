@@ -1,16 +1,14 @@
 import collections
-from typing import Any, Dict, Mapping, Optional, Union
-
+import collections.abc
 import arrow
 
 from ..exceptions import InvalidPosition, InvalidStream, RecordsExpired
-from ..session import SessionWrapper
 from .buffer import RecordBuffer
-from .shard import Shard, unpack_shards
+from .shard import unpack_shards
 
 
 class Coordinator:
-    def __init__(self, *, engine, session: SessionWrapper, stream_arn: str):
+    def __init__(self, *, engine, session, stream_arn):
 
         self.engine = engine
         self.session = session
@@ -42,7 +40,7 @@ class Coordinator:
     def __iter__(self):
         return self
 
-    def __next__(self) -> Optional[Dict[str, Any]]:
+    def __next__(self):
         if not self.buffer:
             self.advance_shards()
 
@@ -57,7 +55,7 @@ class Coordinator:
         # No records :(
         return None
 
-    def advance_shards(self) -> None:
+    def advance_shards(self):
         """Try to refill the buffer by collecting records from the active shards.
 
         Rotates exhausted shards.
@@ -77,7 +75,7 @@ class Coordinator:
 
         self._handle_exhausted()
 
-    def heartbeat(self) -> None:
+    def heartbeat(self):
         """Keep active shards with "latest" and "trim_horizon" iterators alive."""
         for shard in self.active:
             if shard.sequence_number is None:
@@ -98,7 +96,7 @@ class Coordinator:
                 child.jump_to(iterator_type="trim_horizon")
 
     @property
-    def token(self) -> Dict[str, Any]:
+    def token(self):
         shard_tokens = []
         for root in self.roots:
             for shard in root.walk_tree():
@@ -110,7 +108,7 @@ class Coordinator:
             "shards": shard_tokens
         }
 
-    def remove_shard(self, shard: Shard) -> None:
+    def remove_shard(self, shard):
         try:
             self.roots.remove(shard)
         except ValueError:
@@ -134,8 +132,8 @@ class Coordinator:
         for x in to_remove:
             heap.remove(x)
 
-    def move_to(self, position: Union[Mapping, arrow.Arrow, str]) -> None:
-        if isinstance(position, Mapping):
+    def move_to(self, position):
+        if isinstance(position, collections.abc.Mapping):
             move = _move_stream_token
         elif isinstance(position, arrow.Arrow):
             move = _move_stream_time
@@ -146,7 +144,7 @@ class Coordinator:
         move(self, position)
 
 
-def _move_stream_endpoint(coordinator: Coordinator, position: str) -> None:
+def _move_stream_endpoint(coordinator, position):
     """Move to the "trim_horizon" or "latest" of the entire stream."""
     # 0) Everything will be rebuilt from DescribeStream.
     stream_arn = coordinator.stream_arn
@@ -175,7 +173,7 @@ def _move_stream_endpoint(coordinator: Coordinator, position: str) -> None:
                     coordinator.active.append(shard)
 
 
-def _move_stream_time(coordinator: Coordinator, time: arrow.Arrow) -> None:
+def _move_stream_time(coordinator, time):
     """Scan through the *entire* Stream for the first record after ``time``.
 
     This is an extremely expensive, naive algorithm that starts at trim_horizon and simply
@@ -206,7 +204,7 @@ def _move_stream_time(coordinator: Coordinator, time: arrow.Arrow) -> None:
             shard_trees.extend(shard.children)
 
 
-def _move_stream_token(coordinator: Coordinator, token: Mapping[str, Any]) -> None:
+def _move_stream_token(coordinator, token):
     """Move to the Stream position described by the token.
 
     The following rules are applied when interpolation is required:

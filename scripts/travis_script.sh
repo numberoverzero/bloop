@@ -6,4 +6,4 @@ if [ "$TOXENV" = "integ" ]; then
     TOX_COMMAND="$TOX_COMMAND --nonce=-travis-$TRAVIS_JOB_NUMBER"
 fi
 
-$TOX_COMMAND
+${TOX_COMMAND}

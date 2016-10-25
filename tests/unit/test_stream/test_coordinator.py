@@ -17,6 +17,10 @@ from . import (
 )
 
 
+def test_iter(coordinator):
+    assert iter(coordinator) is coordinator
+
+
 def test_coordinator_repr(coordinator):
     coordinator.stream_arn = "repr-stream-arn"
     assert repr(coordinator) == "<Coordinator[repr-stream-arn]>"

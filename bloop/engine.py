@@ -207,7 +207,7 @@ class Engine:
             raise MissingObjects("Failed to load some objects.", objects=not_loaded)
 
     def query(self, model_or_index, key=None, filter=None, projection="all", limit=None,
-              consistent=False, forward=True, **kwargs):
+              consistent=False, forward=True):
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
         else:
@@ -229,7 +229,7 @@ class Engine:
             })
             object_saved.send(self, obj=obj)
 
-    def scan(self, model_or_index, filter=None, projection="all", limit=None, consistent=False, **kwargs):
+    def scan(self, model_or_index, filter=None, projection="all", limit=None, consistent=False):
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
         else:

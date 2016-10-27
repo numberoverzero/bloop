@@ -1,3 +1,5 @@
+.. _guide-index:
+
 User Guide
 ^^^^^^^^^^
 

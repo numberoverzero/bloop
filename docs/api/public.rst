@@ -96,6 +96,27 @@ Querying
 Conditions
 ==========
 
+The only public class the conditions system exposes is :class:`!bloop.conditions.Condition`, which
+represents an empty condition.  The rest of the conditions system is baked into :class:`~bloop.models.Column` and
+the various :class:`~bloop.engine.Engine` functions like :func:`~bloop.engine.Engine.save`.
+
+This function creates a condition for any model that can be used when saving to ensure you don't overwrite an existing
+value.  The model's ``Meta`` attribute describes the required keys:
+
+.. code-block:: python
+
+    from bloop import Condition
+
+    def ensure_unique(model):
+        condition = Condition()
+        for key in model.Meta.keys:
+            condition &= key.is_(None)
+        return condition
+
+.. seealso::
+
+    :ref:`conditions` in the :ref:`guide-index` describes the possible conditions, and when and how to use them.
+
 .. autoclass:: bloop.conditions.Condition
 
 =======

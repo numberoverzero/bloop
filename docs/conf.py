@@ -1,11 +1,10 @@
 import sys
 
-import alabaster
+import sphinx_rtd_theme
 import pkg_resources
 
 
 extensions = [
-    'alabaster',
     'sphinx.ext.autodoc',
     'sphinx.ext.intersphinx',
     'sphinx.ext.viewcode',
@@ -39,34 +38,11 @@ exclude_patterns = ['_build']
 
 pygments_style = 'sphinx'
 
-html_theme = 'alabaster'
-
-html_theme_options = {
-    'github_button': 'true',
-    'github_user': 'numberoverzero',
-    'github_repo': 'bloop',
-    'github_banner': True,
-
-    'github_type': 'star',
-    'github_count': 'true',
-
-    'fixed_sidebar': True,
-
-    'show_powered_by': False,
-    'analytics_id': 'UA-65843067-1'
-}
-html_theme_path = [alabaster.get_path()]
-html_static_path = ['_static']
-html_sidebars = {
-    '**': [
-        'about.html',
-        'navigation.html',
-        'relations.html',
-        'searchbox.html'
-    ]
-}
+html_theme = 'sphinx_rtd_theme'
+html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3.6', None),
-    'arrow': ('https://arrow.readthedocs.io/en/latest/', None)
+    'arrow': ('https://arrow.readthedocs.io/en/latest/', None),
+    'PIL': ('https://pillow.readthedocs.io/en/3.4.x', None)
 }

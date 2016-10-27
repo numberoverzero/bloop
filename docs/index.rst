@@ -11,89 +11,94 @@ Features
 
 * Simple declarative modeling
 * Extensible type system, useful built-in types
+* DynamoDBStreams interface that makes sense
 * Secure expression-based wire format
 * Simple atomic operations
 * Expressive conditions
 * Diff-based saves
 
-Installation
-============
-::
-
-    pip install bloop
-
-Quickstart
+Ergonomics
 ==========
 
-First, define and bind our model:
-
 .. code-block:: python
-
-    import uuid
-
-    from bloop import (
-        BaseModel, Column, Engine,
-        GlobalSecondaryIndex, String, UUID)
-
 
     class Account(BaseModel):
         id = Column(UUID, hash_key=True)
         name = Column(String)
         email = Column(String)
-        by_email = GlobalSecondaryIndex(hash_key='email')
+        by_email = GlobalSecondaryIndex(projection='keys', hash_key='email')
 
-    engine = Engine()
     engine.bind(Account)
 
-Save an instance, load by key, and get the first query result:
-
-.. code-block:: python
-
-    account = Account(
-        id=uuid.uuid4(),
-        name='username',
-        email='foo@bar.com')
-    engine.save(account)
-
-
-    same_account = Account(id=account.id)
-    engine.load(same_account)
-
+    some_account = Account(id=uuid.uuid4(), email='foo@bar.com')
+    engine.save(some_account)
 
     q = engine.query(
         Account.by_email,
-        key=Account.email == "foo@bar.com")
+        key=Account.email == 'foo@bar.com')
 
-    also_same_account = q.first()
+    same_account = q.one()
+    print(same_account.id)
 
-Kick it up a notch with conditional operations:
+Never worry about `trim horizons`__, `iterator types`__, or `tracking shard lineage`__ again:
 
 .. code-block:: python
 
-    # Exactly the same save as above, but now we
-    # fail if the id isn't unique.
-    if_not_exist = Account.id.is_(None)
-    engine.save(account, condition=if_not_exist)
+    # Enable Streams with the following lines in User.Meta:
+    stream = {
+        'include': {'new', 'old'}
+    }
 
+    # Start streaming!
 
-    # Update the account, as long as the name hasn't changed
-    same_username = Account.name == "username"
-    account.email = "new@email.com"
-    engine.save(account, condition=same_username)
+    template = '''
+    User event.
+    Was: {old}
+    Now: {new}
+    Event Details:
+    {meta}
+    '''
 
+    stream = engine.stream(User, 'trim_horizon')
+    while True:
+        record = next(stream)
+        if record: print(template.format(**record)
+        else: time.sleep(0.5)
 
-    # Delete the account, as long as none of the fields have
-    # changed since we last loaded the account
-    engine.delete(account, atomic=True)
+__ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_GetRecords.html#API_GetRecords_Errors
+__ https://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_GetShardIterator.html#DDB-GetShardIterator-request-ShardIteratorType
+__ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html#Streams.Processing
+
+User Guide
+==========
 
 .. toctree::
-    :hidden:
-    :maxdepth: 3
+    :maxdepth: 2
 
-    user/models
-    user/engine
-    user/query
-    user/streams
-    user/types
-    user/conditions
-    internals
+    user/getting-started
+    user/index
+
+API Reference
+=============
+
+Bloop's API is divided into two sections: public and internal.
+
+If you're looking for details on :func:`Engine.save <bloop.engine.Engine.save>` or want the first result
+from a :class:`~bloop.search.Query`, the Public API provides a breakdown of each class you'll encounter
+during normal usage.
+
+.. toctree::
+    :maxdepth: 2
+
+    api/public
+
+Most users never need to interact with the Internal API.  For example, you can interact with the model creation
+process by connecting to :data:`~bloop.signals.model_created`, instead of modifying the
+:class:`metaclass <bloop.models.ModelMetaclass>` directly.
+
+The Internal API has no backwards-compatibility guarantees.
+
+.. toctree::
+    :maxdepth: 2
+
+    api/internal

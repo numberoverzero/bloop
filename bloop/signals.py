@@ -1,10 +1,11 @@
 from .util import signal
 
-
-# Last chance to modify the model before its backing table is created
-# sender: Engine
-# model: Model class
 before_create_table = signal("before_create_table")
+before_create_table.__doc__ = """Last chance to modify the model before its backing table is created.
+
+:param engine: :class:`~bloop.Engine` creating the model's table
+:param model: :class:`~bloop.BaseModel`
+"""
 
 # After a Model's expected table has been validated against the
 #   actual table in DynamoDB

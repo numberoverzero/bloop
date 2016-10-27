@@ -27,24 +27,131 @@ DYNAMODB_CONTEXT = decimal.Context(
 
 
 class Type(declare.TypeDefinition):
-    def _load(self, value, **kwargs):
-        """take a {type: value} dictionary (or None) from DynamoDB and return a python value"""
-        if value is not None:
-            value = next(iter(value.values()))
-        return self.dynamo_load(value, **kwargs)
+    """Abstract base type.
+
+    Basic Usage:
+
+    .. code-block:: python
+
+        class ReversedString(Type):
+            python_type = str
+            backing_type = "S"
+
+            def dynamo_load(self, value, *, context, **kwargs):
+                return str(value[::-1])
+
+            def dynamo_dump(self, value, *, context, **kwargs):
+                return str(value[::-1])
+
+    If a type's constructor doesn't have required args, a :class:`~bloop.Column`
+    can use the class directly:
+
+    .. code-block:: python
+
+        class SomeModel(BaseModel):
+            custom_hash_key = Column(ReversedString, hash_key=True)
+
+    Complex types may need to implement :func:`~_dump`, :func:`~_load`, or :func:`~_register`.
+    """
+
+    #: The local Python type.  Optional, not validated.
+    python_type = None
+
+    #: This is the DynamoDB type that Bloop will store values under.
+    #:
+    #: * ``"S"`` -- string
+    #: * ``"N"`` -- number
+    #: * ``"B"`` -- binary
+    #: * ``"BOOL"`` -- boolean
+    #: * ``"SS"`` -- string set
+    #: * ``"NS"`` -- number set
+    #: * ``"BS"`` -- binary set
+    #: * ``"M"`` -- map
+    #: * ``"L"`` -- list
+    backing_type = None
+
+    def dynamo_dump(self, value, *, context, **kwargs):
+        """Converts a local value into a DynamoDB value.
+
+        For example, to store a string enum as an integer:
+
+        .. code-block:: python
+
+            def dynamo_dump(self, value, *, context, **kwargs):
+                colors = ["red", "blue", "green"]
+                return colors.index(value.lower())
+        """
+        raise NotImplementedError
+
+    def dynamo_load(self, value, *, context, **kwargs):
+        """Converts a DynamoDB value into a local value.
+
+        For example, to load a string enum from an integer:
+
+        .. code-block:: python
+
+            def dynamo_dump(self, value, *, context, **kwargs):
+                colors = ["red", "blue", "green"]
+                return colors[value]
+        """
+        raise NotImplementedError
 
     def _dump(self, value, **kwargs):
-        """dump a python value to a {type: value} dictionary for DynamoDB storage"""
+        """Entry point for serializing values.  Most custom types should use :func:`~dynamo_dump`.
+
+        This wraps the return value of :func:`~dynamo_dump` in DynamoDB's wire format.
+
+        For example, serializing a string enum to an int:
+
+        .. code-block:: python
+
+            value = "green"
+            # dynamo_dump("green") = 2
+            _dump(value) == {"N": 2}
+
+        If a complex type calls this function with ``None``, it will forward ``None`` to :func:`~dynamo_dump`.  This
+        can happen when dumping eg. a sparse :class:`~.Map`, or a missing (not set) value.
+        """
         value = self.dynamo_dump(value, **kwargs)
         if value is None:
             return value
         return {self.backing_type: value}
 
-    def dynamo_load(self, value, *, context, **kwargs):
-        raise NotImplementedError
+    def _load(self, value, **kwargs):
+        """Entry point for deserializing values.  Most custom types should use :func:`~dynamo_load`.
 
-    def dynamo_dump(self, value, *, context, **kwargs):
-        raise NotImplementedError
+        This unpacks DynamoDB's wire format and calls :func:`~dynamo_load` on the inner value.
+
+        For example, deserializing an int to a string enum:
+
+        .. code-block:: python
+
+            value = {"N": 2}
+            # dynamo_load(2) = "green"
+            _load(value) == "green"
+
+        If a complex type calls this function with ``None``, it will forward ``None`` to :func:`~dynamo_load`.  This
+        can happen when loading eg. a sparse :class:`~.Map`.
+        """
+        if value is not None:
+            value = next(iter(value.values()))
+        return self.dynamo_load(value, **kwargs)
+
+    def _register(self, engine):
+        """Called when the type is registered.
+
+        Register any types this type depends on.  For example, :class:`~.List` and :class:`~.Set`
+
+        .. code-block:: python
+
+            class Container(Type):
+                def __init__(self, container_type):
+                    self._type = container_type
+
+                def _register(self, engine):
+                    engine.register(self._type)
+        """
+        super()._register(engine)
 
     def __repr__(self):
         # Render class python types by name
@@ -86,13 +193,14 @@ class UUID(String):
 
 
 class DateTime(String):
-    """DateTimes are ALWAYS stored in UTC, backed by arrow.Arrow instances.
+    """Always stored in UTC, backed by :class:`arrow.Arrow` instances.
 
-    A local timezone may be specified when initializing the type - otherwise
-    UTC is used.
+    A local timezone may be specified when initializing the type - otherwise UTC is used.
 
     For example, comparisons can be done in any timezone since they
-    will all be converted to UTC on request and from UTC on response::
+    will all be converted to UTC on request and from UTC on response:
+
+    .. code-block:: python
 
         class Model(Base):
             id = Column(Integer, hash_key=True)
@@ -104,12 +212,12 @@ class DateTime(String):
 
         paris_one_day_ago = arrow.now().to("Europe/Paris").replace(days=-1)
 
-        query = (engine.query(Model)
-                       .key(Model.id==1)
-                       .filter(Model.date >= paris_one_day_ago))
+        query = engine.query(
+            Model,
+            key=Model.id==1,
+            filter=Model.date >= paris_one_day_ago)
 
-        results = list(query)
-        results[0].date
+        query.first().date
 
     """
     python_type = arrow.Arrow

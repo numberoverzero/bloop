@@ -112,6 +112,39 @@ TODO split into bad input (query without key, unknown projection type, bad strea
 Signals
 =======
 
+Bloop exposes a set of `blinker`_ signals that you can connect to.  Signals allow you to easily extend Bloop and
+inject logic without directly replacing entire classes.  For example, the following will keep a list of all models
+that have been created:
+
+.. code-block:: python
+
+    from bloop import model_created
+    models = []
+
+    @model_created.connect
+    def on_new_model(_, *, model, **kwargs):
+        models.append(model)
+
+Your receiver must take ``**kwargs``.  This allows you and extension authors to send arbitrary metadata with an
+existing built-in signal, or any new signals in the Bloop namespace that extensions may create.
+
+.. note::
+
+    * A signal may **add new kwargs** in a minor version.
+    * An anonymous signal may **add a sender** in a minor version.
+    * A signal can only **remove a kwarg** in a major version.
+    * A signal can only **remove or replace a sender** in a major version.
+    * A signal can only **promote a kwarg to a sender** in a major version.
+
+.. note::
+
+    * ``model`` is always a Model class eg. ``User`` or ``Account``
+    * ``obj`` is always an instance of a Model  eg. ``User(name='some-user')`` or ``Account(id=343)``
+
+    Bloop will never never send both at the same time.  You can retrieve ``model`` from ``obj.__class__``.
+
+.. _blinker: https://pythonhosted.org/blinker/
+
 .. autodata:: bloop.signals.before_create_table
     :annotation:
 

@@ -26,13 +26,13 @@ Modeling
 Streaming
 =========
 
-.. autoclass:: bloop.stream.Shard
+.. autoclass:: bloop.stream.shard.Shard
     :members:
 
-.. autoclass:: bloop.stream.Coordinator
+.. autoclass:: bloop.stream.coordinator.Coordinator
     :members:
 
-.. autoclass:: bloop.stream.RecordBuffer
+.. autoclass:: bloop.stream.buffer.RecordBuffer
     :members:
 
 ========

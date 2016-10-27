@@ -15,11 +15,7 @@ def stream_for(engine, model):
 class Stream:
     """An iterator over all Records in all Shards in a Stream.
 
-    Guaranteed chronological ordering across all shards in a distributed system isn't possible; this will
-    provide a good approximation based on each record's ApproximateCreationDateTime.
-
-    The usual Shard guarantees still apply, such as strict ordering of changes to the same hash/range key.
-    Records in a child shard will never precede records from its parent shard.
+    Ordering is **approximate**.  See :ref:`Stream Internals <internal-streams>` for specific guarantees.
 
     Basic Usage:
 
@@ -31,7 +27,7 @@ class Stream:
             print("{old} became {new}".format(**record))
 
 
-    With periodic :meth:`heartbeats <~.heartbeat>`:
+    Processing in a loop with periodic :func:`heartbeats <bloop.stream.Stream.heartbeat>`:
 
     .. code-block:: python
 
@@ -142,5 +138,5 @@ class Stream:
             model=self.model,
             engine=self.engine
         )
-        object_loaded.send(self.engine, obj=obj)
+        object_loaded.send(engine=self.engine, obj=obj)
         record[key] = obj

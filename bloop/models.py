@@ -12,7 +12,7 @@ __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 
 
 @table_validated.connect
-def on_table_validated(_, model, actual_description, **kwargs):
+def on_table_validated(_, *, model, actual_description, **kwargs):
     if model.Meta.stream:
         model.Meta.stream["arn"] = actual_description["LatestStreamArn"]
 

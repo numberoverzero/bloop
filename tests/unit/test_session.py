@@ -452,10 +452,12 @@ def test_create_already_exists(session, dynamodb_client):
 
 def test_validate_compares_tables(session, dynamodb_client):
     validated = False
+    # Naming collision inside handler
+    expected_session = session
 
     @table_validated.connect
-    def assert_validated(sender, model, **kwargs):
-        assert sender is session
+    def assert_validated(_, *, session, model, **kwargs):
+        assert session is expected_session
         assert model is User
         nonlocal validated
         validated = True

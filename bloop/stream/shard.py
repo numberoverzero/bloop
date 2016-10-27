@@ -141,7 +141,7 @@ class Shard:
         self.sequence_number = sequence_number
         self.empty_responses = 0
 
-    def seek_to(self, position: arrow.Arrow):
+    def seek_to(self, position):
         """Move the Shard's iterator to the earliest record that after the given time.
 
         Returns the first records at or past ``position``.  If the list is empty,

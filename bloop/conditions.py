@@ -36,17 +36,17 @@ _obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None
 
 
 @object_deleted.connect
-def on_object_deleted(_, obj, **kwargs):
+def on_object_deleted(_, *, obj, **kwargs):
     _obj_tracking[obj].pop("snapshot", None)
 
 
 @object_loaded.connect
-def on_object_loaded(engine, obj, **kwargs):
+def on_object_loaded(_, *, engine, obj, **kwargs):
     sync(obj, engine)
 
 
 @object_modified.connect
-def on_object_modified(_, obj, column, **kwargs):
+def on_object_modified(_, *, obj, column, **kwargs):
     # Mark a column for a given object as being modified in any way.
     # Any marked columns will be pushed (possibly as DELETES) in
     # future UpdateItem calls that include the object.
@@ -54,7 +54,7 @@ def on_object_modified(_, obj, column, **kwargs):
 
 
 @object_saved.connect
-def on_object_saved(engine, obj, **kwargs):
+def on_object_saved(_, *, engine, obj, **kwargs):
     sync(obj, engine)
 
 
@@ -193,19 +193,19 @@ class ReferenceTracker:
         for ref in refs:
             name = ref.name
             count = self.counts[name]
-            # Not tracking this ref, nothing to do
+            # Not tracking this ref
             if count < 1:
                 continue
-            # Someone else is using this ref, so decrement and continue
+            # Someone else is using this ref
             elif count > 1:
                 self.counts[name] -= 1
-            # Last reference, time to remove it from an index (or two)
-            else:  # count == 1
+            # Last reference
+            else:
                 self.counts[name] -= 1
                 if ref.type == "value":
                     del self.attr_values[name]
-                else:  # type == "name"
-                    # Grab the name to clean up the reverse lookup
+                else:
+                    # Clean up both name indexes
                     path_segment = self.attr_names[name]
                     del self.attr_names[name]
                     del self.name_attr_index[path_segment]

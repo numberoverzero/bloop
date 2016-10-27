@@ -87,7 +87,50 @@ def fail_unknown(model, from_declare):
 
 
 class Engine:
+    """
+
+    Basic Usage:
+
+    .. code-block:: python
+
+        # Declare some models
+        class User(BaseModel):
+            user_id = Column(Integer, hash_key=True)
+
+        class Game(BaseModel):
+            user_id = Column(Integer, hash_key=True)
+            game_title = Column(String, range_key=True)
+
+            by_title = GlobalSecondaryIndex(
+                projection="keys", hash_key="game_title")
+
+        # Bind the models to tables in DynamoDB
+        engine.bind(User)
+        engine.bind(Game)
+        # OR: bind all subclasses with engine.bind(BaseModel)
+
+        # Create a few instances
+        user = User(user_id=101)
+        game = Game(user_id=101, game_title="Starship X")
+
+        # Persist in DynamoDB
+        engine.save(user, game)
+
+        # Load with consistent reads
+        engine.load(user, consistent=True)
+
+        # Delete an object only if it hasn't been modified
+        engine.delete(game, atomic=True)
+    """
     def __init__(self, session=None, type_engine=None):
+        """
+        Create a new eng
+
+        :param session: An existing boto3 session, or None to use the default session
+        :type session: boto3.session.Session
+        :param type_engine: An existing type engine, or None to use a unique type engine.
+        :type type_engine: declare.TypeEngine
+        """
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = type_engine or declare.TypeEngine.unique()
@@ -118,16 +161,16 @@ class Engine:
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
         for model in concrete:
-            before_create_table.send(self, model=model)
+            before_create_table.send(engine=self, model=model)
             self.session.create_table(model)
 
         for model in concrete:
             self.session.validate_table(model)
-            model_validated.send(self, model=model)
+            model_validated.send(engine=self, model=model)
 
             self.type_engine.register(model)
             self.type_engine.bind(context={"engine": self})
-            model_bound.send(self, model=model)
+            model_bound.send(engine=self, model=model)
 
     def delete(self, *objs, condition=None, atomic=False):
         objs = set(objs)
@@ -138,31 +181,13 @@ class Engine:
                 "Key": dump_key(self, obj),
                 **render(self, obj=obj, atomic=atomic, condition=condition)
             })
-            object_deleted.send(self, obj=obj)
+            object_deleted.send(engine=self, obj=obj)
 
     def load(self, *objs, consistent=False):
-        """Populate objects from dynamodb, optionally using consistent reads.
+        """Populate objects from DynamoDB.
 
-        If any objects are not found, raises MissingObjects with the attribute
-        `objects` containing a list of the objects that were not loaded.
-
-        Example
-        -------
-        class HashOnly(bloop.BaseModel):
-            user_id = Column(NumberType, hash_key=True)
-
-        class HashAndRange(bloop.BaseModel):
-            user_id = Column(NumberType, hash_key=True)
-            game_title = Column(StringType, range_key=True)
-
-        hash_only = HashOnly(user_id=101)
-        hash_and_range = HashAndRange(user_id=101, game_title="Starship X")
-
-        # Load only one instance, with consistent reads
-        engine.load(hash_only, consistent=True)
-
-        # Load multiple instances
-        engine.load([hash_only, hash_and_range])
+        Raises :exc:`~bloop.exceptions.MissingObjects` if objects aren't loaded.
+        :attr:`MissingObjects.objects <~bloop.exceptions.MissingObjects>` includes the objects not loaded.
         """
         objs = set(objs)
         validate_not_abstract(*objs)
@@ -195,7 +220,7 @@ class Engine:
                 for obj in object_index[table_name].pop(index):
                     unpack_from_dynamodb(
                         attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
-                    object_loaded.send(self, obj=obj)
+                    object_loaded.send(engine=self, obj=obj)
                 if not object_index[table_name]:
                     object_index.pop(table_name)
 
@@ -227,7 +252,7 @@ class Engine:
                 "Key": dump_key(self, obj),
                 **render(self, obj=obj, atomic=atomic, condition=condition, update=True)
             })
-            object_saved.send(self, obj=obj)
+            object_saved.send(engine=self, obj=obj)
 
     def scan(self, model_or_index, filter=None, projection="all", limit=None, consistent=False):
         if isinstance(model_or_index, Index):

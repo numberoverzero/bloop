@@ -338,12 +338,12 @@ def test_table_validated_signal():
 
     # arn isn't recorded when Meta doesn't expect a stream
     expected = expected_table_description(NoStream)
-    table_validated.send(None, model=NoStream, actual_description=actual, expected_description=expected)
+    table_validated.send(model=NoStream, actual_description=actual, expected_description=expected)
     assert NoStream.Meta.stream is None
 
     assert HasStream.Meta.stream["arn"] is None
     expected = expected_table_description(HasStream)
-    table_validated.send(None, model=HasStream, actual_description=actual, expected_description=expected)
+    table_validated.send(model=HasStream, actual_description=actual, expected_description=expected)
     assert HasStream.Meta.stream["arn"] == "table/stream_name/stream/2016-08-29T03:30:15.582"
 
 

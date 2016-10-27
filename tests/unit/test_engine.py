@@ -4,7 +4,7 @@ import arrow
 import boto3
 import declare
 import pytest
-from bloop.engine import Engine, dump_key, object_saved
+from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
     AbstractModelError,
     InvalidModel,
@@ -15,6 +15,7 @@ from bloop.exceptions import (
 )
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper
+from bloop.signals import object_saved
 from bloop.types import DateTime, Integer, String
 from bloop.util import ordered
 
@@ -367,7 +368,7 @@ def test_save_atomic_new(engine, session):
 def test_save_atomic_condition(engine, session):
     user = User(id="user_id")
     # Tell the tracking system the user's id was saved to DynamoDB
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine=engine, obj=user)
     # Mutate a field; part of the update but not an expected condition
     user.name = "new_foo"
     # Condition on the mutated field with a different value
@@ -455,7 +456,7 @@ def test_delete_atomic(engine, session):
     user = User(id="user_id")
 
     # Tell the tracking system the user's id was saved to DynamoDB
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine=engine, obj=user)
 
     expected = {
         "ConditionExpression": "(#n0 = :v1)",
@@ -501,7 +502,7 @@ def test_delete_atomic_condition(engine, session):
     user = User(id="user_id", email="foo@bar.com")
 
     # Tell the tracking system the user's id and email were saved to DynamoDB
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine=engine, obj=user)
 
     expected = {
         "ConditionExpression": "((#n0 = :v1) AND (#n2 = :v3) AND (#n4 = :v5))",

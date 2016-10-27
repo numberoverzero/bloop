@@ -1,7 +1,7 @@
 .. _conditions:
 
-Using Conditions
-^^^^^^^^^^^^^^^^
+Conditions
+^^^^^^^^^^
 
 Conditions are used for:
 
@@ -105,7 +105,7 @@ row in DynamoDB.  Here are the rules:
       and expect the value to be None in DynamoDB.
    2. If a column is missing and **wasn't** expected (query on a projected Index), don't include it.
 
-3. Recompute the atomic condition Whenever the local state is synchronized with the DynamoDB value.
+3. Recompute the atomic condition whenever the local state is synchronized with the DynamoDB value.
 
 The following examples use this model:
 
@@ -256,8 +256,8 @@ subset of all columns (using the index's projection) but the value will be missi
         key=Document.name == ".profile")
     result = query.first()
 
-This index projects the ``size`` column, which means it's expected to populate the columns ``id, name, size``.
-If the result looks like this:
+This index projects the ``size`` column, which means it's expected to populate the
+``id``, ``name``, and ``size`` columns.  If the result looks like this:
 
 .. code-block:: python
 

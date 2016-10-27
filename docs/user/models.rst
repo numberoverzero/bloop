@@ -43,7 +43,7 @@ If any model doesn't match its backing table, ``TableMismatch`` is raised.
 
 .. note::
 
-    Models :ref:`must be hashable <internal-model-hash>`.  If you implement ``__eq__`` without
+    Models :ref:`must be hashable <implementation-model-hash>`.  If you implement ``__eq__`` without
     ``__hash__``, Bloop will locate a hash method in the model's mro.
 
 ==================

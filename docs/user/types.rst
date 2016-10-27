@@ -16,9 +16,9 @@ Scalar Types
 
 Bloop supports all scalar types except NULL.
 
-----------
-``Binary``
-----------
+------
+Binary
+------
 
 .. code-block:: python
 
@@ -26,9 +26,9 @@ Bloop supports all scalar types except NULL.
         backing_type = "B"
         python_type = bytes
 
------------
-``Boolean``
------------
+-------
+Boolean
+-------
 
 .. code-block:: python
 
@@ -36,9 +36,9 @@ Bloop supports all scalar types except NULL.
         backing_type = "BOOL"
         python_type = bool
 
----------
-``Float``
----------
+-----
+Float
+-----
 
 .. code-block:: python
 
@@ -46,18 +46,18 @@ Bloop supports all scalar types except NULL.
         backing_type = "N"
         python_type = numbers.Number
 
------------
-``Integer``
------------
+-------
+Integer
+-------
 
 .. code-block:: python
 
     class Integer(bloop.Float):
         python_type = int
 
-----------
-``String``
-----------
+------
+String
+------
 
 .. code-block:: python
 
@@ -65,9 +65,9 @@ Bloop supports all scalar types except NULL.
         backing_type = "S"
         python_type = str
 
---------
-``UUID``
---------
+----
+UUID
+----
 
 .. code-block:: python
 
@@ -85,9 +85,9 @@ Bloop supports all scalar types except NULL.
     >>> typedef.dynamo_dump(guid, context={})
     '9eca3291-f1d6-4f19-afe2-b3116b2c0a9f'
 
-------------
-``DateTime``
-------------
+--------
+DateTime
+--------
 
 DateTime stores an :py:class:`arrow.arrow.Arrow` as an ISO8601 UTC String.
 
@@ -141,9 +141,9 @@ DynamoDB's ``Map`` can have keys with different types per key, but must identify
         "rating": 0.7,
         "stock": 1e9}
 
--------
-``Set``
--------
+---
+Set
+---
 
 .. code-block:: python
 
@@ -175,9 +175,9 @@ As long as the backing type is valid, custom types are fine:
     # Also valid
     Set(Hash)
 
---------
-``List``
---------
+----
+List
+----
 
 Unlike Set, a List's inner type can be anything, including other Lists, Sets, and Maps.
 
@@ -201,9 +201,9 @@ Unlike Set, a List's inner type can be anything, including other Lists, Sets, an
     List(UUID)
     List(Set(DateTime))
 
--------
-``Map``
--------
+---
+Map
+---
 
 This type requires you to specify the modeled keys in the Map, but values don't have to have the same type.
 
@@ -271,15 +271,16 @@ This type requires you to specify the modeled keys in the Map, but values don't 
 Custom Types
 ============
 
-Creating new types is straightforward.  Here's a type that stores an ``Image`` as bytes, and loads it back again:
+Creating new types is straightforward.  Here's a type that stores an :class:`~PIL.Image.Image`
+as bytes:
 
 .. code-block:: python
 
     import io
-    import Image
+    from PIL import Image
 
     class GIF(bloop.Binary):
-        python_type = Image
+        python_type = Image.Image
 
         def dynamo_dump(self, image, *, context, **kwargs):
             if image is None:
@@ -298,16 +299,18 @@ Creating new types is straightforward.  Here's a type that stores an ``Image`` a
             image = Image.open(buffer)
             return image
 
-Now it's all ``Image``, all the time:
+Now the model doesn't need to know about the storage format:
 
 .. code-block:: python
 
     class User(BaseModel):
         name = Column(String, hash_key=True)
         profile_gif = Column(GIF)
+    engine.bind(User)
 
     user = User(name="numberoverzero")
     engine.load(user)
+
     user.profile_gif.rotate(90)
     engine.save(user)
 
@@ -315,13 +318,12 @@ Now it's all ``Image``, all the time:
 Missing and None
 ----------------
 
-Well, almost all the time.  What about that ``return None`` up there?
+When there's no value for a :class:`~bloop.Column` that's being loaded, your type will need to handle None.
+For many types, None is the best sentinel to return for "this has no value" -- Most of the built-in types use None.
 
-When there's no value for a Column that's being loaded, your type will need to handle None.  For many types,
-None is the best sentinel to return for "this has no value" -- Most of the built-in types use None.
-
-Set returns an empty ``set``, so that you'll never need to check for None before adding and removing elements.
-Map will load None for the type associated with each of its keys, and insert those in the dict.
+:class:`~bloop.types.Set` returns an empty ``set``, so that you'll never need to check for None before adding and
+removing elements. :class:`~bloop.types.Map` will load None for the type associated with each of its keys,
+and insert those in the dict.
 
 
 You will also need to handle ``None`` when dumping values to DynamoDB.  This can happen when a value is deleted
@@ -331,96 +333,6 @@ simply return None to signal omission (or deletion, depending on the context).
 You should return ``None`` when dumping empty values like ``list()``, or DynamoDB will complain about setting
 something to an empty list or set.  By returning None, Bloop will know to put that column in
 the DELETE section of the UpdateItem.
-
-
---------------
-``bloop.Type``
---------------
-
-.. code-block:: python
-
-    class Type:
-        backing_type = "S"
-
-        def dynamo_load(self, value: Optional[str],
-                        *, context, **kwargs) -> Any:
-            return value
-
-        def dynamo_dump(self, value: Any,
-                        *, context, **kwargs) -> Optional[str]:
-            return value
-
-        def _register(self, type_engine):
-            pass
-
-.. attribute:: backing_type
-    :noindex:
-
-    This is the DynamoDB type that Bloop will store values under.  The available types are::
-
-        S -- string
-        N -- number
-        B -- binary
-        BOOL -- boolean
-        SS -- string set
-        NS -- number set
-        BS -- binary set
-        M -- map
-        L -- list
-
-.. function:: dynamo_load(value, *, context, **kwargs)
-
-    Takes a ``str`` or ``None`` and returns a value to use locally.
-
-.. function:: dynamo_dump(value, *, context, **kwargs)
-
-    Takes a local value or ``None`` and returns a string or ``None``.  This should return ``None`` to indicate a
-    missing or deleted value - DynamoDB will fail if you try to send an empty set or list.
-
-.. function:: _register(type_engine)
-
-    You only need to implement this if your type references another type.  This is called when your type is registered
-    with the type engine.  Bloop will fail to load or dump your type unless you register the inner type with this
-    method.
-
-    Here's the simplified implementation for ``Set``:
-
-    .. code-block:: python
-
-        class Set(bloop.Type):
-            def __init__(self, typedef):
-                self.typedef = typedef
-
-            def _register(self, type_engine):
-                type_engine.register(self.typedef)
-
-The ``context`` arg is a dict to hold extra information about the current call.  It will always contain
-at least ``{"engine": bloop.Engine}`` which is the Bloop engine that this call came from.  You must perform
-any recursive load/dump calls through the context engine, and must not call ``dynamo_dump`` on another type
-directly.  The engine exposes ``_load`` and ``_dump`` functions, with the following signatures:
-
-.. code-block:: python
-
-    Engine._load(self, typedef, value, *, context, **kwargs)
-    Engine._dump(self, typedef, value, *, context, **kwargs)
-
-This is nearly the same interface as the Type functions, but you must pass the ``bloop.Type`` that the value should
-go through.  For example, here's the simplified ``dynamo_load`` for Set:
-
-.. code-block:: python
-
-    class Set(bloop.Type):
-        def __init__(self, typedef):
-            self.typedef = typedef
-
-        def dynamo_load(self, values, *, context, **kwargs):
-            engine = context["engine"]
-            loaded_set = set()
-            for value in values:
-                value = engine._load(
-                    self.typedef, value, context=context, **kwargs)
-                loaded_set.add(value)
-            return loaded_set
 
 -------------
 Example: Enum

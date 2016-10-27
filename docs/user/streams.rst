@@ -16,7 +16,7 @@ adjacent shards, and saving and loading processing state.
     Bloop creates a total ordering across shards using DynamoDB's ordering rules
     and each record's |ApproximateCreationDateTime|_ and |SequenceNumber|_.
 
-    For a detailed explanation, see :ref:`Stream Internals<internal-streams>`.
+    For a detailed explanation, see :ref:`internal-streams`.
 
 
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html

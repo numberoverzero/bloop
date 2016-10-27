@@ -13,8 +13,8 @@ table_validated.__doc__ = """:class:`~blinker.base.Signal` sent after a model's 
 This signal is sent before :data:`~bloop.signals.model_validated` and :data:`~bloop.signals.model_bound`.
 
 :param model: The :class:`~bloop.models.BaseModel` **class** that was validated.
-:param actual_description: sanitized dict from DynamoDB.
-:param expected_description: dict the model expects.  May be a subset of ``actual_description``.
+:param actual_description: (dict) Sanitized description from DynamoDB.
+:param expected_description: (dict) May be a subset of ``actual_description``.
 """
 
 object_loaded = signal("object_loaded")
@@ -22,7 +22,7 @@ object_loaded.__doc__ = """:class:`~blinker.base.Signal` sent after an object is
 
 
 :param engine: The :class:`~bloop.engine.Engine` that loaded the object.
-:param obj: The `~bloop.models.BaseModel` loaded from DynamoDB.
+:param obj: The :class:`~bloop.models.BaseModel` loaded from DynamoDB.
 """
 
 object_saved = signal("object_saved")
@@ -30,7 +30,7 @@ object_saved.__doc__ = """:class:`~blinker.base.Signal` sent after an object is 
 
 
 :param engine: The :class:`~bloop.engine.Engine` that saved the object.
-:param obj: The `~bloop.models.BaseModel` saved to DynamoDB.
+:param obj: The :class:`~bloop.models.BaseModel` saved to DynamoDB.
 """
 
 object_deleted = signal("object_deleted")
@@ -38,7 +38,7 @@ object_deleted.__doc__ = """:class:`~blinker.base.Signal` sent after an object i
 
 
 :param engine: The :class:`~bloop.engine.Engine` that deleted the object.
-:param obj: The `~bloop.models.BaseModel` deleted from DynamoDB.
+:param obj: The :class:`~bloop.models.BaseModel` deleted from DynamoDB.
 """
 
 object_modified = signal("object_modified")
@@ -49,8 +49,8 @@ When the attribute's ``__set__`` is called, this is only sent if an exception is
 These aren't symmetric because calling ``__del__`` signals intent to remove, which can't otherwise be expressed
 on a column that wasn't loaded (for example, from a query on a keys-only projection).
 
-:param column: The `~bloop.models.Column` that corresponds to the modified attribute.
-:param obj: The `~bloop.models.BaseModel` that was modified.
+:param column: The :class:`~bloop.models.Column` that corresponds to the modified attribute.
+:param obj: The :class:`~bloop.models.BaseModel` that was modified.
 :param value: The new value of the attribute.
 """
 

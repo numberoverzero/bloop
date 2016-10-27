@@ -752,8 +752,8 @@ def test_iter_empty():
 
 def test_render_empty(renderer):
     condition = Condition()
-    with pytest.raises(InvalidCondition):
-        condition.render(renderer)
+    condition.render(renderer)
+    assert not renderer.rendered
 
 
 @pytest.mark.parametrize("condition", non_meta_conditions())

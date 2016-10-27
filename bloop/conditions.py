@@ -463,6 +463,31 @@ class BaseCondition:
 
 
 class Condition(BaseCondition):
+    """An empty condition.
+
+    Useful for iteratively building complex conditions, you can concatenate multiple conditions
+    together without finding an initial condition in a possibly-empty list.
+
+    An empty condition is equivalent to omitting a condition:
+
+    .. code-block:: python
+
+        engine.save(some_user)
+        engine.save(some_user, condition=Condition())
+
+    Basic Usage:
+
+    .. code-block:: python
+
+        combined = Condition()
+
+        for each_condition in get_conditions_list():
+            combined &= each_condition
+
+        if not combined:
+            print("Conditions list only had empty conditions, or no conditions")
+
+    """
     def __init__(self):
         super().__init__(operation=None)
 
@@ -473,7 +498,8 @@ class Condition(BaseCondition):
         return "()"
 
     def render(self, renderer):
-        raise InvalidCondition("Condition is not renderable")
+        """Empty conditions don't render anything."""
+        pass
 
 
 class AndCondition(BaseCondition):

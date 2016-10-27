@@ -161,16 +161,16 @@ class Engine:
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
         for model in concrete:
-            before_create_table.send(engine=self, model=model)
+            before_create_table.send(self, engine=self, model=model)
             self.session.create_table(model)
 
         for model in concrete:
             self.session.validate_table(model)
-            model_validated.send(engine=self, model=model)
+            model_validated.send(self, engine=self, model=model)
 
             self.type_engine.register(model)
             self.type_engine.bind(context={"engine": self})
-            model_bound.send(engine=self, model=model)
+            model_bound.send(self, engine=self, model=model)
 
     def delete(self, *objs, condition=None, atomic=False):
         objs = set(objs)
@@ -181,7 +181,7 @@ class Engine:
                 "Key": dump_key(self, obj),
                 **render(self, obj=obj, atomic=atomic, condition=condition)
             })
-            object_deleted.send(engine=self, obj=obj)
+            object_deleted.send(self, engine=self, obj=obj)
 
     def load(self, *objs, consistent=False):
         """Populate objects from DynamoDB.
@@ -220,7 +220,7 @@ class Engine:
                 for obj in object_index[table_name].pop(index):
                     unpack_from_dynamodb(
                         attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
-                    object_loaded.send(engine=self, obj=obj)
+                    object_loaded.send(self, engine=self, obj=obj)
                 if not object_index[table_name]:
                     object_index.pop(table_name)
 
@@ -252,7 +252,7 @@ class Engine:
                 "Key": dump_key(self, obj),
                 **render(self, obj=obj, atomic=atomic, condition=condition, update=True)
             })
-            object_saved.send(engine=self, obj=obj)
+            object_saved.send(self, engine=self, obj=obj)
 
     def scan(self, model_or_index, filter=None, projection="all", limit=None, consistent=False):
         if isinstance(model_or_index, Index):

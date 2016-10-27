@@ -407,7 +407,7 @@ class SearchModelIterator(SearchIterator):
             expected=self.projected,
             model=self.model,
             engine=self.engine)
-        object_loaded.send(engine=self.engine, obj=obj)
+        object_loaded.send(self.engine, engine=self.engine, obj=obj)
         return obj
 
 

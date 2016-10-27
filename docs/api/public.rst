@@ -148,9 +148,6 @@ existing built-in signal, or any new signals in the Bloop namespace that extensi
 .. autodata:: bloop.signals.before_create_table
     :annotation:
 
-.. autodata:: bloop.signals.table_validated
-    :annotation:
-
 .. autodata:: bloop.signals.object_loaded
     :annotation:
 

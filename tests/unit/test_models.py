@@ -12,8 +12,6 @@ from bloop.models import (
     model_created,
     object_modified,
 )
-from bloop.session import expected_table_description
-from bloop.signals import table_validated
 from bloop.types import UUID, Boolean, DateTime, Integer, String
 
 from ..helpers.models import User
@@ -308,43 +306,6 @@ def test_created_signal():
         id = Column(Integer, hash_key=True)
 
     assert new_model is SomeModel
-
-
-def test_table_validated_signal():
-    """Emitted when the backing table for a model is validated"""
-    class NoStream(BaseModel):
-        id = Column(Integer, hash_key=True)
-
-    class HasStream(BaseModel):
-        class Meta:
-            stream = {
-                "include": ["new"]
-            }
-        id = Column(Integer, hash_key=True)
-
-    actual = {
-        "AttributeDefinitions": [
-            {"AttributeName": "id", "AttributeType": "N"}],
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        "LatestStreamArn": "table/stream_name/stream/2016-08-29T03:30:15.582",
-        "LatestStreamLabel": "2016-08-29T03:30:15.582",
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-        "StreamSpecification": {
-            "StreamEnabled": True,
-            "StreamViewType": "KEYS_ONLY"},
-        "TableName": "Model",
-        "TableStatus": "ACTIVE"}
-
-    # arn isn't recorded when Meta doesn't expect a stream
-    expected = expected_table_description(NoStream)
-    table_validated.send(model=NoStream, actual_description=actual, expected_description=expected)
-    assert NoStream.Meta.stream is None
-
-    assert HasStream.Meta.stream["arn"] is None
-    expected = expected_table_description(HasStream)
-    table_validated.send(model=HasStream, actual_description=actual, expected_description=expected)
-    assert HasStream.Meta.stream["arn"] == "table/stream_name/stream/2016-08-29T03:30:15.582"
 
 
 @pytest.mark.parametrize("invalid_stream", [

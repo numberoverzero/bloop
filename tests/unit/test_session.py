@@ -22,7 +22,6 @@ from bloop.session import (
     sanitize_table_description,
     simple_table_status,
 )
-from bloop.signals import table_validated
 from bloop.types import String
 from bloop.util import Sentinel, ordered
 
@@ -451,14 +450,6 @@ def test_create_already_exists(session, dynamodb_client):
 
 
 def test_validate_compares_tables(session, dynamodb_client):
-    validated = False
-
-    @table_validated.connect
-    def assert_validated(_, *, model, **kwargs):
-        assert model is User
-        nonlocal validated
-        validated = True
-
     description = expected_table_description(User)
     description["TableStatus"] = "ACTIVE"
     description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
@@ -466,7 +457,6 @@ def test_validate_compares_tables(session, dynamodb_client):
     dynamodb_client.describe_table.return_value = {"Table": description}
     session.validate_table(User)
     dynamodb_client.describe_table.assert_called_once_with(TableName="User")
-    assert validated
 
 
 def test_validate_checks_status(session, dynamodb_client):
@@ -535,6 +525,7 @@ def test_validate_stream_exists(session, dynamodb_client):
         "TableStatus": "ACTIVE"}
     dynamodb_client.describe_table.return_value = {"Table": full}
     session.validate_table(Model)
+    assert Model.Meta.stream["arn"] == "table/stream_both/stream/2016-08-29T03:30:15.582"
 
 
 def test_validate_stream_wrong_view_type(session, dynamodb_client):

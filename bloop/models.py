@@ -4,17 +4,11 @@ import declare
 
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel, InvalidStream
-from .signals import model_created, object_modified, table_validated
+from .signals import model_created, object_modified
 from .util import missing, printable_column_name, unpack_from_dynamodb
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
-
-
-@table_validated.connect
-def on_table_validated(_, *, model, actual_description, **kwargs):
-    if model.Meta.stream:
-        model.Meta.stream["arn"] = actual_description["LatestStreamArn"]
 
 
 def loaded_columns(obj):
@@ -418,7 +412,7 @@ class Column(declare.Field, ComparisonMixin):
     def set(self, obj, value):
         super().set(obj, value)
         # Notify the tracking engine that this value was intentionally mutated
-        object_modified.send(obj=obj, column=self, value=value)
+        object_modified.send(self, obj=obj, column=self, value=value)
 
     def delete(self, obj):
         try:
@@ -426,4 +420,4 @@ class Column(declare.Field, ComparisonMixin):
         finally:
             # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
             # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
-            object_modified.send(obj=obj, column=self, value=None)
+            object_modified.send(self, obj=obj, column=self, value=None)

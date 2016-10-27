@@ -17,16 +17,6 @@ Basic Usage:
 :param model: The :class:`~bloop.models.BaseModel` class to create a table for.
 """
 
-table_validated = signal("table_validated")
-table_validated.__doc__ = """:class:`~blinker.base.Signal` sent after a model's expected table is validated.
-
-This signal is sent before :data:`~bloop.signals.model_validated` and :data:`~bloop.signals.model_bound`.
-
-:param model: The :class:`~bloop.models.BaseModel` class that was validated.
-:param actual_description: (dict) Sanitized description from DynamoDB.
-:param expected_description: (dict) May be a subset of ``actual_description``.
-"""
-
 object_loaded = signal("object_loaded")
 object_loaded.__doc__ = """:class:`~blinker.base.Signal` sent after an object is loaded from DynamoDB.
 
@@ -122,7 +112,7 @@ model_bound = signal("model_bound")
 model_bound.__doc__ = """:class:`~blinker.base.Signal` sent after a model has been bound to an
 :class:`~bloop.engine.Engine`.
 
-This signal is sent after :data:`~bloop.signals.table_validated` and :data:`~bloop.signals.model_validated`.
+This signal is sent after :data:`~bloop.signals.model_validated`.
 
 :param engine: The :class:`~bloop.engine.Engine` that the model was bound to.
 :param model: The :class:`~bloop.models.BaseModel` class that was bound.
@@ -147,7 +137,7 @@ You can manually send the BaseModel through your handler with:
 model_validated = signal("model_validated")
 model_validated.__doc__ = """:class:`~blinker.base.Signal` sent after a model is validated.
 
-This signal is sent after :data:`~bloop.signals.table_validated` and before :data:`~bloop.signals.model_bound`.
+This signal is sent before :data:`~bloop.signals.model_bound`.
 
 :param engine: The :class:`~bloop.engine.Engine` that validated the model.
 :param model: The :class:`~bloop.models.BaseModel` class that was validated.

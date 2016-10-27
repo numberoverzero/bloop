@@ -18,7 +18,7 @@ def get_version():
 REQUIREMENTS = [
     "arrow==0.8.0",
     "blinker==1.4",
-    "boto3==1.4.0",
+    "boto3==1.4.1",
     "declare==0.9.11"
 ]
 

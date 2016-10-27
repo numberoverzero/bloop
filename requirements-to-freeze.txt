@@ -8,4 +8,5 @@ flake8
 pip
 pytest
 sphinx
+sphinx_rtd_theme
 tox

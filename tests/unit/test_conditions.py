@@ -124,18 +124,18 @@ empty_user_condition = (
 def test_on_deleted(engine):
     """When an object is deleted, the snapshot expects all columns to be empty"""
     user = User(age=3, name="foo")
-    object_deleted.send(engine=engine, obj=user)
+    object_deleted.send(engine, engine=engine, obj=user)
     assert get_snapshot(user) == empty_user_condition
 
     # It doesn't matter if the object had non-empty values saved from a previous sync
-    object_saved.send(engine=engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
     assert get_snapshot(user) == (
         User.age.is_({"N": "3"}) &
         User.name.is_({"S": "foo"})
     )
 
     # The deleted signal still clears everything
-    object_deleted.send(engine=engine, obj=user)
+    object_deleted.send(engine, engine=engine, obj=user)
     assert get_snapshot(user) == empty_user_condition
 
     # But the current values aren't replaced
@@ -154,7 +154,7 @@ def test_on_loaded_partial(engine):
     # columns included in the snapshot.  A normal load
     # would set the other values to None, and the
     # snapshot would expect those.
-    object_loaded.send(engine=engine, obj=user)
+    object_loaded.send(engine, engine=engine, obj=user)
 
     # Values are stored dumped.  Since the dumped flag isn't checked as
     # part of equality testing, we can simply construct the dumped
@@ -168,7 +168,7 @@ def test_on_loaded_partial(engine):
 def test_on_loaded_full(engine):
     """Same as the partial test, but with explicit Nones to simulate a real engine.load"""
     user = User(age=3, email=None, id=None, joined=None, name="foo")
-    object_loaded.send(engine=engine, obj=user)
+    object_loaded.send(engine, engine=engine, obj=user)
     assert get_snapshot(user) == (
         User.age.is_({"N": "3"}) &
         User.email.is_(None) &
@@ -204,7 +204,7 @@ def test_on_saved(engine):
 
     The state after saving is snapshotted for future atomic operations."""
     user = User(name="foo", age=3)
-    object_saved.send(engine=engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
 
     # Since "name" and "age" were the only marked columns saved to DynamoDB,
     # they are the only columns that must match for an atomic save.  The
@@ -550,7 +550,7 @@ def test_render_atomic_only_partial(engine):
     """Atomic condition on an object already partially synced"""
     user = User(id="user_id", age=3, email=None)
     # Sync gives us an atomic condition
-    object_saved.send(engine=engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
 
     # Unlike a new save, this one has no expectation about the values of "joined" or "name"
     rendered = render(engine, obj=user, atomic=True)
@@ -566,7 +566,7 @@ def test_render_atomic_and_condition(engine):
     """Atomic condition and condition are ANDed together (condition first)"""
     user = User(id="user_id", age=3, email=None)
     # Sync gives us an atomic condition
-    object_saved.send(engine=engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
 
     # Value ref isn't re-used
     condition = User.email.contains("@")
@@ -594,7 +594,7 @@ def test_render_complex(engine):
     """Render a filter condition, key condition, projection, condition, atomic and update"""
     user = User(id="uid", age=3, email=None)
     # Sync gives us an atomic condition on id, age, email (sorted)
-    object_saved.send(engine=engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
 
     filter_condition = User.email.contains("@")
     key_condition = User.age == 4

@@ -121,7 +121,7 @@ class ModelMetaclass(declare.ModelMetaclass):
 
         validate_stream(meta.stream)
 
-        model_created.send(model=model)
+        model_created.send(None, model=model)
         return model
 
     def __repr__(cls):

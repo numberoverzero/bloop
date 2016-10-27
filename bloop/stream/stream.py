@@ -138,5 +138,5 @@ class Stream:
             model=self.model,
             engine=self.engine
         )
-        object_loaded.send(engine=self.engine, obj=obj)
+        object_loaded.send(self.engine, engine=self.engine, obj=obj)
         record[key] = obj

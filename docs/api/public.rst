@@ -116,17 +116,25 @@ Signals
     :annotation:
 
 .. autodata:: bloop.signals.table_validated
+    :annotation:
 
 .. autodata:: bloop.signals.object_loaded
+    :annotation:
 
 .. autodata:: bloop.signals.object_saved
+    :annotation:
 
 .. autodata:: bloop.signals.object_deleted
+    :annotation:
 
 .. autodata:: bloop.signals.object_modified
+    :annotation:
 
 .. autodata:: bloop.signals.model_bound
+    :annotation:
 
 .. autodata:: bloop.signals.model_created
+    :annotation:
 
 .. autodata:: bloop.signals.model_validated
+    :annotation:

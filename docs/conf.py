@@ -44,5 +44,6 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 intersphinx_mapping = {
     'python': ('https://docs.python.org/3.6', None),
     'arrow': ('https://arrow.readthedocs.io/en/latest/', None),
-    'PIL': ('https://pillow.readthedocs.io/en/3.4.x', None)
+    'PIL': ('https://pillow.readthedocs.io/en/3.4.x', None),
+    'blinker': ('https://pythonhosted.org/blinker/', None)
 }

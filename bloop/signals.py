@@ -1,9 +1,7 @@
 from .util import signal
 
 before_create_table = signal("before_create_table")
-before_create_table.__doc__ = """:class:`~blinker.base.Signal` sent before a model's backing table is created.
-
-Basic Usage:
+before_create_table.__doc__ = """Sent by ``engine`` before a model's backing table is created.
 
 .. code-block:: python
 
@@ -18,10 +16,8 @@ Basic Usage:
 """
 
 object_loaded = signal("object_loaded")
-object_loaded.__doc__ = """:class:`~blinker.base.Signal` sent after an object is loaded from DynamoDB.
+object_loaded.__doc__ = """Sent by ``engine`` after an object is loaded from DynamoDB.
 
-
-Basic Usage:
 
 .. code-block:: python
 
@@ -41,9 +37,7 @@ Basic Usage:
 """
 
 object_saved = signal("object_saved")
-object_saved.__doc__ = """:class:`~blinker.base.Signal` sent after an object is saved to DynamoDB.
-
-Basic Usage:
+object_saved.__doc__ = """Sent by ``engine`` after an object is saved to DynamoDB.
 
 .. code-block:: python
 
@@ -63,9 +57,7 @@ Basic Usage:
 """
 
 object_deleted = signal("object_deleted")
-object_deleted.__doc__ = """:class:`~blinker.base.Signal` sent after an object is deleted from DynamoDB.
-
-Basic Usage:
+object_deleted.__doc__ = """Sent by ``engine`` after an object is deleted from DynamoDB.
 
 .. code-block:: python
 
@@ -85,12 +77,10 @@ Basic Usage:
 """
 
 object_modified = signal("object_modified")
-object_modified.__doc__ = """:class:`~blinker.base.Signal` sent after an object's attribute is set or deleted.
+object_modified.__doc__ = """Sent by ``column`` after an object's attribute is set or deleted.
 
-* Always sent on ``__del__``, regardless of exceptions.
-* Only sent on ``__set__`` if an exception isn't raised.
-
-Basic Usage:
+This is sent on ``__set__`` if an exception isn't raised,
+and on ``__del__`` regardless of exceptions.
 
 .. code-block:: python
 
@@ -109,8 +99,7 @@ Basic Usage:
 
 
 model_bound = signal("model_bound")
-model_bound.__doc__ = """:class:`~blinker.base.Signal` sent after a model has been bound to an
-:class:`~bloop.engine.Engine`.
+model_bound.__doc__ = """Sent by ``engine`` after a model is bound to that :class:`~bloop.engine.Engine`.
 
 This signal is sent after :data:`~bloop.signals.model_validated`.
 
@@ -120,7 +109,7 @@ This signal is sent after :data:`~bloop.signals.model_validated`.
 
 
 model_created = signal("model_created")
-model_created.__doc__ = """:class:`~blinker.base.Signal` sent after a new model is defined.
+model_created.__doc__ = """Sent by ``None`` after a new model is defined.
 
 While this signal is sent when the :class:`~bloop.models.BaseModel` is created, the BaseModel is created so
 early in Bloop's import order that no handlers will be connected when it occurs.
@@ -135,7 +124,7 @@ You can manually send the BaseModel through your handler with:
 """
 
 model_validated = signal("model_validated")
-model_validated.__doc__ = """:class:`~blinker.base.Signal` sent after a model is validated.
+model_validated.__doc__ = """Sent by ``engine`` after a model is validated.
 
 This signal is sent before :data:`~bloop.signals.model_bound`.
 

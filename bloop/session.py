@@ -107,7 +107,7 @@ class SessionWrapper:
         expected = expected_table_description(model)
         if not compare_tables(model, actual, expected):
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
-        table_validated.send(session=self, model=model, actual_description=actual, expected_description=expected)
+        table_validated.send(model=model, actual_description=actual, expected_description=expected)
 
     def describe_stream(self, stream_arn, first_shard=None):
         description = {"Shards": []}

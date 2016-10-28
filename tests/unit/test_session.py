@@ -32,7 +32,7 @@ missing = Sentinel("missing")
 
 
 @pytest.fixture
-def dynamodb_client():
+def dynamodb():
     # No spec since clients are generated dynamically.
     # We could use botocore.client.BaseClient but it's so generic
     # that we don't gain any useful inspections
@@ -40,22 +40,14 @@ def dynamodb_client():
 
 
 @pytest.fixture
-def streams_client():
+def dynamodbstreams():
     # No spec since clients are generated dynamically.
     return Mock()
 
 
 @pytest.fixture
-def session(dynamodb_client, streams_client):
-    class Session:
-        def client(self, name):
-            assert name in {"dynamodb", "dynamodbstreams"}
-            if name == "dynamodb":
-                return dynamodb_client
-            elif name == "dynamodbstreams":
-                return streams_client
-            raise RuntimeError("Mock session asked for unexpected client {!r}".format(name))
-    return SessionWrapper(Session())
+def session(dynamodb, dynamodbstreams):
+    return SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
 
 def build_describe_stream_response(shards=missing, next_id=missing):
@@ -91,29 +83,29 @@ def client_error(code):
 # SAVE ITEM ================================================================================================= SAVE ITEM
 
 
-def test_save_item(session, dynamodb_client):
+def test_save_item(session, dynamodb):
     request = {"foo": "bar"}
     session.save_item(request)
-    dynamodb_client.update_item.assert_called_once_with(**request)
+    dynamodb.update_item.assert_called_once_with(**request)
 
 
-def test_save_item_unknown_error(session, dynamodb_client):
+def test_save_item_unknown_error(session, dynamodb):
     request = {"foo": "bar"}
-    cause = dynamodb_client.update_item.side_effect = client_error("FooError")
+    cause = dynamodb.update_item.side_effect = client_error("FooError")
 
     with pytest.raises(BloopException) as excinfo:
         session.save_item(request)
     assert excinfo.value.__cause__ is cause
-    dynamodb_client.update_item.assert_called_once_with(**request)
+    dynamodb.update_item.assert_called_once_with(**request)
 
 
-def test_save_item_condition_failed(session, dynamodb_client):
+def test_save_item_condition_failed(session, dynamodb):
     request = {"foo": "bar"}
-    dynamodb_client.update_item.side_effect = client_error("ConditionalCheckFailedException")
+    dynamodb.update_item.side_effect = client_error("ConditionalCheckFailedException")
 
     with pytest.raises(ConstraintViolation):
         session.save_item(request)
-    dynamodb_client.update_item.assert_called_once_with(**request)
+    dynamodb.update_item.assert_called_once_with(**request)
 
 
 # END SAVE ITEM ========================================================================================= END SAVE ITEM
@@ -122,29 +114,29 @@ def test_save_item_condition_failed(session, dynamodb_client):
 # DELETE ITEM ============================================================================================= DELETE ITEM
 
 
-def test_delete_item(session, dynamodb_client):
+def test_delete_item(session, dynamodb):
     request = {"foo": "bar"}
     session.delete_item(request)
-    dynamodb_client.delete_item.assert_called_once_with(**request)
+    dynamodb.delete_item.assert_called_once_with(**request)
 
 
-def test_delete_item_unknown_error(session, dynamodb_client):
+def test_delete_item_unknown_error(session, dynamodb):
     request = {"foo": "bar"}
-    cause = dynamodb_client.delete_item.side_effect = client_error("FooError")
+    cause = dynamodb.delete_item.side_effect = client_error("FooError")
 
     with pytest.raises(BloopException) as excinfo:
         session.delete_item(request)
     assert excinfo.value.__cause__ is cause
-    dynamodb_client.delete_item.assert_called_once_with(**request)
+    dynamodb.delete_item.assert_called_once_with(**request)
 
 
-def test_delete_item_condition_failed(session, dynamodb_client):
+def test_delete_item_condition_failed(session, dynamodb):
     request = {"foo": "bar"}
-    dynamodb_client.delete_item.side_effect = client_error("ConditionalCheckFailedException")
+    dynamodb.delete_item.side_effect = client_error("ConditionalCheckFailedException")
 
     with pytest.raises(ConstraintViolation):
         session.delete_item(request)
-    dynamodb_client.delete_item.assert_called_once_with(**request)
+    dynamodb.delete_item.assert_called_once_with(**request)
 
 
 # END DELETE ITEM ===================================================================================== END DELETE ITEM
@@ -153,15 +145,15 @@ def test_delete_item_condition_failed(session, dynamodb_client):
 # LOAD ITEMS =============================================================================================== LOAD ITEMS
 
 
-def test_batch_get_raises(session, dynamodb_client):
-    cause = dynamodb_client.batch_get_item.side_effect = client_error("FooError")
+def test_batch_get_raises(session, dynamodb):
+    cause = dynamodb.batch_get_item.side_effect = client_error("FooError")
     request = {"TableName": {"Keys": ["key"], "ConsistentRead": False}}
     with pytest.raises(BloopException) as excinfo:
         session.load_items(request)
     assert excinfo.value.__cause__ is cause
 
 
-def test_batch_get_one_item(session, dynamodb_client):
+def test_batch_get_one_item(session, dynamodb):
     """A single call for a single item"""
     user = User(id="user_id")
 
@@ -182,14 +174,14 @@ def test_batch_get_one_item(session, dynamodb_client):
     def handle(RequestItems):
         assert RequestItems == expected_request
         return response
-    dynamodb_client.batch_get_item.side_effect = handle
+    dynamodb.batch_get_item.side_effect = handle
 
     response = session.load_items(request)
     assert response == expected_response
-    dynamodb_client.batch_get_item.assert_called_once_with(RequestItems=expected_request)
+    dynamodb.batch_get_item.assert_called_once_with(RequestItems=expected_request)
 
 
-def test_batch_get_one_batch(session, dynamodb_client):
+def test_batch_get_one_batch(session, dynamodb):
     """A single call when the number of requested items is <= batch size"""
     users = [User(id=str(i)) for i in range(BATCH_GET_ITEM_CHUNK_SIZE)]
 
@@ -217,14 +209,14 @@ def test_batch_get_one_batch(session, dynamodb_client):
     # The response that the bloop client should return
     expected_client_response = boto3_client_response["Responses"]
 
-    dynamodb_client.batch_get_item.return_value = boto3_client_response
+    dynamodb.batch_get_item.return_value = boto3_client_response
     response = session.load_items(client_request)
 
-    dynamodb_client.batch_get_item.assert_called_once_with(RequestItems=client_request)
+    dynamodb.batch_get_item.assert_called_once_with(RequestItems=client_request)
     assert response == expected_client_response
 
 
-def test_batch_get_paginated(session, dynamodb_client):
+def test_batch_get_paginated(session, dynamodb):
     """Paginate requests to fit within the max batch size"""
     users = [User(id=str(i)) for i in range(BATCH_GET_ITEM_CHUNK_SIZE + 1)]
     keys = [
@@ -267,14 +259,14 @@ def test_batch_get_paginated(session, dynamodb_client):
         ]
     }
 
-    dynamodb_client.batch_get_item.side_effect = batched_responses
+    dynamodb.batch_get_item.side_effect = batched_responses
     response = session.load_items(client_request)
 
-    assert dynamodb_client.batch_get_item.call_count == 2
+    assert dynamodb.batch_get_item.call_count == 2
     assert response == expected_client_response
 
 
-def test_batch_get_unprocessed(session, dynamodb_client):
+def test_batch_get_unprocessed(session, dynamodb):
     """ Re-request unprocessed keys """
     user = User(id="user_id")
 
@@ -316,7 +308,7 @@ def test_batch_get_unprocessed(session, dynamodb_client):
         calls += 1
         assert RequestItems == expected
         return response
-    dynamodb_client.batch_get_item = handle
+    dynamodb.batch_get_item = handle
 
     response = session.load_items(request)
 
@@ -336,22 +328,22 @@ def test_batch_get_unprocessed(session, dynamodb_client):
     ({"ScannedCount": -1}, (0, -1)),
     ({"Count": 1, "ScannedCount": 2}, (1, 2))
 ], ids=str)
-def test_query_scan(session, dynamodb_client, response, expected):
-    dynamodb_client.query.return_value = response
-    dynamodb_client.scan.return_value = response
+def test_query_scan(session, dynamodb, response, expected):
+    dynamodb.query.return_value = response
+    dynamodb.scan.return_value = response
 
     expected = {"Count": expected[0], "ScannedCount": expected[1]}
     assert session.query_items({}) == expected
     assert session.scan_items({}) == expected
 
 
-def test_query_scan_raise(session, dynamodb_client):
-    cause = dynamodb_client.query.side_effect = client_error("FooError")
+def test_query_scan_raise(session, dynamodb):
+    cause = dynamodb.query.side_effect = client_error("FooError")
     with pytest.raises(BloopException) as excinfo:
         session.query_items({})
     assert excinfo.value.__cause__ is cause
 
-    cause = dynamodb_client.scan.side_effect = client_error("FooError")
+    cause = dynamodb.scan.side_effect = client_error("FooError")
     with pytest.raises(BloopException) as excinfo:
         session.scan_items({})
     assert excinfo.value.__cause__ is cause
@@ -369,7 +361,7 @@ def test_search_unknown(session):
 # CREATE TABLE =========================================================================================== CREATE TABLE
 
 
-def test_create_table(session, dynamodb_client):
+def test_create_table(session, dynamodb):
     expected = {
         "LocalSecondaryIndexes": [
             {"Projection": {"NonKeyAttributes": ["date", "name",
@@ -399,12 +391,12 @@ def test_create_table(session, dynamodb_client):
 
     def handle(**table):
         assert ordered(table) == ordered(expected)
-    dynamodb_client.create_table.side_effect = handle
+    dynamodb.create_table.side_effect = handle
     session.create_table(ComplexModel)
-    assert dynamodb_client.create_table.call_count == 1
+    assert dynamodb.create_table.call_count == 1
 
 
-def test_create_subclass(session, dynamodb_client):
+def test_create_subclass(session, dynamodb):
     base_model = User
 
     # Shouldn't include base model's columns in create_table call
@@ -422,25 +414,25 @@ def test_create_subclass(session, dynamodb_client):
     def handle(**table):
         assert ordered(table) == ordered(expected)
 
-    dynamodb_client.create_table.side_effect = handle
+    dynamodb.create_table.side_effect = handle
     session.create_table(SubModel)
-    assert dynamodb_client.create_table.call_count == 1
+    assert dynamodb.create_table.call_count == 1
 
 
-def test_create_raises_unknown(session, dynamodb_client):
-    cause = dynamodb_client.create_table.side_effect = client_error("FooError")
+def test_create_raises_unknown(session, dynamodb):
+    cause = dynamodb.create_table.side_effect = client_error("FooError")
 
     with pytest.raises(BloopException) as excinfo:
         session.create_table(User)
     assert excinfo.value.__cause__ is cause
-    assert dynamodb_client.create_table.call_count == 1
+    assert dynamodb.create_table.call_count == 1
 
 
-def test_create_already_exists(session, dynamodb_client):
-    dynamodb_client.create_table.side_effect = client_error("ResourceInUseException")
+def test_create_already_exists(session, dynamodb):
+    dynamodb.create_table.side_effect = client_error("ResourceInUseException")
 
     session.create_table(User)
-    assert dynamodb_client.create_table.call_count == 1
+    assert dynamodb.create_table.call_count == 1
 
 
 # END CREATE TABLE =================================================================================== END CREATE TABLE
@@ -449,24 +441,24 @@ def test_create_already_exists(session, dynamodb_client):
 # VALIDATE TABLE ====================================================================================== VALIDATE TABLE
 
 
-def test_validate_compares_tables(session, dynamodb_client):
+def test_validate_compares_tables(session, dynamodb):
     description = expected_table_description(User)
     description["TableStatus"] = "ACTIVE"
     description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
 
-    dynamodb_client.describe_table.return_value = {"Table": description}
+    dynamodb.describe_table.return_value = {"Table": description}
     session.validate_table(User)
-    dynamodb_client.describe_table.assert_called_once_with(TableName="User")
+    dynamodb.describe_table.assert_called_once_with(TableName="User")
 
 
-def test_validate_checks_status(session, dynamodb_client):
+def test_validate_checks_status(session, dynamodb):
     # Don't care about the value checking, just want to observe retries
     # based on busy tables or indexes
     full = expected_table_description(User)
     full["TableStatus"] = "ACTIVE"
     full["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
 
-    dynamodb_client.describe_table.side_effect = [
+    dynamodb.describe_table.side_effect = [
         {"Table": {"TableStatus": "CREATING"}},
         {"Table": {"TableStatus": "ACTIVE",
                    "GlobalSecondaryIndexes": [
@@ -474,19 +466,19 @@ def test_validate_checks_status(session, dynamodb_client):
         {"Table": full}
     ]
     session.validate_table(User)
-    dynamodb_client.describe_table.assert_called_with(TableName="User")
-    assert dynamodb_client.describe_table.call_count == 3
+    dynamodb.describe_table.assert_called_with(TableName="User")
+    assert dynamodb.describe_table.call_count == 3
 
 
-def test_validate_invalid_table(session, dynamodb_client):
+def test_validate_invalid_table(session, dynamodb):
     """DynamoDB returns an invalid json document"""
-    dynamodb_client.describe_table.return_value = \
+    dynamodb.describe_table.return_value = \
         {"Table": {"TableStatus": "ACTIVE"}}
     with pytest.raises(TableMismatch):
         session.validate_table(SimpleModel)
 
 
-def test_validate_simple_model(session, dynamodb_client):
+def test_validate_simple_model(session, dynamodb):
     full = {
         "AttributeDefinitions": [
             {"AttributeName": "id", "AttributeType": "S"}],
@@ -495,13 +487,13 @@ def test_validate_simple_model(session, dynamodb_client):
             "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
         "TableName": "Simple",
         "TableStatus": "ACTIVE"}
-    dynamodb_client.describe_table.return_value = {"Table": full}
+    dynamodb.describe_table.return_value = {"Table": full}
     session.validate_table(SimpleModel)
-    dynamodb_client.describe_table.assert_called_once_with(
+    dynamodb.describe_table.assert_called_once_with(
         TableName="Simple")
 
 
-def test_validate_stream_exists(session, dynamodb_client):
+def test_validate_stream_exists(session, dynamodb):
     """Model expects a stream that exists and matches"""
     class Model(BaseModel):
         class Meta:
@@ -523,12 +515,12 @@ def test_validate_stream_exists(session, dynamodb_client):
             "StreamViewType": "KEYS_ONLY"},
         "TableName": "Model",
         "TableStatus": "ACTIVE"}
-    dynamodb_client.describe_table.return_value = {"Table": full}
+    dynamodb.describe_table.return_value = {"Table": full}
     session.validate_table(Model)
     assert Model.Meta.stream["arn"] == "table/stream_both/stream/2016-08-29T03:30:15.582"
 
 
-def test_validate_stream_wrong_view_type(session, dynamodb_client):
+def test_validate_stream_wrong_view_type(session, dynamodb):
     """Model expects a stream that doesn't exist"""
     class Model(BaseModel):
         class Meta:
@@ -548,12 +540,12 @@ def test_validate_stream_wrong_view_type(session, dynamodb_client):
             "StreamViewType": "NEW_IMAGE"},
         "TableName": "Model",
         "TableStatus": "ACTIVE"}
-    dynamodb_client.describe_table.return_value = {"Table": full}
+    dynamodb.describe_table.return_value = {"Table": full}
     with pytest.raises(TableMismatch):
         session.validate_table(Model)
 
 
-def test_validate_stream_missing(session, dynamodb_client):
+def test_validate_stream_missing(session, dynamodb):
     """Model expects a stream that doesn't exist"""
     class Model(BaseModel):
         class Meta:
@@ -570,12 +562,12 @@ def test_validate_stream_missing(session, dynamodb_client):
             "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
         "TableName": "Model",
         "TableStatus": "ACTIVE"}
-    dynamodb_client.describe_table.return_value = {"Table": full}
+    dynamodb.describe_table.return_value = {"Table": full}
     with pytest.raises(TableMismatch):
         session.validate_table(Model)
 
 
-def test_validate_stream_unexpected(session, dynamodb_client):
+def test_validate_stream_unexpected(session, dynamodb):
     """It's ok if the model doesn't expect a stream that exists"""
     class Model(BaseModel):
         class Meta:
@@ -595,31 +587,31 @@ def test_validate_stream_unexpected(session, dynamodb_client):
             "StreamViewType": "KEYS_ONLY"},
         "TableName": "Model",
         "TableStatus": "ACTIVE"}
-    dynamodb_client.describe_table.return_value = {"Table": full}
+    dynamodb.describe_table.return_value = {"Table": full}
     session.validate_table(Model)
 
 
-def test_validate_wrong_table(session, dynamodb_client):
+def test_validate_wrong_table(session, dynamodb):
     """dynamo returns a valid document but it doesn't match"""
     full = expected_table_description(SimpleModel)
     full["TableStatus"] = "ACTIVE"
 
     full["TableName"] = "wrong table name"
 
-    dynamodb_client.describe_table.return_value = {"Table": full}
+    dynamodb.describe_table.return_value = {"Table": full}
     with pytest.raises(TableMismatch):
         session.validate_table(SimpleModel)
 
 
-def test_validate_raises(session, dynamodb_client):
-    cause = dynamodb_client.describe_table.side_effect = client_error("FooError")
+def test_validate_raises(session, dynamodb):
+    cause = dynamodb.describe_table.side_effect = client_error("FooError")
 
     with pytest.raises(BloopException) as excinfo:
         session.validate_table(User)
     assert excinfo.value.__cause__ is cause
 
 
-def test_validate_unexpected_index(session, dynamodb_client):
+def test_validate_unexpected_index(session, dynamodb):
     """Validation doesn't fail when the backing table has an extra GSI and named attribute"""
     full = expected_table_description(ComplexModel)
     full["AttributeDefinitions"].append(
@@ -638,7 +630,7 @@ def test_validate_unexpected_index(session, dynamodb_client):
         "KeySchema": [{"KeyType": "RANGE", "AttributeName": "date"}],
         "ProvisionedThroughput": {"WriteCapacityUnits": 1, "ReadCapacityUnits": 1}
     })
-    dynamodb_client.describe_table.return_value = {"Table": full}
+    dynamodb.describe_table.return_value = {"Table": full}
 
     full["TableStatus"] = "ACTIVE"
     for gsi in full["GlobalSecondaryIndexes"]:
@@ -653,32 +645,32 @@ def test_validate_unexpected_index(session, dynamodb_client):
 # DESCRIBE STREAM ==================================================================================== DESCRIBE STREAM
 
 
-def test_describe_stream_unknown_error(session, streams_client):
+def test_describe_stream_unknown_error(session, dynamodbstreams):
     request = {"StreamArn": "arn", "ExclusiveStartShardId": "shard id"}
-    cause = streams_client.describe_stream.side_effect = client_error("FooError")
+    cause = dynamodbstreams.describe_stream.side_effect = client_error("FooError")
 
     with pytest.raises(BloopException) as excinfo:
         session.describe_stream("arn", "shard id")
     assert excinfo.value.__cause__ is cause
-    streams_client.describe_stream.assert_called_once_with(**request)
+    dynamodbstreams.describe_stream.assert_called_once_with(**request)
 
 
-def test_describe_stream_not_found(session, streams_client):
+def test_describe_stream_not_found(session, dynamodbstreams):
     request = {"StreamArn": "arn", "ExclusiveStartShardId": "shard id"}
-    cause = streams_client.describe_stream.side_effect = client_error("ResourceNotFoundException")
+    cause = dynamodbstreams.describe_stream.side_effect = client_error("ResourceNotFoundException")
 
     with pytest.raises(InvalidStream) as excinfo:
         session.describe_stream("arn", "shard id")
     assert excinfo.value.__cause__ is cause
-    streams_client.describe_stream.assert_called_once_with(**request)
+    dynamodbstreams.describe_stream.assert_called_once_with(**request)
 
 
 @pytest.mark.parametrize("no_shards", [missing, list()])
 @pytest.mark.parametrize("next_ids", [(missing, ), (None, ), ("two pages", None)])
-def test_describe_stream_no_results(no_shards, next_ids, session, streams_client):
+def test_describe_stream_no_results(no_shards, next_ids, session, dynamodbstreams):
     stream_arn = "arn"
     responses = [build_describe_stream_response(shards=no_shards, next_id=next_id) for next_id in next_ids]
-    streams_client.describe_stream.side_effect = responses
+    dynamodbstreams.describe_stream.side_effect = responses
 
     description = session.describe_stream(stream_arn=stream_arn, first_shard="first-token")
     assert description["Shards"] == []
@@ -686,8 +678,8 @@ def test_describe_stream_no_results(no_shards, next_ids, session, streams_client
     empty_response = build_describe_stream_response(shards=[])["StreamDescription"]
     assert ordered(description) == ordered(empty_response)
 
-    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId="first-token")
-    assert streams_client.describe_stream.call_count == len(next_ids)
+    dynamodbstreams.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId="first-token")
+    assert dynamodbstreams.describe_stream.call_count == len(next_ids)
 
 
 @pytest.mark.parametrize("shard_list", [
@@ -696,18 +688,18 @@ def test_describe_stream_no_results(no_shards, next_ids, session, streams_client
     # empty followed by results
     ([], ["first", "second"])
 ])
-def test_describe_stream_combines_results(shard_list, session, streams_client):
+def test_describe_stream_combines_results(shard_list, session, dynamodbstreams):
     stream_arn = "arn"
     responses = [build_describe_stream_response(shards=shard_list[0], next_id="second-token"),
                  build_describe_stream_response(shards=shard_list[1], next_id=missing)]
-    streams_client.describe_stream.side_effect = responses
+    dynamodbstreams.describe_stream.side_effect = responses
 
     description = session.describe_stream(stream_arn)
     assert description["Shards"] == ["first", "second"]
 
-    assert streams_client.describe_stream.call_count == 2
-    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn)
-    streams_client.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId="second-token")
+    assert dynamodbstreams.describe_stream.call_count == 2
+    dynamodbstreams.describe_stream.assert_any_call(StreamArn=stream_arn)
+    dynamodbstreams.describe_stream.assert_any_call(StreamArn=stream_arn, ExclusiveStartShardId="second-token")
 
 
 # END DESCRIBE STREAM ============================================================================ END DESCRIBE STREAM
@@ -716,7 +708,7 @@ def test_describe_stream_combines_results(shard_list, session, streams_client):
 # GET SHARD ITERATOR ============================================================================= GET SHARD ITERATOR
 
 
-def test_get_unknown_shard_iterator(streams_client, session):
+def test_get_unknown_shard_iterator(dynamodbstreams, session):
     unknown_type = "foo123"
     with pytest.raises(InvalidShardIterator) as excinfo:
         session.get_shard_iterator(
@@ -726,11 +718,11 @@ def test_get_unknown_shard_iterator(streams_client, session):
             sequence_number=None
         )
     assert unknown_type in str(excinfo.value)
-    streams_client.get_shard_iterator.assert_not_called()
+    dynamodbstreams.get_shard_iterator.assert_not_called()
 
 
-def test_get_trimmed_shard_iterator(streams_client, session):
-    streams_client.get_shard_iterator.side_effect = client_error("TrimmedDataAccessException")
+def test_get_trimmed_shard_iterator(dynamodbstreams, session):
+    dynamodbstreams.get_shard_iterator.side_effect = client_error("TrimmedDataAccessException")
     with pytest.raises(RecordsExpired):
         session.get_shard_iterator(
             stream_arn="arn",
@@ -738,7 +730,7 @@ def test_get_trimmed_shard_iterator(streams_client, session):
             iterator_type="at_sequence",
             sequence_number="sequence-123"
         )
-    streams_client.get_shard_iterator.assert_called_once_with(
+    dynamodbstreams.get_shard_iterator.assert_called_once_with(
         StreamArn="arn",
         ShardId="shard_id",
         ShardIteratorType="AT_SEQUENCE_NUMBER",
@@ -746,15 +738,15 @@ def test_get_trimmed_shard_iterator(streams_client, session):
     )
 
 
-def test_get_shard_iterator_unknown_error(streams_client, session):
-    cause = streams_client.get_shard_iterator.side_effect = client_error("FooError")
+def test_get_shard_iterator_unknown_error(dynamodbstreams, session):
+    cause = dynamodbstreams.get_shard_iterator.side_effect = client_error("FooError")
     with pytest.raises(BloopException) as excinfo:
         session.get_shard_iterator(stream_arn="arn", shard_id="shard_id", iterator_type="at_sequence")
     assert excinfo.value.__cause__ is cause
 
 
-def test_get_shard_iterator_after_sequence(streams_client, session):
-    streams_client.get_shard_iterator.return_value = {"ShardIterator": "return value"}
+def test_get_shard_iterator_after_sequence(dynamodbstreams, session):
+    dynamodbstreams.get_shard_iterator.return_value = {"ShardIterator": "return value"}
 
     shard_iterator = session.get_shard_iterator(
         stream_arn="arn",
@@ -764,7 +756,7 @@ def test_get_shard_iterator_after_sequence(streams_client, session):
     )
     assert shard_iterator == "return value"
 
-    streams_client.get_shard_iterator.assert_called_once_with(
+    dynamodbstreams.get_shard_iterator.assert_called_once_with(
         StreamArn="arn",
         ShardId="shard_id",
         ShardIteratorType="AFTER_SEQUENCE_NUMBER",
@@ -772,8 +764,8 @@ def test_get_shard_iterator_after_sequence(streams_client, session):
     )
 
 
-def test_get_shard_iterator_latest(streams_client, session):
-    streams_client.get_shard_iterator.return_value = {"ShardIterator": "return value"}
+def test_get_shard_iterator_latest(dynamodbstreams, session):
+    dynamodbstreams.get_shard_iterator.return_value = {"ShardIterator": "return value"}
 
     shard_iterator = session.get_shard_iterator(
         stream_arn="arn",
@@ -782,7 +774,7 @@ def test_get_shard_iterator_latest(streams_client, session):
     )
     assert shard_iterator == "return value"
 
-    streams_client.get_shard_iterator.assert_called_once_with(
+    dynamodbstreams.get_shard_iterator.assert_called_once_with(
         StreamArn="arn",
         ShardId="shard_id",
         ShardIteratorType="LATEST"
@@ -795,33 +787,33 @@ def test_get_shard_iterator_latest(streams_client, session):
 # GET STREAM RECORDS ============================================================================== GET STREAM RECORDS
 
 
-def test_get_trimmed_records(streams_client, session):
-    streams_client.get_records.side_effect = client_error("TrimmedDataAccessException")
+def test_get_trimmed_records(dynamodbstreams, session):
+    dynamodbstreams.get_records.side_effect = client_error("TrimmedDataAccessException")
     with pytest.raises(RecordsExpired):
         session.get_stream_records(iterator_id="iterator-123")
 
 
-def test_get_records_expired_iterator(streams_client, session):
-    streams_client.get_records.side_effect = client_error("ExpiredIteratorException")
+def test_get_records_expired_iterator(dynamodbstreams, session):
+    dynamodbstreams.get_records.side_effect = client_error("ExpiredIteratorException")
     with pytest.raises(ShardIteratorExpired):
         session.get_stream_records("some-iterator")
 
 
-def test_get_shard_records_unknown_error(streams_client, session):
-    cause = streams_client.get_records.side_effect = client_error("FooError")
+def test_get_shard_records_unknown_error(dynamodbstreams, session):
+    cause = dynamodbstreams.get_records.side_effect = client_error("FooError")
     with pytest.raises(BloopException) as excinfo:
         session.get_stream_records("iterator-123")
     assert excinfo.value.__cause__ is cause
 
 
-def test_get_records(streams_client, session):
+def test_get_records(dynamodbstreams, session):
     # Return structure isn't important, since it's just a passthrough
-    response = streams_client.get_records.return_value = {"return": "value"}
+    response = dynamodbstreams.get_records.return_value = {"return": "value"}
 
     records = session.get_stream_records(iterator_id="some-iterator")
     assert records is response
 
-    streams_client.get_records.assert_called_once_with(ShardIterator="some-iterator")
+    dynamodbstreams.get_records.assert_called_once_with(ShardIterator="some-iterator")
 
 
 # END GET STREAM RECORDS ====================================================================== END GET STREAM RECORDS

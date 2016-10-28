@@ -1,3 +1,4 @@
+import boto3
 import collections
 
 import botocore.exceptions
@@ -31,23 +32,29 @@ SHARD_ITERATOR_TYPES = {
 
 
 class SessionWrapper:
-    def __init__(self, session):
+    def __init__(self, dynamodb=None, dynamodbstreams=None):
+        """Provides a consistent interface to DynamoDb and DynamoDbStreams clients.
+
+        If either client is None, that client is built using :func:`boto3.client`.
+
+        :param dynamodb: A boto3 client for DynamoDB.  Defaults to ``boto3.client("dynamodb")``.
+        :param dynamodbstreams: A boto3 client for DynamoDbStreams.  Defaults to ``boto3.client("dynamodbstreams")``.
         """
-        :param session: underlying boto3 session to wrap
-        :type session: boto3.session.Session
-        """
-        self._dynamodb_client = session.client("dynamodb")
-        self._stream_client = session.client("dynamodbstreams")
+        dynamodb = dynamodb or boto3.client("dynamodb")
+        dynamodbstreams = dynamodbstreams or boto3.client("dynamodbstreams")
+
+        self.dynamodb_client = dynamodb
+        self.stream_client = dynamodbstreams
 
     def save_item(self, item):
         try:
-            self._dynamodb_client.update_item(**item)
+            self.dynamodb_client.update_item(**item)
         except botocore.exceptions.ClientError as error:
             handle_constraint_violation(error)
 
     def delete_item(self, item):
         try:
-            self._dynamodb_client.delete_item(**item)
+            self.dynamodb_client.delete_item(**item)
         except botocore.exceptions.ClientError as error:
             handle_constraint_violation(error)
 
@@ -57,7 +64,7 @@ class SessionWrapper:
         while requests:
             request = requests.pop()
             try:
-                response = self._dynamodb_client.batch_get_item(RequestItems=request)
+                response = self.dynamodb_client.batch_get_item(RequestItems=request)
             except botocore.exceptions.ClientError as error:
                 raise BloopException("Unexpected error while loading items.") from error
 
@@ -79,7 +86,7 @@ class SessionWrapper:
 
     def search_items(self, mode, request):
         validate_search_mode(mode)
-        method = getattr(self._dynamodb_client, mode)
+        method = getattr(self.dynamodb_client, mode)
         try:
             response = method(**request)
         except botocore.exceptions.ClientError as error:
@@ -90,7 +97,7 @@ class SessionWrapper:
     def create_table(self, model):
         table = create_table_request(model)
         try:
-            self._dynamodb_client.create_table(**table)
+            self.dynamodb_client.create_table(**table)
         except botocore.exceptions.ClientError as error:
             handle_table_exists(error, model)
 
@@ -99,7 +106,7 @@ class SessionWrapper:
         status, actual = None, {}
         while status is not ready:
             try:
-                actual = self._dynamodb_client.describe_table(TableName=table_name)["Table"]
+                actual = self.dynamodb_client.describe_table(TableName=table_name)["Table"]
             except botocore.exceptions.ClientError as error:
                 raise BloopException("Unexpected error while describing table.") from error
             status = simple_table_status(actual)
@@ -119,7 +126,7 @@ class SessionWrapper:
 
         while request.get("ExclusiveStartShardId") is not missing:
             try:
-                response = self._stream_client.describe_stream(**request)["StreamDescription"]
+                response = self.stream_client.describe_stream(**request)["StreamDescription"]
             except botocore.exceptions.ClientError as error:
                 if error.response["Error"]["Code"] == "ResourceNotFoundException":
                     raise InvalidStream("The stream arn {!r} does not exist.".format(stream_arn)) from error
@@ -144,7 +151,7 @@ class SessionWrapper:
         if sequence_number is None:
             request.pop("SequenceNumber")
         try:
-            return self._stream_client.get_shard_iterator(**request)["ShardIterator"]
+            return self.stream_client.get_shard_iterator(**request)["ShardIterator"]
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "TrimmedDataAccessException":
                 raise RecordsExpired from error
@@ -152,7 +159,7 @@ class SessionWrapper:
 
     def get_stream_records(self, iterator_id):
         try:
-            return self._stream_client.get_records(ShardIterator=iterator_id)
+            return self.stream_client.get_records(ShardIterator=iterator_id)
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "TrimmedDataAccessException":
                 raise RecordsExpired from error

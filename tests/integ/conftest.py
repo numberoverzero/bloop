@@ -12,6 +12,8 @@ from .models import User
 
 
 fixed_session = boto3.Session(region_name="us-west-2")
+fixed_ddb_client = fixed_session.client("dynamodb")
+fixed_streams_client = fixed_session.client("dynamodbstreams")
 
 
 def pytest_addoption(parser):
@@ -70,11 +72,16 @@ def cleanup_objects(engine):
     engine.delete(*users)
 
 
-@pytest.fixture
-def session():
-    return fixed_session
+@pytest.fixture(scope="session")
+def dynamodb():
+    return fixed_ddb_client
+
+
+@pytest.fixture(scope="session")
+def dynamodbstreams():
+    return fixed_streams_client
 
 
 @pytest.fixture
-def engine(session):
-    return Engine(session=session)
+def engine(dynamodb, dynamodbstreams):
+    return Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)

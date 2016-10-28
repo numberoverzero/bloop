@@ -1,7 +1,6 @@
 from unittest.mock import Mock
 
 import arrow
-import boto3
 import declare
 import pytest
 from bloop.engine import Engine, dump_key
@@ -21,12 +20,11 @@ from bloop.util import ordered
 from ..helpers.models import ComplexModel, User, VectorModel
 
 
-def test_shared_type_engine():
+def test_shared_type_engine(dynamodb, dynamodbstreams):
     """Engine can use a specific type_engine to share bound instances"""
     type_engine = declare.TypeEngine.unique()
-    session = Mock(spec=boto3.Session)
-    first = Engine(type_engine=type_engine, session=session)
-    second = Engine(type_engine=type_engine, session=session)
+    first = Engine(type_engine=type_engine, dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    second = Engine(type_engine=type_engine, dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
     assert first.type_engine is second.type_engine
 
@@ -596,11 +594,10 @@ def test_bind_concrete_base(engine, session):
     session.validate_table.assert_called_once_with(Concrete)
 
 
-def test_bind_different_engines():
+def test_bind_different_engines(dynamodb, dynamodbstreams):
     # Required so engine doesn't pass boto3 to the wrapper
-    _session = Mock(spec=boto3.Session)
-    first_engine = Engine(session=_session)
-    second_engine = Engine(session=_session)
+    first_engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    second_engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
     first_engine.session = Mock(spec=SessionWrapper)
     second_engine.session = Mock(spec=SessionWrapper)

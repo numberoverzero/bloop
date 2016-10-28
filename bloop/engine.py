@@ -1,4 +1,3 @@
-import boto3
 import declare
 
 from .conditions import render
@@ -105,30 +104,33 @@ class Engine:
 
         engine.delete(game)
 
-    To customize connection settings, provide a :class:`~bloop.session.SessionWrapper` object:
+    To customize the engine's connection, you can provide your own DynamoDB and DynamoDBStreams clients.
+    By default, Bloop will build clients directly from :func:`boto3.client`.
 
     .. code-block:: python
 
+        import bloop
         import boto3
-        from bloop import Engine, SessionWrapper
 
-        dynamodb_local = boto3.client("dynamodb", endpoint_url="http://127.0.0.1:8000")
-        streams_local = boto3.client("dynamodbstreams", endpoint_url="http://127.0.0.1:8001")
+        dynamodb_local = boto3.client(
+            "dynamodb",
+            endpoint_url="http://127.0.0.1:8000")
+        streams_local = boto3.client(
+            "dynamodbstreams",
+            endpoint_url="http://127.0.0.1:8001")
 
-        session = SessionWrapper(dynamodb_local, streams_local)
-        engine = Engine(session)
+        engine = bloop.Engine(
+            dynamodb=dynamodb_local,
+            dynamodbstreams=streams_local)
 
-    By default, Bloop will build clients directly from :func:`boto3.client`.
-
-    :param session: Used to create "dynamodb" and "dynamodbstreams" clients.
-    :type session: :class:`~bloop.session.SessionWrapper`
-
+    :param dynamodb: A boto3 client for DynamoDB.  Defaults to ``boto3.client("dynamodb")``.
+    :param dynamodbstreams: A boto3 client for DynamoDbStreams.  Defaults to ``boto3.client("dynamodbstreams")``.
     """
-    def __init__(self, session=None, type_engine=None):
+    def __init__(self, *, dynamodb=None, dynamodbstreams=None, type_engine=None):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = type_engine or declare.TypeEngine.unique()
-        self.session = SessionWrapper(session or boto3)
+        self.session = SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
     def _dump(self, model, obj, context=None, **kwargs):
         context = context or {"engine": self}

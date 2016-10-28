@@ -11,7 +11,7 @@ from .exceptions import (
     UnknownType,
 )
 from .models import Index, ModelMetaclass
-from .search import Query, Scan
+from .search import Search
 from .session import SessionWrapper
 from .signals import (
     before_create_table,
@@ -238,9 +238,9 @@ class Engine:
         else:
             model, index = model_or_index, None
         validate_not_abstract(model)
-        q = Query(
-            engine=self, session=self.session, model=model, index=index, key=key, filter=filter,
-            projection=projection, limit=limit, consistent=consistent, forward=forward)
+        q = Search(
+            mode="query", engine=self, session=self.session, model=model, index=index, key=key,
+            filter=filter, projection=projection, limit=limit, consistent=consistent, forward=forward)
         return iter(q.prepare())
 
     def save(self, *objs, condition=None, atomic=False):
@@ -260,9 +260,9 @@ class Engine:
         else:
             model, index = model_or_index, None
         validate_not_abstract(model)
-        s = Scan(
-            engine=self, session=self.session, model=model, index=index, filter=filter,
-            projection=projection, limit=limit, consistent=consistent)
+        s = Search(
+            mode="scan", engine=self, session=self.session, model=model, index=index,
+            filter=filter, projection=projection, limit=limit, consistent=consistent)
         return iter(s.prepare())
 
     def stream(self, model, position) -> Stream:

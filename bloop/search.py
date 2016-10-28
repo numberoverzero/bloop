@@ -15,7 +15,7 @@ from .signals import object_loaded
 from .util import printable_column_name, printable_query, unpack_from_dynamodb
 
 
-__all__ = ["Scan", "Query", "ScanIterator", "QueryIterator"]
+__all__ = ["ScanIterator", "QueryIterator"]
 
 
 def search_repr(cls, model, index):
@@ -160,8 +160,9 @@ class Search:
     mode = None
 
     def __init__(
-            self, engine=None, session=None, model=None, index=None, key=None, filter=None,
+            self, mode=None, engine=None, session=None, model=None, index=None, key=None, filter=None,
             projection=None, limit=None, consistent=False, forward=True):
+        self.mode = mode
         self.engine = engine
         self.session = session
         self.model = model
@@ -192,14 +193,6 @@ class Search:
             forward=self.forward
         )
         return p
-
-
-class Scan(Search):
-    mode = "scan"
-
-
-class Query(Search):
-    mode = "query"
 
 
 class PreparedSearch:

@@ -29,9 +29,7 @@ from bloop.models import (
 )
 from bloop.search import (
     PreparedSearch,
-    Query,
     QueryIterator,
-    Scan,
     ScanIterator,
     Search,
     SearchIterator,
@@ -623,8 +621,6 @@ def test_search_repr():
 
 def test_reprs(simple_iter):
     assert repr(Search(model=User, index=None)) == "<Search[User]>"
-    assert repr(Scan(model=User, index=User.by_email)) == "<Scan[User.by_email]>"
-    assert repr(Query(model=None, index=None)) == "<Query[None]>"
     prepared_search = PreparedSearch()
     prepared_search.model = None
     prepared_search.index = User.by_email

@@ -80,6 +80,8 @@ def validate_search_projection(model, index, projection):
 
     if projection == "all":
         return (index or model.Meta).projection["included"]
+    elif isinstance(projection, str):
+        raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
 
     # Keep original around for error messages
     original_projection = projection

@@ -423,14 +423,22 @@ def test_search_projection_includes_non_projected_column(model, index):
     projection = [model.model_hash, model.not_projected]
 
     if should_succeed:
-        projected = validate_search_projection(
-            model, index, projection=projection)
+        projected = validate_search_projection(model, index, projection=projection)
         assert projected == [model.model_hash, model.not_projected]
 
     else:
         with pytest.raises(InvalidProjection):
-            validate_search_projection(
-                model, index, projection=projection)
+            validate_search_projection(model, index, projection=projection)
+
+
+@pytest.mark.parametrize("model, index", all_permutations)
+def test_search_projection_unknown_string(model, index):
+    """Don't confuse a string for an iterable list.
+    Users can be explicit with list("string") if their column names are all single-characters
+    """
+
+    with pytest.raises(InvalidProjection):
+        validate_search_projection(model, index, projection="keys")
 
 
 def test_validate_no_filter():

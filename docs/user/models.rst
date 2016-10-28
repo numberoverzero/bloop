@@ -32,7 +32,7 @@ Let's add some columns and a GSI:
 
 Then create the table in DynamoDB:
 
-.. code-block:: python
+.. code-block:: pycon
 
     >>> from bloop import Engine
     >>> engine = Engine()
@@ -52,7 +52,7 @@ Creating Instances
 
 ``BaseModel`` provides a basic ``__init__``:
 
-.. code-block:: python
+.. code-block:: pycon
 
     >>> import arrow, uuid
     >>> user = User(
@@ -64,7 +64,7 @@ Creating Instances
 
 A hash key value isn't required until you're ready to interact with DynamoDB:
 
-.. code-block:: python
+.. code-block:: pycon
 
     >>> user = User(email="u@d.com")
     >>> engine.save(user)

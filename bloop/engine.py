@@ -19,7 +19,7 @@ from .signals import (
     object_loaded,
     object_saved,
 )
-from .stream import Stream, stream_for
+from .stream import stream_for
 from .util import missing, unpack_from_dynamodb, walk_subclasses
 
 
@@ -87,15 +87,14 @@ def fail_unknown(model, from_declare):
 class Engine:
     """Primary means of interacting with DynamoDB.
 
-    .. code-block:: python
+    .. code-block:: pycon
 
-        from your_project.models import Game
-        from bloop import Engine
-        engine = Engine()
-        engine.bind(Game)
-
-        game = Game(id=101, title="Starship X")
-        engine.save(game)
+        >>> from your_project.models import Game
+        >>> from bloop import Engine
+        >>> engine = Engine()
+        >>> engine.bind(Game)
+        >>> game = Game(id=101, title="Starship X")
+        >>> engine.save(game)
 
     :param dynamodb: DynamoDB client.  Defaults to ``boto3.client("dynamodb")``.
     :param dynamodbstreams: DynamoDbStreams client.  Defaults to ``boto3.client("dynamodbstreams")``.
@@ -123,18 +122,16 @@ class Engine:
     def bind(self, base):
         """Create backing tables for a model and its subclasses.
 
-        Basic Usage:
+        .. code-block:: pycon
 
-        .. code-block:: python
+            >>> class User(BaseModel):
+            ...     id = Column(UUID, hash_key=True)
+            ...     email = Column(String)
+            ...
+            >>> engine = Engine()
+            >>> engine.bind(User)
 
-            class User(BaseModel):
-                id = Column(UUID, hash_key=True)
-                email = Column(String)
-
-            engine = Engine()
-            engine.bind(User)
-
-        :param base: Can be abstract.
+        :param base: Base model to bind.  Can be abstract.
         """
         # Make sure we're looking at models
         validate_is_model(base)
@@ -159,32 +156,30 @@ class Engine:
     def delete(self, *objs, condition=None, atomic=False):
         """Delete one or more objects.
 
-        .. code-block:: python
+        .. code-block:: pycon
 
-            user = User(id=123, email="user@domain.com")
-            engine.save(user)
-            engine.delete(user)
+            >>> user = User(id=123, email="user@domain.com")
+            >>> engine.save(user)
+            >>> engine.delete(user)
 
         Use a condition to ensure some criteria is met before deleting the object(s):
 
-        .. code-block:: python
+        .. code-block:: pycon
 
-            user = User(id=123, email="user@domain.com")
-            engine.save(user)
-
+            >>> user = User(id=123, email="user@domain.com")
             # Don't delete the user if the email has changed
             same_email = User.email == user.email
-            engine.delete(user, condition=same_email)
+            >>> engine.delete(user, condition=same_email)
 
         When ``atomic`` is True, the delete is only performed if the local object and the DynamoDB object
         are exactly the same.  This can be combined with other conditions:
 
-        .. code-block:: python
+        .. code-block:: pycon
 
             # Local user doesn't know its verified state,
             # so it isn't part of the atomic condition.
-            engine.delete(User, atomic=True,
-                          condition=User.verified.is_(False))
+            >>> engine.delete(User, atomic=True,
+            ...     condition=User.verified.is_(False))
         """
         objs = set(objs)
         validate_not_abstract(*objs)
@@ -199,17 +194,18 @@ class Engine:
     def load(self, *objs, consistent=False):
         """Populate objects from DynamoDB.
 
-        .. code-block:: python
+        .. code-block:: pycon
 
-            user = User(id=123)
-            game = Game(title="Starship X")
+            >>> user = User(id=123)
+            >>> game = Game(title="Starship X")
 
-            engine.load(user, game)
+            >>> engine.load(user, game)
+            >>> user.email
+            "user@domain.com"
+            >>> game.rating
+            3.14
 
-            print(user.email)
-            print(game.rating)
-
-        When ``consistent`` is True, uses `strongly consistent reads`__.
+        Uses `strongly consistent reads`__ when ``consistent`` is True.
         Raises :exc:`~bloop.exceptions.MissingObjects` if one or more objects aren't loaded.
 
         __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
@@ -256,8 +252,60 @@ class Engine:
                     not_loaded.update(index_set)
             raise MissingObjects("Failed to load some objects.", objects=not_loaded)
 
-    def query(self, model_or_index, key=None, filter=None, projection="all", limit=None,
+    def query(self, model_or_index, key, filter=None, projection="all", limit=None,
               consistent=False, forward=True):
+        """Create a reusable :class:`~bloop.search.QueryIterator`.
+
+        .. code-block:: pycon
+
+            >>> q = engine.query(
+            ...     User.by_email,
+            ...     User.email == "user@domain.com",
+            ...     projection="all",
+            ...     filter=User.age >= 18,
+            ... )
+            >>> list(q)
+            [User(id=0, email=...), User(id=1, email=...)]
+            >>> q.first()
+            User(id=0, email=...)
+            >>> q.one()
+            ConstraintViolation: Query found more than one result.
+
+        A `key condition`__ must use an equality condition ``==`` against the hash key of the Model
+        or Index being queried.  The condition can also include one of the following conditions
+        against the range key::
+
+            <, <=, ==, >=, >, begins_with, between
+
+        To use a hash key and range key condition together:
+
+        .. code-block:: pycon
+
+            >>> in_home = File.path == "~"
+            >>> start_with_a = File.name.begins_with("a")
+            >>> q = engine.query(File, in_home & starts_with_a)
+
+        :param model_or_index: A model or index to query.  For example, ``User`` or ``User.by_email``.
+        :param key:
+            Key condition.  This must include an equality against the hash key, and optionally one
+            of a restricted set of conditions on the range key.
+        :param filter: Filter condition.  Only matching objects will be included in the results.
+        :param projection:
+            "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.  When projection is
+            "count", you must advance the iterator to retrieve the count.
+
+        :param int limit: Maximum number of items returned.  This is not DynamoDB's `Limit`__ parameter.
+        :param bool consistent: Use `strongly consistent reads`__ if True.  Default is False.
+        :param bool forward:  Query in ascending or descending order.  Default is True (ascending).
+
+        :return: A reusable query iterator with helper methods.
+        :rtype: :class:`~bloop.search.QueryIterator`
+
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html\
+           #DDB-Query-request-KeyConditionExpression
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+        """
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
         else:
@@ -269,6 +317,33 @@ class Engine:
         return iter(q.prepare())
 
     def save(self, *objs, condition=None, atomic=False):
+        """Save one or more objects.
+
+        .. code-block:: pycon
+
+            >>> user = User(id=123, email="user@domain.com")
+            >>> engine.save(user)
+            >>> engine.delete(user)
+
+        Use a condition to ensure some criteria is met before saving the object(s):
+
+        .. code-block:: pycon
+
+            >>> user = User(id=123, email="user@domain.com")
+            # Don't save the user if their account isn't verified
+            # must_be_verified = User.verified.is_(True)
+            >>> engine.save(user, condition=must_be_verified)
+
+        When ``atomic`` is True, the save is only performed if the local object and the DynamoDB object
+        are exactly the same.  This can be combined with other conditions:
+
+        .. code-block:: pycon
+
+            # Local user doesn't know its subscription level,
+            # so it isn't part of the atomic condition.
+            >>> engine.save(User, atomic=True,
+            ...     condition=User.subscription >= 3)
+        """
         objs = set(objs)
         validate_not_abstract(*objs)
         for obj in objs:
@@ -280,6 +355,41 @@ class Engine:
             object_saved.send(self, engine=self, obj=obj)
 
     def scan(self, model_or_index, filter=None, projection="all", limit=None, consistent=False):
+        """Create a reusable :class:`~bloop.search.ScanIterator`.
+
+        .. code-block:: pycon
+
+            >>> recently_online = User.last_login.between(
+            ...     arrow.now().replace(hours=-2),
+            ...     arrow.now()
+            ... )
+            >>> q = engine.scan(
+            ...     User,
+            ...     filter=recently_online,
+            ...     projection=[User.verified, User.email]
+            ... )
+            >>> list(q)
+            [User(id=0, ...), User(id=1, ...)]
+            >>> q.first()
+            User(id=0, ...)
+            >>> q.one()
+            ConstraintViolation: Scan found more than one result.
+
+        :param model_or_index: A model or index to scan.  For example, ``User`` or ``User.by_email``.
+        :param filter: Filter condition.  Only matching objects will be included in the results.
+        :param projection:
+            "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.  When projection is
+            "count", you must advance the iterator to retrieve the count.
+
+        :param int limit: Maximum number of items returned.  This is not DynamoDB's `Limit`__ parameter.
+        :param bool consistent: Use `strongly consistent reads`__ if True.  Default is False.
+
+        :return: A reusable scan iterator with helper methods.
+        :rtype: :class:`~bloop.search.ScanIterator`
+
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html#DDB-Scan-request-Limit
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+        """
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
         else:
@@ -290,7 +400,59 @@ class Engine:
             filter=filter, projection=projection, limit=limit, consistent=consistent)
         return iter(s.prepare())
 
-    def stream(self, model, position) -> Stream:
+    def stream(self, model, position):
+        """Create an iterator with approximate chronological ordering over all shards in a model's Stream.
+
+        The stream's initial position can be:
+
+        * Either end of the stream with "trim_horizon" and "latest"
+        * At the same position as another stream with :attr:`Stream.token <bloop.stream.Stream.token>`
+        * An arrow datetime.  This can be **very expensive** for high volume streams.
+
+        .. code-block:: pycon
+
+            >>> last_night = arrow.now().replace(hours=-6)
+            >>> stream = engine.stream(User, position=last_night)
+            >>> next(stream)
+            {'key': None,
+             'old': None,
+             'new': User(id=0, email="user@domain.com"),
+             'meta': {'created_at': <Arrow [2016-10-28T01:58:00-07:00]>,
+                      'event': {'id': '5ad8700c0adbfad0083e44fc2e3861c0',
+                                'type': 'insert',
+                                'version': '1.1'},
+                      'sequence_number': '100000000006486326346'}
+            }
+            >>> engine.save(User(id=0, email="new@email.com"))
+            >>> next(stream)
+            {'key': None,
+             'old': User(id=0, email="user@domain.com"),
+             'new': User(id=0, email="new@email.com"),
+             'meta': {'created_at': <Arrow [2016-10-28T01:59:00-07:00]>,
+                      'event': {'id': 'd8dfc861287b917f81bcbf3cd8a8a5b3',
+                                'type': 'modify',
+                                'version': '1.1'},
+                      'sequence_number': '200000000006486327270'}
+            }
+
+        You can pick up where a previous stream left off:
+
+        .. code-block:: pycon
+
+            >>> token = previous_stream.token
+            >>> token
+            {'active': ['shardId-00000001477645069173-8148b80f'],
+             'shards': [{'iterator_type': 'after_sequence',
+               'sequence_number': '200000000006486327270',
+               'shard_id': 'shardId-00000001477645069173-8148b80f'}],
+             'stream_arn': 'arn:.../stream/2016-10-28T08:57:46.568'}
+            >>> stream = engine.stream(User, token)
+
+        :param model: The model to stream records from.
+        :param position: "trim_horizon", "latest", a stream token, or a time.
+        :return: An iterator for records in all shards.
+        :rtype: :class:`~bloop.stream.Stream`
+        """
         validate_not_abstract(model)
         stream = stream_for(self, model)
         stream.move_to(position=position)

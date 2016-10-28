@@ -74,7 +74,7 @@ UUID
     class UUID(bloop.String):
         python_type = uuid.UUID
 
-.. code-block:: python
+.. code-block:: pycon
 
     >>> import bloop
     >>> import uuid
@@ -105,7 +105,7 @@ DateTime stores an :py:class:`arrow.arrow.Arrow` as an ISO8601 UTC String.
 
     Note that values in DynamoDB are **always** stored in UTC.
 
-.. code-block:: python
+.. code-block:: pycon
 
     >>> import arrow
     >>> import bloop

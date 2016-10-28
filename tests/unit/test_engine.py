@@ -636,10 +636,13 @@ def test_abstract_model_operations_raise(engine, op_name):
         id = Column(Integer, hash_key=True)
         other = Column(Integer)
         by_other = GlobalSecondaryIndex(projection="all", hash_key="other")
+    args = [Abstract]
+    if op_name == "query":
+        args.append("KeyCondition")
 
     with pytest.raises(InvalidModel):
         operation = getattr(engine, op_name)
-        operation(Abstract)
+        operation(*args)
 
 
 def test_load_missing_vector_types(engine, session):

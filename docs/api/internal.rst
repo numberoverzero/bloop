@@ -113,7 +113,7 @@ Models must be Hashable
 
 By default python makes all user classes are hashable:
 
-.. code-block:: python
+.. code-block:: pycon
 
     >>> class Dict(): pass
     >>> hash(Dict())
@@ -141,7 +141,7 @@ In the first case, Bloop will simply raise ``InvalidModel``.  In the second case
 This is required because python doesn't provide a default hash method when ``__eq__`` is implemented,
 and won't fall back to a parent class's definition:
 
-.. code-block:: python
+.. code-block:: pycon
 
     >>> class Base():
     ...     def __hash__(self):

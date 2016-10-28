@@ -25,7 +25,7 @@ object_loaded.__doc__ = """Sent by ``engine`` after an object is loaded from Dyn
     local_objects = {}
 
     def key(obj):
-        meta = obj.__class__.Meta
+        meta = obj.Meta
         return (getattr(obj, k.model_name) for k in meta.keys)
 
     @object_loaded.connect
@@ -45,7 +45,7 @@ object_saved.__doc__ = """Sent by ``engine`` after an object is saved to DynamoD
     local_objects = {}
 
     def key(obj):
-        meta = obj.__class__.Meta
+        meta = obj.Meta
         return (getattr(obj, k.model_name) for k in meta.keys)
 
     @object_saved.connect
@@ -65,7 +65,7 @@ object_deleted.__doc__ = """Sent by ``engine`` after an object is deleted from D
     local_objects = {}
 
     def key(obj):
-        meta = obj.__class__.Meta
+        meta = obj.Meta
         return (getattr(obj, k.model_name) for k in meta.keys)
 
     @object_deleted.connect

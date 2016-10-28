@@ -77,14 +77,18 @@ User Guide
 
     user/getting-started
     user/index
+    user/patterns
 
 API Reference
 =============
 
 Bloop's API is divided into two sections: public and internal.
 
+Public API
+----------
+
 If you're looking for details on :func:`Engine.save <bloop.engine.Engine.save>` or want the first result
-from a :class:`~bloop.search.Query`, the Public API provides a breakdown of each class you'll encounter
+from a :class:`Query <bloop.search.QueryIterator>`, the Public API provides a breakdown of each class you'll encounter
 during normal usage.
 
 .. toctree::
@@ -92,13 +96,18 @@ during normal usage.
 
     api/public
 
+Internal API
+------------
+
 Most users never need to interact with the Internal API.  For example, you can interact with the model creation
 process by connecting to :data:`~bloop.signals.model_created`, instead of modifying the
 :class:`metaclass <bloop.models.ModelMetaclass>` directly.
-
-The Internal API has no backwards-compatibility guarantees.
 
 .. toctree::
     :maxdepth: 2
 
     api/internal
+
+.. warning::
+
+    Breaking changes to the Internal API can occur at any time.

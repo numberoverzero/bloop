@@ -3,7 +3,6 @@ import declare
 
 from .conditions import render
 from .exceptions import (
-    AbstractModelError,
     InvalidModel,
     MissingKey,
     MissingObjects,
@@ -66,7 +65,7 @@ def validate_not_abstract(*objs):
     for obj in objs:
         if obj.Meta.abstract:
             cls = obj if isinstance(obj, type) else obj.__class__
-            raise AbstractModelError("{!r} is abstract.".format(cls.__name__))
+            raise InvalidModel("{!r} is abstract.".format(cls.__name__))
 
 
 def validate_is_model(model):
@@ -212,8 +211,8 @@ class Engine:
     def load(self, *objs, consistent=False):
         """Populate objects from DynamoDB.
 
-        Set ``consistent`` to True to perform `strongly consistent reads`__.  Raises :exc:`~bloop.exceptions.MissingObjects`
-        if one or more objects aren't loaded.
+        Set ``consistent`` to True to perform `strongly consistent reads`__.
+        Raises :exc:`~bloop.exceptions.MissingObjects` if one or more objects aren't loaded.
 
         Basic Usage:
 

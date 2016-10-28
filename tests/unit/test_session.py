@@ -10,7 +10,7 @@ from bloop.exceptions import (
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
-    UnknownSearchMode,
+    InvalidSearchMode,
 )
 from bloop.models import BaseModel, Column
 from bloop.session import (
@@ -358,7 +358,7 @@ def test_query_scan_raise(session, dynamodb_client):
 
 
 def test_search_unknown(session):
-    with pytest.raises(UnknownSearchMode) as excinfo:
+    with pytest.raises(InvalidSearchMode) as excinfo:
         session.search_items(mode="foo", request={})
     assert "foo" in str(excinfo.value)
 

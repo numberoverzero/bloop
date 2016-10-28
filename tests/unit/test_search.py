@@ -19,7 +19,7 @@ from bloop.exceptions import (
     InvalidFilterCondition,
     InvalidKeyCondition,
     InvalidProjection,
-    UnknownSearchMode,
+    InvalidSearchMode,
 )
 from bloop.models import (
     BaseModel,
@@ -478,7 +478,7 @@ def test_prepare_session(valid_search, engine, session, mode, cls):
 
 def test_prepare_unknown_mode(valid_search):
     valid_search.mode = "foo"
-    with pytest.raises(UnknownSearchMode):
+    with pytest.raises(InvalidSearchMode):
         valid_search.prepare()
 
 

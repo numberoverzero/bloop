@@ -17,10 +17,6 @@ class TableMismatch(BloopException):
     """The expected and actual tables for this Model do not match."""
 
 
-class AbstractModelError(BloopException, ValueError):
-    """There is no way to load or save an abstract Model."""
-
-
 class UnboundModel(BloopException, ValueError):
     """This Model has not been bound to the Engine."""
 
@@ -29,7 +25,7 @@ class UnknownType(BloopException, ValueError):
     """This Type has not been registered with the type engine."""
 
 
-class UnknownSearchMode(BloopException, ValueError):
+class InvalidSearchMode(BloopException, ValueError):
     """Search mode must be 'scan' or 'query'."""
 
 

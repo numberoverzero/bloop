@@ -10,7 +10,7 @@ from .exceptions import (
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
-    UnknownSearchMode,
+    InvalidSearchMode,
 )
 from .util import Sentinel, ordered
 
@@ -163,7 +163,7 @@ class SessionWrapper:
 
 def validate_search_mode(mode):
     if mode not in {"query", "scan"}:
-        raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
+        raise InvalidSearchMode("{!r} is not a valid search mode.".format(mode))
 
 
 def validate_stream_iterator_type(iterator_type):

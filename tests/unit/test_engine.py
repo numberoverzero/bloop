@@ -6,7 +6,6 @@ import declare
 import pytest
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
-    AbstractModelError,
     InvalidModel,
     MissingKey,
     MissingObjects,
@@ -633,11 +632,11 @@ def test_abstract_object_operations_raise(engine, op_name, plural):
     abstract = Abstract(id=5)
     concrete = User(age=5)
 
-    with pytest.raises(AbstractModelError):
+    with pytest.raises(InvalidModel):
         operation = getattr(engine, op_name)
         operation(abstract)
     if plural:
-        with pytest.raises(AbstractModelError):
+        with pytest.raises(InvalidModel):
             operation = getattr(engine, op_name)
             operation(abstract, concrete)
 
@@ -651,7 +650,7 @@ def test_abstract_model_operations_raise(engine, op_name):
         other = Column(Integer)
         by_other = GlobalSecondaryIndex(projection="all", hash_key="other")
 
-    with pytest.raises(AbstractModelError):
+    with pytest.raises(InvalidModel):
         operation = getattr(engine, op_name)
         operation(Abstract)
 

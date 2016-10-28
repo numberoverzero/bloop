@@ -8,7 +8,7 @@ from .exceptions import (
     InvalidFilterCondition,
     InvalidKeyCondition,
     InvalidProjection,
-    UnknownSearchMode,
+    InvalidSearchMode,
 )
 from .models import Column, GlobalSecondaryIndex
 from .signals import object_loaded
@@ -33,7 +33,7 @@ def search_repr(cls, model, index):
 
 def validate_search_mode(mode):
     if mode not in {"query", "scan"}:
-        raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
+        raise InvalidSearchMode("{!r} is not a valid search mode.".format(mode))
 
 
 def validate_key_condition(model, index, key):

@@ -35,9 +35,9 @@ Streaming
 .. autoclass:: bloop.stream.buffer.RecordBuffer
     :members:
 
-========
-Querying
-========
+=========
+Searching
+=========
 
 .. autoclass:: bloop.search.Search
     :members:

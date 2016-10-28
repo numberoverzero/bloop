@@ -1,6 +1,8 @@
 Public API
 ^^^^^^^^^^
 
+.. module:: bloop
+
 All of the classes in the Public API can be directly imported from ``bloop``, even though the documentation below
 uses their full module paths.
 
@@ -75,15 +77,9 @@ Streaming
 
 .. autofunction:: bloop.stream.stream_for
 
-========
-Querying
-========
-
-.. autoclass:: bloop.search.Query
-    :members:
-
-.. autoclass:: bloop.search.Scan
-    :members:
+=========
+Searching
+=========
 
 .. autoclass:: bloop.search.QueryIterator
     :members:
@@ -96,9 +92,9 @@ Querying
 Conditions
 ==========
 
-The only public class the conditions system exposes is :class:`!bloop.conditions.Condition`, which
-represents an empty condition.  The rest of the conditions system is baked into :class:`~bloop.models.Column` and
-the various :class:`~bloop.engine.Engine` functions like :func:`~bloop.engine.Engine.save`.
+The only public class the conditions system exposes is the empty condition, :class:`~.conditions.Condition`.
+The rest of the conditions system is baked into :class:`~.models.Column` and consumed by the various
+:class:`~.engine.Engine` functions like :func:`Engine.save() <bloop.engine.Engine.save>`.
 
 This function creates a condition for any model that can be used when saving to ensure you don't overwrite an existing
 value.  The model's ``Meta`` attribute describes the required keys:
@@ -175,7 +171,7 @@ Another is sent by the ``column`` and has an ``obj``.  Instead of forcing you to
 sends **every** parameter as a kwarg.  This means you can build a receiver by cherry picking the parameters you
 care about, and always ignore the positional argument. The sender is accessed the same as all other parameters.
 
-For example, :data:`~bloop.signals.object_modified` is sent by ``column`` and includes ``obj``, and ``value``.
+For example, :data:`~.signals.object_modified` is sent by ``column`` and includes ``obj``, and ``value``.
 Here's an anti-fraud receiver that inspects login patterns that only cares about changes to ``User.last_login``:
 
 .. code-block:: python

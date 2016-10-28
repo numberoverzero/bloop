@@ -229,5 +229,76 @@ Built-in Signals
 Exceptions
 ==========
 
-.. automodule:: bloop.exceptions
-    :members:
+.. module:: bloop.exceptions
+
+Except to configure sessions, Bloop aims to completely abstract the boto3/botocore layers.  If you encounter an
+exception from either boto3 or botocore, please `open an issue`__.  Bloop's exceptions are broadly divided into two
+categories: unexpected state, and invalid input.
+
+To catch any exception from Bloop, use :exc:`~.BloopException`:
+
+.. code-block:: python
+
+    try:
+        engine.stream(User, "latest")
+    except BloopException:
+        print("Didn't expect an exception, but Bloop raised:")
+        raise
+
+.. autoclass:: BloopException
+
+__ https://github.com/numberoverzero/bloop/issues/new
+
+----------------
+Unexpected state
+----------------
+
+These are exceptions that you should be ready to handle in the normal course of using DynamoDB.  For example,
+failing to load objects will raise :exc:`~.MissingObjects`, while conditional operations may fail with
+:exc`~.ConstraintViolation`.
+
+.. autoclass:: ConstraintViolation
+
+.. autoclass:: MissingObjects
+
+.. autoclass:: RecordsExpired
+
+.. autoclass:: ShardIteratorExpired
+
+.. autoclass:: TableMismatch
+
+---------
+Bad Input
+---------
+
+These are thrown when an option is invalid or missing, such as forgetting a key condition for a query,
+or trying to use an unknown projection type.
+
+.. autoclass:: InvalidComparisonOperator
+
+.. autoclass:: InvalidCondition
+
+.. autoclass:: InvalidFilterCondition
+
+.. autoclass:: InvalidIndex
+
+.. autoclass:: InvalidKeyCondition
+
+.. autoclass:: InvalidModel
+
+.. autoclass:: InvalidPosition
+
+.. autoclass:: InvalidProjection
+
+.. autoclass:: InvalidSearchMode
+
+.. autoclass:: InvalidShardIterator
+
+.. autoclass:: InvalidStream
+
+.. autoclass:: MissingKey
+
+.. autoclass:: UnboundModel
+
+.. autoclass:: UnknownType
+

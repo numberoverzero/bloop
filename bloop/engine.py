@@ -97,39 +97,13 @@ class Engine:
         game = Game(id=101, title="Starship X")
         engine.save(game)
 
-        q = engine.query(
-                Game.by_title,
-                key=Game.title=="Starship X")
-        print(q.first().id)  # 101
-
-        engine.delete(game)
-
-    To customize the engine's connection, you can provide your own DynamoDB and DynamoDBStreams clients.
-    By default, Bloop will build clients directly from :func:`boto3.client`.
-
-    .. code-block:: python
-
-        import bloop
-        import boto3
-
-        dynamodb_local = boto3.client(
-            "dynamodb",
-            endpoint_url="http://127.0.0.1:8000")
-        streams_local = boto3.client(
-            "dynamodbstreams",
-            endpoint_url="http://127.0.0.1:8001")
-
-        engine = bloop.Engine(
-            dynamodb=dynamodb_local,
-            dynamodbstreams=streams_local)
-
-    :param dynamodb: A boto3 client for DynamoDB.  Defaults to ``boto3.client("dynamodb")``.
-    :param dynamodbstreams: A boto3 client for DynamoDbStreams.  Defaults to ``boto3.client("dynamodbstreams")``.
+    :param dynamodb: DynamoDB client.  Defaults to ``boto3.client("dynamodb")``.
+    :param dynamodbstreams: DynamoDbStreams client.  Defaults to ``boto3.client("dynamodbstreams")``.
     """
-    def __init__(self, *, dynamodb=None, dynamodbstreams=None, type_engine=None):
+    def __init__(self, *, dynamodb=None, dynamodbstreams=None):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
-        self.type_engine = type_engine or declare.TypeEngine.unique()
+        self.type_engine = declare.TypeEngine.unique()
         self.session = SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
     def _dump(self, model, obj, context=None, **kwargs):

@@ -6,9 +6,24 @@ Public API
 All of the classes in the Public API can be directly imported from ``bloop``, even though the documentation below
 uses their full module paths.
 
-===========
-Connections
-===========
+======
+Engine
+======
+
+By default, Bloop will build clients directly from :func:`boto3.client`.
+To customize the engine's connection, you can provide your own DynamoDB and DynamoDBStreams clients:
+
+.. code-block:: python
+
+    import bloop
+    import boto3
+
+    dynamodb_local = boto3.client("dynamodb", endpoint_url="http://127.0.0.1:8000")
+    streams_local = boto3.client("dynamodbstreams", endpoint_url="http://127.0.0.1:8001")
+
+    engine = bloop.Engine(
+        dynamodb=dynamodb_local,
+        dynamodbstreams=streams_local)
 
 .. autoclass:: bloop.engine.Engine
     :members:

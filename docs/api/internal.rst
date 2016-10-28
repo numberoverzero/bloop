@@ -5,9 +5,9 @@ In addition to documenting internal classes, this section describes complex inte
 atomic tracking via weakrefs) and specific parameters and error handling that Bloop employs when talking to DynamoDB
 (such as SessionWrapper's error inspection, and partial table validation).
 
-===========
-Connections
-===========
+==============
+SessionWrapper
+==============
 
 .. autoclass:: bloop.session.SessionWrapper
     :members:

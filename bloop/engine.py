@@ -88,49 +88,29 @@ def fail_unknown(model, from_declare):
 
 class Engine:
     """
-
     Basic Usage:
 
     .. code-block:: python
 
-        # Declare some models
-        class User(BaseModel):
-            user_id = Column(Integer, hash_key=True)
+        from your_project.models import Game
+        from bloop import Engine
 
-        class Game(BaseModel):
-            user_id = Column(Integer, hash_key=True)
-            game_title = Column(String, range_key=True)
-
-            by_title = GlobalSecondaryIndex(
-                projection="keys", hash_key="game_title")
-
-        # Bind the models to tables in DynamoDB
-        engine.bind(User)
+        engine = Engine()
         engine.bind(Game)
-        # OR: bind all subclasses with engine.bind(BaseModel)
 
-        # Create a few instances
-        user = User(user_id=101)
-        game = Game(user_id=101, game_title="Starship X")
+        game = Game(id=101, title="Starship X")
+        engine.save(game)
 
-        # Persist in DynamoDB
-        engine.save(user, game)
+        q = engine.query(
+                Game.by_title,
+                key=Game.title=="Starship X")
 
-        # Load with consistent reads
-        engine.load(user, consistent=True)
+        print(q.first().id)  # 101
 
-        # Delete an object only if it hasn't been modified
-        engine.delete(game, atomic=True)
+        engine.delete(game)
+
     """
     def __init__(self, session=None, type_engine=None):
-        """
-        Create a new eng
-
-        :param session: An existing boto3 session, or None to use the default session
-        :type session: boto3.session.Session
-        :param type_engine: An existing type engine, or None to use a unique type engine.
-        :type type_engine: declare.TypeEngine
-        """
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
         self.type_engine = type_engine or declare.TypeEngine.unique()
@@ -151,7 +131,22 @@ class Engine:
             fail_unknown(model, from_declare)
 
     def bind(self, base):
-        """Create tables for all models subclassing base"""
+        """Create backing tables for a model and its subclasses.
+
+        Basic Usage:
+
+        .. code-block:: python
+
+            class User(BaseModel):
+                id = Column(UUID, hash_key=True)
+                email = Column(String)
+
+            engine = Engine()
+            engine.bind(User)
+
+        :param base: Can be abstract.  If the base is not abstract, its backing table will be created.
+                     Tables will also be created for all non-abstract classes derived from the base.
+        """
         # Make sure we're looking at models
         validate_is_model(base)
 
@@ -173,6 +168,37 @@ class Engine:
             model_bound.send(self, engine=self, model=model)
 
     def delete(self, *objs, condition=None, atomic=False):
+        """Delete one or more objects.
+
+        Basic Usage:
+
+        .. code-block:: python
+
+            user = User(id=123, email="user@domain.com")
+            engine.save(user)
+            engine.delete(user)
+
+        Use a condition to ensure some criteria is met before deleting the object(s):
+
+        .. code-block:: python
+
+            user = User(id=123, email="user@domain.com")
+            engine.save(user)
+
+            # Don't delete the user if the email has changed
+            same_email = User.email == user.email
+            engine.delete(user, condition=same_email)
+
+        If ``atomic`` is True, the delete is only performed if the object in DynamoDB
+        is exactly the same as the local version.  This can be combined with other conditions:
+
+        .. code-block:: python
+
+            # Local user doesn't know its verified state,
+            # so it isn't part of the atomic condition.
+            engine.delete(User, atomic=True,
+                          condition=User.verified.is_(False))
+        """
         objs = set(objs)
         validate_not_abstract(*objs)
         for obj in objs:
@@ -186,8 +212,22 @@ class Engine:
     def load(self, *objs, consistent=False):
         """Populate objects from DynamoDB.
 
-        Raises :exc:`~bloop.exceptions.MissingObjects` if objects aren't loaded.
-        :attr:`MissingObjects.objects <~bloop.exceptions.MissingObjects>` includes the objects not loaded.
+        Set ``consistent`` to True to perform `strongly consistent reads`__.  Raises :exc:`~bloop.exceptions.MissingObjects`
+        if one or more objects aren't loaded.
+
+        Basic Usage:
+
+        .. code-block:: python
+
+            user = User(id=123)
+            game = Game(title="Starship X")
+
+            engine.load(user, game)
+
+            print(user.email)
+            print(game.rating)
+
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
         """
         objs = set(objs)
         validate_not_abstract(*objs)

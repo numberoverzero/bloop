@@ -86,14 +86,12 @@ def fail_unknown(model, from_declare):
 
 
 class Engine:
-    """
-    Basic Usage:
+    """Primary means of interacting with DynamoDB.
 
     .. code-block:: python
 
         from your_project.models import Game
         from bloop import Engine
-
         engine = Engine()
         engine.bind(Game)
 
@@ -103,10 +101,27 @@ class Engine:
         q = engine.query(
                 Game.by_title,
                 key=Game.title=="Starship X")
-
         print(q.first().id)  # 101
 
         engine.delete(game)
+
+    To customize connection settings, provide a :class:`~bloop.session.SessionWrapper` object:
+
+    .. code-block:: python
+
+        import boto3
+        from bloop import Engine, SessionWrapper
+
+        dynamodb_local = boto3.client("dynamodb", endpoint_url="http://127.0.0.1:8000")
+        streams_local = boto3.client("dynamodbstreams", endpoint_url="http://127.0.0.1:8001")
+
+        session = SessionWrapper(dynamodb_local, streams_local)
+        engine = Engine(session)
+
+    By default, Bloop will build clients directly from :func:`boto3.client`.
+
+    :param session: Used to create "dynamodb" and "dynamodbstreams" clients.
+    :type session: :class:`~bloop.session.SessionWrapper`
 
     """
     def __init__(self, session=None, type_engine=None):
@@ -143,8 +158,7 @@ class Engine:
             engine = Engine()
             engine.bind(User)
 
-        :param base: Can be abstract.  If the base is not abstract, its backing table will be created.
-                     Tables will also be created for all non-abstract classes derived from the base.
+        :param base: Can be abstract.
         """
         # Make sure we're looking at models
         validate_is_model(base)
@@ -169,8 +183,6 @@ class Engine:
     def delete(self, *objs, condition=None, atomic=False):
         """Delete one or more objects.
 
-        Basic Usage:
-
         .. code-block:: python
 
             user = User(id=123, email="user@domain.com")
@@ -188,8 +200,8 @@ class Engine:
             same_email = User.email == user.email
             engine.delete(user, condition=same_email)
 
-        If ``atomic`` is True, the delete is only performed if the object in DynamoDB
-        is exactly the same as the local version.  This can be combined with other conditions:
+        When ``atomic`` is True, the delete is only performed if the local object and the DynamoDB object
+        are exactly the same.  This can be combined with other conditions:
 
         .. code-block:: python
 
@@ -211,11 +223,6 @@ class Engine:
     def load(self, *objs, consistent=False):
         """Populate objects from DynamoDB.
 
-        Set ``consistent`` to True to perform `strongly consistent reads`__.
-        Raises :exc:`~bloop.exceptions.MissingObjects` if one or more objects aren't loaded.
-
-        Basic Usage:
-
         .. code-block:: python
 
             user = User(id=123)
@@ -225,6 +232,9 @@ class Engine:
 
             print(user.email)
             print(game.rating)
+
+        When ``consistent`` is True, uses `strongly consistent reads`__.
+        Raises :exc:`~bloop.exceptions.MissingObjects` if one or more objects aren't loaded.
 
         __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
         """

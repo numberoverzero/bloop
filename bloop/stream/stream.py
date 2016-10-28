@@ -15,10 +15,6 @@ def stream_for(engine, model):
 class Stream:
     """An iterator over all Records in all Shards in a Stream.
 
-    Ordering is **approximate**.  See :ref:`Stream Internals <internal-streams>` for specific guarantees.
-
-    Basic Usage:
-
     .. code-block:: python
 
         stream = engine.stream(Model, position="trim_horizon")
@@ -26,6 +22,7 @@ class Stream:
         if record:
             print("{old} became {new}".format(**record))
 
+    Ordering is **approximate**.  See :ref:`Stream Internals <internal-streams>` for specific guarantees.
 
     Processing in a loop with periodic :func:`heartbeats <bloop.stream.Stream.heartbeat>`:
 

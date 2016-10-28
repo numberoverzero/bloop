@@ -29,8 +29,6 @@ DYNAMODB_CONTEXT = decimal.Context(
 class Type(declare.TypeDefinition):
     """Abstract base type.
 
-    Basic Usage:
-
     .. code-block:: python
 
         class ReversedString(Type):

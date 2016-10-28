@@ -465,18 +465,6 @@ class BaseCondition:
 class Condition(BaseCondition):
     """An empty condition.
 
-    Useful for iteratively building complex conditions, you can concatenate multiple conditions
-    together without finding an initial condition in a possibly-empty list.
-
-    An empty condition is equivalent to omitting a condition:
-
-    .. code-block:: python
-
-        engine.save(some_user)
-        engine.save(some_user, condition=Condition())
-
-    Basic Usage:
-
     .. code-block:: python
 
         combined = Condition()
@@ -486,6 +474,16 @@ class Condition(BaseCondition):
 
         if not combined:
             print("Conditions list only had empty conditions, or no conditions")
+
+    Useful for iteratively building complex conditions, you can concatenate multiple conditions
+    together without finding an initial condition in a possibly-empty list.
+
+    An empty condition is equivalent to omitting a condition:
+
+    .. code-block:: python
+
+        engine.save(some_user)
+        engine.save(some_user, condition=Condition())
 
     """
     def __init__(self):

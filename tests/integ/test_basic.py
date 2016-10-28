@@ -56,7 +56,7 @@ def test_stream_creation(engine):
     assert "arn" in StreamCreation.Meta.stream
 
 
-def test_model_overlap(session, engine):
+def test_model_overlap(dynamodb, engine):
     """Two models backed by the same table, with different indexes"""
     class FirstOverlap(BaseModel):
         class Meta:
@@ -100,8 +100,7 @@ def test_model_overlap(session, engine):
         # the test framework to allow parallel runs
         "TableName": FirstOverlap.Meta.table_name
     }
-    client = session.client("dynamodb")
-    client.create_table(**combined_table)
+    dynamodb.create_table(**combined_table)
 
     # Now, both of these binds should see the particular subset of indexes/attribute names that they care about
     engine.bind(FirstOverlap)

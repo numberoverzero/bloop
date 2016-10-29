@@ -10,6 +10,16 @@ from .exceptions import (
 )
 from .models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from .search import QueryIterator, ScanIterator
+from .signals import (
+    before_create_table,
+    model_bound,
+    model_created,
+    model_validated,
+    object_deleted,
+    object_loaded,
+    object_modified,
+    object_saved,
+)
 from .stream import Stream
 from .types import (
     UUID,
@@ -33,6 +43,10 @@ __all__ = [
     # Exceptions
     "BloopException", "ConstraintViolation", "MissingObjects",
     "RecordsExpired", "ShardIteratorExpired", "TableMismatch",
+
+    # Signals
+    "before_create_table", "model_bound", "model_created", "model_validated",
+    "object_deleted", "object_loaded", "object_modified", "object_saved",
 
     # Misc
     "Condition", "QueryIterator", "ScanIterator", "Stream"

@@ -5,6 +5,28 @@ from .coordinator import Coordinator
 
 
 def stream_for(engine, model):
+    """Helper to construct a stream for an engine and model.
+
+    .. code-block:: pycon
+
+        >>> from my_project.models import User
+        >>> from bloop import Engine, stream_for
+        >>> engine = Engine()
+        >>> engine.bind(User)
+        >>> stream = stream_for(engine, User)
+        >>> next(stream)
+        {'key': None,
+         'old': None,
+         'new': User(id=0, email="user@domain.com"),
+         'meta': {'created_at': <Arrow [2016-10-28T01:58:00-07:00]>,
+                  'event': {'id': '5ad8700c0adbfad0083e44fc2e3861c0',
+                            'type': 'insert',
+                            'version': '1.1'},
+                  'sequence_number': '100000000006486326346'}
+        }
+
+    :rtype: :class:`~bloop.stream.Stream`
+    """
     if not model.Meta.stream or not model.Meta.stream.get("arn"):
         raise InvalidStream("{!r} does not have a stream arn".format(model))
     coordinator = Coordinator(engine=engine, session=engine.session, stream_arn=model.Meta.stream["arn"])
@@ -13,7 +35,7 @@ def stream_for(engine, model):
 
 
 class Stream:
-    """An iterator over all Records in all Shards in a Stream.
+    """Iterate over all records in a stream.
 
     .. code-block:: python
 
@@ -21,8 +43,6 @@ class Stream:
         record = next(stream)
         if record:
             print("{old} became {new}".format(**record))
-
-    Ordering is **approximate**.  See :ref:`Stream Internals <internal-streams>` for specific guarantees.
 
     Processing in a loop with periodic :func:`heartbeats <bloop.stream.Stream.heartbeat>`:
 
@@ -36,16 +56,27 @@ class Stream:
             if arrow.now() > next_heartbeat:
                 next_heartbeat = arrow.now().replace(minutes=12)
                 stream.heartbeat()
+
+    .. warning::
+
+        **Chronological order is not guaranteed for high throughput streams.**
+
+        DynamoDB guarantees ordering:
+
+        * within any single shard
+        * across shards for a single hash/range key
+
+        There is no way to exactly order records from adjacent shards.  High throughput streams
+        provide approximate ordering using each record's "ApproximateCreationDateTime".
+
+        Tables with a single partition guarantee order across all records.
+
+        See :ref:`Stream Internals <internal-streams>` for details.
     """
     def __init__(self, *, model, engine, coordinator):
 
-        #: The :class:`BaseModel` of the Stream to iterate.
         self.model = model
-
-        #: The :class:`Engine` to create instances with.
         self.engine = engine
-
-        #: The :class:`Coordinator` that manages shard iterators and record ordering.
         self.coordinator = coordinator
 
     def __repr__(self):
@@ -66,35 +97,11 @@ class Stream:
                     self._unpack(record, key, expected)
         return record
 
-    @property
-    def token(self):
-        """Dict that can be used to reconstruct the current progress of the iterator.
-
-        .. code-block:: python
-
-            with open(".stream-state", "w") as f:
-                json.dump(stream.token, f)
-
-            # Some time later
-            ...
-
-            with open(".stream-state", "r") as f:
-                token = json.load(f)
-
-            stream = engine.stream(MyModel, position=token)
-        """
-        return self.coordinator.token
-
     def heartbeat(self):
-        """Call periodically to ensure iterators without a fixed sequence number don't expire.
+        """Ensures iterators without fixed sequence numbers don't expire.
 
-        You should call this once every ~12 minutes so that your "latest" and "trim_horizon" shard iterators don't
-        expire.  While iterators have an advertised lifetime of 15 minutes, calling more frequently can avoid
-        expiration due to clock skew.
-
-        If an iterator with a sequence number expires, it can be refreshed at the same position.  If an iterator
-        at "latest" expires, there's no way to refresh it where it expired; refreshing at "latest" could
-        miss records between the expiration position and the new "latest".
+        You should call this every 12 minutes or more often.  This is an inexpensive operation.
+        It averages 1 outbound call per 4 hours per shard, for a shard with any activity.
 
         .. code-block:: python
 
@@ -110,19 +117,35 @@ class Stream:
         self.coordinator.heartbeat()
 
     def move_to(self, position):
-        """Move to either endpoint of the stream, a stream token, or a specific time.
-
-        Moving to "trim_horizon" or "latest" is fast; moving to a point in time is very slow.
+        """Move to either endpoint of the stream; a stream token; or a specific time.
 
         .. code-block:: python
 
+            # Very fast
+            stream.move_to("trim_horizon")
+
+            # Fast
             stream.move_to(stream.token)
 
+            # Very slow, scans from trim_horizon to the target time
             stream.move_to(arrow.now().replace(days=-1))
 
-            stream.move_to("trim_horizon")
         """
         self.coordinator.move_to(position)
+
+    @property
+    def token(self):
+        """Can be used to reconstruct the current progress of the iterator.
+
+        .. code-block:: python
+
+            same_stream = engine.stream(MyModel, position=stream.token)
+            with open(".stream-state", "w") as f:
+                json.dump(stream.token, f)
+
+        :returns: Stream state as a json-friendly dict
+        """
+        return self.coordinator.token
 
     def _unpack(self, record, key, expected):
         """Replaces the attr dict at the given key with an instance of a Model"""

@@ -143,46 +143,36 @@ Save a new user, and then update the email address:
 
 The first record won't have an ``old`` value, since it was the first time this item was saved:
 
-.. code-block:: python
+.. code-block:: pycon
 
-    first = next(stream)
-    print(json.dumps(first, indent=4, default=repr))
-
-    {
-        "key": null,
-        "old": null,
-        "new": "User(email='user@domain.com', id=3, verified=None)",
-        "meta": {
-            "created_at": "<Arrow [2016-10-23T00:28:00-07:00]>",
-            "event": {
-                "id": "3fe6d339b7cb19a1474b3d853972c12a",
-                "type": "insert",
-                "version": "1.1"
-            },
-            "sequence_number": "700000000007366876916"
-        },
+    >>> next(stream)
+    {'key': None,
+     'old': None,
+     'new': User(email='user@domain.com', id=3, verified=None),
+     'meta': {
+         'created_at': <Arrow [2016-10-23T00:28:00-07:00]>,
+         'event': {
+             'id': '3fe6d339b7cb19a1474b3d853972c12a',
+             'type': 'insert',
+             'version': '1.1'},
+         'sequence_number': '700000000007366876916'}
     }
 
 The second record shows the change to email, and has both ``old`` and ``new``:
 
-.. code-block:: python
+.. code-block:: pycon
 
-    second = next(stream)
-    print(json.dumps(second, indent=4, default=repr))
-
-    {
-        "key": null,
-        "old": "User(email='user@domain.com', id=3, verified=None)",
-        "new": "User(email='admin@domain.com', id=3, verified=None)",
-        "meta": {
-            "created_at": "<Arrow [2016-10-23T00:28:00-07:00]>",
-            "event": {
-                "id": "73a4b8568a85a0bcac25799f806df239",
-                "type": "modify",
-                "version": "1.1"
-            },
-            "sequence_number": "800000000007366876936"
-        },
+    >>> next(stream)
+    {'key': None,
+     'old': User(email='user@domain.com', id=3, verified=None),
+     'new': User(email='admin@domain.com', id=3, verified=None),
+     'meta': {
+         'created_at': <Arrow [2016-10-23T00:28:00-07:00]>,
+         'event': {
+             'id': '73a4b8568a85a0bcac25799f806df239',
+             'type': 'modify',
+             'version': '1.1'},
+         'sequence_number': '800000000007366876936'}
     }
 
 -------------------

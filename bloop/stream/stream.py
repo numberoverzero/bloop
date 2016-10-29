@@ -139,9 +139,19 @@ class Stream:
 
         .. code-block:: python
 
-            same_stream = engine.stream(MyModel, position=stream.token)
-            with open(".stream-state", "w") as f:
-                json.dump(stream.token, f)
+            >>> with open(".stream-state", "w") as f:
+            ...   json.dump(stream.token, f)
+            ...
+            >>> with open(".stream-state", "r") as f:
+            ...     token = json.load(f)
+            ...     stream = engine.stream(User, token)
+            ...
+            >>> token
+            {'active': ['shardId-00000001477207595861-d35d208d'],
+             'shards': [{'iterator_type': 'after_sequence',
+                 'sequence_number': '800000000007366876936',
+                 'shard_id': 'shardId-00000001477207595861-d35d208d'}],
+             'stream_arn': 'arn:.../stream/2016-10-23T07:26:33.312'}
 
         :returns: Stream state as a json-friendly dict
         """

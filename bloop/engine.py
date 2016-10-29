@@ -3,6 +3,7 @@ import declare
 from .conditions import render
 from .exceptions import (
     InvalidModel,
+    InvalidStream,
     MissingKey,
     MissingObjects,
     UnboundModel,
@@ -19,7 +20,7 @@ from .signals import (
     object_loaded,
     object_saved,
 )
-from .stream import stream_for
+from .stream import Stream
 from .util import missing, unpack_from_dynamodb, walk_subclasses
 
 
@@ -454,6 +455,8 @@ class Engine:
         :rtype: :class:`~bloop.stream.Stream`
         """
         validate_not_abstract(model)
-        stream = stream_for(self, model)
+        if not model.Meta.stream or not model.Meta.stream.get("arn"):
+            raise InvalidStream("{!r} does not have a stream arn".format(model))
+        stream = Stream(model=model, engine=self, session=self.session)
         stream.move_to(position=position)
         return stream

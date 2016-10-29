@@ -2,14 +2,12 @@ from unittest.mock import MagicMock
 
 import arrow
 import pytest
-from bloop.exceptions import InvalidStream
 from bloop.models import BaseModel, Column
 from bloop.stream.coordinator import Coordinator
-from bloop.stream.stream import Stream, stream_for
+from bloop.stream.stream import Stream
 from bloop.types import Integer, String
 from bloop.util import ordered
 
-from ...helpers.models import User
 from . import build_shards
 
 
@@ -20,8 +18,10 @@ def coordinator():
 
 
 @pytest.fixture
-def stream(coordinator, engine):
-    return Stream(model=Email, engine=engine, coordinator=coordinator)
+def stream(coordinator, engine, session):
+    stream = Stream(model=Email, engine=engine, session=session)
+    stream.coordinator = coordinator
+    return stream
 
 
 class Email(BaseModel):
@@ -34,12 +34,6 @@ class Email(BaseModel):
     data = Column(String)
 
 
-def test_no_stream_arn(engine):
-    """Can't create a stream for a model that doesn't have an arn"""
-    with pytest.raises(InvalidStream):
-        stream_for(engine, User)
-
-
 def test_repr(stream):
     assert repr(stream) == "<Stream[Email]>"
 
@@ -49,14 +43,14 @@ def test_iter(stream):
     assert iter(stream) is stream
 
 
-def test_token(engine):
+def test_token(engine, session):
     engine.bind(Email)
     shards = build_shards(3, {0: [1, 2]}, stream_arn=Email.Meta.stream["arn"])
     shards[1].iterator_type = "latest"
     shards[2].iterator_type = "at_sequence"
     shards[2].sequence_number = "sequence-number"
 
-    stream = stream_for(engine, Email)
+    stream = Stream(model=Email, engine=engine, session=session)
     stream.coordinator.roots.append(shards[0])
     stream.coordinator.active.extend(shards[1:])
 

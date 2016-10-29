@@ -10,7 +10,7 @@ from .exceptions import (
 )
 from .models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from .search import QueryIterator, ScanIterator
-from .stream import Stream, stream_for
+from .stream import Stream
 from .types import (
     UUID,
     Binary,
@@ -35,6 +35,6 @@ __all__ = [
     "RecordsExpired", "ShardIteratorExpired", "TableMismatch",
 
     # Misc
-    "Condition", "QueryIterator", "ScanIterator", "Stream", "stream_for"
+    "Condition", "QueryIterator", "ScanIterator", "Stream"
 ]
 __version__ = "1.0.0"

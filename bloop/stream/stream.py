@@ -1,37 +1,6 @@
-from ..exceptions import InvalidStream
 from ..signals import object_loaded
 from ..util import unpack_from_dynamodb
 from .coordinator import Coordinator
-
-
-def stream_for(engine, model):
-    """Helper to construct a stream for an engine and model.
-
-    .. code-block:: pycon
-
-        >>> from my_project.models import User
-        >>> from bloop import Engine, stream_for
-        >>> engine = Engine()
-        >>> engine.bind(User)
-        >>> stream = stream_for(engine, User)
-        >>> next(stream)
-        {'key': None,
-         'old': None,
-         'new': User(id=0, email="user@domain.com"),
-         'meta': {'created_at': <Arrow [2016-10-28T01:58:00-07:00]>,
-                  'event': {'id': '5ad8700c0adbfad0083e44fc2e3861c0',
-                            'type': 'insert',
-                            'version': '1.1'},
-                  'sequence_number': '100000000006486326346'}
-        }
-
-    :rtype: :class:`~bloop.stream.Stream`
-    """
-    if not model.Meta.stream or not model.Meta.stream.get("arn"):
-        raise InvalidStream("{!r} does not have a stream arn".format(model))
-    coordinator = Coordinator(engine=engine, session=engine.session, stream_arn=model.Meta.stream["arn"])
-    stream = Stream(model=model, engine=engine, coordinator=coordinator)
-    return stream
 
 
 class Stream:
@@ -73,11 +42,14 @@ class Stream:
 
         See :ref:`Stream Internals <internal-streams>` for details.
     """
-    def __init__(self, *, model, engine, coordinator):
+    def __init__(self, *, model, engine, session):
 
         self.model = model
         self.engine = engine
-        self.coordinator = coordinator
+        self.coordinator = Coordinator(
+            engine=engine,
+            session=session,
+            stream_arn=model.Meta.stream["arn"])
 
     def __repr__(self):
         # <Stream[User]>

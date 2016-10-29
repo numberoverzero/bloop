@@ -5,6 +5,7 @@ import pytest
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
     InvalidModel,
+    InvalidStream,
     MissingKey,
     MissingObjects,
     UnboundModel,
@@ -540,6 +541,11 @@ def test_stream(engine, session):
 
     stream = engine.stream(StreamModel, "latest")
     assert stream.model is StreamModel
+
+
+def test_invalid_stream(engine, session):
+    with pytest.raises(InvalidStream):
+        engine.stream(User, "latest")
 
 
 def test_bind_non_model(engine):

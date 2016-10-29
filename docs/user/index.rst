@@ -14,3 +14,4 @@ This is the user guide landing page.
     streams
     types
     conditions
+    signals

@@ -376,7 +376,7 @@ And using that in a model:
     class Shirt(BaseModel):
         id = Column(String, hash_key=True)
         color = Column(Enum(Color))
-    engine.bind(base=Shirt)
+    engine.bind(Shirt)
 
     shirt = Shirt(id="t-shirt", color=Color.red)
     engine.save(shirt)

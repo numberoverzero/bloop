@@ -52,7 +52,7 @@ def test_load_default_init(engine):
             super().__init__(**kwargs)
         id = Column(String, hash_key=True)
         data = Column(String)
-    engine.bind(base=Blob)
+    engine.bind(Blob)
 
     assert Blob.Meta.init is Blob
 

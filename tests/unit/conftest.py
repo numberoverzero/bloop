@@ -29,11 +29,11 @@ def session():
 @pytest.fixture
 def engine(session, dynamodb, dynamodbstreams):
     # HACK: These clients won't be used.  We're going to replace the session immediately.
-    _engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
     # Toss the clients above and hook up the mock session
-    _engine.session = session
-    _engine.bind(base=BaseModel)
-    return _engine
+    engine.session = session
+    engine.bind(BaseModel)
+    return engine
 
 
 @pytest.fixture

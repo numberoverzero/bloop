@@ -75,9 +75,7 @@ User Guide
 .. toctree::
     :maxdepth: 2
 
-    user/getting-started
     user/index
-    user/patterns
 
 API Reference
 =============
@@ -111,3 +109,16 @@ process by connecting to :data:`~bloop.signals.model_created`, instead of modify
 .. warning::
 
     Breaking changes to the Internal API can occur at any time.
+
+About Bloop
+-----------
+
+Any size contribution is welcome!  If there's a section of the docs that was unclear or incorrect,
+`open an issue`_ and it'll get some attention.
+
+.. _open an issue: https://github.com/numberoverzero/bloop/issues/new
+
+.. toctree::
+    :maxdepth: 2
+
+    meta

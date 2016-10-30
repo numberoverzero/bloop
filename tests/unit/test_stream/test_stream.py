@@ -18,8 +18,8 @@ def coordinator():
 
 
 @pytest.fixture
-def stream(coordinator, engine, session):
-    stream = Stream(model=Email, engine=engine, session=session)
+def stream(coordinator, engine):
+    stream = Stream(model=Email, engine=engine)
     stream.coordinator = coordinator
     return stream
 
@@ -43,14 +43,14 @@ def test_iter(stream):
     assert iter(stream) is stream
 
 
-def test_token(engine, session):
+def test_token(engine):
     engine.bind(Email)
     shards = build_shards(3, {0: [1, 2]}, stream_arn=Email.Meta.stream["arn"])
     shards[1].iterator_type = "latest"
     shards[2].iterator_type = "at_sequence"
     shards[2].sequence_number = "sequence-number"
 
-    stream = Stream(model=Email, engine=engine, session=session)
+    stream = Stream(model=Email, engine=engine)
     stream.coordinator.roots.append(shards[0])
     stream.coordinator.active.extend(shards[1:])
 

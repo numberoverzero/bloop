@@ -4,51 +4,18 @@ from .coordinator import Coordinator
 
 
 class Stream:
-    """Iterate over all records in a stream.
+    """Iterator over all records in a stream.
 
-    .. code-block:: python
-
-        stream = engine.stream(Model, position="trim_horizon")
-        record = next(stream)
-        if record:
-            print("{old} became {new}".format(**record))
-
-    Processing in a loop with periodic :func:`heartbeats <bloop.stream.Stream.heartbeat>`:
-
-    .. code-block:: python
-
-        stream = engine.stream(Model, position="trim_horizon")
-        next_heartbeat = arrow.now()
-
-        while True:
-            process(next(stream))
-            if arrow.now() > next_heartbeat:
-                next_heartbeat = arrow.now().replace(minutes=12)
-                stream.heartbeat()
-
-    .. warning::
-
-        **Chronological order is not guaranteed for high throughput streams.**
-
-        DynamoDB guarantees ordering:
-
-        * within any single shard
-        * across shards for a single hash/range key
-
-        There is no way to exactly order records from adjacent shards.  High throughput streams
-        provide approximate ordering using each record's "ApproximateCreationDateTime".
-
-        Tables with a single partition guarantee order across all records.
-
-        See :ref:`Stream Internals <internal-streams>` for details.
+    :param model: The model to stream records from.
+    :param engine: The engine to load model objects through.
     """
-    def __init__(self, *, model, engine, session):
+    def __init__(self, *, model, engine):
 
         self.model = model
         self.engine = engine
         self.coordinator = Coordinator(
             engine=engine,
-            session=session,
+            session=engine.session,
             stream_arn=model.Meta.stream["arn"])
 
     def __repr__(self):
@@ -70,62 +37,30 @@ class Stream:
         return record
 
     def heartbeat(self):
-        """Ensures iterators without fixed sequence numbers don't expire.
+        """Refresh iterators without sequence numbers so they don't expire.
 
-        You should call this every 12 minutes or more often.  This is an inexpensive operation.
-        It averages 1 outbound call per 4 hours per shard, for a shard with any activity.
-
-        .. code-block:: python
-
-            stream = engine.stream(Model, position="trim_horizon")
-            next_heartbeat = arrow.now()
-
-            while True:
-                process(next(stream))
-                if arrow.now() > next_heartbeat:
-                    next_heartbeat = arrow.now().replace(minutes=12)
-                    stream.heartbeat()
+        Call this at least every 14 minutes.
         """
         self.coordinator.heartbeat()
 
     def move_to(self, position):
-        """Move to either endpoint of the stream; a stream token; or a specific time.
+        """
 
-        .. code-block:: python
-
-            # Very fast
-            stream.move_to("trim_horizon")
-
-            # Fast
-            stream.move_to(stream.token)
-
-            # Very slow, scans from trim_horizon to the target time
-            stream.move_to(arrow.now().replace(days=-1))
-
+        * Move to either endpoint of the stream with "trim_horizon" or "latest".
+        * Move to a stream token (``other_stream.token``)
+        * Move to a specific time ie. ``arrow.now().replace(hours=-2)``
         """
         self.coordinator.move_to(position)
 
     @property
     def token(self):
-        """Can be used to reconstruct the current progress of the iterator.
+        """JSON-serializable representation of the current state.
 
-        .. code-block:: python
-
-            >>> with open(".stream-state", "w") as f:
-            ...   json.dump(stream.token, f)
-            ...
-            >>> with open(".stream-state", "r") as f:
-            ...     token = json.load(f)
-            ...     stream = engine.stream(User, token)
-            ...
-            >>> token
-            {'active': ['shardId-00000001477207595861-d35d208d'],
-             'shards': [{'iterator_type': 'after_sequence',
-                 'sequence_number': '800000000007366876936',
-                 'shard_id': 'shardId-00000001477207595861-d35d208d'}],
-             'stream_arn': 'arn:.../stream/2016-10-23T07:26:33.312'}
+        Use :func:`Engine.stream(YourModel, token) <bloop.engine.Engine.stream>` to create an identical stream,
+        or :func:`stream.move_to(token) <bloop.stream.Stream.move_to>` to move an existing stream to this position.
 
         :returns: Stream state as a json-friendly dict
+        :rtype: dict
         """
         return self.coordinator.token
 

@@ -4,34 +4,34 @@ Signals
 Signals (powered by `blinker`_) allow you to easily respond to events. Bloop exposes a number of signals during
 model creation, validation, and as objects are loaded and saved.
 
-.. code-block:: python
+.. code-block:: pycon
 
-    # Keep track of all created models
-    from bloop import model_created
-    models = []
-
-    @model_created.connect
-    def on_new_model(_, *, model, **kwargs):
-        models.append(model)
+    >>> from bloop import model_created
+    >>> @model_created.connect
+    ... def on_new_model(_, *, model, **kwargs):
+    ...     models.append(model)
+    ...
+    >>> models = []
 
 To disconnect a receiver:
 
-.. code-block:: python
+.. code-block:: pycon
 
-    model_created.disconnect(on_new_model)
+    >>> model_created.disconnect(on_new_model)
 
-Specify a sender to filter notifications.  This simplifies many cross-region tasks, and can be set up as a simple
-plugin.  Automatically bind and save models to a second region:
+You can specify a sender to restrict who you receive notifications from.  This simplifies many cross-region
+tasks, where multiple engines are sending the same type of notifications.  For example, you can
+automatically bind and save models to a second region:
 
-.. code-block:: python
+.. code-block:: pycon
 
-    @model_created.connect(sender=primary_engine)
-    def on_new_model(_, model, **__):
-        secondary_engine.bind(model)
-
-    @object_saved.connect(sender=primary_engine)
-    def on_save(_, obj, **__):
-        secondary_engine.save(obj)
+    >>> @model_created.connect(sender=primary_engine)
+    >>> def on_new_model(_, model, **__):
+    ...     secondary_engine.bind(model)
+    ...
+    >>> @object_saved.connect(sender=primary_engine)
+    ... def on_save(_, obj, **__):
+    ...     secondary_engine.save(obj)
 
 .. _blinker: https://pythonhosted.org/blinker/
 
@@ -39,7 +39,7 @@ plugin.  Automatically bind and save models to a second region:
 Parameters
 ==========
 
-Your receiver must accept ``**kwargs``, and should use ``_`` or ``sender`` for the positional argument.
+Your receiver must accept ``**kwargs``, and should only use ``_`` or ``sender`` for the positional argument.
 The following templates are recommended for all receivers:
 
 .. code-block:: python
@@ -48,30 +48,34 @@ The following templates are recommended for all receivers:
 
     def receiver(sender, *, kwarg1, kwarg2, **__):
 
-It's easy to forget which parameter a signal's sender is.  Some signals are sent by an ``engine`` and have a ``model``.
-Another is sent by the ``column`` and has an ``obj``.  Instead of forcing you to keep track of the sender, Bloop
-sends **every** parameter as a kwarg.  This means you can build a receiver by cherry picking the parameters you
-care about, and always ignore the positional argument. The sender is accessed the same as all other parameters.
+Instead of forcing you to remember which parameter the sender is (engine?  model?)  Bloop sends **every** parameter
+as a kwarg.  This means your receiver can always ignore the positional argument, and cherry pick the parameters you
+care about. The sender is accessed the same as all other parameters.
 
-For example, :data:`~.signals.object_modified` is sent by ``column`` and includes ``obj``, and ``value``.
-Here's an anti-fraud receiver that inspects login patterns that only cares about changes to ``User.last_login``:
+You can still specify a sender when you connect, but you should not use that parameter name in your function signature.
+For example, :data:`~.signals.model_bound` is sent by ``engine`` and includes ``engine`` and ``model``.
+If you set up a receiver that names its first positional arg "engine", this causes a :exc:`TypeError`:
 
-.. code-block:: python
+.. code-block:: pycon
 
-    @object_modified.connect(sender=User.last_login)
-    def on_new_login(_, obj, value, **__):
-        fraud.enqueue_check(obj.id)
+    >>> @model_bound.connect
+    ... def wrong_receiver(engine, model, **kwargs):
+    ...     pass
+    ...
+    >>> model_bound.send("engine", model="model", engine="engine")
+    TypeError: wrong_receiver() got multiple values for argument 'engine'
 
-Meanwhile, a debugging receiver log the modified column of every change:
 
-.. code-block:: python
+Here's the correct version, which also filters on sender:
 
-    @object_modified.connect
-    def attr_change(_, obj, column, value, **__):
-        print("{!r} set to {!r} on {}".format(column, value, id(obj)))
+.. code-block:: pycon
 
-In both cases, the sender's name didn't matter.  The first cares that the sender is ``User.last_login``,
-and the second doesn't care if the signal is sent by ``obj``, ``column``, or ``value``.
+    >>> @model_bound.connect(sender="engine")
+    ... def correct_receiver(_, model, engine, **kwargs):
+    ...     print("Called!")
+    ...
+    >>> model_bound.send("engine", model="model", engine="engine")
+    Called!
 
 .. note::
 

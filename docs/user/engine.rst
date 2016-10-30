@@ -1,5 +1,5 @@
-Load, Save, and Delete
-^^^^^^^^^^^^^^^^^^^^^^
+Using the Engine
+^^^^^^^^^^^^^^^^
 
 All loading, saving, and deleting is done through a ``bloop.Engine``.
 
@@ -62,6 +62,43 @@ Delete the user in DynamoDB:
 Load
 ====
 
+.. function:: Engine.load(*objs, consistent=False)
+
+Populate objects from DynamoDB.
+
+.. code-block:: pycon
+
+    >>> from bloop import Engine, BaseModel, Column, Integer
+    >>> class User(BaseModel):
+    ...     id = Column(Integer, hash_key=True)
+    ...     connections = Column(Integer)
+    ...
+    >>> engine = Engine()
+    >>> engine.bind(User)
+    >>> user = User(id=123, connections=434)
+    >>> engine.save(user)
+    >>> same_user = User(id=123)
+    >>> engine.load(same_user)
+    >>> same_user.connections
+    434
+
+    user = User(id=123)
+    >>> game = Game(title="Starship X")
+
+    >>> engine.load(user, game)
+    >>> user.email
+    "user@domain.com"
+    >>> game.rating
+    3.14
+
+You can load instances of different models at the same time.  Bloop will automatically split requests into the
+appropriate chunks for BatchGetItems and then inject the results into the corresponding objects.
+
+Uses `strongly consistent reads`__ when ``consistent`` is True.
+Raises :exc:`~bloop.exceptions.MissingObjects` if one or more objects aren't loaded.
+
+__ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+
 .. code-block:: python
 
     Engine.load(*objs, consistent: bool=False) -> None
@@ -84,11 +121,17 @@ appropriate chunks for BatchGetItems and then inject the results into the corres
 
 Raises ``MissingObjects`` if any items fail to load.  The ``objects`` attribute holds the set of objects not loaded.
 
-.. _save-delete-interface:
+.. _user-engine-save:
 
-===============
-Save and Delete
-===============
+====
+Save
+====
+
+.. _user-engine-delete:
+
+======
+Delete
+======
 
 Save and Delete share the same interface; they both conditionally modify the state of an object in DynamoDB.
 

@@ -3,11 +3,11 @@
 User Guide
 ^^^^^^^^^^
 
-This is the user guide landing page.
-
 .. toctree::
     :maxdepth: 2
 
+    install
+    quickstart
     models
     engine
     query
@@ -15,3 +15,4 @@ This is the user guide landing page.
     types
     conditions
     signals
+    patterns

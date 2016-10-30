@@ -1,8 +1,9 @@
-Patterns
-^^^^^^^^
+Bloop Patterns
+^^^^^^^^^^^^^^
 
 .. _patterns-local:
 
+==============
 DynamoDB Local
 ==============
 
@@ -24,6 +25,7 @@ Connect to a local DynamoDB instance.
     ExpressionAttributeName when you query or scan against a GSI.  For example, see
     `this issue <https://github.com/numberoverzero/bloop/issues/43>`_.
 
+======================
 Generic "if not exist"
 ======================
 

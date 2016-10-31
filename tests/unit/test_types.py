@@ -114,7 +114,7 @@ def test_dump_none_vector_types(engine, typedef, nones):
 
 
 @pytest.mark.parametrize("typedef, values, expected", [
-    (Set(String), [None, "hello"], [{"S": "hello"}]),
+    (Set(String), [None, "hello"], ["hello"]),
     (List(String), ["foo", None], [{"S": "foo"}]),
     (DocumentType, {"Rating": 3.0, "Stock": None}, {"Rating": {"N": "3"}})
 ])
@@ -197,10 +197,10 @@ def test_binary():
 
 @pytest.mark.parametrize(
     "set_type, loaded, dumped", [
-        (String, {"Hello", "World"}, [{"S": "Hello"}, {"S": "World"}]),
-        (Float, {4.5, 3}, [{"N": "4.5"}, {"N": "3"}]),
-        (Integer, {0, -1, 1}, [{"N": "0"}, {"N": "-1"}, {"N": "1"}]),
-        (Binary, {b"123", b"456"}, [{"B": "MTIz"}, {"B": "NDU2"}])], ids=str)
+        (String, {"Hello", "World"}, ["Hello", "World"]),
+        (Float, {4.5, 3}, ["4.5", "3"]),
+        (Integer, {0, -1, 1}, ["0", "-1", "1"]),
+        (Binary, {b"123", b"456"}, ["MTIz", "NDU2"])], ids=str)
 def test_sets(engine, set_type, loaded, dumped):
     typedef = Set(set_type)
     engine.type_engine.register(typedef)

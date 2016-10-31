@@ -334,24 +334,19 @@ class Set(Type):
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return set()
-        # local lookup in a tight loop
-        load = context["engine"]._load
-        typedef = self.typedef
-        return set(load(typedef, value, context=context, **kwargs) for value in values)
+        return set(
+            self.typedef.dynamo_load(value, context=context, **kwargs)
+            for value in values)
 
     def dynamo_dump(self, values, *, context, **kwargs):
         if values is None:
             return None
-        # local lookup in a tight loop
-        dump = context["engine"]._dump
-        typedef = self.typedef
-
-        filtered = filter(
-            lambda x: x is not None,
-            (
-                dump(typedef, value, context=context, **kwargs)
-                for value in values))
-        return list(filtered) or None
+        dumped = []
+        for value in values:
+            value = self.typedef.dynamo_dump(value, context=context, **kwargs)
+            if value is not None:
+                dumped.append(value)
+        return dumped or None
 
 
 class List(Type):
@@ -371,24 +366,15 @@ class List(Type):
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return list()
-        # local lookup in a tight loop
-        load = context["engine"]._load
-        typedef = self.typedef
-        return [load(typedef, value, context=context, **kwargs) for value in values]
+        return [
+            self.typedef._load(value, context=context, **kwargs)
+            for value in values]
 
     def dynamo_dump(self, values, *, context, **kwargs):
         if values is None:
             return None
-        # local lookup in a tight loop
-        dump = context["engine"]._dump
-        typedef = self.typedef
-
-        filtered = filter(
-            lambda x: x is not None,
-            (
-                dump(typedef, value, context=context, **kwargs)
-                for value in values))
-        return list(filtered) or None
+        dumped = (self.typedef._dump(value, context=context, **kwargs) for value in values)
+        return [value for value in dumped if value is not None] or None
 
 
 class Map(Type):
@@ -411,22 +397,18 @@ class Map(Type):
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             values = dict()
-        load = context["engine"]._load
-        get = values.get
-        return {
-            key: load(typedef, get(key, None), context=context, **kwargs)
-            for key, typedef in self.types.items()
-        }
+        loaded = {}
+        for key, typedef in self.types.items():
+            value = typedef._load(values.get(key, None), context=context, **kwargs)
+            loaded[key] = value
+        return loaded
 
     def dynamo_dump(self, values, *, context, **kwargs):
         if values is None:
             return None
-        dump = context["engine"]._dump
-        get = values.get
-
-        filtered = filter(
-            lambda item: item[1] is not None,
-            ((
-                key, dump(typedef, get(key, None), context=context, **kwargs)
-            ) for key, typedef in self.types.items()))
-        return dict(filtered) or None
+        dumped = {}
+        for key, typedef in self.types.items():
+            value = typedef._dump(values.get(key, None), context=context, **kwargs)
+            if value is not None:
+                dumped[key] = value
+        return dumped or None

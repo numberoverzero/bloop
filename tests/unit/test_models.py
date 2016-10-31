@@ -2,6 +2,7 @@ import operator
 
 import arrow
 import pytest
+from bloop.conditions import ConditionRenderer
 from bloop.exceptions import InvalidIndex, InvalidModel, InvalidStream
 from bloop.models import (
     BaseModel,
@@ -14,7 +15,7 @@ from bloop.models import (
 )
 from bloop.types import UUID, Boolean, DateTime, Integer, String
 
-from ..helpers.models import User
+from ..helpers.models import User, VectorModel
 
 
 operations = [
@@ -492,6 +493,21 @@ def test_modified_signal():
 
     user.id = None
     assert called
+
+
+@pytest.mark.parametrize("container_column", [VectorModel.list_str, VectorModel.set_str])
+def test_contains_container_types(container_column, engine):
+    """Contains should render with the column type's inner type"""
+    renderer = ConditionRenderer(engine)
+    condition = container_column.contains("foo")
+    renderer.render_condition_expression(condition)
+
+    expected = {
+        'ExpressionAttributeValues': {':v1': {'S': "foo"}},
+        'ConditionExpression': '(contains(#n0, :v1))',
+        'ExpressionAttributeNames': {'#n0': container_column.dynamo_name}
+    }
+    assert renderer.rendered == expected
 
 
 # END COLUMN =============================================================================================== END COLUMN

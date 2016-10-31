@@ -1,7 +1,7 @@
 import bloop.condition
 from bloop import (
     new_base, Column, DateTime, Float, GlobalSecondaryIndex,
-    Integer, List, LocalSecondaryIndex, Map, String, UUID)
+    Integer, List, LocalSecondaryIndex, Map, Set, String, UUID)
 
 DocumentType = Map(**{
     'Rating': Float(),
@@ -31,6 +31,13 @@ class User(BaseModel):
     joined = Column(DateTime, name="j")
     by_email = GlobalSecondaryIndex(
         hash_key="email", projection="all")
+
+
+# https://github.com/numberoverzero/bloop/issues/73
+class ContainerModel(BaseModel):
+    id = Column(String, hash_key=True)
+    str_list = Column(List(String))
+    str_set = Column(Set(String))
 
 
 class SimpleModel(BaseModel):

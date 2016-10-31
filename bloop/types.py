@@ -194,6 +194,17 @@ class Set(Type):
         dump = self.typedef.dynamo_dump
         return [dump(v, context=context, **kwargs) for v in sorted(value)]
 
+    def _dump(self, value, *, context=None, **kwargs):
+        # HACK needed for `contains` condition, until Conditions can
+        # use deep inspection during rendering.  Will not be available
+        # until 1.0.0
+        # https://github.com/numberoverzero/bloop/issues/73
+        if not isinstance(value, set):
+            dump = self.typedef._dump
+        else:
+            dump = super()._dump
+        return dump(value=value, context=context, **kwargs)
+
 
 class Boolean(Type):
     python_type = bool
@@ -304,3 +315,14 @@ class List(Type):
     def dynamo_dump(self, value, *, context=None, **kwargs):
         dump = self.typedef._dump
         return [dump(v, context=context, **kwargs) for v in value]
+
+    def _dump(self, value, *, context=None, **kwargs):
+        # HACK needed for `contains` condition, until Conditions can
+        # use deep inspection during rendering.  Will not be available
+        # until 1.0.0
+        # https://github.com/numberoverzero/bloop/issues/73
+        if not isinstance(value, list):
+            dump = self.typedef._dump
+        else:
+            dump = super()._dump
+        return dump(value=value, context=context, **kwargs)

@@ -24,6 +24,7 @@ from bloop.conditions import (
     render,
 )
 from bloop.signals import object_deleted, object_loaded, object_saved
+from bloop.types import String
 
 from ..helpers.models import Document, User
 
@@ -36,6 +37,7 @@ class MockColumn(ComparisonMixin):
 
         self.model_name = name
         self.dynamo_name = "d_" + name
+        self.typedef = String()
 
         super().__init__()
 
@@ -1239,12 +1241,12 @@ def test_render_valid_condition(condition, as_str, expected_names, expected_valu
     User.age > None,
     User.age <= None,
     User.age >= None,
-    User.age.begins_with(None),
+    User.email.begins_with(None),
     # At least one None
     User.age.between(3, None),
     User.age.between(None, 4),
     User.age.between(None, None),
-    User.age.contains(None),
+    User.email.contains(None),
     # No values
     User.age.in_(),
     # At least one None
@@ -1252,7 +1254,7 @@ def test_render_valid_condition(condition, as_str, expected_names, expected_valu
     User.age.in_(3, None),
     User.age.in_(None, None),
     # Not literal None, but becomes None
-    Document.data <= dict(),
+    Document.numbers.contains([]),
 
     # Empty meta conditions
     AndCondition(),

@@ -16,6 +16,11 @@ BOOLEAN = "BOOL"
 MAP = "M"
 LIST = "L"
 
+PRIMITIVES = {"S", "N", "B"}
+SETS = {"SS", "NS", "BS"}
+DOCUMENTS = {"L", "M"}
+ALL = {*PRIMITIVES, *SETS, *DOCUMENTS, BOOLEAN}
+
 # Dynamo takes numbers as strings to reduce inter-language problems
 DYNAMODB_CONTEXT = decimal.Context(
     Emin=-128, Emax=126, rounding=None, prec=38,
@@ -24,6 +29,23 @@ DYNAMODB_CONTEXT = decimal.Context(
         decimal.Rounded, decimal.Underflow
     ]
 )
+
+SUPPORTED_OPERATIONS = {
+    "==": ALL,
+    "!=": ALL,
+    "<": PRIMITIVES,
+    ">": PRIMITIVES,
+    "<=": PRIMITIVES,
+    ">=": PRIMITIVES,
+    "begins_with": {STRING, BINARY},
+    "between": PRIMITIVES,
+    "contains": {*SETS, STRING, BINARY, LIST},  # TODO confirm LIST is actually supported
+    "in": ALL,  # FIXME this isn't correct, but haven't tested in_ yet
+}
+
+
+def supports_operation(operation, typedef):
+    return typedef.backing_type in SUPPORTED_OPERATIONS[operation]
 
 
 class Type(declare.TypeDefinition):
@@ -321,7 +343,7 @@ class Set(Type):
     python_type = collections.abc.Set
 
     def __init__(self, typedef):
-        self.typedef = type_instance(typedef)
+        self.inner_typedef = type_instance(typedef)
         self.backing_type = typedef.backing_type + "S"
         if self.backing_type not in {"NS", "SS", "BS"}:
             raise TypeError("{!r} is not a valid set type.".format(self.backing_type))
@@ -329,13 +351,13 @@ class Set(Type):
 
     def _register(self, engine):
         """Register the set's type"""
-        engine.register(self.typedef)
+        engine.register(self.inner_typedef)
 
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return set()
         return set(
-            self.typedef.dynamo_load(value, context=context, **kwargs)
+            self.inner_typedef.dynamo_load(value, context=context, **kwargs)
             for value in values)
 
     def dynamo_dump(self, values, *, context, **kwargs):
@@ -343,7 +365,7 @@ class Set(Type):
             return None
         dumped = []
         for value in values:
-            value = self.typedef.dynamo_dump(value, context=context, **kwargs)
+            value = self.inner_typedef.dynamo_dump(value, context=context, **kwargs)
             if value is not None:
                 dumped.append(value)
         return dumped or None
@@ -354,26 +376,26 @@ class List(Type):
     backing_type = LIST
 
     def __init__(self, typedef):
-        self.typedef = type_instance(typedef)
+        self.inner_typedef = type_instance(typedef)
         super().__init__()
 
     def __getitem__(self, key):
-        return self.typedef
+        return self.inner_typedef
 
     def _register(self, engine):
-        engine.register(self.typedef)
+        engine.register(self.inner_typedef)
 
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return list()
         return [
-            self.typedef._load(value, context=context, **kwargs)
+            self.inner_typedef._load(value, context=context, **kwargs)
             for value in values]
 
     def dynamo_dump(self, values, *, context, **kwargs):
         if values is None:
             return None
-        dumped = (self.typedef._dump(value, context=context, **kwargs) for value in values)
+        dumped = (self.inner_typedef._dump(value, context=context, **kwargs) for value in values)
         return [value for value in dumped if value is not None] or None
 
 

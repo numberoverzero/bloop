@@ -219,11 +219,11 @@ def test_set_type_instance():
     """Set can take an instance of a Type as well as a Type subclass"""
     type_instance = String()
     instance_set = Set(type_instance)
-    assert instance_set.typedef is type_instance
+    assert instance_set.inner_typedef is type_instance
 
     type_subclass = String
     subclass_set = Set(type_subclass)
-    assert isinstance(subclass_set.typedef, type_subclass)
+    assert isinstance(subclass_set.inner_typedef, type_subclass)
 
 
 def test_set_illegal_backing_type():

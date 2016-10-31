@@ -9,6 +9,7 @@ from .signals import (
     object_modified,
     object_saved,
 )
+from .types import supports_operation
 from .util import WeakDefaultDictionary, missing, printable_column_name
 
 
@@ -706,6 +707,21 @@ class InCondition(BaseCondition):
 # END CONDITIONS ====================================================================================== END CONDITIONS
 
 
+def check_support(column, operation):
+    # TODO parametrize tests for (all condition types) X (all backing types)
+    typedef = column.typedef
+    for segment in column._path:
+        typedef = typedef[segment]
+    if not supports_operation(operation, typedef):
+        tpl = "Backing type {!r} for {}.{} does not support condition {!r}."
+        raise InvalidCondition(tpl.format(
+            column.typedef.backing_type,
+            column.model.__name__,
+            printable_column_name(column),
+            operation
+        ))
+
+
 class ComparisonMixin:
     def __init__(self, *args, proxied=None, path=None, **kwargs):
         self._path = path or []
@@ -730,33 +746,43 @@ class ComparisonMixin:
         return ComparisonMixin(proxied=self._proxied, path=self._path + [path])
 
     def __eq__(self, value):
+        check_support(self, "==")
         return ComparisonCondition(operation="==", column=self, value=value)
 
     def __ne__(self, value):
+        check_support(self, "!=")
         return ComparisonCondition(operation="!=", column=self, value=value)
 
     def __lt__(self, value):
+        check_support(self, "<")
         return ComparisonCondition(operation="<", column=self, value=value)
 
     def __gt__(self, value):
+        check_support(self, ">")
         return ComparisonCondition(operation=">", column=self, value=value)
 
     def __le__(self, value):
+        check_support(self, "<=")
         return ComparisonCondition(operation="<=", column=self, value=value)
 
     def __ge__(self, value):
+        check_support(self, ">=")
         return ComparisonCondition(operation=">=", column=self, value=value)
 
     def begins_with(self, value):
+        check_support(self, "begins_with")
         return BeginsWithCondition(column=self, value=value)
 
     def between(self, lower, upper):
+        check_support(self, "between")
         return BetweenCondition(column=self, lower=lower, upper=upper)
 
     def contains(self, value):
+        check_support(self, "contains")
         return ContainsCondition(column=self, value=value)
 
     def in_(self, *values):
+        check_support(self, "in")
         return InCondition(column=self, values=values)
 
     is_ = __eq__

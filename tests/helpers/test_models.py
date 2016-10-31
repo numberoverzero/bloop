@@ -21,6 +21,7 @@ class Document(BaseModel):
     id = Column(Integer, hash_key=True)
     data = Column(DocumentType)
     numbers = Column(List(Integer))
+    more_numbers = Column(Set(Integer))
 
 
 class User(BaseModel):

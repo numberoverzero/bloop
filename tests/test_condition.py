@@ -5,7 +5,13 @@ import uuid
 
 from bloop.condition import And, Or, Not
 
-from test_models import User, Document, DocumentType, ContainerModel, conditions
+from test_models import (
+    User,
+    Document,
+    DocumentType,
+    ContainerModel,
+    conditions,
+)
 
 
 @pytest.fixture
@@ -126,11 +132,14 @@ def test_contains(renderer):
     assert renderer.rendered == expected
 
 
-@pytest.mark.parametrize("container_column", [ContainerModel.str_list, ContainerModel.str_set])
+@pytest.mark.parametrize("container_column", [
+    ContainerModel.str_list,
+    ContainerModel.str_set])
 def test_container_contains(container_column, renderer):
     condition = container_column.contains("foo")
     expected = {"ConditionExpression": "(contains(#n0, :v1))",
-                "ExpressionAttributeNames": {"#n0": container_column.dynamo_name},
+                "ExpressionAttributeNames": {
+                    "#n0": container_column.dynamo_name},
                 "ExpressionAttributeValues": {":v1": {"S": "foo"}}}
     renderer.render(condition, "condition")
     assert renderer.rendered == expected

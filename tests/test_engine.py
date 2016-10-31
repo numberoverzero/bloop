@@ -7,7 +7,7 @@ import pytest
 import uuid
 from unittest.mock import Mock
 
-from test_models import ComplexModel, User
+from test_models import ComplexModel, Document, User
 
 
 def test_missing_objects(engine):
@@ -333,6 +333,26 @@ def test_save_set_only(engine):
         "UpdateExpression": "SET #n0=:v1",
         "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
     engine.save(user)
+    engine.client.update_item.assert_called_once_with(expected)
+
+
+def test_save_container_primitives(engine):
+    # https://github.com/numberoverzero/bloop/issues/73
+    document = Document(id=0)
+    document.numbers = [2, 3]
+    document.more_numbers = {5, 7}
+    expected = {
+        "Key": {"id": {"N": "0"}},
+        "ExpressionAttributeNames": {
+            "#n0": "more_numbers", "#n2": "numbers"},
+        "TableName": "Document",
+        "UpdateExpression": "SET #n0=:v1, #n2=:v3",
+        "ExpressionAttributeValues": {
+            ":v1": {"NS": ["5", "7"]},
+            ":v3": {"L": [{"N": "2"}, {"N": "3"}]}
+        }
+    }
+    engine.save(document)
     engine.client.update_item.assert_called_once_with(expected)
 
 

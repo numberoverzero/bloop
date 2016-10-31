@@ -107,13 +107,15 @@ class ConditionRenderer:
         expression = ""
         if attrs.get("SET", None):
             expression += "SET "
-            pairs = map(self.refs, attrs["SET"])
+            sorted_attrs = sorted(attrs["SET"], key=lambda t: t[0].model_name)
+            pairs = map(self.refs, sorted_attrs)
             pairs = (set_fmt.format(*pair) for pair in pairs)
             pairs = ", ".join(pairs)
             expression += pairs
         if attrs.get("REMOVE", None):
             expression += " REMOVE "
-            names = map(self.name_ref, attrs["REMOVE"])
+            sorted_attrs = sorted(attrs["REMOVE"], key=lambda c: c.model_name)
+            names = map(self.name_ref, sorted_attrs)
             names = ", ".join(names)
             expression += names
         self.expressions["UpdateExpression"] = expression.strip()

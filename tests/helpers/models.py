@@ -35,6 +35,7 @@ class Document(BaseModel):
     value = Column(Float)
     another_value = Column(Float)
     some_string = Column(String)
+    nested_numbers = Column(List(List(Integer)))
 
 
 class User(BaseModel):

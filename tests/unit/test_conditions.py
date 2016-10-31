@@ -1254,7 +1254,7 @@ def test_render_valid_condition(condition, as_str, expected_names, expected_valu
     User.age.in_(3, None),
     User.age.in_(None, None),
     # Not literal None, but becomes None
-    Document.numbers.contains([]),
+    Document.nested_numbers.contains([]),
 
     # Empty meta conditions
     AndCondition(),

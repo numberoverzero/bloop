@@ -154,7 +154,8 @@ class ReferenceTracker:
                 str_pieces.append(self._name_ref(piece))
         return ".".join(str_pieces)
 
-    def _value_ref(self, column, value, *, dumped=False):
+    def _value_ref(self, column, value, *, dumped=False, inner=False):
+        """inner=True uses column.typedef.inner_type instead of column.typedef"""
         ref = ":v{}".format(self.next_index)
 
         # Need to dump this value
@@ -162,13 +163,15 @@ class ReferenceTracker:
             typedef = column.typedef
             for segment in column._path:
                 typedef = typedef[segment]
+            if inner:
+                typedef = typedef.inner_typedef
             value = self.engine._dump(typedef, value)
 
         self.attr_values[ref] = value
         self.counts[ref] += 1
         return ref, value
 
-    def any_ref(self, *, column=None, value=missing, dumped=False):
+    def any_ref(self, *, column=None, value=missing, dumped=False, inner=False):
         """Returns {"type": Union["name", "value"], "ref": str, "value": Optional[Any]}"""
         # Can't use None since it's a legal value for comparisons (attribute_not_exists)
         if value is missing:
@@ -183,7 +186,7 @@ class ReferenceTracker:
             value = None
         else:
             # Simple value ref.
-            name, value = self._value_ref(column=column, value=value, dumped=dumped)
+            name, value = self._value_ref(column=column, value=value, dumped=dumped, inner=inner)
             ref_type = "value"
         return Reference(name=name, type=ref_type, value=value)
 
@@ -668,7 +671,7 @@ class ContainsCondition(BaseCondition):
         column_ref = renderer.refs.any_ref(
             column=self.column, dumped=self.dumped)
         value_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped, value=self.values[0])
+            column=self.column, dumped=self.dumped, value=self.values[0], inner=True)
         if is_empty(value_ref):
             # Try to revert the renderer to a valid state
             renderer.refs.pop_refs(column_ref, value_ref)

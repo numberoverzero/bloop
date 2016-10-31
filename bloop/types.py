@@ -90,6 +90,11 @@ class Type(declare.TypeDefinition):
     #: * ``"L"`` -- list
     backing_type = None
 
+    def __init__(self):
+        if not hasattr(self, "inner_typedef"):
+            self.inner_typedef = self
+        super().__init__()
+
     def dynamo_dump(self, value, *, context, **kwargs):
         """Converts a local value into a DynamoDB value.
 

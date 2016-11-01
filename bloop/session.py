@@ -1,17 +1,17 @@
-import boto3
 import collections
 
+import boto3
 import botocore.exceptions
 
 from .exceptions import (
     BloopException,
     ConstraintViolation,
+    InvalidSearchMode,
     InvalidShardIterator,
     InvalidStream,
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
-    InvalidSearchMode,
 )
 from .util import Sentinel, ordered
 

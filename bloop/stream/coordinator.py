@@ -1,5 +1,6 @@
 import collections
 import collections.abc
+
 import arrow
 
 from ..exceptions import InvalidPosition, InvalidStream, RecordsExpired

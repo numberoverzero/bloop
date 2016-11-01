@@ -1,5 +1,6 @@
 from .util import signal
 
+
 before_create_table = signal("before_create_table")
 before_create_table.__doc__ = """Sent by ``engine`` before a model's backing table is created.
 

@@ -5,12 +5,12 @@ import pytest
 from bloop.exceptions import (
     BloopException,
     ConstraintViolation,
+    InvalidSearchMode,
     InvalidShardIterator,
     InvalidStream,
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
-    InvalidSearchMode,
 )
 from bloop.models import BaseModel, Column
 from bloop.session import (

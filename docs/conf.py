@@ -1,7 +1,7 @@
 import sys
 
-import sphinx_rtd_theme
 import pkg_resources
+import sphinx_rtd_theme
 
 
 extensions = [

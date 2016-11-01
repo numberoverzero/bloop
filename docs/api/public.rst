@@ -31,15 +31,22 @@ To customize the engine's connection, you can provide your own DynamoDB and Dyna
 Models
 ======
 
-See the :ref:`defining models <define-models>` section of the User Guide to learn how to declare GSIs, LSIs, and
-customize column bindings.
+See :ref:`defining models <define-models>` in the User Guide.
+
+---------
+BaseModel
+---------
 
 .. autoclass:: bloop.models.BaseModel
 
     .. attribute:: Meta
 
-        Holds configuration for the model's backing table, and computed properties of the model.
-        See the :ref:`model meta <user-model-meta>` section of the User Guide for details.
+        Holds table configuration and computed properties of the model.
+        See :ref:`model meta <user-model-meta>` in the User Guide.
+
+------
+Column
+------
 
 .. autoclass:: bloop.models.Column
     :members:
@@ -74,6 +81,10 @@ customize column bindings.
     .. attribute:: range_key
 
         True if this is the model's range key.
+
+--------------------
+GlobalSecondaryIndex
+--------------------
 
 .. autoclass:: bloop.models.GlobalSecondaryIndex
 
@@ -130,6 +141,9 @@ customize column bindings.
 
         Provisioned write units for the index.  GSIs have their own provisioned throughput.
 
+-------------------
+LocalSecondaryIndex
+-------------------
 
 .. autoclass:: bloop.models.LocalSecondaryIndex
 

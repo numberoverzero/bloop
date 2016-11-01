@@ -39,8 +39,8 @@ SUPPORTED_OPERATIONS = {
     ">=": PRIMITIVES,
     "begins_with": {STRING, BINARY},
     "between": PRIMITIVES,
-    "contains": {*SETS, STRING, BINARY, LIST},  # TODO confirm LIST is actually supported
-    "in": ALL,  # FIXME this isn't correct, but haven't tested in_ yet
+    "contains": {*SETS, STRING, BINARY, LIST},
+    "in": ALL
 }
 
 
@@ -200,7 +200,7 @@ class String(Type):
     def dynamo_dump(self, value, *, context, **kwargs):
         if value is None:
             return None
-        return str(value)
+        return value
 
 
 class UUID(String):

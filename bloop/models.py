@@ -198,7 +198,20 @@ def setup_indexes(meta):
 
 
 class BaseModel(metaclass=ModelMetaclass):
-    """An unbound, abstract base model"""
+    """Abstract base that all models derive from.
+
+    Provides a basic ``__init__`` method that takes \*\*kwargs whose
+    keys are columns names:
+
+    .. code-block:: python
+
+        class URL(BaseModel):
+            id = Column(UUID, hash_key=True)
+            ip = Column(IPv6)
+            name = Column(String)
+
+        url = URL(id=uuid.uuid4(), name="google")
+    """
     class Meta:
         abstract = True
 
@@ -272,6 +285,7 @@ class Index(declare.Field):
 
     @property
     def dynamo_name(self):
+        """The name of this index in DynamoDB.  Defaults to the index's name in the model."""
         if self._dynamo_name is None:
             return self.model_name
         return self._dynamo_name
@@ -337,6 +351,18 @@ class Index(declare.Field):
 
 
 class GlobalSecondaryIndex(Index):
+    """See `GlobalSecondaryIndex`_ in the DynamoDB Developer Guide for details.
+
+    :param projection: **Required** -- Either "keys", "all", or a list of column name or objects.  Included
+                       columns will be projected into the index.  Key columns are always included.
+    :param hash_key: **Required** -- The column that the index can be queried against.
+    :param range_key: *(Optional)* -- The column that the index can be sorted on.  Default is None.
+    :param read_units: *(Optional)* -- Provisioned read units for the index.  Default is 1.
+    :param write_units:  *(Optional)* -- Provisioned write units for the index.  Default is 1.
+    :param name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
+
+    .. _GlobalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
+    """
     def __init__(self, *, projection, hash_key, range_key=None, read_units=1, write_units=1, name=None, **kwargs):
         super().__init__(hash_key=hash_key, range_key=range_key, name=name, projection=projection, **kwargs)
         self.write_units = write_units
@@ -344,7 +370,21 @@ class GlobalSecondaryIndex(Index):
 
 
 class LocalSecondaryIndex(Index):
-    """ LSIs don't have individual read/write units """
+    """See `LocalSecondaryIndex`_ in the DynamoDB Developer GUide for details.
+
+    Unlike :class:`~bloop.models.GlobalSecondaryIndex`\, LSIs share their throughput with the table,
+    and their hash key is always the table hash key.
+
+    :param projection: **Required** -- Either "keys", "all", or a list of column name or objects.  Included
+                       columns will be projected into the index.  Key columns are always included.
+    :param range_key: **Required** -- The column that the index can be sorted against.
+    :param name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    :param strict: *(Optional)* -- Restricts queries and scans on the LSI to columns in the projection.  When False,
+                   DynamoDB may silently incur additional reads to load results.  You should not disable this
+                   unless you have an explicit need.  Default is True.
+
+    .. _LocalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
+    """
     def __init__(self, *, projection, range_key, name=None, strict=True, **kwargs):
         # Hash key MUST be the table hash; do not specify
         if "hash_key" in kwargs:

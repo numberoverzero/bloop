@@ -31,6 +31,9 @@ To customize the engine's connection, you can provide your own DynamoDB and Dyna
 Models
 ======
 
+See the :ref:`defining models <define-models>` section of the User Guide to learn how to declare GSIs, LSIs, and
+customize column bindings.
+
 .. autoclass:: bloop.models.BaseModel
     :members:
 

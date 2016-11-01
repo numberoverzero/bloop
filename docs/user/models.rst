@@ -91,6 +91,8 @@ A local object's hash and range keys don't need values until you're ready to int
     >>> user.id = uuid.uuid4()
     >>> engine.save(user)
 
+.. _user-model-meta:
+
 ========
 Metadata
 ========

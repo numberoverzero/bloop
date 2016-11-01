@@ -35,7 +35,11 @@ See the :ref:`defining models <define-models>` section of the User Guide to lear
 customize column bindings.
 
 .. autoclass:: bloop.models.BaseModel
-    :members:
+
+    .. attribute:: Meta
+
+        Holds configuration for the model's backing table, and computed properties of the model.
+        See the :ref:`model meta <user-model-meta>` section of the User Guide for details.
 
 .. autoclass:: bloop.models.Column
     :members:

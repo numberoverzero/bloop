@@ -76,13 +76,12 @@ A number type with a :class:`decimal.Context` that doesn't trap :class:`decimal.
 
 .. warning::
 
-    **DO NOT USE THIS PATTERN IF YOU CARE ABOUT THE ACCURACY OF YOUR DATA**.
-
+    **Do not use this pattern if you care about the accuracy of your data.**
     This will almost certainly cause duplicate and missing data.  You're probably here because dealing with
-    :class:`decimal.Decimal` `can be frustrating`__.  I get that.  It `doesn't play nicely`__ with the standard
-    library.  It's frustrating.  However, you are talking about the accuracy of your data layer.
+    :class:`decimal.Decimal` `can be frustrating`__, and it `doesn't play nicely`__ with the standard library.
 
-    Before you copy this into your secure bitcoin banking app, consider a brief example:
+    Think carefully before you throw away correctness guarantees in your data layer.  Before you copy and paste
+    this into your secure bitcoin trading app, a brief reminder about floats:
 
     .. code-block:: pycon
 

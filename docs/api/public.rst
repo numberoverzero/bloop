@@ -280,10 +280,29 @@ String
 Number
 ------
 
-.. autoclass:: bloop.types.Number
+You should use :class:`decimal.Decimal` instances to avoid rounding errors:
 
-    Number uses a :class:`decimal.Context` to accurately send numbers to DynamoDB.
-    The default context uses the stated limits in the `Developer Guide`__, which are taken from `boto3`__.
+.. code-block:: pycon
+
+    >>> from bloop import BaseModel, Engine, Column, Number, Integer
+    >>> class Product(BaseModel):
+    ...     id = Column(Integer, hash_key=True)
+    ...     rating = Column(Number)
+
+    >>> engine = Engine()
+    >>> engine.bind(Rating)
+
+    >>> product = Product(id=0, rating=3.14)
+    >>> engine.save(product)
+    # Long traceback
+    Inexact: [<class 'decimal.Inexact'>, <class 'decimal.Rounded'>]
+
+    >>> from decimal import Decimal as D
+    >>> product.rating = D('3.14')
+    >>> engine.save(product)
+    >>> # Success!
+
+.. autoclass:: bloop.types.Number
 
     .. seealso::
 
@@ -296,8 +315,10 @@ Number
     .. attribute:: python_type
         :annotation: = decimal.Decimal
 
-    __ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-data-types-numbers
-    __ https://github.com/boto/boto3/blob/dffeb393a795204f375b951d791c768be6b1cb8c/boto3/dynamodb/types.py#L32
+    .. attribute:: context
+        :annotation: = decimal.Context
+
+        The context used to transfer numbers to DynamoDB.
 
 ------
 Binary
@@ -347,6 +368,11 @@ DateTime
     .. attribute:: python_type
         :annotation: = arrow.Arrow
 
+    .. attribute:: timezone
+        :annotation: = str
+
+        The timezone used for local values.
+
 -------
 Integer
 -------
@@ -358,6 +384,11 @@ Integer
 
     .. attribute:: python_type
         :annotation: = int
+
+    .. attribute:: context
+        :annotation: = decimal.Context
+
+        The context used to transfer numbers to DynamoDB.
 
 ---
 Set
@@ -374,6 +405,11 @@ Set
     .. attribute:: python_type
         :annotation: = set
 
+    .. attribute:: inner_typedef
+        :annotation: = Type
+
+        The typedef for values in this Set.  Has a backing type of "S", "N", or "B".
+
 ----
 List
 ----
@@ -386,6 +422,11 @@ List
     .. attribute:: python_type
         :annotation: = list
 
+    .. attribute:: inner_typedef
+        :annotation: = Type
+
+        The typedef for values in this List.  All types supported.
+
 ---
 Map
 ---
@@ -397,6 +438,19 @@ Map
 
     .. attribute:: python_type
         :annotation: = dict
+
+    .. attribute:: types
+        :annotation: = dict
+
+        Specifies the Type for each key in the Map.  For example, a Map with two keys "id" and "rating" that are
+        a UUID and Number respectively would have the following types:
+
+        .. code-block:: python
+
+            {
+                "id": UUID(),
+                "rating": Number()
+            }
 
 =====
 Query

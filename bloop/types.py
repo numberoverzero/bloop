@@ -126,7 +126,7 @@ class Type(declare.TypeDefinition):
     def _register(self, engine):
         """Called when the type is registered.
 
-        Register any types this type depends on.  For example, :class:`~.List` and :class:`~.Set`
+        Register any types this type depends on.  For example, a container might use:
 
         .. code-block:: python
 
@@ -179,12 +179,7 @@ class UUID(String):
 
 
 class DateTime(String):
-    """Always stored in UTC, backed by :class:`arrow.Arrow` instances.
-
-    A local timezone may be specified when initializing the type - otherwise UTC is used.
-
-    For example, comparisons can be done in any timezone since they
-    will all be converted to UTC on request and from UTC on response:
+    """DateTimes are always stored in UTC.  A timezone can be specified for local values.
 
     .. code-block:: python
 
@@ -205,6 +200,7 @@ class DateTime(String):
 
         query.first().date
 
+    :param str timezone: *(Optional)* used for local values only.  Default is "utc".
     """
     python_type = arrow.Arrow
 
@@ -225,11 +221,20 @@ class DateTime(String):
 
 
 class Number(Type):
+    """Base for all numeric types.
+
+    :param context: *(Optional)* :class:`decimal.Context` used to translate numbers.  Default is a context that
+        matches DynamoDB's `stated limits`__, taken from `boto3`__.
+
+    __ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-data-types-numbers
+    __ https://github.com/boto/boto3/blob/dffeb393a795204f375b951d791c768be6b1cb8c/boto3/dynamodb/types.py#L32
+    """
     python_type = decimal.Decimal
     backing_type = NUMBER
 
     def __init__(self, context=None):
         self.context = context or DYNAMODB_CONTEXT
+        super().__init__()
 
     def dynamo_load(self, value, *, context, **kwargs):
         if value is None:
@@ -246,7 +251,11 @@ class Number(Type):
 
 
 class Integer(Number):
-    """Truncates data when loading or dumping with ``int(value)``"""
+    """
+
+    Truncates values when loading or dumping.  For example, '3.14' in DynamoDB is loaded as 3.
+    If a value is 7.5 locally, it's stored in DynamoDB as '7'.
+    """
     python_type = int
 
     def dynamo_load(self, value, *, context, **kwargs):
@@ -309,7 +318,17 @@ def type_instance(typedef):
 
 
 class Set(Type):
-    """Adapter for sets of objects"""
+    """Generic set type.  Must provide an inner type.
+
+    .. code-block:: python
+
+        class Customer(BaseModel):
+            id = Column(Integer, hash_key=True)
+            account_ids = Column(Set(UUID))
+
+    :param typedef: **Required** The type to use when loading and saving values in this set.
+        Must have a ``backing_type`` of "S", "N", or "B".
+    """
     python_type = collections.abc.Set
 
     def __init__(self, typedef):
@@ -342,6 +361,26 @@ class Set(Type):
 
 
 class List(Type):
+    """Holds values of a single type.
+
+    Similar to :class:`~bloop.types.Set` because it requires a single type.  However, that type
+    can be another List, or :class:`~bloop.types.Map`, or :class:`~bloop.types.Boolean`.  This is restricted
+    to a single type even though DynamoDB is not because there is no way to know which Type to load a DynamoDB value
+    with.
+
+    For example, ``{"S": "6d8b54a2-fa07-47e1-9305-717699459293"}`` could be loaded with
+    :class:`~bloop.types.UUID`, :class:`~bloop.types.String`, or any other class that is backed by "S".
+
+    .. code-block:: python
+
+        SingleQuizAnswers = List(String)
+
+        class AnswerBook(BaseModel):
+            ...
+            all_answers = List(SingleQuizAnswers)
+
+    :param typedef: **Required** The type to use when loading and saving values in this list.
+    """
     python_type = collections.abc.Iterable
     backing_type = LIST
 
@@ -370,6 +409,29 @@ class List(Type):
 
 
 class Map(Type):
+    """Mapping of fixed keys and their Types.
+
+    .. code-block:: python
+
+        Metadata = Map(**{
+            "created": DateTime,
+            "referrer": UUID,
+            "cache": String
+        })
+
+        Product = Map(
+            id=Integer,
+            metadata=Metadata,
+            price=Number
+        )
+
+        class ProductCatalog(BaseModel):
+            ...
+            products = List(Product)
+
+    :param types: *(Optional)* specifies the keys and their Types when loading and dumping the Map.
+        Any keys that aren't specified in ``types`` are ignored when loading and dumping.
+    """
     python_type = collections.abc.Mapping
     backing_type = MAP
 

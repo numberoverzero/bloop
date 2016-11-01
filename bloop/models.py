@@ -351,13 +351,13 @@ class Index(declare.Field):
 class GlobalSecondaryIndex(Index):
     """See `GlobalSecondaryIndex`_ in the DynamoDB Developer Guide for details.
 
-    :param projection: **Required** -- Either "keys", "all", or a list of column name or objects.
+    :param projection: **Required** Either "keys", "all", or a list of column name or objects.
         Included columns will be projected into the index.  Key columns are always included.
-    :param hash_key: **Required** -- The column that the index can be queried against.
-    :param range_key: *(Optional)* -- The column that the index can be sorted on.  Default is None.
-    :param int read_units: *(Optional)* -- Provisioned read units for the index.  Default is 1.
-    :param int write_units:  *(Optional)* -- Provisioned write units for the index.  Default is 1.
-    :param str name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    :param hash_key: **Required** The column that the index can be queried against.
+    :param range_key: *(Optional)* The column that the index can be sorted on.  Default is None.
+    :param int read_units: *(Optional)* Provisioned read units for the index.  Default is 1.
+    :param int write_units:  *(Optional)* Provisioned write units for the index.  Default is 1.
+    :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
 
     .. _GlobalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
     """
@@ -373,11 +373,11 @@ class LocalSecondaryIndex(Index):
     Unlike :class:`~bloop.models.GlobalSecondaryIndex`\, LSIs share their throughput with the table,
     and their hash key is always the table hash key.
 
-    :param projection: **Required** -- Either "keys", "all", or a list of column name or objects.
+    :param projection: **Required** Either "keys", "all", or a list of column name or objects.
         Included columns will be projected into the index.  Key columns are always included.
-    :param range_key: **Required** -- The column that the index can be sorted against.
-    :param str name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
-    :param bool strict: *(Optional)* -- Restricts queries and scans on the LSI to columns in the projection.
+    :param range_key: **Required** The column that the index can be sorted against.
+    :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    :param bool strict: *(Optional)* Restricts queries and scans on the LSI to columns in the projection.
         When False, DynamoDB may silently incur additional reads to load results.  You should not disable this
         unless you have an explicit need.  Default is True.
 
@@ -419,15 +419,15 @@ class LocalSecondaryIndex(Index):
 class Column(declare.Field, ComparisonMixin):
     """Represents a single attribute in DynamoDB.
 
-    :param typedef: **Required** --The type of this attribute.  Can be either a :class:`~bloop.types.Type` or
+    :param typedef: **Required** The type of this attribute.  Can be either a :class:`~bloop.types.Type` or
         an instance thereof.  If a type class is provided, the column will call the constructor without arguments
         to create an instance.  For example, ``Column(Integer)`` and ``Column(Integer())`` are equivalent.
     :param bool hash_key: *(Optional)* True if this is the model's hash key.
         A model must have exactly one Column with ``hash_key=True``.  Default is False.
-    :param bool range_key:  *(Optional)* -- True if this is the model's range key.
+    :param bool range_key:  *(Optional)* True if this is the model's range key.
         A model can have at most one Column with
         ``range_key=True``.  Default is False.
-    :param str name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
     """
     def __init__(self, typedef, hash_key=False, range_key=False, name=None, **kwargs):
         self.hash_key = hash_key

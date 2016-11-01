@@ -285,7 +285,6 @@ class Index(declare.Field):
 
     @property
     def dynamo_name(self):
-        """The name of this index in DynamoDB.  Defaults to the index's name in the model."""
         if self._dynamo_name is None:
             return self.model_name
         return self._dynamo_name

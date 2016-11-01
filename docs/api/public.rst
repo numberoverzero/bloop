@@ -41,10 +41,115 @@ customize column bindings.
     :members:
 
 .. autoclass:: bloop.models.GlobalSecondaryIndex
-    :members:
+
+    .. attribute:: dynamo_name
+
+        The name of this index in DynamoDB.  Defaults to the index's ``model_name``.
+
+    .. attribute:: hash_key
+
+        The column that the index can be queried against.
+
+    .. attribute:: model
+
+        The model this index is attached to.
+
+    .. attribute:: model_name
+
+        The name of this index in the model.  Not settable.
+
+        .. code-block:: pycon
+
+            >>> class Document(BaseModel):
+            ...     ...
+            ...     by_email = GlobalSecondaryIndex(
+            ...         projection="keys", name="ind_e", hash_key="email")
+            ...
+            >>> Document.by_email.model_name
+            by_email
+            >>> Document.by_email.dynamo_name
+            ind_e
+
+    .. attribute:: projection
+
+        .. code-block:: python
+
+            {
+                "available":  # Set of columns that can be returned from a query or search.
+                "included":   # Set of columns that can be used in query and scan filters.
+                "mode":       # "all", "keys", or "include"
+                "strict":     # False if queries and scans can fetch non-included columns
+            }
+
+        GSIs can't incur extra reads, so "strict" will always be true and "available" is always the same as "included".
+
+    .. attribute:: range_key
+
+        The column that the index can be sorted on.  May be ``None``.
+
+    .. attribute:: read_units
+
+        Provisioned read units for the index.  GSIs have their own provisioned throughput.
+
+    .. attribute:: write_units
+
+        Provisioned write units for the index.  GSIs have their own provisioned throughput.
+
 
 .. autoclass:: bloop.models.LocalSecondaryIndex
-    :members:
+
+    .. attribute:: dynamo_name
+
+        The name of this index in DynamoDB.  Defaults to the index's ``model_name``.
+
+    .. attribute:: hash_key
+
+        LSI's hash_key is always the table hash_key.
+
+    .. attribute:: model
+
+        The model this index is attached to.
+
+    .. attribute:: model_name
+
+        The name of this index in the model.  Not settable.
+
+        .. code-block:: pycon
+
+            >>> class Document(BaseModel):
+            ...     ...
+            ...     by_date = LocalSecondaryIndex(
+            ...         projection="keys", name="ind_co", range_key="created_on")
+            ...
+            >>> Document.by_date.model_name
+            by_date
+            >>> Document.by_date.dynamo_name
+            ind_co
+
+    .. attribute:: projection
+
+        .. code-block:: python
+
+            {
+                "available":  # Set of columns that can be returned from a query or search.
+                "included":   # Set of columns that can be used in query and scan filters.
+                "mode":       # "all", "keys", or "include"
+                "strict":     # False if queries and scans can fetch non-included columns
+            }
+
+        LSIs can incur extra reads, so "available" may be a superset of "included".
+
+    .. attribute:: range_key
+
+        The column that the index can be sorted on.  LSIs always have a range_key.
+
+    .. attribute:: read_units
+
+        Provisioned read units for the index.  LSIs share the table's provisioned throughput.
+
+    .. attribute:: write_units
+
+        Provisioned write units for the index.  LSIs share the table's provisioned throughput.
 
 =====
 Types

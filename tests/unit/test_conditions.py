@@ -23,8 +23,9 @@ from bloop.conditions import (
     iter_conditions,
     render,
 )
+from bloop.models import BaseModel, Column
 from bloop.signals import object_deleted, object_loaded, object_saved
-from bloop.types import String
+from bloop.types import String, Binary, Integer, Set, List, Map, Boolean
 
 from ..helpers.models import Document, User
 
@@ -1403,6 +1404,63 @@ def test_mixin_is_():
     assert condition.operation == "!="
     assert condition.column is c
     assert condition.values == [3]
+
+
+@pytest.mark.parametrize("op, typedefs, args", [
+    (
+        "begins_with",
+        [
+            Integer(), List(String), Map(s=String), Boolean(),
+            Set(Integer), Set(Binary), Set(String)
+        ],
+        ("one-arg",)
+    ),
+    (
+        "contains",
+        [
+            Integer(), Boolean(), Map(s=String)
+        ],
+        ("one-arg",)
+    ),
+    (
+        "between",
+        [
+            Set(String), Set(Binary), Set(String),
+            List(String), Map(s=String), Boolean()
+        ],
+        ("first-arg", "second-arg")
+    )
+])
+def test_unsupported_mixin_function_conditions(op, typedefs, args):
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+    for typedef in typedefs:
+        column = Column(typedef, name="d")
+        column.model = Model
+        column.model_name = "c"
+        with pytest.raises(InvalidCondition):
+            getattr(column, op)(*args)
+            column.begins_with(object())
+
+
+@pytest.mark.parametrize("typedef", [
+    Set(Integer), Set(Binary), Set(String),
+    List(String), Map(s=String), Boolean()
+])
+@pytest.mark.parametrize("op", [
+    operator.lt,
+    operator.gt,
+    operator.le,
+    operator.ge
+])
+def test_unsupported_mixin_comparison_conditions(op, typedef):
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+    column = Column(typedef, name="d")
+    column.model = Model
+    column.model_name = "c"
+    with pytest.raises(InvalidCondition):
+        op(column, "value")
 
 
 # END COMPARISON MIXIN ========================================================================== END COMPARISON MIXIN

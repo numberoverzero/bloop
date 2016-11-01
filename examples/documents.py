@@ -9,9 +9,9 @@ from bloop import (
     Column,
     DateTime,
     Engine,
-    Float,
     Integer,
     Map,
+    Number,
     Set,
     String,
 )
@@ -23,7 +23,7 @@ from bloop import (
 
 Product = Map(**{
     'Name': String,
-    'Rating': Float,
+    'Rating': Number,
     'Updated': DateTime('US/Pacific'),
     'Description': Map(**{
         'Title': String,

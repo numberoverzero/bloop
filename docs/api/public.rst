@@ -264,7 +264,6 @@ Type
 
         __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html
 
-
 ------
 String
 ------
@@ -277,17 +276,28 @@ String
     .. attribute:: python_type
         :annotation: = str
 
------
-Float
------
+------
+Number
+------
 
-.. autoclass:: bloop.types.Float
+.. autoclass:: bloop.types.Number
+
+    Number uses a :class:`decimal.Context` to accurately send numbers to DynamoDB.
+    The default context uses the stated limits in the `Developer Guide`__, which are taken from `boto3`__.
+
+    .. seealso::
+
+        If you don't want to deal with :class:`decimal.Decimal`\, see the
+        :ref:`Float <patterns-float>` type in the patterns section.
 
     .. attribute:: backing_type
         :annotation: = "N"
 
     .. attribute:: python_type
-        :annotation: = float
+        :annotation: = decimal.Decimal
+
+    __ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-data-types-numbers
+    __ https://github.com/boto/boto3/blob/dffeb393a795204f375b951d791c768be6b1cb8c/boto3/dynamodb/types.py#L32
 
 ------
 Binary

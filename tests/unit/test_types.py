@@ -9,10 +9,10 @@ from bloop.types import (
     Binary,
     Boolean,
     DateTime,
-    Float,
     Integer,
     List,
     Map,
+    Number,
     Set,
     String,
     Type,
@@ -61,7 +61,7 @@ def test_load_dump_best_effort(engine):
     assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={"engine": engine})
 
 
-@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Float, Integer, Binary, Boolean])
+@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Number, Integer, Binary, Boolean])
 def test_none_scalar_types(typedef):
     """single-value types without an explicit 'lack of value' sentinel should return None when given None"""
     type = typedef()
@@ -159,8 +159,8 @@ def test_datetime():
     assert loaded_as_string == now_with_tz_as_string
 
 
-def test_float():
-    typedef = Float()
+def test_number():
+    typedef = Number()
     d = decimal.Decimal
     symmetric_test(typedef, (1.5, "1.5"), (d(4) / d(3), "1.333333333333333333333333333"))
 
@@ -175,7 +175,7 @@ def test_float():
         (decimal.Decimal("NaN"), TypeError)])
 def test_float_errors(value, raises):
     with pytest.raises(raises):
-        Float().dynamo_dump(value, context={})
+        Number().dynamo_dump(value, context={})
 
 
 def test_integer():
@@ -198,7 +198,7 @@ def test_binary():
 @pytest.mark.parametrize(
     "set_type, loaded, dumped", [
         (String, {"Hello", "World"}, ["Hello", "World"]),
-        (Float, {4.5, 3}, ["4.5", "3"]),
+        (Number, {4.5, 3}, ["4.5", "3"]),
         (Integer, {0, -1, 1}, ["0", "-1", "1"]),
         (Binary, {b"123", b"456"}, ["MTIz", "NDU2"])], ids=str)
 def test_sets(engine, set_type, loaded, dumped):

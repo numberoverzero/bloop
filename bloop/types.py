@@ -1,7 +1,6 @@
 import base64
 import collections.abc
 import decimal
-import numbers
 import uuid
 
 import arrow
@@ -225,25 +224,29 @@ class DateTime(String):
         return value.to("utc").isoformat()
 
 
-class Float(Type):
-    python_type = numbers.Number
+class Number(Type):
+    python_type = decimal.Decimal
     backing_type = NUMBER
+
+    def __init__(self, context=None):
+        self.context = context or DYNAMODB_CONTEXT
 
     def dynamo_load(self, value, *, context, **kwargs):
         if value is None:
             return None
-        return DYNAMODB_CONTEXT.create_decimal(value)
+        return self.context.create_decimal(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
         if value is None:
             return None
-        n = str(DYNAMODB_CONTEXT.create_decimal(value))
+        n = str(self.context.create_decimal(value))
         if any(filter(lambda x: x in n, ("Infinity", "NaN"))):
             raise TypeError("{!r} does not support Infinity and NaN.".format(self))
         return n
 
 
-class Integer(Float):
+class Integer(Number):
+    """Truncates data when loading or dumping with ``int(value)``"""
     python_type = int
 
     def dynamo_load(self, value, *, context, **kwargs):

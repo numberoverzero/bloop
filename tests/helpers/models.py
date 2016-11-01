@@ -4,19 +4,19 @@ from bloop import (
     Column,
     Condition,
     DateTime,
-    Float,
     GlobalSecondaryIndex,
     Integer,
     List,
     LocalSecondaryIndex,
     Map,
+    Number,
     Set,
     String,
 )
 
 
 DocumentType = Map(**{
-    'Rating': Float(),
+    'Rating': Number(),
     'Stock': Integer(),
     'Description': Map(**{
         'Heading': String,
@@ -32,8 +32,8 @@ class Document(BaseModel):
     id = Column(Integer, hash_key=True)
     data = Column(DocumentType)
     numbers = Column(List(Integer))
-    value = Column(Float)
-    another_value = Column(Float)
+    value = Column(Number)
+    another_value = Column(Number)
     some_string = Column(String)
     nested_numbers = Column(List(List(Integer)))
 

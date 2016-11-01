@@ -48,3 +48,50 @@ Create a condition for any model or object that fails the operation if the item 
     engine.save(tweet, condition=if_not_exist(tweet))
     # or
     engine.save(tweet, condition=if_not_exist(Tweet))
+
+.. _patterns-float:
+
+==========
+Float Type
+==========
+
+A number type with a :class:`decimal.Context` that doesn't trap :class:`decimal.Rounded` or :class:`decimal.Inexact`.
+
+.. code-block:: python
+
+    import decimal
+    from bloop import Number
+
+    class Float(Number):
+        def __init__(self):
+            context = decimal.Context(
+                Emin=-128, Emax=126, rounding=None, prec=38,
+                traps=[decimal.Clamped, decimal.Overflow, decimal.Underflow])
+            super().__init__(context=context)
+
+        def dynamo_load(self, value, *, context, **kwargs):
+            value = super().dynamo_load(value, context=context, **kwargs)
+            # float goes in, float goes out.  You can't explain that!
+            return float(value)
+
+.. warning::
+
+    **DO NOT USE THIS PATTERN IF YOU CARE ABOUT THE ACCURACY OF YOUR DATA**.
+
+    This will almost certainly cause duplicate and missing data.  You're probably here because dealing with
+    :class:`decimal.Decimal` `can be frustrating`__.  I get that.  It `doesn't play nicely`__ with the standard
+    library.  It's frustrating.  However, you are talking about the accuracy of your data layer.
+
+    Before you copy this into your secure bitcoin banking app, consider a brief example:
+
+    .. code-block:: pycon
+
+        >>> from decimal import Decimal
+        >>> d = Decimal("3.14")
+        >>> f = float(d)
+        >>> d2 = Decimal(f)
+        >>> d == d2
+        False
+
+    __ https://github.com/boto/boto3/issues/665
+    __ https://github.com/boto/boto3/issues/369

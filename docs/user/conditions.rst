@@ -16,7 +16,7 @@ Available Conditions
 ====================
 
 There is no DynamoDB type that supports all of the conditions.  For example, ``contains`` does not work with
-a numeric type ``"N"`` such as Float or Integer.  DynamoDB's `ConditionExpression Reference`__ has the full
+a numeric type ``"N"`` such as Number or Integer.  DynamoDB's `ConditionExpression Reference`__ has the full
 specification.
 
 .. code-block:: python
@@ -61,10 +61,10 @@ You can construct conditions against individual elements of List and Map types w
 
     Item = Map(
         name=String,
-        price=Float,
+        price=Number,
         quantity=Integer)
     Metrics = Map(**{
-        "payment-duration": Float,
+        "payment-duration": Number,
         "coupons.used"=Integer,
         "coupons.available"=Integer
     })

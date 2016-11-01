@@ -36,15 +36,15 @@ Boolean
         backing_type = "BOOL"
         python_type = bool
 
------
-Float
------
+------
+Number
+------
 
 .. code-block:: python
 
-    class Float(bloop.Type):
+    class Number(bloop.Type):
         backing_type = "N"
-        python_type = numbers.Number
+        python_type = decimal.Decimal
 
 -------
 Integer

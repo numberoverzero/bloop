@@ -26,10 +26,10 @@ from .types import (
     Binary,
     Boolean,
     DateTime,
-    Float,
     Integer,
     List,
     Map,
+    Number,
     Set,
     String,
 )
@@ -47,6 +47,9 @@ __all__ = [
     # Signals
     "before_create_table", "model_bound", "model_created", "model_validated",
     "object_deleted", "object_loaded", "object_modified", "object_saved",
+
+    # Types
+    "UUID", "Binary", "Boolean", "DateTime", "Integer", "List", "Map", "Number", "Set", "String",
 
     # Misc
     "Condition", "QueryIterator", "ScanIterator", "Stream"

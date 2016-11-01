@@ -44,6 +44,37 @@ customize column bindings.
 .. autoclass:: bloop.models.Column
     :members:
 
+    .. attribute:: dynamo_name
+
+        The name of this column in DynamoDB.  Defaults to the column's ``model_name``.
+
+    .. attribute:: hash_key
+
+        True if this is the model's hash key.
+
+    .. attribute:: model
+
+        The model this column is attached to.
+
+    .. attribute:: model_name
+
+        The name of this column in the model.  Not settable.
+
+        .. code-block:: pycon
+
+            >>> class Document(BaseModel):
+            ...     ...
+            ...     cheat_codes = Column(Set(String), name="cc")
+            ...
+            >>> Document.cheat_codes.model_name
+            cheat_codes
+            >>> Document.cheat_codes.dynamo_name
+            cc
+
+    .. attribute:: range_key
+
+        True if this is the model's range key.
+
 .. autoclass:: bloop.models.GlobalSecondaryIndex
 
     .. attribute:: dynamo_name

@@ -430,9 +430,8 @@ class Column(declare.Field, ComparisonMixin):
     :param str name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
     """
     def __init__(self, typedef, hash_key=False, range_key=False, name=None, **kwargs):
-        # Signature uses False but many checks use explicit `is None`
-        self.hash_key = None if hash_key is False else hash_key
-        self.range_key = None if range_key is False else range_key
+        self.hash_key = hash_key
+        self.range_key = range_key
         self._dynamo_name = name
         kwargs['typedef'] = typedef
         super().__init__(**kwargs)

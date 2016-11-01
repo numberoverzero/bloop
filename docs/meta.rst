@@ -26,7 +26,7 @@ Public API
 
 Bloop follows `Semantic Versioning 2.0.0`__ and a `draft appendix`__ for its :ref:`Public API <api-public>`.
 
-The following are enforced (see appendix for third point):
+The following are enforced:
 
 * Backwards incompatible changes in major version only
 * New features in minor version or higher
@@ -35,6 +35,8 @@ The following are enforced (see appendix for third point):
 __ http://semver.org/spec/v2.0.0.html
 __ appendix_
 .. _appendix: https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
+
+.. _versioning-internal:
 
 ------------
 Internal API
@@ -53,3 +55,11 @@ License
 =======
 
 .. include:: ../LICENSE
+
+.. _changelog:
+
+=========
+Changelog
+=========
+
+TODO include ../CHANGELOG when it exists.

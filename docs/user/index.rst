@@ -16,3 +16,4 @@ User Guide
     conditions
     signals
     patterns
+    changes

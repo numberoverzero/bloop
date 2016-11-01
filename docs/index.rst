@@ -97,24 +97,20 @@ during normal usage.
 Internal API
 ------------
 
-Most users never need to interact with the Internal API.  For example, you can interact with the model creation
-process by connecting to :data:`~bloop.signals.model_created`, instead of modifying the
-:class:`metaclass <bloop.models.ModelMetaclass>` directly.
+.. warning::
+
+    Here be dragons.  Breaking changes to the Internal API can occur :ref:`at any time <versioning-internal>`.
 
 .. toctree::
     :maxdepth: 2
 
     api/internal
 
-.. warning::
-
-    Breaking changes to the Internal API can occur at any time.
-
 About Bloop
 -----------
 
 Any size contribution is welcome!  If there's a section of the docs that was unclear or incorrect,
-`open an issue`_ and it'll get some attention.
+please `open an issue`_ and it'll get some love.
 
 .. _open an issue: https://github.com/numberoverzero/bloop/issues/new
 

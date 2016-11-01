@@ -49,45 +49,9 @@ def supports_operation(operation, typedef):
 
 
 class Type(declare.TypeDefinition):
-    """Abstract base type.
+    """Abstract base type."""
 
-    .. code-block:: python
-
-        class ReversedString(Type):
-            python_type = str
-            backing_type = "S"
-
-            def dynamo_load(self, value, *, context, **kwargs):
-                return str(value[::-1])
-
-            def dynamo_dump(self, value, *, context, **kwargs):
-                return str(value[::-1])
-
-    If a type's constructor doesn't have required args, a :class:`~bloop.Column`
-    can use the class directly:
-
-    .. code-block:: python
-
-        class SomeModel(BaseModel):
-            custom_hash_key = Column(ReversedString, hash_key=True)
-
-    Complex types may need to implement :func:`~_dump`, :func:`~_load`, or :func:`~_register`.
-    """
-
-    #: The local Python type.  Optional, not validated.
     python_type = None
-
-    #: This is the DynamoDB type that Bloop will store values under.
-    #:
-    #: * ``"S"`` -- string
-    #: * ``"N"`` -- number
-    #: * ``"B"`` -- binary
-    #: * ``"BOOL"`` -- boolean
-    #: * ``"SS"`` -- string set
-    #: * ``"NS"`` -- number set
-    #: * ``"BS"`` -- binary set
-    #: * ``"M"`` -- map
-    #: * ``"L"`` -- list
     backing_type = None
 
     def __init__(self):
@@ -125,7 +89,6 @@ class Type(declare.TypeDefinition):
         """Entry point for serializing values.  Most custom types should use :func:`~dynamo_dump`.
 
         This wraps the return value of :func:`~dynamo_dump` in DynamoDB's wire format.
-
         For example, serializing a string enum to an int:
 
         .. code-block:: python
@@ -146,7 +109,6 @@ class Type(declare.TypeDefinition):
         """Entry point for deserializing values.  Most custom types should use :func:`~dynamo_load`.
 
         This unpacks DynamoDB's wire format and calls :func:`~dynamo_load` on the inner value.
-
         For example, deserializing an int to a string enum:
 
         .. code-block:: python

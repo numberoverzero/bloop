@@ -204,29 +204,189 @@ LocalSecondaryIndex
 Types
 =====
 
+Most custom types only need to specify a backing_type (or subclass a built-in type) and override ``dynamo_dump`` and
+``dynamo_load``:
+
+.. code-block:: python
+
+    class ReversedString(Type):
+        python_type = str
+        backing_type = "S"
+
+        def dynamo_load(self, value, *, context, **kwargs):
+            return str(value[::-1])
+
+        def dynamo_dump(self, value, *, context, **kwargs):
+            return str(value[::-1])
+
+If a type's constructor doesn't have required args, a :class:`~bloop.Column` can use the class directly.  The column
+will create an instance of the type by calling the constructor without any args:
+
+.. code-block:: python
+
+    class SomeModel(BaseModel):
+        custom_hash_key = Column(ReversedString, hash_key=True)
+
+In rare cases, complex types may need to implement :func:`~_dump`, :func:`~_load`, or :func:`~_register`.
+
+----
+Type
+----
+
 .. autoclass:: bloop.types.Type
-    :members: python_type, backing_type, dynamo_dump, dynamo_load, _dump, _load, _register
+    :members: dynamo_dump, dynamo_load, _dump, _load, _register
     :member-order: bysource
+
+    .. attribute:: python_type
+
+        The type local values will have.  Informational only, this is not used for validation.
+
+    .. attribute:: backing_type
+
+        The DynamoDB type that Bloop will store values as.
+
+        One of:
+
+        .. hlist::
+            :columns: 3
+
+            * ``"S"`` -- string
+            * ``"N"`` -- number
+            * ``"B"`` -- binary
+            * ``"SS"`` -- string set
+            * ``"NS"`` -- number set
+            * ``"BS"`` -- binary set
+            * ``"M"`` -- map
+            * ``"L"`` -- list
+            * ``"BOOL"`` -- boolean
+
+        See the `DynamoDB API Reference`__ for details.
+
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html
+
+
+------
+String
+------
 
 .. autoclass:: bloop.types.String
 
+    .. attribute:: backing_type
+        :annotation: = "S"
+
+    .. attribute:: python_type
+        :annotation: = str
+
+-----
+Float
+-----
+
 .. autoclass:: bloop.types.Float
+
+    .. attribute:: backing_type
+        :annotation: = "N"
+
+    .. attribute:: python_type
+        :annotation: = float
+
+------
+Binary
+------
 
 .. autoclass:: bloop.types.Binary
 
+    .. attribute:: backing_type
+        :annotation: = "B"
+
+    .. attribute:: python_type
+        :annotation: = bytes
+
+-------
+Boolean
+-------
+
 .. autoclass:: bloop.types.Boolean
+
+    .. attribute:: backing_type
+        :annotation: = "BOOL"
+
+    .. attribute:: python_type
+        :annotation: = bool
+
+----
+UUID
+----
 
 .. autoclass:: bloop.types.UUID
 
+    .. attribute:: backing_type
+        :annotation: = "S"
+
+    .. attribute:: python_type
+        :annotation: = uuid.UUID
+
+--------
+DateTime
+--------
+
 .. autoclass:: bloop.types.DateTime
+
+    .. attribute:: backing_type
+        :annotation: = "S"
+
+    .. attribute:: python_type
+        :annotation: = arrow.Arrow
+
+-------
+Integer
+-------
 
 .. autoclass:: bloop.types.Integer
 
+    .. attribute:: backing_type
+        :annotation: = "N"
+
+    .. attribute:: python_type
+        :annotation: = int
+
+---
+Set
+---
+
 .. autoclass:: bloop.types.Set
+
+    .. attribute:: backing_type
+        :annotation: = "SS", "NS", or "BS"
+
+        Set is not a standalone type; its backing type depends on the inner type its constructor receives. For
+        example, ``Set(DateTime)`` has backing type "SS" because :class:`~bloop.types.DateTime` has backing type "S".
+
+    .. attribute:: python_type
+        :annotation: = set
+
+----
+List
+----
 
 .. autoclass:: bloop.types.List
 
+    .. attribute:: backing_type
+        :annotation: = "L"
+
+    .. attribute:: python_type
+        :annotation: = list
+
+---
+Map
+---
+
 .. autoclass:: bloop.types.Map
+
+    .. attribute:: backing_type
+        :annotation: = "M"
+
+    .. attribute:: python_type
+        :annotation: = dict
 
 =====
 Query

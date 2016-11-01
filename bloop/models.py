@@ -139,8 +139,7 @@ def setup_columns(meta):
     # This is a set instead of a list, because set uses __hash__
     # while some list operations uses __eq__ which will break
     # with the ComparisonMixin
-    meta.columns = set(filter(
-        lambda field: isinstance(field, Column), meta.fields))
+    meta.columns = set(filter(lambda field: isinstance(field, Column), meta.fields))
 
     meta.hash_key = None
     meta.range_key = None
@@ -352,13 +351,13 @@ class Index(declare.Field):
 class GlobalSecondaryIndex(Index):
     """See `GlobalSecondaryIndex`_ in the DynamoDB Developer Guide for details.
 
-    :param projection: **Required** -- Either "keys", "all", or a list of column name or objects.  Included
-                       columns will be projected into the index.  Key columns are always included.
+    :param projection: **Required** -- Either "keys", "all", or a list of column name or objects.
+        Included columns will be projected into the index.  Key columns are always included.
     :param hash_key: **Required** -- The column that the index can be queried against.
     :param range_key: *(Optional)* -- The column that the index can be sorted on.  Default is None.
-    :param read_units: *(Optional)* -- Provisioned read units for the index.  Default is 1.
-    :param write_units:  *(Optional)* -- Provisioned write units for the index.  Default is 1.
-    :param name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    :param int read_units: *(Optional)* -- Provisioned read units for the index.  Default is 1.
+    :param int write_units:  *(Optional)* -- Provisioned write units for the index.  Default is 1.
+    :param str name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
 
     .. _GlobalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
     """
@@ -374,13 +373,13 @@ class LocalSecondaryIndex(Index):
     Unlike :class:`~bloop.models.GlobalSecondaryIndex`\, LSIs share their throughput with the table,
     and their hash key is always the table hash key.
 
-    :param projection: **Required** -- Either "keys", "all", or a list of column name or objects.  Included
-                       columns will be projected into the index.  Key columns are always included.
+    :param projection: **Required** -- Either "keys", "all", or a list of column name or objects.
+        Included columns will be projected into the index.  Key columns are always included.
     :param range_key: **Required** -- The column that the index can be sorted against.
-    :param name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
-    :param strict: *(Optional)* -- Restricts queries and scans on the LSI to columns in the projection.  When False,
-                   DynamoDB may silently incur additional reads to load results.  You should not disable this
-                   unless you have an explicit need.  Default is True.
+    :param str name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    :param bool strict: *(Optional)* -- Restricts queries and scans on the LSI to columns in the projection.
+        When False, DynamoDB may silently incur additional reads to load results.  You should not disable this
+        unless you have an explicit need.  Default is True.
 
     .. _LocalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
     """
@@ -394,7 +393,6 @@ class LocalSecondaryIndex(Index):
         self.projection["strict"] = strict
 
     def _bind(self, model):
-        """Raise if the model doesn't have a range key"""
         if not model.Meta.range_key:
             raise InvalidIndex("An LSI requires the Model to have a range key.")
         # this is model_name (string) because super()._bind will do the string -> Column lookup
@@ -419,10 +417,22 @@ class LocalSecondaryIndex(Index):
 
 
 class Column(declare.Field, ComparisonMixin):
-    def __init__(self, typedef, hash_key=None, range_key=None,
-                 name=None, **kwargs):
-        self.hash_key = hash_key
-        self.range_key = range_key
+    """Represents a single attribute in DynamoDB.
+
+    :param typedef: **Required** --The type of this attribute.  Can be either a :class:`~bloop.types.Type` or
+        an instance thereof.  If a type class is provided, the column will call the constructor without arguments
+        to create an instance.  For example, ``Column(Integer)`` and ``Column(Integer())`` are equivalent.
+    :param bool hash_key: *(Optional)* True if this is the model's hash key.
+        A model must have exactly one Column with ``hash_key=True``.  Default is False.
+    :param bool range_key:  *(Optional)* -- True if this is the model's range key.
+        A model can have at most one Column with
+        ``range_key=True``.  Default is False.
+    :param str name: *(Optional)* -- The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    """
+    def __init__(self, typedef, hash_key=False, range_key=False, name=None, **kwargs):
+        # Signature uses False but many checks use explicit `is None`
+        self.hash_key = None if hash_key is False else hash_key
+        self.range_key = None if range_key is False else range_key
         self._dynamo_name = name
         kwargs['typedef'] = typedef
         super().__init__(**kwargs)

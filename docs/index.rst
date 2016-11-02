@@ -28,11 +28,14 @@ Ergonomics
         id = Column(UUID, hash_key=True)
         name = Column(String)
         email = Column(String)
-        by_email = GlobalSecondaryIndex(projection='keys', hash_key='email')
+        by_email = GlobalSecondaryIndex(
+            projection='keys', hash_key='email')
 
     engine.bind(Account)
 
-    some_account = Account(id=uuid.uuid4(), email='foo@bar.com')
+    some_account = Account(
+        id=uuid.uuid4(),
+        email='foo@bar.com')
     engine.save(some_account)
 
     q = engine.query(
@@ -64,8 +67,10 @@ Never worry about `trim horizons`__, `iterator types`__, or `tracking shard line
     stream = engine.stream(User, 'trim_horizon')
     while True:
         record = next(stream)
-        if record: print(template.format(**record)
-        else: time.sleep(0.5)
+        if record:
+            print(template.format(**record)
+        else:
+            time.sleep(0.5)
 
 __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_GetRecords.html#API_GetRecords_Errors
 __ https://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_GetShardIterator.html#DDB-GetShardIterator-request-ShardIteratorType

@@ -326,7 +326,7 @@ class Set(Type):
             id = Column(Integer, hash_key=True)
             account_ids = Column(Set(UUID))
 
-    :param typedef: **Required** The type to use when loading and saving values in this set.
+    :param typedef: The type to use when loading and saving values in this set.
         Must have a ``backing_type`` of "S", "N", or "B".
     """
     python_type = collections.abc.Set
@@ -379,7 +379,7 @@ class List(Type):
             ...
             all_answers = List(SingleQuizAnswers)
 
-    :param typedef: **Required** The type to use when loading and saving values in this list.
+    :param typedef: The type to use when loading and saving values in this list.
     """
     python_type = collections.abc.Iterable
     backing_type = LIST

@@ -351,9 +351,9 @@ class Index(declare.Field):
 class GlobalSecondaryIndex(Index):
     """See `GlobalSecondaryIndex`_ in the DynamoDB Developer Guide for details.
 
-    :param projection: **Required** Either "keys", "all", or a list of column name or objects.
+    :param projection: Either "keys", "all", or a list of column name or objects.
         Included columns will be projected into the index.  Key columns are always included.
-    :param hash_key: **Required** The column that the index can be queried against.
+    :param hash_key: The column that the index can be queried against.
     :param range_key: *(Optional)* The column that the index can be sorted on.  Default is None.
     :param int read_units: *(Optional)* Provisioned read units for the index.  Default is 1.
     :param int write_units:  *(Optional)* Provisioned write units for the index.  Default is 1.
@@ -373,9 +373,9 @@ class LocalSecondaryIndex(Index):
     Unlike :class:`~bloop.models.GlobalSecondaryIndex`\, LSIs share their throughput with the table,
     and their hash key is always the table hash key.
 
-    :param projection: **Required** Either "keys", "all", or a list of column name or objects.
+    :param projection: Either "keys", "all", or a list of column name or objects.
         Included columns will be projected into the index.  Key columns are always included.
-    :param range_key: **Required** The column that the index can be sorted against.
+    :param range_key: The column that the index can be sorted against.
     :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
     :param bool strict: *(Optional)* Restricts queries and scans on the LSI to columns in the projection.
         When False, DynamoDB may silently incur additional reads to load results.  You should not disable this
@@ -419,7 +419,7 @@ class LocalSecondaryIndex(Index):
 class Column(declare.Field, ComparisonMixin):
     """Represents a single attribute in DynamoDB.
 
-    :param typedef: **Required** The type of this attribute.  Can be either a :class:`~bloop.types.Type` or
+    :param typedef: The type of this attribute.  Can be either a :class:`~bloop.types.Type` or
         an instance thereof.  If a type class is provided, the column will call the constructor without arguments
         to create an instance.  For example, ``Column(Integer)`` and ``Column(Integer())`` are equivalent.
     :param bool hash_key: *(Optional)* True if this is the model's hash key.

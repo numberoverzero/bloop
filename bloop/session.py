@@ -32,14 +32,14 @@ SHARD_ITERATOR_TYPES = {
 
 
 class SessionWrapper:
+    """Provides a consistent interface to DynamoDb and DynamoDbStreams clients.
+
+    If either client is None, that client is built using :func:`boto3.client`.
+
+    :param dynamodb: A boto3 client for DynamoDB.  Defaults to ``boto3.client("dynamodb")``.
+    :param dynamodbstreams: A boto3 client for DynamoDbStreams.  Defaults to ``boto3.client("dynamodbstreams")``.
+    """
     def __init__(self, dynamodb=None, dynamodbstreams=None):
-        """Provides a consistent interface to DynamoDb and DynamoDbStreams clients.
-
-        If either client is None, that client is built using :func:`boto3.client`.
-
-        :param dynamodb: A boto3 client for DynamoDB.  Defaults to ``boto3.client("dynamodb")``.
-        :param dynamodbstreams: A boto3 client for DynamoDbStreams.  Defaults to ``boto3.client("dynamodbstreams")``.
-        """
         dynamodb = dynamodb or boto3.client("dynamodb")
         dynamodbstreams = dynamodbstreams or boto3.client("dynamodbstreams")
 
@@ -47,18 +47,32 @@ class SessionWrapper:
         self.stream_client = dynamodbstreams
 
     def save_item(self, item):
+        """Save an object to DynamoDB.
+
+        :param item: Unpacked into kwargs for :func:`boto3.DynamoDB.Client.update_item`.
+        :raises bloop.exceptions.ConstraintViolation: if the condition (or atomic) is not met.
+        """
         try:
             self.dynamodb_client.update_item(**item)
         except botocore.exceptions.ClientError as error:
             handle_constraint_violation(error)
 
     def delete_item(self, item):
+        """Delete an object in DynamoDB.
+
+        :param item: Unpacked into kwargs for :func:`boto3.DynamoDB.Client.delete_item`.
+        :raises bloop.exceptions.ConstraintViolation: if the condition (or atomic) is not met.
+        """
         try:
             self.dynamodb_client.delete_item(**item)
         except botocore.exceptions.ClientError as error:
             handle_constraint_violation(error)
 
     def load_items(self, items):
+        """Loads any number of items in chunks, handling continuation tokens.
+
+        :param items: Unpacked in chunks into "RequestItems" for :func:`boto3.DynamoDB.Client.batch_get_item`.
+        """
         loaded_items = {}
         requests = collections.deque(create_batch_get_chunks(items))
         while requests:
@@ -79,12 +93,32 @@ class SessionWrapper:
         return loaded_items
 
     def query_items(self, request):
+        """Wraps :func:`boto3.DynamoDB.Client.query`.
+
+        Response always includes "Count" and "ScannedCount"
+
+        :param request: Unpacked into :func:`boto3.DynamoDB.Client.query`
+        """
         return self.search_items("query", request)
 
     def scan_items(self, request):
+        """Wraps :func:`boto3.DynamoDB.Client.scan`.
+
+        Response always includes "Count" and "ScannedCount"
+
+        :param str mode: "query" or "scan"
+        :param request: Unpacked into :func:`boto3.DynamoDB.Client.scan`
+        """
         return self.search_items("scan", request)
 
     def search_items(self, mode, request):
+        """Invoke query/scan by name.
+
+        Response always includes "Count" and "ScannedCount"
+
+        :param str mode: "query" or "scan"
+        :param request: Unpacked into :func:`boto3.DynamoDB.Client.query` or :func:`boto3.DynamoDB.Client.scan`
+        """
         validate_search_mode(mode)
         method = getattr(self.dynamodb_client, mode)
         try:
@@ -95,6 +129,13 @@ class SessionWrapper:
         return response
 
     def create_table(self, model):
+        """Create the model's table.
+
+        Does not wait for the table to create, and does not validate an existing table.
+        Will not raise "ResourceInUseException" if the table exists or is being created.
+
+        :param model: The :class:`~bloop.models.BaseModel` to create the table for.
+        """
         table = create_table_request(model)
         try:
             self.dynamodb_client.create_table(**table)
@@ -102,6 +143,14 @@ class SessionWrapper:
             handle_table_exists(error, model)
 
     def validate_table(self, model):
+        """Polls until a creating table is ready, then verifies the description against the model's requirements.
+
+        The model may have a subset of all GSIs and LSIs on the table, but the key structure must be exactly
+        the same.  The table must have a stream if the model expects one, but not the other way around.
+
+        :param model: The :class:`~bloop.models.BaseModel` to validate the table of.
+        :raises bloop.exceptions.TableMismatch: When the table does not meet the constraints of the model.
+        """
         table_name = model.Meta.table_name
         status, actual = None, {}
         while status is not ready:
@@ -117,6 +166,13 @@ class SessionWrapper:
             model.Meta.stream["arn"] = actual["LatestStreamArn"]
 
     def describe_stream(self, stream_arn, first_shard=None):
+        """Wraps :func:`boto3.DynamoDBStreams.Client.describe_stream`, handling continuation tokens.
+
+        :param str stream_arn: Stream arn, usually from the model's ``Meta.stream["arn"]``.
+        :param str first_shard: *(Optional)* If provided, only shards after this shard id will be returned.
+        :return: All shards in the stream, or a subset if ``first_shard`` is provided.
+        :rtype: list
+        """
         description = {"Shards": []}
 
         request = {"StreamArn": stream_arn, "ExclusiveStartShardId": first_shard}
@@ -140,6 +196,16 @@ class SessionWrapper:
         return description
 
     def get_shard_iterator(self, *, stream_arn, shard_id, iterator_type, sequence_number=None):
+        """Wraps :func:`boto3.DynamoDBStreams.Client.get_shard_iterator`.
+
+        :param str stream_arn: Stream arn.  Usually :data:`Shard.stream_arn <bloop.stream.shard.Shard.stream_arn>`.
+        :param str shard_id: Shard identifier.  Usually :data:`Shard.shard_id <bloop.stream.shard.Shard.shard_id>`.
+        :param str iterator_type: "sequence_at", "sequence_after", "trim_horizon", or "latest"
+        :param sequence_number:
+        :return: Iterator id, valid for 15 minutes.
+        :rtype: str
+        :raises bloop.exceptions.RecordsExpired: Tried to get an iterator beyond the Trim Horizon.
+        """
         real_iterator_type = validate_stream_iterator_type(iterator_type)
         request = {
             "StreamArn": stream_arn,
@@ -158,6 +224,14 @@ class SessionWrapper:
             raise BloopException("Unexpected error while creating shard iterator") from error
 
     def get_stream_records(self, iterator_id):
+        """Wraps :func:`boto3.DynamoDBStreams.Client.get_records`.
+
+        :param iterator_id: Iterator id.  Usually :data:`Shard.iterator_id <bloop.stream.shard.Shard.iterator_id>`.
+        :return: Dict with "Records" list (may be empty) and "NextShardIterator" str (may not exist).
+        :rtype: dict
+        :raises bloop.exceptions.RecordsExpired: The iterator moved beyond the Trim Horizon since it was created.
+        :raises bloop.exceptions.ShardIteratorExpired: The iterator was created more than 15 minutes ago.
+        """
         try:
             return self.stream_client.get_records(ShardIterator=iterator_id)
         except botocore.exceptions.ClientError as error:

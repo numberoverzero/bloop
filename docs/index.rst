@@ -6,6 +6,7 @@ DynamoDB's concurrency model is great, but using it correctly is tedious and unf
 
 __ https://gist.github.com/numberoverzero/9584cfc375de0e087c8e1ae35ab8559c
 
+========
 Features
 ========
 
@@ -17,6 +18,7 @@ Features
 * Expressive conditions
 * Diff-based saves
 
+==========
 Ergonomics
 ==========
 
@@ -69,52 +71,40 @@ __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_GetRecords
 __ https://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_GetShardIterator.html#DDB-GetShardIterator-request-ShardIteratorType
 __ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html#Streams.Processing
 
-User Guide
-==========
+===========
+What's Next
+===========
+
+Head to the :ref:`user-install` section to install Bloop, or :ref:`user-quickstart` for a larger example!
 
 .. toctree::
     :maxdepth: 2
+    :caption: User Guide
+    :hidden:
 
-    user/index
-
-API Reference
-=============
-
-Bloop's API is divided into two sections: public and internal.
-
-Public API
-----------
-
-If you're looking for details on :func:`Engine.save <bloop.engine.Engine.save>` or want the first result
-from a :class:`Query <bloop.search.QueryIterator>`, the Public API provides a breakdown of each class you'll encounter
-during normal usage.
+    user/install
+    user/quickstart
+    user/models
+    user/engine
+    user/query
+    user/streams
+    user/types
+    user/conditions
+    user/signals
+    user/patterns
 
 .. toctree::
     :maxdepth: 2
+    :caption: API
+    :hidden:
 
     api/public
-
-Internal API
-------------
-
-.. warning::
-
-    Here be dragons.  Breaking changes to the Internal API can occur :ref:`at any time <versioning-internal>`.
-
-.. toctree::
-    :maxdepth: 2
-
     api/internal
 
-About Bloop
------------
-
-Any size contribution is welcome!  If there's a section of the docs that was unclear or incorrect,
-please `open an issue`_ and it'll get some love.
-
-.. _open an issue: https://github.com/numberoverzero/bloop/issues/new
-
 .. toctree::
     :maxdepth: 2
+    :caption: Project
+    :hidden:
 
-    meta
+    meta/changelog
+    meta/about

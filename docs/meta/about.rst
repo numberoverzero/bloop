@@ -1,5 +1,5 @@
-About Bloop
-^^^^^^^^^^^
+About
+^^^^^
 
 ============
 Contributing
@@ -54,12 +54,4 @@ it is part of the internal api.  Still, please `open an issue`_ so it can be app
 License
 =======
 
-.. include:: ../LICENSE
-
-.. _changelog:
-
-=========
-Changelog
-=========
-
-TODO include ../CHANGELOG when it exists.
+.. include:: ../../LICENSE

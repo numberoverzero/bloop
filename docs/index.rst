@@ -45,23 +45,17 @@ Ergonomics
     same_account = q.one()
     print(same_account.id)
 
-Never worry about `trim horizons`__, `iterator types`__, or `tracking shard lineage`__ again:
+Never worry about `iterator types`__, or `tracking shard lineage`__ again:
 
 .. code-block:: python
 
-    # Enable Streams with the following lines in User.Meta:
-    stream = {
-        'include': {'new', 'old'}
-    }
-
-    # Start streaming!
-
     template = '''
-    User event.
-    Was: {old}
-    Now: {new}
+    Old: {old}
+    New: {new}
+
     Event Details:
     {meta}
+
     '''
 
     stream = engine.stream(User, 'trim_horizon')
@@ -72,7 +66,6 @@ Never worry about `trim horizons`__, `iterator types`__, or `tracking shard line
         else:
             time.sleep(0.5)
 
-__ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_GetRecords.html#API_GetRecords_Errors
 __ https://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_GetShardIterator.html#DDB-GetShardIterator-request-ShardIteratorType
 __ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html#Streams.Processing
 
@@ -80,7 +73,7 @@ __ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html
 What's Next
 ===========
 
-Head to the :ref:`user-install` section to install Bloop, or :ref:`user-quickstart` for a larger example!
+Get started by :ref:`installing <user-install>` Bloop, or check out a :ref:`larger example <user-quickstart>`.
 
 .. toctree::
     :maxdepth: 2

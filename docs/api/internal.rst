@@ -1,7 +1,7 @@
 .. _api-internal:
 
-Internal API
-^^^^^^^^^^^^
+Internal
+^^^^^^^^
 
 In addition to documenting internal classes, this section describes complex internal systems (such as Streams,
 atomic tracking via weakrefs) and specific parameters and error handling that Bloop employs when talking to DynamoDB

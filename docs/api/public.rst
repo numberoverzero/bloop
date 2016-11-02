@@ -1,7 +1,7 @@
 .. _api-public:
 
-Public API
-^^^^^^^^^^
+Public
+^^^^^^
 
 .. module:: bloop
 
@@ -516,7 +516,7 @@ value.  The model's ``Meta`` attribute describes the required keys:
 
 .. seealso::
 
-    :ref:`conditions` in the :ref:`guide-index` describes the possible conditions, and when and how to use them.
+    :ref:`conditions` in the User Guide describes the possible conditions, and when and how to use them.
 
 .. autoclass:: bloop.conditions.Condition
 

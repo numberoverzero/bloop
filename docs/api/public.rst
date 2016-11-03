@@ -460,6 +460,7 @@ Query
 
 .. autoclass:: bloop.search.QueryIterator
     :members:
+    :inherited-members:
 
 ====
 Scan
@@ -467,6 +468,7 @@ Scan
 
 .. autoclass:: bloop.search.ScanIterator
     :members:
+    :inherited-members:
 
 ======
 Stream

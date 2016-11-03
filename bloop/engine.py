@@ -219,8 +219,8 @@ class Engine:
         :param projection:
             "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.  When projection is
             "count", you must advance the iterator to retrieve the count.
-
-        :param int limit: Maximum number of items returned.  This is not DynamoDB's `Limit`__ parameter.
+        :param int limit: Maximum number of items to return.
+            This is not DynamoDB's `Limit`__ parameter.  Default is None (unlimited).
         :param bool consistent: Use `strongly consistent reads`__ if True.  Default is False.
         :param bool forward:  Query in ascending or descending order.  Default is True (ascending).
 
@@ -236,7 +236,7 @@ class Engine:
             model, index = model_or_index, None
         validate_not_abstract(model)
         q = Search(
-            mode="query", engine=self, session=self.session, model=model, index=index, key=key,
+            mode="query", engine=self, model=model, index=index, key=key,
             filter=filter, projection=projection, limit=limit, consistent=consistent, forward=forward)
         return iter(q.prepare())
 
@@ -266,10 +266,9 @@ class Engine:
         :param projection:
             "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.  When projection is
             "count", you must advance the iterator to retrieve the count.
-
-        :param int limit: Maximum number of items returned.  This is not DynamoDB's `Limit`__ parameter.
+        :param int limit: Maximum number of items to return.
+            This is not DynamoDB's `Limit`__ parameter.  Default is None (unlimited).
         :param bool consistent: Use `strongly consistent reads`__ if True.  Default is False.
-
         :return: A reusable scan iterator with helper methods.
         :rtype: :class:`~bloop.search.ScanIterator`
 
@@ -282,7 +281,7 @@ class Engine:
             model, index = model_or_index, None
         validate_not_abstract(model)
         s = Search(
-            mode="scan", engine=self, session=self.session, model=model, index=index,
+            mode="scan", engine=self, model=model, index=index,
             filter=filter, projection=projection, limit=limit, consistent=consistent)
         return iter(s.prepare())
 

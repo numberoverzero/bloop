@@ -98,6 +98,7 @@ Searching
 
 .. autoclass:: bloop.search.SearchModelIterator
     :members:
+    :inherited-members:
 
 ==========
 Conditions

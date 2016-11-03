@@ -273,16 +273,19 @@ def simple_iter(engine, session):
             "request": {},
             "projected": set()
         }
-        if cls is SearchIterator:
+        if issubclass(cls, SearchModelIterator):
+            kwargs.pop("session")
+        elif cls is SearchIterator:
             kwargs.pop("engine")
+
         return cls(**kwargs)
     return _simple_iter
 
 
 @pytest.fixture
-def valid_search(engine, session):
+def valid_search(engine):
     search = Search(
-        engine=engine, session=session, model=ComplexModel, index=None, key=ComplexModel.name == "foo",
+        engine=engine, model=ComplexModel, index=None, key=ComplexModel.name == "foo",
         filter=None, projection="all", limit=None, consistent=True, forward=False)
     search.mode = "query"
     return search
@@ -474,12 +477,11 @@ def test_validate_filter_success():
 
 
 @pytest.mark.parametrize("mode, cls", [("query", QueryIterator), ("scan", ScanIterator)])
-def test_prepare_session(valid_search, engine, session, mode, cls):
+def test_prepare_iterator_cls(valid_search, engine, mode, cls):
     valid_search.mode = mode
     prepared = valid_search.prepare()
 
     assert prepared.engine is engine
-    assert prepared.session is session
     assert prepared.mode == mode
     assert prepared._iterator_cls is cls
 

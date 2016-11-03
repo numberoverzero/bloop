@@ -19,40 +19,85 @@ def heap_item(clock, record, shard):
 
 
 class RecordBuffer:
+    """Maintains a total ordering for records across any number of shards.
+
+    Methods are thin wrappers around :mod:`heapq`.  Buffer entries have the form:
+
+    .. code-block: python
+
+        (total_ordering, record, shard)
+
+    where ``total_ordering`` is a tuple of ``(created_at, sequence_number, monotomic_clock)`` created from each
+    record as it is inserted.
+    """
     def __init__(self):
-        self._heap = []
+        self.heap = []
 
         # Used by the total ordering clock
         self.__monotonic_integer = 0
 
     def push(self, record, shard):
-        heapq.heappush(self._heap, heap_item(self.clock, record, shard))
+        """Push a new record into the buffer
+
+        :param dict record: new record
+        :param shard: Shard the record came from
+        :type shard: :class:`~bloop.stream.shard.Shard`
+        """
+        heapq.heappush(self.heap, heap_item(self.clock, record, shard))
 
     def push_all(self, record_shard_pairs):
+        """Push multiple (record, shard) pairs at once, with only one :meth:`heapq.heapify` call to maintain order.
+
+        :param record_shard_pairs: list of ``(record, shard)`` tuples
+            (see :func:`~bloop.stream.buffer.RecordBuffer.push`).
+        """
         # Faster than inserting one at a time; the heap is sorted once after all inserts.
         for record, shard in record_shard_pairs:
             item = heap_item(self.clock, record, shard)
-            self._heap.append(item)
-        heapq.heapify(self._heap)
+            self.heap.append(item)
+        heapq.heapify(self.heap)
 
     def pop(self):
-        return heapq.heappop(self._heap)[1:]
+        """Pop the oldest (lowest total ordering) record and the shard it came from.
+
+        :return: Oldest ``(record, shard)`` tuple.
+        """
+        return heapq.heappop(self.heap)[1:]
 
     def peek(self):
-        return self._heap[0][1:]
+        """A :func:`~bloop.stream.buffer.RecordBuffer.pop` without removing the (record, shard) from the buffer.
+
+        :return: Oldest ``(record, shard)`` tuple.
+        """
+        return self.heap[0][1:]
 
     def clear(self):
-        self._heap.clear()
-
-    @property
-    def heap(self):
-        return self._heap
+        """Drop the entire buffer."""
+        self.heap.clear()
 
     def __len__(self):
-        return len(self._heap)
+        return len(self.heap)
 
     def clock(self):
-        """Returns a monotonically increasing integer."""
-        # Try to avoid collisions from someone accessing the underlying int.
+        """Returns a monotonically increasing integer.
+
+        **Do not rely on the clock using a fixed increment.**
+
+        .. code-block:: python
+
+            >>> buffer.clock()
+            3
+            >>> buffer.clock()
+            40
+            >>> buffer.clock()
+            41
+            >>> buffer.clock()
+            300
+
+        :return: A unique clock value guaranteed to be larger than every previous value
+        :rtype: int
+        """
+        # Try to prevent collisions from someone accessing the underlying int. This offset
+        # ensures __monotonic_integer will never have the same value as any call to clock().
         self.__monotonic_integer += 2
         return self.__monotonic_integer - 1

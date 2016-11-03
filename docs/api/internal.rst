@@ -74,14 +74,31 @@ Index
 Searching
 =========
 
+------
+Search
+------
+
 .. autoclass:: bloop.search.Search
     :members:
+
+--------------
+PreparedSearch
+--------------
 
 .. autoclass:: bloop.search.PreparedSearch
     :members:
 
+--------------
+SearchIterator
+--------------
+
 .. autoclass:: bloop.search.SearchIterator
     :members:
+
+
+-------------------
+SearchModelIterator
+-------------------
 
 .. autoclass:: bloop.search.SearchModelIterator
 

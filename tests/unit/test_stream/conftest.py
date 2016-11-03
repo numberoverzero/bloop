@@ -19,5 +19,5 @@ def shard(session, stream_arn, shard_id):
 
 
 @pytest.fixture
-def coordinator(engine, session, stream_arn):
-    return Coordinator(engine=engine, session=session, stream_arn=stream_arn)
+def coordinator(session, stream_arn):
+    return Coordinator(session=session, stream_arn=stream_arn)

@@ -459,16 +459,70 @@ Query
 =====
 
 .. autoclass:: bloop.search.QueryIterator
-    :members:
-    :inherited-members:
+
+    .. attribute:: count
+
+        Number of items that have been loaded from DynamoDB so far, including buffered items.
+
+    .. attribute:: exhausted
+
+        True if there are no more results or the limit has been reached.
+
+    .. function:: first()
+
+        Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
+
+    .. attribute:: limit
+
+        The maximum number of items to return, or None.
+
+    .. function:: one()
+
+        Return the unique result.  If there is not exactly one result,
+        raises :exc:`~bloop.exceptions.ConstraintViolation`.
+
+    .. function:: reset()
+
+        Reset to the initial state, clearing the buffer and zeroing count and scanned.
+
+    .. attribute:: scanned
+
+        Number of items that DynamoDB evaluated, before any filter was applied.
 
 ====
 Scan
 ====
 
 .. autoclass:: bloop.search.ScanIterator
-    :members:
-    :inherited-members:
+
+    .. attribute:: count
+
+        Number of items that have been loaded from DynamoDB so far, including buffered items.
+
+    .. attribute:: exhausted
+
+        True if there are no more results or the limit has been reached.
+
+    .. function:: first()
+
+        Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
+
+    .. attribute:: limit
+
+        The maximum number of items to return, or None.
+
+    .. function:: one()
+
+        Return the unique result.  If there is not exactly one result,
+        raises :exc:`~bloop.exceptions.ConstraintViolation`.
+
+    .. function:: reset()
+
+        Reset to the initial state, clearing the buffer and zeroing count and scanned.
+
+    .. attribute:: scanned
+
+        Number of items that DynamoDB evaluated, before any filter was applied.
 
 ======
 Stream

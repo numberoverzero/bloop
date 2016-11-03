@@ -455,7 +455,6 @@ class SearchModelIterator(SearchIterator):
         self.engine = engine
 
         self.model = model
-        """Model class used to unpack results into."""
 
         super().__init__(session=engine.session, model=model, index=index,
                          limit=limit, request=request, projected=projected)

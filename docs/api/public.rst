@@ -205,8 +205,8 @@ LocalSecondaryIndex
 Types
 =====
 
-Most custom types only need to specify a backing_type (or subclass a built-in type) and override ``dynamo_dump`` and
-``dynamo_load``:
+Most custom types only need to specify a backing_type (or subclass a built-in type) and override
+:func:`~bloop.types.Type.dynamo_dump` and :func:`~bloop.types.Type.dynamo_load`:
 
 .. code-block:: python
 

@@ -45,9 +45,16 @@ html_theme = 'sphinx_rtd_theme'
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 html_context = {
     "css_files": ["_static/css/bloop.css"],
-    "docstitle": False,
     "favicon": "favicon-cog.ico",
     "show_sphinx": False,
+
+    # Render docs source links correctly
+    "github_user": "numberoverzero",
+    "github_repo": "bloop",
+    "github_version": "HEAD",
+    "conf_py_path": "/docs/",
+    "source_suffix": ".rst"
+
 }
 
 intersphinx_mapping = {

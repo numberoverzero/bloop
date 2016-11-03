@@ -151,6 +151,7 @@ class Sentinel:
 
 
 class WeakDefaultDictionary(weakref.WeakKeyDictionary):
+    """The cross product of :class:`weakref.WeakKeyDictionary` and :class:`collections.defaultdict`."""
     def __init__(self, default_factory):
         self.default_factory = default_factory
         super().__init__()

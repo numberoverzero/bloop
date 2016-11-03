@@ -25,6 +25,10 @@ ModelMetaclass
 .. autoclass:: bloop.models.ModelMetaclass
     :members:
 
+    The metaclass for :class:`~bloop.models.BaseModel`.  Binds ``model_name`` to each :class:`~bloop.models.Column`;
+    validates key configuration; binds the model to each :class:`~bloop.models.Index`; populates model's ``Meta``
+    with modeling metadata (``columns``, ``keys``, ``indexes``, etc).
+
 -----
 Index
 -----

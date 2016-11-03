@@ -14,40 +14,54 @@ missing = Sentinel("missing")
 
 
 class Shard:
+    """Encapsulates the record-level iterator management for a single Shard.
+
+    :param str stream_arn: Stream arn, usually from the model's ``Meta.stream["arn"]``.
+    :param str shard_id: Shard id, usually from a DescribeStream call.
+    :param str iterator_id: *(Optional)* An existing Shard iterator id.  Default is None.
+    :param str iterator_type: *(Optional)* The shard's iterator type, usually when loading from a token.
+        One of "trim_horizon", "at_sequence", "after_sequence", or "latest". Default is None.
+    :param str sequence_number: *(Optional)* SequenceNumber for an "at_sequence" or "after_sequence" iterator
+        type.  Default is None.
+    :param parent: *(Optional)* This shard's parent.  Default is None.
+    :type parent: :class:`~bloop.stream.shard.Shard`
+    :param session: Used to make DescribeStream, GetRecords, GetShardIterator calls.
+    :type session: :class:`~bloop.session.SessionWrapper`
+    """
     def __init__(self, *, stream_arn, shard_id, iterator_id=None,
                  iterator_type=None, sequence_number=None, parent=None, session=None):
 
-        #: Set once on creation, never changes
+        # Set once on creation, never changes
         self.stream_arn = stream_arn
 
-        #: Set once on creation, never changes
+        # Set once on creation, never changes
         self.shard_id = shard_id
 
-        #: ID of the current iterator for this shard.
-        #: Changes with every call to :func:`~Shard.get_records`.
+        # ID of the current iterator for this shard.
+        # Changes with every call to :func:`~Shard.get_records`.
         self.iterator_id = iterator_id
 
-        #: One of "trim_horizon", "latest", "at_sequence", or "after_sequence".
-        #: Changes as the shard jumps around or when the Coordinator
-        #: pops a record from this shard from the buffer.
+        # One of "trim_horizon", "latest", "at_sequence", or "after_sequence".
+        # Changes as the shard jumps around or when the Coordinator
+        # pops a record from this shard from the buffer.
         self.iterator_type = iterator_type
 
-        #: Changes when records are consumed.  Used with :attr:`~.iterator_type`.
+        # Changes when records are consumed.  Used with :attr:`~.iterator_type`.
         self.sequence_number = sequence_number
 
-        #: The :class:`Shard` that this one spawned off of.  This will become None
-        #: if a Coordinator is pruning expired parents.  It is usually set as part
-        #: of rebuilding a shard tree, soon after the shard is instantiated.
+        # The :class:`Shard` that this one spawned off of.  This will become None
+        # if a Coordinator is pruning expired parents.  It is usually set as part
+        # of rebuilding a shard tree, soon after the shard is instantiated.
         self.parent = parent
 
-        #: Shards have 0, 1, or 2 children.  A shard will have 0 children
-        #: when the shard is still open; if the stream is closed; or the table
-        #: throughput has decreased.
+        # Shards have 0, 1, or 2 children.  A shard will have 0 children
+        # when the shard is still open; if the stream is closed; or the table
+        # throughput has decreased.
         self.children = []
 
-        #: Tracks how many times a GetRecords call has an iterator_id without any results.
-        #: After :data:`CALLS_TO_REACH_HEAD` empty responses, we can assume the shard is still open.
-        #: This dictates how hard the shard works to "catch up" a new iterator.
+        # Tracks how many times a GetRecords call has an iterator_id without any results.
+        # After :data:`CALLS_TO_REACH_HEAD` empty responses, we can assume the shard is still open.
+        # This dictates how hard the shard works to "catch up" a new iterator.
         self.empty_responses = 0
 
         self.session = session
@@ -98,14 +112,17 @@ class Shard:
 
     @property
     def exhausted(self) -> bool:
+        """True if the shard is closed and there are no additional records to get."""
         return self.iterator_id is last_iterator
 
     @property
     def token(self):
-        """Does not recursively tokenize children.
+        """JSON-serializable representation of the current Shard state.
 
-        Returns fields that may be redundant for generating a Stream token,
-        such as stream_arn and shard_id.
+        The token is enough to rebuild the Shard as part of rebuilding a Stream.
+
+        :returns: Shard state as a json-friendly dict
+        :rtype: dict
         """
         # TODO logger.info when iterator_type is "trim_horizon" or "latest"
         token = {
@@ -123,7 +140,7 @@ class Shard:
         return token
 
     def walk_tree(self):
-        """Generator that visits all shards in a shard tree"""
+        """Generator that yields each :class:`~bloop.stream.shard.Shard` by walking the shard's children in order."""
         shards = collections.deque([self])
         while shards:
             shard = shards.popleft()
@@ -131,6 +148,11 @@ class Shard:
             shards.extend(shard.children)
 
     def jump_to(self, *, iterator_type, sequence_number=None) -> None:
+        """Move to a new position in the shard using the standard parameters to GetShardIterator.
+
+        :param str iterator_type: "trim_horizon", "at_sequence", "after_sequence", "latest"
+        :param str sequence_number: *(Optional)* Sequence number to use with at/after sequence.  Default is None.
+        """
         # Just a simple wrapper; let the caller handle RecordsExpired
         self.iterator_id = self.session.get_shard_iterator(
             stream_arn=self.stream_arn,
@@ -142,11 +164,15 @@ class Shard:
         self.empty_responses = 0
 
     def seek_to(self, position):
-        """Move the Shard's iterator to the earliest record that after the given time.
+        """Move the Shard's iterator to the earliest record after the :class:`~arrow.arrow.Arrow` time.
 
         Returns the first records at or past ``position``.  If the list is empty,
         the seek failed to find records, either because the Shard is exhausted or it
         reached the HEAD of an open Shard.
+
+        :param position: The position in time to move to.
+        :type position: :class:`~arrow.arrow.Arrow`
+        :returns: A list of the first records found after ``position``.  May be empty.
         """
         # 0) We have no way to associate the date with a position,
         #    so we have to scan the shard from the beginning.
@@ -169,9 +195,10 @@ class Shard:
         return []
 
     def load_children(self) -> None:
-        """Try to load the shard's children from DynamoDB if it doesn't have any.
+        """If the Shard doesn't have any children, tries to find some from DescribeStream.
 
-        Loads all shards that have this shard as an ancestor.
+        If the Shard is open this won't find any children, so an empty response doesn't
+        mean the Shard will **never** have children.
         """
         # Child count is fixed the first time any of the following happen:
         # 0 :: stream closed or throughput decreased
@@ -214,9 +241,9 @@ class Shard:
         return self.children
 
     def get_records(self):
-        """Get the next set of records in this shard.
+        """Get the next set of records in this shard.  An empty list doesn't guarantee the shard is exhausted.
 
-        An empty list doesn't guarantee the shard is exhausted.
+        :returns: A list of reformatted records.  May be empty.
         """
         # Won't be able to find new records.
         if self.exhausted:

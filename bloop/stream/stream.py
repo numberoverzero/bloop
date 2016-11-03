@@ -54,7 +54,7 @@ class Stream:
 
     @property
     def token(self):
-        """JSON-serializable representation of the current state.
+        """JSON-serializable representation of the current Stream state.
 
         Use :func:`Engine.stream(YourModel, token) <bloop.engine.Engine.stream>` to create an identical stream,
         or :func:`stream.move_to(token) <bloop.stream.Stream.move_to>` to move an existing stream to this position.

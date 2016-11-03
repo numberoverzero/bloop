@@ -25,7 +25,7 @@ class Shard:
         type.  Default is None.
     :param parent: *(Optional)* This shard's parent.  Default is None.
     :type parent: :class:`~bloop.stream.shard.Shard`
-    :param session: Used to make DescribeStream, GetRecords, GetShardIterator calls.
+    :param session: Used to make DynamoDBStreams calls.
     :type session: :class:`~bloop.session.SessionWrapper`
     """
     def __init__(self, *, stream_arn, shard_id, iterator_id=None,

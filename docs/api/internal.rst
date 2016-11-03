@@ -118,11 +118,23 @@ Searching
 Streaming
 =========
 
-.. autoclass:: bloop.stream.shard.Shard
-    :members:
+-----------
+Coordinator
+-----------
 
 .. autoclass:: bloop.stream.coordinator.Coordinator
     :members:
+
+-----
+Shard
+-----
+
+.. autoclass:: bloop.stream.shard.Shard
+    :members:
+
+------------
+RecordBuffer
+------------
 
 .. autoclass:: bloop.stream.buffer.RecordBuffer
     :members:

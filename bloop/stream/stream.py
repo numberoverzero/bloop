@@ -8,13 +8,13 @@ class Stream:
 
     :param model: The model to stream records from.
     :param engine: The engine to load model objects through.
+    :type engine: :class:`~bloop.engine.Engine`
     """
     def __init__(self, *, model, engine):
 
         self.model = model
         self.engine = engine
         self.coordinator = Coordinator(
-            engine=engine,
             session=engine.session,
             stream_arn=model.Meta.stream["arn"])
 
@@ -44,6 +44,18 @@ class Stream:
         self.coordinator.heartbeat()
 
     def move_to(self, position):
+        """Move the Stream to a specific endpoint or time, or load state from a token.
+
+        Moving to an endpoint with "trim_horizon" or "latest" and loading from a previous token are both
+        very efficient.
+
+        In contrast, seeking to a specific time requires iterating **all records in the stream up to that time**.
+        This can be **very expensive**.  Once you have moved a stream to a time, you should save the
+        :attr:`Stream.token <bloop.stream.stream.Stream.token>` so reloading will be extremely fast.
+
+        :param position: "trim_horizon", "latest", :class:`~arrow.arrow.Arrow`, or a
+            :attr:`Stream.token <bloop.stream.stream.Stream.token>`
+        """
         """
 
         * Move to either endpoint of the stream with "trim_horizon" or "latest".

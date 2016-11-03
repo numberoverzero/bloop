@@ -262,12 +262,60 @@ def render(engine, obj=None, filter=None, projection=None, key=None, atomic=None
 
 
 class ConditionRenderer:
+    """Renders collections of :class:`~bloop.conditions.BaseCondition` into DynamoDB's wire format for expressions,
+    including:
+
+    * ``"ConditionExpression"`` -- used in conditional operations
+    * ``"FilterExpression"`` -- used in queries and scans to ignore results that don't match the filter
+    * ``"KeyConditionExpressions"`` -- used to describe a query's hash (and range) key(s)
+    * ``"ProjectionExpression"`` -- used to include a subset of possible columns in the results of a query or scan
+    * ``"UpdateExpression"`` -- used to save objects
+
+    Normally, you will only need to call :func:`~bloop.conditions.ConditionRenderer.render` to handle any combination
+    of conditions.  You can also call each individual ``render_*`` function to control how multiple conditions of
+    each type are applied.
+
+    You can collect the rendered condition at any time through :attr:`~bloop.conditions.ConditionRenderer.rendered`.
+
+    .. code-block:: python
+
+        >>> renderer.render(obj=user, atomic=True)
+        >>> renderer.rendered
+        {'ConditionExpression': '((#n0 = :v1) AND (attribute_not_exists(#n2)) AND (#n4 = :v5))',
+         'ExpressionAttributeNames': {'#n0': 'age', '#n2': 'email', '#n4': 'id'},
+         'ExpressionAttributeValues': {':v1': {'N': '3'}, ':v5': {'S': 'some-user-id'}}}
+
+
+    :param engine: Used to dump values in conditions into the appropriate wire format.
+    :type engine: :class:`~bloop.engine.Engine`
+    """
     def __init__(self, engine):
         self.refs = ReferenceTracker(engine)
         self.engine = engine
         self.expressions = {}
 
     def render(self, obj=None, condition=None, atomic=False, update=False, filter=None, projection=None, key=None):
+        """Main entry point for rendering multiple expressions.  All parameters are optional, except obj when
+        atomic or update are True.
+
+        :param obj: *(Optional)* An object to render an atomic condition or update expression for.  Required if
+            update or atomic are true.  Default is False.
+        :param condition: *(Optional)* Rendered as a "ConditionExpression" for a conditional operation.
+            If atomic is True, the two are rendered in an AND condition.  Default is None.
+        :type condition: :class:`~bloop.conditions.BaseCondition`
+        :param bool atomic: *(Optional)*  True if an atomic condition should be created for ``obj`` and rendered as
+            a "ConditionExpression".  Default is False.
+        :param bool update: *(Optional)*  True if an "UpdateExpression" should be rendered for ``obj``.
+            Default is False.
+        :param filter: *(Optional)* A filter condition for a query or scan, rendered as a "FilterExpression".
+            Default is None.
+        :type filter: :class:`~bloop.conditions.BaseCondition`
+        :param projection: *(Optional)* A set of Columns to include in a query or scan, redered as a
+            "ProjectionExpression".  Default is None.
+        :type projection: set :class:`~bloop.models.Column`
+        :param key: *(Optional)* A key condition for queries, rendered as a "KeyConditionExpression".  Default is None.
+        :type key: :class:`~bloop.conditions.BaseCondition`
+        """
         if (atomic or update) and not obj:
             raise InvalidCondition("An object is required to render atomic conditions or updates without an object.")
 
@@ -336,6 +384,8 @@ class ConditionRenderer:
 
     @property
     def rendered(self):
+        """The rendered wire format for all conditions that have been rendered.  Rendered conditions are never
+        cleared.  A new :class:`~bloop.conditions.ConditionRenderer` should be used for each operation."""
         expressions = {k: v for (k, v) in self.expressions.items() if v is not None}
         if self.refs.attr_names:
             expressions["ExpressionAttributeNames"] = self.refs.attr_names

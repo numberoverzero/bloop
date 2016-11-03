@@ -160,11 +160,23 @@ RecordBuffer
 Conditions
 ==========
 
+----------------
+ReferenceTracker
+----------------
+
 .. autoclass:: bloop.conditions.ReferenceTracker
-        :members:
+        :members: any_ref, pop_refs
+
+-----------------
+ConditionRenderer
+-----------------
 
 .. autoclass:: bloop.conditions.ConditionRenderer
-        :members:
+        :members: render, rendered
+
+-------------------
+Built-in Conditions
+-------------------
 
 .. autoclass:: bloop.conditions.BaseCondition
         :members:

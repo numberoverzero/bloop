@@ -71,19 +71,6 @@ Index
         The column that the index can be sorted on.
 
 =========
-Streaming
-=========
-
-.. autoclass:: bloop.stream.shard.Shard
-    :members:
-
-.. autoclass:: bloop.stream.coordinator.Coordinator
-    :members:
-
-.. autoclass:: bloop.stream.buffer.RecordBuffer
-    :members:
-
-=========
 Searching
 =========
 
@@ -99,6 +86,19 @@ Searching
 .. autoclass:: bloop.search.SearchModelIterator
     :members:
     :inherited-members:
+
+=========
+Streaming
+=========
+
+.. autoclass:: bloop.stream.shard.Shard
+    :members:
+
+.. autoclass:: bloop.stream.coordinator.Coordinator
+    :members:
+
+.. autoclass:: bloop.stream.buffer.RecordBuffer
+    :members:
 
 ==========
 Conditions

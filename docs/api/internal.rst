@@ -18,11 +18,53 @@ SessionWrapper
 Modeling
 ========
 
+--------------
+ModelMetaclass
+--------------
+
 .. autoclass:: bloop.models.ModelMetaclass
     :members:
 
+-----
+Index
+-----
+
 .. autoclass:: bloop.models.Index
-    :members:
+    :members: _bind
+
+    .. attribute:: dynamo_name
+
+        The name of this index in DynamoDB.  Defaults to the index's ``model_name``.
+
+    .. attribute:: hash_key
+
+        The column that the index can be queried against.
+        *(LSI's hash_key is always the table hash_key.)*
+
+    .. attribute:: model
+
+        The model this index is attached to.
+
+    .. attribute:: model_name
+
+        The name of this index in the model.  Set during :func:`Index._bind <bloop.models.Index._bind>`.
+
+    .. attribute:: projection
+
+        Computed during :func:`Index._bind <bloop.models.Index._bind>`.
+
+        .. code-block:: python
+
+            {
+                "available":  # Set of columns that can be returned from a query or search.
+                "included":   # Set of columns that can be used in query and scan filters.
+                "mode":       # "all", "keys", or "include"
+                "strict":     # False if queries and scans can fetch non-included columns
+            }
+
+    .. attribute:: range_key
+
+        The column that the index can be sorted on.
 
 =========
 Streaming

@@ -256,6 +256,21 @@ class BaseModel(metaclass=ModelMetaclass):
 
 
 class Index(declare.Field):
+    """Abstract base class for GSIs and LSIs.
+
+    An index needs to be bound to a model by calling :func:`Index._bind <bloop.models.Index._bind`, which
+    lets the index compute projected columns, validate hash and range keys, etc.
+
+    .. seealso::
+
+        :class:`~bloop.models.GlobalSecondaryIndex` and :class:`~bloop.models.LocalSecondaryIndex`
+
+    :param projection: Either "keys", "all", or a list of column name or objects.
+        Included columns will be projected into the index.  Key columns are always included.
+    :param hash_key: The column that the index can be queried against.  Always the table hash_key for LSIs.
+    :param range_key: The column that the index can be sorted on.  Always required for an LSI.  Default is None.
+    :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    """
     def __init__(self, *, projection, hash_key=None, range_key=None, name=None, **kwargs):
         self.model = None
         self.hash_key = hash_key
@@ -289,7 +304,17 @@ class Index(declare.Field):
         return self._dynamo_name
 
     def _bind(self, model):
-        """Set up hash, range keys and compute projection"""
+        """Compute attributes and resolve column names.
+
+        * If hash and/or range keys are strings, resolve them to :class:`~bloop.models.Column` instances from
+          the model by ``model_name``.
+        * If projection is a list of strings, resolve each to a Column instance.
+        * Compute :data:`~bloop.models.Index.projection` dict from model Metadata and Index's temporary ``projection``
+          attribute.
+
+        :param model: The :class:`~bloop.models.BaseModel` this Index is attached to.
+        :raises bloop.exceptions.InvalidIndex: If the hash or range keys are misconfigured.
+        """
         self.model = model
 
         # Index by model_name so we can replace hash_key, range_key with the proper `bloop.Column` object

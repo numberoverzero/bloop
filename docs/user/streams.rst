@@ -171,8 +171,8 @@ The second record shows the change to email, and has both old and new objects:
 Periodic Heartbeats
 -------------------
 
-You should call :func:`Stream.heartbeat <bloop.stream.Stream.heartbeat>` at least every 14 minutes in your
-processing loop.
+You should call :func:`Stream.heartbeat() <bloop.stream.Stream.heartbeat>`
+at least every 14 minutes in your processing loop.
 
 Iterators only last 15 minutes, and need to be refreshed periodically.  There's no way to
 safely refresh an iterator that hasn't found a record.  For example, refreshing an iterator at "latest" could miss

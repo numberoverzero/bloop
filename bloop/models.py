@@ -258,7 +258,7 @@ class BaseModel(metaclass=ModelMetaclass):
 class Index(declare.Field):
     """Abstract base class for GSIs and LSIs.
 
-    An index needs to be bound to a model by calling :func:`Index._bind <bloop.models.Index._bind`, which
+    An index needs to be bound to a model by calling :func:`Index._bind(model) <bloop.models.Index._bind>`, which
     lets the index compute projected columns, validate hash and range keys, etc.
 
     .. seealso::
@@ -309,7 +309,7 @@ class Index(declare.Field):
         * If hash and/or range keys are strings, resolve them to :class:`~bloop.models.Column` instances from
           the model by ``model_name``.
         * If projection is a list of strings, resolve each to a Column instance.
-        * Compute :data:`~bloop.models.Index.projection` dict from model Metadata and Index's temporary ``projection``
+        * Compute :data:`~Index.projection` dict from model Metadata and Index's temporary ``projection``
           attribute.
 
         :param model: The :class:`~bloop.models.BaseModel` this Index is attached to.

@@ -290,7 +290,7 @@ class Engine:
         """Create a :class:`~bloop.stream.Stream` that provides approximate chronological ordering.
 
         :param model: The model to stream records from.
-        :param position: "trim_horizon", "latest", a stream token, or an :class:`arrow.Arrow` datetime.
+        :param position: "trim_horizon", "latest", a stream token, or an :class:`arrow.arrow.Arrow` datetime.
         :return: An iterator for records in all shards.
         :rtype: :class:`~bloop.stream.Stream`
         :raises bloop.exceptions.InvalidStream: if the model does not have a stream.

@@ -4,7 +4,7 @@ Types
 ^^^^^
 
 Types are used when defining :ref:`Columns <property-typedef>` and are responsible for translating between
-local values and their DynamoDB representations.  For example, ``DateTime`` maps between
+local values and their DynamoDB representations.  For example, :class:`~bloop.types.DateTime` maps between
 ``arrow.now()`` and ``"2016-08-09T01:16:25.322849+00:00"``.
 
 With just two methods, you can :ref:`create new types <custom-types>` that automatically integrate
@@ -158,9 +158,10 @@ Set
 
     The type for values in this Set.  Must be backed by one of ``S, N, B``.
 
-When a Set is created, its ``backing_type`` is based on the inner type and will be one of ``SS, NS, BS``.
-This does not mean that the inner type must subclass ``String``, ``Float``, or ``Binary``.
-As long as the backing type is valid, custom types are fine:
+When a Set is created, its :data:`~bloop.types.Set.backing_type` is based on the inner type and will be one of
+``SS, NS, BS``.  This does not mean that the inner type must subclass :class:`~bloop.types.String`,
+:class:`~bloop.types.Float`, or :class:`~bloop.types.Binary`.  As long as the backing type is valid, custom types
+are fine:
 
 .. code-block:: python
 
@@ -267,6 +268,7 @@ This type requires you to specify the modeled keys in the Map, but values don't 
 
 .. _custom-types:
 
+
 ============
 Custom Types
 ============
@@ -318,7 +320,7 @@ Now the model doesn't need to know about the storage format:
 Missing and None
 ----------------
 
-When there's no value for a :class:`~bloop.Column` that's being loaded, your type will need to handle None.
+When there's no value for a :class:`~bloop.models.Column` that's being loaded, your type will need to handle None.
 For many types, None is the best sentinel to return for "this has no value" -- Most of the built-in types use None.
 
 :class:`~bloop.types.Set` returns an empty ``set``, so that you'll never need to check for None before adding and
@@ -330,7 +332,7 @@ You will also need to handle ``None`` when dumping values to DynamoDB.  This can
 from a Model instance, or it's explicitly set to None.  In almost all cases, your ``dynamo_dump`` function should
 simply return None to signal omission (or deletion, depending on the context).
 
-You should return ``None`` when dumping empty values like ``list()``, or DynamoDB will complain about setting
+You should return None when dumping empty values like ``list()``, or DynamoDB will complain about setting
 something to an empty list or set.  By returning None, Bloop will know to put that column in
 the DELETE section of the UpdateItem.
 

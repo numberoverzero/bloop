@@ -88,7 +88,8 @@ Here are some basic conditions using paths:
 Atomic Conditions
 =================
 
-When you specify ``atomic=True`` during ``Engine.save`` or ``Engine.delete``, Bloop will insert a pre-constructed
+When you specify ``atomic=True`` during :func:`Engine.save <bloop.engine.Engine.save>` or
+:func:`Engine.delete <bloop.engine.Engine.delete>`, Bloop will insert a pre-constructed
 condition on each object to be modified.
 
 The condition depends on how the local version of your object was last synchronized with the corresponding
@@ -154,8 +155,8 @@ Load a Partial Object
 
 This demonstrates :ref:`Rule 2.1 <atomic-rules>`.
 
-``Engine.load`` will return all columns for an object; if a column's value is missing, it hasn't been set.  An atomic
-save or delete would expect those missing columns to still not have values.
+:func:`Engine.load <bloop.engine.Engine.load>` will return all columns for an object; if a column's value is
+missing, it hasn't been set.  An atomic save or delete would expect those missing columns to still not have values.
 
 First, save an object and then load it into a new instance:
 

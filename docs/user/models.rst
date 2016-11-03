@@ -179,8 +179,8 @@ Additional properties break down the broad categories, such as splitting ``index
 
 * ``hash_key`` -- The table hash key
 * ``range_key`` -- The table range key or None
-* ``gsis`` -- The set of all :class:`~bloop.models.GlobalSecondaryIndex`\es in the model
-* ``lsis`` -- The set of all :class:`~bloop.models.LocalSecondaryIndex`\es in the model
+* ``gsis`` -- The set of all :class:`~bloop.models.GlobalSecondaryIndex` in the model
+* ``lsis`` -- The set of all :class:`~bloop.models.LocalSecondaryIndex` in the model
 * ``projection`` A pseudo-projection for the table, providing API parity with an Index
 
 For example, a common pattern involves saving an item only if it doesn't exist.  Instead of creating a specific
@@ -274,7 +274,7 @@ Columns
         data = Column(Binary)
         data = Column(Binary())
 
-    Some types like ``Set`` require arguments.  See :ref:`types` for details.
+    Some types like :class:`~bloop.types.Set` require arguments.  See :ref:`types` for details.
 
 .. attribute:: hash_key
     :noindex:

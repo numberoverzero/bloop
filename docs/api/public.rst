@@ -3,8 +3,6 @@
 Public
 ^^^^^^
 
-.. module:: bloop
-
 ======
 Engine
 ======
@@ -53,7 +51,8 @@ Column
 
     .. attribute:: dynamo_name
 
-        The name of this column in DynamoDB.  Defaults to the column's ``model_name``.
+        The name of this column in DynamoDB.  Defaults to the column's
+        :data:`~Column.model_name`.
 
     .. attribute:: hash_key
 
@@ -90,7 +89,8 @@ GlobalSecondaryIndex
 
     .. attribute:: dynamo_name
 
-        The name of this index in DynamoDB.  Defaults to the index's ``model_name``.
+        The name of this index in DynamoDB.  Defaults to the index's
+        :data:`~GlobalSecondaryIndex.model_name`.
 
     .. attribute:: hash_key
 
@@ -149,7 +149,8 @@ LocalSecondaryIndex
 
     .. attribute:: dynamo_name
 
-        The name of this index in DynamoDB.  Defaults to the index's ``model_name``.
+        The name of this index in DynamoDB.  Defaults to the index's
+        :data:`~LocalSecondaryIndex.model_name`.
 
     .. attribute:: hash_key
 
@@ -219,15 +220,16 @@ Most custom types only need to specify a backing_type (or subclass a built-in ty
         def dynamo_dump(self, value, *, context, **kwargs):
             return str(value[::-1])
 
-If a type's constructor doesn't have required args, a :class:`~bloop.Column` can use the class directly.  The column
-will create an instance of the type by calling the constructor without any args:
+If a type's constructor doesn't have required args, a :class:`~bloop.models.Column` can use the class directly.
+The column will create an instance of the type by calling the constructor without any args:
 
 .. code-block:: python
 
     class SomeModel(BaseModel):
         custom_hash_key = Column(ReversedString, hash_key=True)
 
-In rare cases, complex types may need to implement :func:`~_dump`, :func:`~_load`, or :func:`~_register`.
+In rare cases, complex types may need to implement :func:`~bloop.types.Type._dump`,
+:func:`~bloop.types.Type._load`, or :func:`~bloop.types.Type._register`.
 
 ----
 Type
@@ -497,9 +499,9 @@ Stream.
 Conditions
 ==========
 
-The only public class the conditions system exposes is the empty condition, :class:`~.conditions.Condition`.
-The rest of the conditions system is baked into :class:`~.models.Column` and consumed by the various
-:class:`~.engine.Engine` functions like :func:`Engine.save() <bloop.engine.Engine.save>`.
+The only public class the conditions system exposes is the empty condition, :class:`~bloop.conditions.Condition`.
+The rest of the conditions system is baked into :class:`~bloop.models.Column` and consumed by the various
+:class:`~bloop.engine.Engine` functions like :func:`Engine.save() <bloop.engine.Engine.save>`.
 
 This function creates a condition for any model that can be used when saving to ensure you don't overwrite an existing
 value.  The model's ``Meta`` attribute describes the required keys:
@@ -554,13 +556,11 @@ Signals
 Exceptions
 ==========
 
-.. module:: bloop.exceptions
-
 Except to configure sessions, Bloop aims to completely abstract the boto3/botocore layers.  If you encounter an
 exception from either boto3 or botocore, please `open an issue`__.  Bloop's exceptions are broadly divided into two
 categories: unexpected state, and invalid input.
 
-To catch any exception from Bloop, use :exc:`~.BloopException`:
+To catch any exception from Bloop, use :exc:`~bloop.exceptions.BloopException`:
 
 .. code-block:: python
 
@@ -570,7 +570,7 @@ To catch any exception from Bloop, use :exc:`~.BloopException`:
         print("Didn't expect an exception, but Bloop raised:")
         raise
 
-.. autoclass:: BloopException
+.. autoclass:: bloop.exceptions.BloopException
 
 __ https://github.com/numberoverzero/bloop/issues/new
 
@@ -579,18 +579,18 @@ Unexpected state
 ----------------
 
 These are exceptions that you should be ready to handle in the normal course of using DynamoDB.  For example,
-failing to load objects will raise :exc:`~.MissingObjects`, while conditional operations may fail with
-:exc`~.ConstraintViolation`.
+failing to load objects will raise :exc:`~bloop.exceptions.MissingObjects`, while conditional operations may
+fail with :exc`~bloop.exceptions.ConstraintViolation`.
 
-.. autoclass:: ConstraintViolation
+.. autoclass:: bloop.exceptions.ConstraintViolation
 
-.. autoclass:: MissingObjects
+.. autoclass:: bloop.exceptions.MissingObjects
 
-.. autoclass:: RecordsExpired
+.. autoclass:: bloop.exceptions.RecordsExpired
 
-.. autoclass:: ShardIteratorExpired
+.. autoclass:: bloop.exceptions.ShardIteratorExpired
 
-.. autoclass:: TableMismatch
+.. autoclass:: bloop.exceptions.TableMismatch
 
 ---------
 Bad Input
@@ -599,31 +599,31 @@ Bad Input
 These are thrown when an option is invalid or missing, such as forgetting a key condition for a query,
 or trying to use an unknown projection type.
 
-.. autoclass:: InvalidComparisonOperator
+.. autoclass:: bloop.exceptions.InvalidComparisonOperator
 
-.. autoclass:: InvalidCondition
+.. autoclass:: bloop.exceptions.InvalidCondition
 
-.. autoclass:: InvalidFilterCondition
+.. autoclass:: bloop.exceptions.InvalidFilterCondition
 
-.. autoclass:: InvalidIndex
+.. autoclass:: bloop.exceptions.InvalidIndex
 
-.. autoclass:: InvalidKeyCondition
+.. autoclass:: bloop.exceptions.InvalidKeyCondition
 
-.. autoclass:: InvalidModel
+.. autoclass:: bloop.exceptions.InvalidModel
 
-.. autoclass:: InvalidPosition
+.. autoclass:: bloop.exceptions.InvalidPosition
 
-.. autoclass:: InvalidProjection
+.. autoclass:: bloop.exceptions.InvalidProjection
 
-.. autoclass:: InvalidSearchMode
+.. autoclass:: bloop.exceptions.InvalidSearchMode
 
-.. autoclass:: InvalidShardIterator
+.. autoclass:: bloop.exceptions.InvalidShardIterator
 
-.. autoclass:: InvalidStream
+.. autoclass:: bloop.exceptions.InvalidStream
 
-.. autoclass:: MissingKey
+.. autoclass:: bloop.exceptions.MissingKey
 
-.. autoclass:: UnboundModel
+.. autoclass:: bloop.exceptions.UnboundModel
 
-.. autoclass:: UnknownType
+.. autoclass:: bloop.exceptions.UnknownType
 

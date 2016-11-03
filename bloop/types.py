@@ -85,9 +85,9 @@ class Type(declare.TypeDefinition):
         raise NotImplementedError
 
     def _dump(self, value, **kwargs):
-        """Entry point for serializing values.  Most custom types should use :func:`~dynamo_dump`.
+        """Entry point for serializing values.  Most custom types should use :func:`~bloop.types.Type.dynamo_dump`.
 
-        This wraps the return value of :func:`~dynamo_dump` in DynamoDB's wire format.
+        This wraps the return value of :func:`~bloop.types.Type.dynamo_dump` in DynamoDB's wire format.
         For example, serializing a string enum to an int:
 
         .. code-block:: python
@@ -96,8 +96,9 @@ class Type(declare.TypeDefinition):
             # dynamo_dump("green") = 2
             _dump(value) == {"N": 2}
 
-        If a complex type calls this function with ``None``, it will forward ``None`` to :func:`~dynamo_dump`.  This
-        can happen when dumping eg. a sparse :class:`~.Map`, or a missing (not set) value.
+        If a complex type calls this function with ``None``, it will forward ``None`` to
+        :func:`~bloop.types.Type.dynamo_dump`.  This can happen when dumping eg. a sparse
+        :class:`~.bloop.types.Map`, or a missing (not set) value.
         """
         value = self.dynamo_dump(value, **kwargs)
         if value is None:
@@ -105,9 +106,9 @@ class Type(declare.TypeDefinition):
         return {self.backing_type: value}
 
     def _load(self, value, **kwargs):
-        """Entry point for deserializing values.  Most custom types should use :func:`~dynamo_load`.
+        """Entry point for deserializing values.  Most custom types should use :func:`~bloop.types.Type.dynamo_load`.
 
-        This unpacks DynamoDB's wire format and calls :func:`~dynamo_load` on the inner value.
+        This unpacks DynamoDB's wire format and calls :func:`~bloop.types.Type.dynamo_load` on the inner value.
         For example, deserializing an int to a string enum:
 
         .. code-block:: python
@@ -116,8 +117,8 @@ class Type(declare.TypeDefinition):
             # dynamo_load(2) = "green"
             _load(value) == "green"
 
-        If a complex type calls this function with ``None``, it will forward ``None`` to :func:`~dynamo_load`.  This
-        can happen when loading eg. a sparse :class:`~.Map`.
+        If a complex type calls this function with ``None``, it will forward ``None`` to
+        :func:`~bloop.types.Type.dynamo_load`.  This can happen when loading eg. a sparse :class:`~bloop.types.Map`.
         """
         if value is not None:
             value = next(iter(value.values()))

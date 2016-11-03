@@ -1,7 +1,7 @@
 Using the Engine
 ^^^^^^^^^^^^^^^^
 
-All loading, saving, and deleting is done through a ``bloop.Engine``.
+All loading, saving, and deleting is done through a :class:`~bloop.engine.Engine`.
 
 Reusing the model from :ref:`define-models`:
 
@@ -119,7 +119,8 @@ __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.Re
 You can load instances of different models at the same time.  Bloop will automatically split requests into the
 appropriate chunks for BatchGetItems and then inject the results into the corresponding objects.
 
-Raises ``MissingObjects`` if any items fail to load.  The ``objects`` attribute holds the set of objects not loaded.
+Raises :exc:`~bloop.exceptions.MissingObjects` if any items fail to load.  The ``objects``
+attribute holds the set of objects not loaded.
 
 .. _user-engine-save:
 

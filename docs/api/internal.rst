@@ -38,7 +38,7 @@ Index
 
     .. attribute:: dynamo_name
 
-        The name of this index in DynamoDB.  Defaults to the index's ``model_name``.
+        The name of this index in DynamoDB.  Defaults to the index's :data:`~Index.model_name`.
 
     .. attribute:: hash_key
 
@@ -51,11 +51,11 @@ Index
 
     .. attribute:: model_name
 
-        The name of this index in the model.  Set during :func:`Index._bind <bloop.models.Index._bind>`.
+        The name of this index in the model.  Set during :func:`~bloop.models.Index._bind`.
 
     .. attribute:: projection
 
-        Computed during :func:`Index._bind <bloop.models.Index._bind>`.
+        Computed during :func:`~bloop.models.Index._bind`.
 
         .. code-block:: python
 

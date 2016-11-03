@@ -112,6 +112,14 @@ def is_empty(ref):
 
 
 class ReferenceTracker:
+    """De-dupes reference names for the same path segments and generates unique placeholders for all
+    names, paths, and values.  The reference tracker can also forget references if, for example, a value fails to
+    render but the rest of the condition should be left intact.  This is primarily used when a value is unexpectedly
+    dumped as None, or an expression uses another column as a value.
+
+    :param engine: Used to dump column values for value refs.
+    :type engine: :class:`~bloop.engine.Engine`
+    """
     def __init__(self, engine):
         self.__next_index = 0
         self.counts = collections.defaultdict(lambda: 0)
@@ -171,8 +179,35 @@ class ReferenceTracker:
         self.counts[ref] += 1
         return ref, value
 
-    def any_ref(self, *, column=None, value=missing, dumped=False, inner=False):
-        """Returns {"type": Union["name", "value"], "ref": str, "value": Optional[Any]}"""
+    def any_ref(self, *, column, value=missing, dumped=False, inner=False):
+        """Returns a NamedTuple of (name, type, value) for any type of reference.
+
+        .. code-block:: python
+
+            # Name ref
+            >>> tracker.any_ref(column=User.email)
+            Reference(name='email', type='name', value=None)
+
+            # Value ref
+            >>> tracker.any_ref(column=User.email, value='user@domain')
+            Reference(name='email', type='value', value={'S': 'user@domain'})
+
+            # Passed as value ref, but value is another column
+            >>> tracker.any_ref(column=User.email, value=User.other_column)
+            Reference(name='other_column', type='name', value=None)
+
+        :param column: The column to reference.  If ``value`` is None, this will render a name ref for this column.
+        :type column: :class:`~bloop.conditions.ComparisonMixin`
+        :param value: *(Optional)* If provided, this is likely a value ref.  If ``value`` is also a column,
+            this will render a name ref for that column (not the ``column`` parameter).
+        :param bool dumped:  *(Optional)* True if the value has already been dumped and should not be dumped
+            through the column's typedef again.  Commonly used with atomic conditions (which store the object's dumped
+            representation).  Default is False.
+        :param bool inner: *(Optional)* True if this is a value ref and it should be dumped through a collection's
+            inner type, and not the collection type itself.  Default is False.
+        :return: A name or value reference
+        :rtype: :class:`bloop.conditions.Reference`
+        """
         # Can't use None since it's a legal value for comparisons (attribute_not_exists)
         if value is missing:
             # Simple path ref to the column.
@@ -193,7 +228,8 @@ class ReferenceTracker:
     def pop_refs(self, *refs):
         """Decrement the usage of each ref by 1.
 
-        If this was the last use of the ref, pop it from attr_names or attr_values"""
+        If this was the last use of a ref, remove it from attr_names or attr_values.
+        """
         for ref in refs:
             name = ref.name
             count = self.counts[name]

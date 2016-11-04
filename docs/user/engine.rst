@@ -58,9 +58,9 @@ Delete the user in DynamoDB:
 
     engine.delete(user)
 
-====
-Load
-====
+======
+ Load
+======
 
 .. function:: Engine.load(*objs, consistent=False)
 
@@ -124,15 +124,15 @@ attribute holds the set of objects not loaded.
 
 .. _user-engine-save:
 
-====
-Save
-====
+======
+ Save
+======
 
 .. _user-engine-delete:
 
-======
-Delete
-======
+========
+ Delete
+========
 
 Save and Delete share the same interface; they both conditionally modify the state of an object in DynamoDB.
 
@@ -164,9 +164,9 @@ Save and Delete share the same interface; they both conditionally modify the sta
 
 .. _save-delete-conditions:
 
----------------------
-Conditions and Atomic
----------------------
+-----------------------
+ Conditions and Atomic
+-----------------------
 
 :ref:`Conditions <conditions>` are expressed with the usual python comparisons (``<=``, ``>``, ``==``, ...)
 as well as a few methods such as ``begins_with``, ``between``, and ``is_``.

@@ -3,9 +3,9 @@
 Define Models
 ^^^^^^^^^^^^^
 
-==================
-A Basic Definition
-==================
+====================
+ A Basic Definition
+====================
 
 Every model inherits from :class:`~bloop.models.BaseModel`, and needs at least a hash key:
 
@@ -62,11 +62,11 @@ Then create the table in DynamoDB:
     Models :ref:`must be hashable <implementation-model-hash>`.  If you implement ``__eq__`` without
     ``__hash__``, Bloop will inject the first hash method it finds by walking the model's :meth:`class.mro`.
 
-==================
-Creating Instances
-==================
+====================
+ Creating Instances
+====================
 
-BaseModel provides a basic ``__init__``:
+The default ``__init__`` takes \*\*kwargs and applies them by each column's model name:
 
 .. code-block:: pycon
 
@@ -93,13 +93,13 @@ A local object's hash and range keys don't need values until you're ready to int
 
 .. _user-model-meta:
 
-========
-Metadata
-========
+==========
+ Metadata
+==========
 
--------------------
-Table Configuration
--------------------
+---------------------
+ Table Configuration
+---------------------
 
 You can provide an inner ``Meta`` class to configure the model's DynamoDB table:
 
@@ -146,8 +146,9 @@ to an existing table,or mapping multiple models to the same table:
         ...
 
 
-Default ``read_units`` and ``write_units`` are 1.  These do not include provisioned throughput for any Global
-Secondary Indexes, which have their own ``read_units`` and ``write_units`` attributes.
+Default ``read_units`` and ``write_units`` are 1.  These do not include provisioned throughput for any
+:class:`~bloop.models.GlobalSecondaryIndex`, which have their own
+:attr:`~bloop.models.GlobalSecondaryIndex.read_units`` and :attr:`~bloop.models.GlobalSecondaryIndex.write_units``.
 
 Finally, ``stream`` can be used to enable DynamoDBStreams on the table.  By default streaming is not enabled, and this
 is ``None``.  To enable a stream with both new and old images, use:
@@ -161,9 +162,9 @@ is ``None``.  To enable a stream with both new and old images, use:
 
 See the :ref:`streams` section of the user guide to get started.  Streams are awesome.
 
--------------------
-Model Introspection
--------------------
+---------------------
+ Model Introspection
+---------------------
 
 When a new model is created, a number of attributes are computed and stored in ``Meta``.  These can be used to
 generalize conditions for any model, or find columns by their name in DynamoDB.
@@ -183,7 +184,30 @@ Additional properties break down the broad categories, such as splitting ``index
 * ``lsis`` -- The set of all :class:`~bloop.models.LocalSecondaryIndex` in the model
 * ``projection`` A pseudo-projection for the table, providing API parity with an Index
 
-For example, a common pattern involves saving an item only if it doesn't exist.  Instead of creating a specific
+Here's the User model we just defined:
+
+.. code-block:: pycon
+
+    >>> User.Meta.hash_key
+    <Column[User.id=hash]>
+    >>> User.Meta.gsis
+    {<GSI[User.by_email=keys]>}
+    >>> User.Meta.keys
+    {<Column[User.version=range]>,
+     <Column[User.id=hash]>}
+    >>> User.Meta.columns
+    {<Column[User.created_on]>,
+     <Column[User.profile]>,
+     <Column[User.verified]>,
+     <Column[User.id=hash]>,
+     <Column[User.version=range]>,
+     <Column[User.email]>}
+
+-----------------------------------
+ Developing Against Generic Models
+-----------------------------------
+
+A common pattern involves saving an item only if it doesn't exist.  Instead of creating a specific
 condition for every model, we can use ``keys`` to make a function for any model:
 
 .. code-block:: python
@@ -204,188 +228,95 @@ Now, saving only when an object doesn't exist is as simple as:
 
 (This is also available in the :ref:`patterns section <patterns-if-not-exist>` of the user guide).
 
-Here's a basic model, and its generated ``Meta`` properties:
+.. _user-models-columns:
+
+=========
+ Columns
+=========
 
 .. code-block:: python
 
-    class DataBlob(BaseModel):
-        id = Column(UUID, hash_key=True)
-        version = Column(Integer, range_key=True)
-        data = Column(Binary)
-        email = Column(String)
-        sourced_at = Column(DateTime)
+    Column(typedef, hash_key=False, range_key=False, name=None, **kwargs)
 
-        by_email = GlobalSecondaryIndex(
-            projection="keys", hash_key=email)
-        by_origin_date = LocalSecondaryIndex(
-            projection="all", range_key="sourced_at")
+A :class:`~bloop.models.Column` determines how a value in DynamoDB maps to a local value.  The ``typedef`` is a
+:class:`~bloop.types.Type` that performs the translation.  There are a number of built-in types for common data types,
+such as :class:`~bloop.types.DateTime` and :class:`~bloop.types.UUID`.  See :ref:`user-types-custom` to easily create
+your own types.
 
-.. code-block:: python
+Models can only have one ``hash_key``, and at most one ``range_key``.  :exc:`~bloop.exceptions.InvalidModel` is raised
+if you specify multiple hash keys or forget to specify a hash key.
 
-    >>> meta = DataBlob.Meta
-    >>> meta.model
-    <Model[DataBlob]>
-    >>> meta.columns
-    {<Column[DataBlob.id=hash]>,
-     <Column[DataBlob.version=range]>,
-     <Column[DataBlob.data]>,
-     <Column[DataBlob.email]>,
-     <Column[DataBlob.sourced_at]>}
-    >>> meta.keys
-    {<Column[DataBlob.id=hash]>, <Column[DataBlob.version=range]>}
-    >>> meta.indexes
-    {<LSI[DataBlob.by_origin_date=all]>, <GSI[DataBlob.by_email=keys]>}
-    >>> meta.hash_key
-    <Column[DataBlob.id=hash]>
-    >>> meta.range_key
-    <Column[DataBlob.version=range]>
-    >>> meta.gsis
-    {<GSI[DataBlob.by_email=keys]>}
-    >>> meta.lsis
-    {<LSI[DataBlob.by_origin_date=all]>}
-    >>> meta.projection
-    {'available': {<Column[DataBlob.id=hash]>, ...},
-     'included': {<Column[DataBlob.id=hash]>, ...},
-     'mode': 'all',
-     'strict': True}
-
-=======
-Columns
-=======
+``name`` is an optional string to store the values in DynamoDB.  This is useful if your model names are long, and you
+want to use short names to save on throughput.  It also allows you to rename columns or map pythonic names to
+existing DynamoDB column names.  In the following example, the column's :attr:`~bloop.models.Column.model_name` is
+``verified_connections`` while it is stored in DynamoDB as ``vc``:
 
 .. code-block:: python
 
-    Column(typedef: bloop.Type,
-           hash_key: bool=False,
-           range_key: bool=False,
-           name: Optional[str]=None,
-           **kwargs)
+    class SomeModel(BaseModel):
+        ...
+        verified_connections = Column(Set(String), name='vc')
 
-.. _property-typedef:
+=========
+ Indexes
+=========
 
-.. attribute:: typedef
-    :noindex:
+Indexes provide additional ways to query and scan your data.  If you have not used indexes, you should first read
+the Developer's Guide on `Improving Data Access with Secondary Indexes`__.
 
-    A type class or instance used to load and save this column.  If a class is provided, an instance will
-    be created by calling the constructor without any arguments.  These will have the same result:
+__ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SecondaryIndexes.html
 
-    .. code-block:: python
-
-        data = Column(Binary)
-        data = Column(Binary())
-
-    Some types like :class:`~bloop.types.Set` require arguments.  See :ref:`types` for details.
-
-.. attribute:: hash_key
-    :noindex:
-
-    True if this column is the model's hash key.  Defaults to False.
-
-.. attribute:: range_key
-    :noindex:
-
-    True if this column is the model's range key.  Defaults to False.
-
-.. _property-name:
-
-.. attribute:: name
-    :noindex:
-
-    The name this column is stored as in DynamoDB.  Defaults to the column's name in the model.
-
-    DynamoDB includes column names when computing item sizes.  To save space, you'd usually set your attribute
-    name to ``c`` instead of ``created_on``.  The ``name`` kwarg allows you to map a readable model name to a
-    compact DynamoDB name:
-
-    .. code-block:: python
-
-        created_on = Column(DateTime, name="c")
-
-    See `Item Size`__ for the exact calculation.
-
-    __ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Limits.html#limits-items-size
-
-=======
-Indexes
-=======
+----------------------
+ GlobalSecondaryIndex
+----------------------
 
 .. code-block:: python
 
     GlobalSecondaryIndex(
-        projection: Union[str, List[str], List[Column]],
-        hash_key: str,
-        range_key: Optional[str]=None,
-        name: Optional[str]=None,
-        read_units: Optional[int]=1,
-        write_units: Optional[int]=1)
+        projection, hash_key, range_key=None,
+        name=None, read_units=1, write_units=1)
 
-    LocalSecondaryIndex(
-        projection: Union[str, List[str], List[Column]],
-        range_key: str,
-        name: Optional[str]=None,
-        strict: bool=True)
+Every :class:`~bloop.models.GlobalSecondaryIndex` must have a ``hash_key``.  A ``range_key`` is optional.
 
-.. attribute:: projection
-    :noindex:
+The ``projection`` can be "all", "keys", or a list of :class:`~bloop.models.Column` objects or model names.
 
-    The columns to project into this Index.  The index and model hash and range keys are always included
-    in the projection.  Must be one of ``"all"``, ``"keys"``, a list of Column objects, or a list of
-    Column model names.
+Like Column and LocalSecondaryIndex, ``name`` is used to control the index's name in DynamoDB.  By default,
+the index's ``model_name`` is used.
 
-.. attribute:: hash_key
-    :noindex:
+Each GSI has its own ``read_units`` and ``write_units``, independent of the model's throughput
+(``model.Meta.read_units``, ``model.Meta.write_units``).
 
-    Required for GSIs.  The model name of the column that will be this index's hash key.
-    You cannot specify the hash key for an LSI since it always shares the model's hash key.
+.. seealso::
 
-.. attribute:: range_key
-    :noindex:
+    `Global Secondary Indexes`__ in the DynamoDB Developer Guide
 
-    Required for LSIs.  Optional for GSIs.  The model name of the column that will be this index's range key.
-
-.. attribute:: name
-    :noindex:
-
-    The name this index is stored as in DynamoDB.  Defaults to the index's name in the model.
-
-    See the :ref:`name property <property-name>` above.
-
-.. attribute:: read_units
-    :noindex:
-
-    The provisioned read units for the index.  LSIs share the model's read units.  Defaults to 1.
-
-.. attribute:: write_units
-    :noindex:
-
-    The provisioned write units for the index.  LSIs share the model's write units.  Defaults to 1.
-
-.. attribute:: strict
-    :noindex:
-
-    Whether or not queries and scans against the LSI will be allowed to access the full set of columns,
-    even when they are not projected into the LSI.  When this is True, bloop will prevent you from making
-    calls that incur additional reads against the table.  If you query or scan a Local Secondary Index
-    that has ``strict=False`` and include columns in the projection or filter expressions that are not
-    part of the LSI, DynamoDB will incur an additional read against the table in order to return all columns.
-
-    It is highly recommended to keep this enabled.  Defaults to True.
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
 
 
-Specific column projections always include key columns.  A query against the following ``User`` index would
-return objects that include all columns except ``created_on`` (since ``id`` and ``email`` are the model
-and index hash keys).
+---------------------
+ LocalSecondaryIndex
+---------------------
 
 .. code-block:: python
 
-    by_email = GlobalSecondaryIndex(
-            projection=[User.verified, User.profile],
-            hash_key="email")
+    LocalSecondaryIndex(projection, range_key, name=None, strict=True)
+
+Every :class:`~bloop.models.LocalSecondaryIndex` must have a ``range_key``.  An LSI's ``hash_key`` is always the
+model's (``model.Meta.hash_key``).
+
+The ``projection`` can be "all", "keys", or a list of :class:`~bloop.models.Column` objects or model names.
+
+Like Column and GlobalSecondaryIndex, ``name`` is used to control the index's name in DynamoDB.  By default,
+the index's ``model_name`` is used.
+
+DynamoDB allows you to access columns outside of an LSI's projection during queries and scans,
+by consuming an additional read on the table to load those columns.  This can result in unexpected consumption from
+a poorly formed query.  By default, Bloop will raise an exception if you try to filter or project columns outside
+of an LSI's defined projection.  You can disable this and have DynamoDB incur extra reads automatically by setting
+``strict=False``.
 
 .. seealso::
-    | The DynamoDB Developer Guide:
-    |     `Global Secondary Indexes`__
-    |     `Local Secondary Indexes`__
 
-    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
+    `Local Secondary Indexes`__ in the DynamoDB Developer Guide
+
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html

@@ -3,22 +3,22 @@
 Types
 ^^^^^
 
-Types are used when defining :ref:`Columns <property-typedef>` and are responsible for translating between
+Types are used when defining :ref:`Columns <user-models-columns>` and are responsible for translating between
 local values and their DynamoDB representations.  For example, :class:`~bloop.types.DateTime` maps between
 ``arrow.now()`` and ``"2016-08-09T01:16:25.322849+00:00"``.
 
-With just two methods, you can :ref:`create new types <custom-types>` that automatically integrate
+With just two methods, you can :ref:`create new types <user-types-custom>` that automatically integrate
 with all of Bloop's features.
 
-============
-Scalar Types
-============
+==============
+ Scalar Types
+==============
 
 Bloop supports all scalar types except NULL.
 
-------
-Binary
-------
+--------
+ Binary
+--------
 
 .. code-block:: python
 
@@ -26,9 +26,9 @@ Binary
         backing_type = "B"
         python_type = bytes
 
--------
-Boolean
--------
+---------
+ Boolean
+---------
 
 .. code-block:: python
 
@@ -36,9 +36,9 @@ Boolean
         backing_type = "BOOL"
         python_type = bool
 
-------
-Number
-------
+--------
+ Number
+--------
 
 .. code-block:: python
 
@@ -46,18 +46,18 @@ Number
         backing_type = "N"
         python_type = decimal.Decimal
 
--------
-Integer
--------
+---------
+ Integer
+---------
 
 .. code-block:: python
 
     class Integer(bloop.Float):
         python_type = int
 
-------
-String
-------
+--------
+ String
+--------
 
 .. code-block:: python
 
@@ -65,9 +65,9 @@ String
         backing_type = "S"
         python_type = str
 
-----
-UUID
-----
+------
+ UUID
+------
 
 .. code-block:: python
 
@@ -85,9 +85,9 @@ UUID
     >>> typedef.dynamo_dump(guid, context={})
     '9eca3291-f1d6-4f19-afe2-b3116b2c0a9f'
 
---------
-DateTime
---------
+----------
+ DateTime
+----------
 
 DateTime stores an :py:class:`arrow.arrow.Arrow` as an ISO8601 UTC String.
 
@@ -116,9 +116,9 @@ DateTime stores an :py:class:`arrow.arrow.Arrow` as an ISO8601 UTC String.
     >>> typedef.dynamo_dump(now, context={})
     '2016-08-09T06:03:22.948742+00:00'
 
-==================
-Sets and Documents
-==================
+====================
+ Sets and Documents
+====================
 
 Because ``{"S": "red"}`` could be loaded by any type backed by ``S``, there's no way to know which type to
 use.  Therefore, any types that can hold an arbitrary group of inner values must provide enough information to
@@ -141,9 +141,9 @@ DynamoDB's ``Map`` can have keys with different types per key, but must identify
         "rating": 0.7,
         "stock": 1e9}
 
----
-Set
----
+-----
+ Set
+-----
 
 .. code-block:: python
 
@@ -176,9 +176,9 @@ are fine:
     # Also valid
     Set(Hash)
 
-----
-List
-----
+------
+ List
+------
 
 Unlike Set, a List's inner type can be anything, including other Lists, Sets, and Maps.
 
@@ -202,9 +202,9 @@ Unlike Set, a List's inner type can be anything, including other Lists, Sets, an
     List(UUID)
     List(Set(DateTime))
 
----
-Map
----
+-----
+ Map
+-----
 
 This type requires you to specify the modeled keys in the Map, but values don't have to have the same type.
 
@@ -266,12 +266,12 @@ This type requires you to specify the modeled keys in the Map, but values don't 
     __ https://forums.aws.amazon.com/thread.jspa?threadID=162907
     __ https://forums.aws.amazon.com/message.jspa?messageID=576069#576069
 
-.. _custom-types:
 
+.. _user-types-custom:
 
-============
-Custom Types
-============
+==============
+ Custom Types
+==============
 
 Creating new types is straightforward.  Here's a type that stores an :class:`~PIL.Image.Image`
 as bytes:
@@ -316,9 +316,9 @@ Now the model doesn't need to know about the storage format:
     user.profile_gif.rotate(90)
     engine.save(user)
 
-----------------
-Missing and None
-----------------
+------------------
+ Missing and None
+------------------
 
 When there's no value for a :class:`~bloop.models.Column` that's being loaded, your type will need to handle None.
 For many types, None is the best sentinel to return for "this has no value" -- Most of the built-in types use None.
@@ -336,9 +336,9 @@ You should return None when dumping empty values like ``list()``, or DynamoDB wi
 something to an empty list or set.  By returning None, Bloop will know to put that column in
 the DELETE section of the UpdateItem.
 
--------------
-Example: Enum
--------------
+---------------
+ Example: Enum
+---------------
 
 This is a simple Type that stores an :py:class:`enum.Enum` by its string value.
 

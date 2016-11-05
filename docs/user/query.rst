@@ -1,3 +1,5 @@
+.. _user-query-scan:
+
 Query and Scan
 ^^^^^^^^^^^^^^
 

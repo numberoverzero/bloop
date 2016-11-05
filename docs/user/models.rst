@@ -160,7 +160,7 @@ is ``None``.  To enable a stream with both new and old images, use:
             "include": ["new", "old"]
         }
 
-See the :ref:`streams` section of the user guide to get started.  Streams are awesome.
+See the :ref:`user-streams` section of the user guide to get started.  Streams are awesome.
 
 ---------------------
  Model Introspection

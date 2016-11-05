@@ -1,4 +1,4 @@
-.. _streams:
+.. _user-streams:
 
 Streams
 ^^^^^^^

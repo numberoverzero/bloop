@@ -9,11 +9,9 @@ Conditions are used for:
 * To specify a Query's :ref:`key condition <user-query-key>`
 * To :ref:`filter results <user-query-filter>` from a Query or Scan
 
-.. _available-conditions:
-
-====================
-Available Conditions
-====================
+=====================
+ Built-In Conditions
+=====================
 
 There is no DynamoDB type that supports all of the conditions.  For example, ``contains`` does not work with
 a numeric type ``"N"`` such as Number or Integer.  DynamoDB's `ConditionExpression Reference`__ has the full
@@ -49,11 +47,9 @@ specification.
 
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html#ConditionExpressionReference
 
-.. _condition-paths:
-
-=====
-Paths
-=====
+================
+ Document Paths
+================
 
 You can construct conditions against individual elements of List and Map types with the usual indexing notation.
 
@@ -82,11 +78,11 @@ Here are some basic conditions using paths:
     Receipt.metrics["payment-duration"] > 30000
     Receipt.items[0]["name"].begins_with("deli:salami:")
 
-.. _atomic:
+.. _user-conditions-atomic:
 
-=================
-Atomic Conditions
-=================
+===================
+ Atomic Conditions
+===================
 
 When you specify ``atomic=True`` during :func:`Engine.save <bloop.engine.Engine.save>` or
 :func:`Engine.delete <bloop.engine.Engine.delete>`, Bloop will insert a pre-constructed
@@ -123,9 +119,9 @@ The following examples use this model:
         by_name = GlobalSecondaryIndex(
             projection=["size"], hash_key="name")
 
-----------
-New Object
-----------
+---------------------
+ Example: New Object
+---------------------
 
 This demonstrates :ref:`Rule 1 <atomic-rules>`.
 
@@ -149,9 +145,9 @@ The following atomic condition would be generated:
 
 In this case, atomic means "only save if this object didn't exist before".
 
----------------------
-Load a Partial Object
----------------------
+--------------------------------
+ Example: Load a Partial Object
+--------------------------------
 
 This demonstrates :ref:`Rule 2.1 <atomic-rules>`.
 
@@ -200,9 +196,9 @@ from DynamoDB -- **not** the values you just set.  The atomic condition is:
 
 If another call changed folder or name, or set a value for size or data, the atomic save will fail.
 
----------------
-Scan on a Table
----------------
+--------------------------
+ Example: Scan on a Table
+--------------------------
 
 This demonstrates :ref:`Rule 2.2 <atomic-rules>`.
 
@@ -241,9 +237,9 @@ There's no way to know if the previous value for eg. ``folder`` had a value, sin
 include that column when it performed the scan.  There's no save assumption for the state of that column in DynamoDB,
 so it's not part of the generated atomic condition.
 
----------------------
-Query on a Projection
----------------------
+--------------------------------
+ Example: Query on a Projection
+--------------------------------
 
 This demonstrates :ref:`Rule 2.1 <atomic-rules>`.
 
@@ -281,9 +277,9 @@ The atomic condition used for this object will be:
 If the value in DynamoDB has a value for ``size``, the operation will fail.  If the document's ``data`` column has
 changed since the query executed, this atomic condition won't care.
 
---------------
-Save then Save
---------------
+-------------------------
+ Example: Save then Save
+-------------------------
 
 This demonstrates :ref:`Rule 3 <atomic-rules>`.
 

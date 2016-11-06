@@ -110,8 +110,8 @@ a value or not).
 
 .. seealso::
 
-    Atomic conditions can be tricky, and there are subtle edge cases.  See the :ref:`Atomic Conditions <atomic>`
-    section of the User Guide for detailed examples of generated atomic conditions.
+    Atomic conditions can be tricky, and there are subtle edge cases.  See the :ref:`Atomic Conditions
+    <user-conditions-atomic>` section of the User Guide for detailed examples of generated atomic conditions.
 
 If you provide a ``condition`` and ``atomic`` is True, the atomic condition will be ANDed with the condition to
 form a single ConditionExpression.
@@ -434,3 +434,34 @@ And ``consistent`` to use strongly consistent reads:
 The same attributes in :ref:`user-query-state` can be accessed on the :class:`~bloop.search.ScanIterator`.
 
 See :ref:`user-query` for details on these parameters.
+
+========
+ Stream
+========
+
+.. note::
+
+    Before you can create a stream on a model, you need to enable it in the model's :ref:`Meta <user-model-meta>`.
+    For a detailed guide to using streams, head over to the :ref:`user-streams` section of the User Guide.
+
+To start from the beginning or end of the stream, use "trim_horizon" and "latest":
+
+.. code-block:: pycon
+
+    >>> stream = engine.stream(User, position="trim_horizon")
+    >>> stream = engine.stream(Account, "latest")
+
+Alternatively, you can use an existing stream token to reload its previous state:
+
+.. code-block:: pycon
+
+    >>> same_stream = engine.stream(
+    ...     Impression, previous_stream.token)
+
+Lastly, you can use an arrow datetime.  This is an **expensive call**, and walks the entire stream from the trim
+horizon until it finds the first record in each shard after the target datetime.
+
+.. code-block:: pycon
+
+    >>> yesterday = arrow.now().replace(hours=-12)
+    >>> stream = engine.stream(User, yesterday)

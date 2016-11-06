@@ -6,8 +6,8 @@ Conditions
 Conditions are used for:
 
 * Optimistic concurrency when :ref:`saving <user-engine-save>` or :ref:`deleting <user-engine-delete>` objects
-* To specify a Query's :ref:`key condition <query-key>`
-* To :ref:`filter results <query-filter>` from a Query or Scan
+* To specify a Query's :ref:`key condition <user-query-key>`
+* To :ref:`filter results <user-query-filter>` from a Query or Scan
 
 .. _available-conditions:
 

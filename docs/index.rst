@@ -84,7 +84,6 @@ Get started by :ref:`installing <user-install>` Bloop, or check out a :ref:`larg
     user/quickstart
     user/models
     user/engine
-    user/query
     user/streams
     user/types
     user/conditions

@@ -187,3 +187,250 @@ You can access :data:`MissingObjects.objects <bloop.exceptions.MissingObjects.ob
 to load.
 
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+
+.. _user-query:
+
+=======
+ Query
+=======
+
+This section defines a new model to demonstrate the various filtering and conditions available:
+
+.. code-block:: python
+
+    class Account(BaseModel):
+        name = Column(String, hash_key=True)
+        number = Column(Integer, range_key=True)
+        created_on = Column(DateTime)
+        balance = Column(Number)
+        level = Column(Integer)
+
+        by_level = GlobalSecondaryIndex(
+            projection="all", hash_key=level)
+
+        by_balance = LocalSecondaryIndex(
+            projection=["created_on"], range_key="balance")
+
+    engine = Engine()
+    engine.bind(Account)
+
+-------
+ First
+-------
+
+Often, you'll only need a single result from the query; with the correct sorting and indexes, the first result can
+be used to get a maximum or minimum.  Use :func:`first() <bloop.search.QueryIterator.first>` to get the first result,
+if it exists.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
+
+.. code-block:: pycon
+
+    >>> q = engine.query(Account,
+    ...     key=Account.name == "numberoverzero")
+    >>> q.first()
+    Account(name='numberoverzero', number=21623)
+
+-----
+ One
+-----
+
+Similar to :func:`~bloop.search.QueryIterator.first`, you can get the unique result of a query with
+:func:`one() <bloop.search.QueryIterator.one>`.  If there are no results, or more than one result, raises
+:exc:`~bloop.exceptions.ConstraintViolation`.
+
+.. code-block:: pycon
+
+    >>> q = engine.query(Account,
+    ...     key=Account.name == "numberoverzero")
+    >>> q.one()
+    Traceback (most recent call last):
+        ...
+    ConstraintViolation: Query found more than one result.
+
+.. _user-query-key:
+
+----------------
+ Key Conditions
+----------------
+
+Queries can be performed against a Model or an Index.  You must specify at least a hash key equality condition; a
+range key condition is optional.
+
+.. code-block:: pycon
+
+    >>> owned_by_stacy = Account.name == "Stacy"
+    >>> q = engine.query(Account, key=owned_by_stacy)
+    >>> for account in q:
+    ...     print(account)
+    ...
+
+Here, the query uses the Index's range_key to narrow the range of accounts to find:
+
+.. code-block:: pycon
+
+    >>> owned_by_stacy = Account.name == "Stacy"
+    >>> at_least_one_mil = Account.balance >= 1000000
+    >>> q = engine.query(Account.by_balance,
+    ...     key=owned_by_stacy & at_least_one_mil)
+    >>> for account in q:
+    ...     print(account.balance)
+
+.. note::
+
+    A query must always include an equality check ``==`` or ``is_`` against the model or index's hash key.
+    If you want to include a condition on the range key, it can be one of ``==, <, <=, >, >=, between, begins_with``.
+
+    See the `KeyConditionExpression`__ parameter of the Query operation in the Developer's Guide.
+
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-KeyConditionExpression
+
+.. _user-query-filter:
+
+-----------
+ Filtering
+-----------
+
+If you provide a ``filter`` condition, DynamoDB only returns items that match the filter.  Conditions can be on
+any column -- except the hash and range key being queried -- projected into the Index.  All non-key columns are
+available for queries against a model.  A filter condition can use any condition operations.
+Here is the same LSI query as above, but now excluding accounts created in the last 30 days:
+
+.. code-block:: pycon
+
+    >>> key_condition = owned_by_stacy & at_least_one_mil
+    >>> exclude_recent = Account.created_on < arrow.now().replace(days=-30)
+    >>> q = engine.query(Account.by_balance,
+    ...     key=key_condition,
+    ...     filter=exclude_recent)
+
+.. warning::
+
+    Trying to use a column that's not part of an Index's projection will raise
+    :exc:`~bloop.exceptions.InvalidFilterCondition`, since the value can't be loaded.  This does not apply to queries
+    against an LSI with ``strict=False``, which will consume additional reads to apply the filter.
+
+    .. code-block:: pycon
+
+        >>> q = engine.query(Account.by_balance,
+        ...     key=key_condition,
+        ...     filter=Account.level == 3)
+        Traceback (most recent call last):
+          ...
+        InvalidFilterCondition: <Column[Account.level]> is not available for the projection.
+
+-------------
+ Projections
+-------------
+
+By default, queries return all columns projected into the index or model.  You can use the ``projection`` parameter
+to control which columns are returned for each object.  This must be "all" to include everything in the index or
+model's projection, or a list of columns or column model names to include.  Use "count" to get the number of results
+that match the query.
+
+.. code-block:: pycon
+
+    >>> q = engine.query(Account,
+    ...     key=key_condition,
+    ...     projection=["email", "balance"])
+    >>> account = q.first()
+    >>> account.email
+    'user@domain.com'
+    >>> account.balance
+    Decimal('3400')
+    >>> account.level
+    Traceback (most recent call last):
+        ...
+    AttributeError: ...
+
+Because the projection did not include ``Account.level``, it was not loaded on the account object.
+
+-----------------------
+ Configuration Options
+-----------------------
+
+The remaining options are ``consistent``, ``forward``, and ``limit``.  When ``consistent`` is True,
+`strongly consistent reads`__ are used.  By default, consistent is False.
+
+Use ``forward`` to query ascending or descending.  By default ``forward`` is True, or ascending.
+
+The last option, ``limit``, is **not** the same as the `Query parameter Limit`__.  DynamoDB's limit is used to
+control consumed throughput per call, which is useful when performing parallel scans.  Instead, Bloop's ``limit``
+is the maximum number of items to yield.  Note that the Query may load more items from DynamoDB than it yields.  This
+means that there are still records in the :class:`~bloop.search.QueryIterator` buffer.  Note that the query iterator's
+:attr:`~bloop.search.QueryIterator.count` and :attr:`~bloop.search.QueryIterator.scanned` attributes reflect the
+number of items returned from DynamoDB, which may be greater than the limit.
+
+__ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+__ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
+
+.. _user-query-state:
+
+----------------
+ Iterator State
+----------------
+
+The :class:`~bloop.search.QueryIterator` exposes a number of properties to inspect its current progress:
+
+* ``count`` -- the number of items loaded from DynamoDB so far, including buffered items.
+* ``exhausted`` -- True if there are no more results
+* ``scanned`` -- the number of items DynamoDB evaluated, before applying any filter condition.
+
+To restart a query, use :func:`QueryIterator.reset() <bloop.search.QueryIterator.reset>`:
+
+.. code-block:: pycon
+
+    >>> query = engine.query(...)
+    >>> unique = query.one()
+    >>> query.exhausted
+    True
+    >>> query.reset()
+    >>> query.exhausted
+    False
+    >>> same = query.one()
+    >>> unique == same  # Assume we implemented __eq__
+    True
+
+======
+ Scan
+======
+
+Scan and :ref:`Query <user-query>` share a very similar interface.  Query, unlike Scan, does not have a key condition.
+Additionally, scans has no ``forward`` argument, and can't be performed in descending order.
+
+
+Using the same model from :ref:`user-query`, we can scan the model or an index:
+
+.. code-block:: pycon
+
+    >>> for account in engine.scan(Account):
+    ...     print(account.email)
+    ...
+    >>> for account in engine.scan(Account.by_email):
+    ...     print(account.email)
+
+And get the first, or unique result:
+
+.. code-block:: pycon
+
+    >>> some_account = engine.scan(Account).first()
+    >>> one_account = engine.scan(Account).one()
+    Traceback (most recent call last):
+        ...
+    ConstraintViolation: Scan found more than one result.
+
+Use ``filter`` and ``projection`` to exclude items and control which columns are included in results:
+
+.. code-block:: pycon
+
+    >>> scan = engine.scan(Account,
+    ...     filter=Account.email.contains("@"),
+    ...     projection=["level", "email"])
+
+And ``consistent`` to use strongly consistent reads:
+
+.. code-block:: pycon
+
+    >>> scan = engine.scan(Account.by_balance, consistent=True)
+
+The same attributes in :ref:`user-query-state` can be accessed on the :class:`~bloop.search.ScanIterator`.
+
+See :ref:`user-query` for details on these parameters.

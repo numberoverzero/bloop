@@ -111,7 +111,7 @@ class Shard:
             return False
 
     @property
-    def exhausted(self) -> bool:
+    def exhausted(self):
         """True if the shard is closed and there are no additional records to get."""
         return self.iterator_id is last_iterator
 
@@ -147,7 +147,7 @@ class Shard:
             yield shard
             shards.extend(shard.children)
 
-    def jump_to(self, *, iterator_type, sequence_number=None) -> None:
+    def jump_to(self, *, iterator_type, sequence_number=None):
         """Move to a new position in the shard using the standard parameters to GetShardIterator.
 
         :param str iterator_type: "trim_horizon", "at_sequence", "after_sequence", "latest"
@@ -194,7 +194,7 @@ class Shard:
         # Either exhausted the Shard or caught up to HEAD.
         return []
 
-    def load_children(self) -> None:
+    def load_children(self):
         """If the Shard doesn't have any children, tries to find some from DescribeStream.
 
         If the Shard is open this won't find any children, so an empty response doesn't

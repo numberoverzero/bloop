@@ -108,15 +108,11 @@ SearchModelIterator
 
     .. attribute:: exhausted
 
-        True if there are no more results or the limit has been reached.
+        True if there are no more results.
 
     .. function:: first()
 
         Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
-
-    .. attribute:: limit
-
-        The maximum number of items to return, or None.
 
     .. function:: one()
 

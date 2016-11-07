@@ -347,20 +347,11 @@ Because the projection did not include ``Account.level``, it was not loaded on t
  Configuration Options
 -----------------------
 
-The remaining options are ``consistent``, ``forward``, and ``limit``.  When ``consistent`` is True,
-`strongly consistent reads`__ are used.  By default, consistent is False.
-
-Use ``forward`` to query ascending or descending.  By default ``forward`` is True, or ascending.
-
-The last option, ``limit``, is **not** the same as the `Query parameter Limit`__.  DynamoDB's limit is used to
-control consumed throughput per call, which is useful when performing parallel scans.  Instead, Bloop's ``limit``
-is the maximum number of items to yield.  Note that the Query may load more items from DynamoDB than it yields.  This
-means that there are still records in the :class:`~bloop.search.QueryIterator` buffer.  Note that the query iterator's
-:attr:`~bloop.search.QueryIterator.count` and :attr:`~bloop.search.QueryIterator.scanned` attributes reflect the
-number of items returned from DynamoDB, which may be greater than the limit.
+The remaining options are ``consistent`` and ``forward``.  When ``consistent`` is True,
+`strongly consistent reads`__ are used.  By default, consistent is False.  Use ``forward`` to query ascending
+or descending.  By default ``forward`` is True, or ascending.
 
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
-__ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
 
 .. _user-query-state:
 
@@ -393,9 +384,8 @@ To restart a query, use :func:`QueryIterator.reset() <bloop.search.QueryIterator
  Scan
 ======
 
-Scan and :ref:`Query <user-query>` share a very similar interface.  Query, unlike Scan, does not have a key condition.
-Additionally, scans has no ``forward`` argument, and can't be performed in descending order.
-
+Scan and :ref:`Query <user-query>` share a very similar interface.  Unlike Query, Scan does not have a key condition
+and can't be performed in descending order.  Scans can be performed in parallel, however.
 
 Using the same model from :ref:`user-query`, we can scan the model or an index:
 
@@ -431,9 +421,33 @@ And ``consistent`` to use strongly consistent reads:
 
     >>> scan = engine.scan(Account.by_balance, consistent=True)
 
-The same attributes in :ref:`user-query-state` can be accessed on the :class:`~bloop.search.ScanIterator`.
+----------------
+ Parallel Scans
+----------------
 
-See :ref:`user-query` for details on these parameters.
+Scans can be performed `in parallel`__, using the ``parallel`` parameter.  To specify which segment you are
+constructing the scan for, pass a tuple of ``(Segment, TotalSegments)``:
+
+.. code-block:: pycon
+
+    >>> first_segment = engine.scan(Account, parallel=(0, 2))
+    >>> second_segment = engine.scan(Account, parallel=(1, 2))
+
+You can easily construct a parallel scan with ``s`` segments by calling engine.scan in a loop:
+
+.. code-block:: python
+
+    def parallelize(s, engine, *args, **kwargs):
+        for i in range(s):
+            kwargs["parallel"] = (i, s)
+            yield engine.scan(*args, **kargs)
+
+    workers = scan_workers(n=10)
+    scans = parallelize(10, engine, Account, filter=...)
+    for worker, scan in zip(threads, scans):
+        worker.process(scan)
+
+__ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#QueryAndScanParallelScan
 
 ========
  Stream

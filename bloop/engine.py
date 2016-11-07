@@ -207,8 +207,7 @@ class Engine:
                     not_loaded.update(index_set)
             raise MissingObjects("Failed to load some objects.", objects=not_loaded)
 
-    def query(self, model_or_index, key, filter=None, projection="all", limit=None,
-              consistent=False, forward=True):
+    def query(self, model_or_index, key, filter=None, projection="all", consistent=False, forward=True):
         """Create a reusable :class:`~bloop.search.QueryIterator`.
 
         :param model_or_index: A model or index to query.  For example, ``User`` or ``User.by_email``.
@@ -219,15 +218,12 @@ class Engine:
         :param projection:
             "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.  When projection is
             "count", you must advance the iterator to retrieve the count.
-        :param int limit: Maximum number of items to return.
-            This is not DynamoDB's `Limit`__ parameter.  Default is None (unlimited).
         :param bool consistent: Use `strongly consistent reads`__ if True.  Default is False.
         :param bool forward:  Query in ascending or descending order.  Default is True (ascending).
 
         :return: A reusable query iterator with helper methods.
         :rtype: :class:`~bloop.search.QueryIterator`
 
-        __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
         __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
         """
         if isinstance(model_or_index, Index):
@@ -236,8 +232,8 @@ class Engine:
             model, index = model_or_index, None
         validate_not_abstract(model)
         q = Search(
-            mode="query", engine=self, model=model, index=index, key=key,
-            filter=filter, projection=projection, limit=limit, consistent=consistent, forward=forward)
+            mode="query", engine=self, model=model, index=index, key=key, filter=filter,
+            projection=projection, consistent=consistent, forward=forward)
         return iter(q.prepare())
 
     def save(self, *objs, condition=None, atomic=False):
@@ -258,22 +254,22 @@ class Engine:
             })
             object_saved.send(self, engine=self, obj=obj)
 
-    def scan(self, model_or_index, filter=None, projection="all", limit=None, consistent=False):
+    def scan(self, model_or_index, filter=None, projection="all", consistent=False, parallel=None):
         """Create a reusable :class:`~bloop.search.ScanIterator`.
 
         :param model_or_index: A model or index to scan.  For example, ``User`` or ``User.by_email``.
         :param filter: Filter condition.  Only matching objects will be included in the results.
         :param projection:
             "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.  When projection is
-            "count", you must advance the iterator to retrieve the count.
-        :param int limit: Maximum number of items to return.
-            This is not DynamoDB's `Limit`__ parameter.  Default is None (unlimited).
+            "count", you must exhaust the iterator to retrieve the count.
         :param bool consistent: Use `strongly consistent reads`__ if True.  Default is False.
+        :param tuple parallel: Perform a `parallel scan`__.  A tuple of (Segment, TotalSegments)
+            for this portion the scan. Default is None.
         :return: A reusable scan iterator with helper methods.
         :rtype: :class:`~bloop.search.ScanIterator`
 
-        __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Scan.html#DDB-Scan-request-Limit
         __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#QueryAndScanParallelScan
         """
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
@@ -281,8 +277,8 @@ class Engine:
             model, index = model_or_index, None
         validate_not_abstract(model)
         s = Search(
-            mode="scan", engine=self, model=model, index=index,
-            filter=filter, projection=projection, limit=limit, consistent=consistent)
+            mode="scan", engine=self, model=model, index=index, filter=filter,
+            projection=projection, consistent=consistent, parallel=parallel)
         return iter(s.prepare())
 
     def stream(self, model, position):

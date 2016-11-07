@@ -156,8 +156,7 @@ def test_load_equivalent_objects(engine, session):
 
 
 def test_load_shared_table(engine, session):
-    """
-    Two different models backed by the same table try to load the same hash key.
+    """Two different models backed by the same table try to load the same hash key.
     They share the column "shared" but load the content differently
     """
     class FirstModel(BaseModel):
@@ -209,8 +208,7 @@ def test_load_shared_table(engine, session):
 
 
 def test_load_missing_attrs(engine, session):
-    """
-    When an instance of a Model is loaded into, existing attributes should be
+    """When an instance of a Model is loaded into, existing attributes should be
     overwritten with new values, or if there is no new value, should be deleted
     """
     obj = User(id="user_id", age=4, name="user")
@@ -378,8 +376,7 @@ def test_save_atomic_condition(engine, session):
 
 
 def test_save_condition_key_only(engine, session):
-    """
-    Even when the diff is empty, an UpdateItem should be issued
+    """Even when the diff is empty, an UpdateItem should be issued
     (in case this is really a create - the item doesn't exist yet)
     """
     user = User(id="user_id")
@@ -474,10 +471,7 @@ def test_delete_atomic_new(engine, session):
 
 
 def test_delete_new(engine, session):
-    """
-    When an object is first created, a non-atomic delete shouldn't expect
-    anything.
-    """
+    """When an object is first created, a non-atomic delete shouldn't expect anything."""
     user = User(id="user_id")
     expected = {
         "TableName": "User",
@@ -507,8 +501,12 @@ def test_delete_atomic_condition(engine, session):
 
 
 def test_query(engine):
-    """ Engine.query supports model and index-based queries """
-    index_query = engine.query(User.by_email, key=User.by_email.hash_key == "placeholder")
+    """Engine.query supports model and index-based queries"""
+    index_query = engine.query(
+        User.by_email,
+        key=User.by_email.hash_key == "placeholder",
+        forward=False
+    )
     assert index_query.model is User
     assert index_query.index is User.by_email
 
@@ -518,8 +516,8 @@ def test_query(engine):
 
 
 def test_scan(engine):
-    """ Engine.scan supports model and index-based queries """
-    index_scan = engine.scan(User.by_email)
+    """Engine.scan supports model and index-based queries"""
+    index_scan = engine.scan(User.by_email, parallel=(1, 5))
     assert index_scan.model is User
     assert index_scan.index is User.by_email
 

@@ -203,9 +203,9 @@ Here's the User model we just defined:
      <Column[User.version=range]>,
      <Column[User.email]>}
 
------------------------------------
- Developing Against Generic Models
------------------------------------
+----------------------
+ Using Generic Models
+----------------------
 
 A common pattern involves saving an item only if it doesn't exist.  Instead of creating a specific
 condition for every model, we can use ``keys`` to make a function for any model:

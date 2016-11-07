@@ -440,10 +440,10 @@ class BaseCondition:
             return other
         # (a & b) & (c & d) -> (a & b & c & d)
         elif self.operation == other.operation == "and":
-            return AndCondition(*self.values, *other.values)
+            return AndCondition(*(self.values + other.values))
         # (a & b) & (c > 2) -> (a & b & (c > 2))
         elif self.operation == "and":
-            return AndCondition(*self.values, other)
+            return AndCondition(*(self.values + [other]))
         # (a > 2) & (b & c) -> ((a > 2) & b & c)
         elif other.operation == "and":
             return AndCondition(self, *other.values)
@@ -484,10 +484,10 @@ class BaseCondition:
             return other
         # (a | b) | (c | d) -> (a | b | c | d)
         elif self.operation == other.operation == "or":
-            return OrCondition(*self.values, *other.values)
+            return OrCondition(*(self.values + other.values))
         # (a | b) | (c > 2) -> (a | b | (c > 2))
         elif self.operation == "or":
-            return OrCondition(*self.values, other)
+            return OrCondition(*(self.values + [other]))
         # (a > 2) | (b | c) -> ((a > 2) | b | c)
         elif other.operation == "or":
             return OrCondition(self, *other.values)

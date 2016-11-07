@@ -172,18 +172,18 @@ class Search:
     :param filter: Filter condition.  Only matching objects will be included in the results.
     :param projection: "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.
         When projection is "count", you must advance the iterator to retrieve the count.
-    :param int limit: Maximum number of items to return.
-        This is not DynamoDB's `Limit`__ parameter.  Default is None (unlimited).
     :param bool consistent: Use `strongly consistent reads`__ if True.  Not applicable to GSIs.  Default is False.
     :param bool forward: *(Query only)* Use ascending or descending order.  Default is True (ascending).
+    :param tuple parallel: *(Scan only)* A tuple of (Segment, TotalSegments) for this portion of a `parallel scan`__.
+            Default is None.
 
-    __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_Query.html#DDB-Query-request-Limit
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#QueryAndScanParallelScan
     """
 
     def __init__(
             self, mode=None, engine=None, model=None, index=None, key=None, filter=None,
-            projection=None, limit=None, consistent=False, forward=True):
+            projection=None, consistent=False, forward=True, parallel=None):
         self.mode = mode
         self.engine = engine
         self.model = model
@@ -191,9 +191,9 @@ class Search:
         self.key = key
         self.filter = filter
         self.projection = projection
-        self.limit = limit
         self.consistent = consistent
         self.forward = forward
+        self.parallel = parallel
 
     def __repr__(self):
         return search_repr(self.__class__, self.model, self.index)
@@ -209,9 +209,9 @@ class Search:
             key=self.key,
             filter=self.filter,
             projection=self.projection,
-            limit=self.limit,
             consistent=self.consistent,
-            forward=self.forward
+            forward=self.forward,
+            parallel=self.parallel
         )
         return p
 
@@ -238,14 +238,14 @@ class PreparedSearch:
 
         self.filter = None
 
-        self.limit = None
         self.forward = None
+        self.parallel = None
 
         self._request = None
 
     def prepare(
             self, engine=None, mode=None, model=None, index=None, key=None,
-            filter=None, projection=None, limit=None, consistent=None, forward=None):
+            filter=None, projection=None, consistent=None, forward=None, parallel=None):
         """Validates the search parameters and builds the base request dict for each Query/Scan call."""
 
         self.prepare_iterator_cls(engine, mode)
@@ -253,7 +253,7 @@ class PreparedSearch:
         self.prepare_key(key)
         self.prepare_projection(projection)
         self.prepare_filter(filter)
-        self.prepare_constraints(limit, forward)
+        self.prepare_constraints(forward, parallel)
 
         self.prepare_request()
 
@@ -295,16 +295,19 @@ class PreparedSearch:
         available_columns = (self.index or self.model.Meta).projection["available"]
         validate_filter_condition(self.filter, available_columns, column_blacklist)
 
-    def prepare_constraints(self, limit, forward):
-        self.limit = limit
+    def prepare_constraints(self, forward, parallel):
         self.forward = forward
+        self.parallel = parallel
 
     def prepare_request(self):
         request = self._request = {}
         request["TableName"] = self.model.Meta.table_name
         request["ConsistentRead"] = self.consistent
 
-        if self.mode != "scan":
+        if self.mode == "scan":
+            if self.parallel:
+                request["Segments"], request["TotalSegments"] = self.parallel
+        else:
             request["ScanIndexForward"] = self.forward
 
         if self.index:
@@ -320,8 +323,7 @@ class PreparedSearch:
             request["Select"] = "SPECIFIC_ATTRIBUTES"
             projected = self._projected_columns
 
-        request.update(render(
-            self.engine, filter=self.filter, projection=projected, key=self.key))
+        request.update(render(self.engine, filter=self.filter, projection=projected, key=self.key))
 
     def __repr__(self):
         return search_repr(self.__class__, self.model, self.index)
@@ -331,7 +333,6 @@ class PreparedSearch:
             engine=self.engine,
             model=self.model,
             index=self.index,
-            limit=self.limit,
             request=self._request,
             projected=self._projected_columns
         )
@@ -343,18 +344,14 @@ class SearchIterator:
     :param session: :class:`~bloop.session.SessionWrapper` to make Query, Scan calls.
     :param model: :class:`~bloop.models.BaseModel` for repr only.
     :param index: :class:`~bloop.models.Index` to search, or None.
-    :param int limit: Maximum number of items to return.  Default is None (unlimited).
     :param dict request: The base request dict for each search.
     :param set projected: Set of :class:`~bloop.models.Column` that should be included in each result.
     """
     mode = "<mode-placeholder>"
 
-    def __init__(self, *, session, model, index, limit, request, projected):
+    def __init__(self, *, session, model, index, request, projected):
         self.session = session
         self.request = request
-
-        self.limit = limit
-        """The maximum number of items to return, or None."""
 
         self.model = model
         self.index = index
@@ -368,7 +365,6 @@ class SearchIterator:
         self.scanned = 0
         """Number of items that DynamoDB evaluated, before any filter was applied."""
 
-        self.yielded = 0
         self._exhausted = False
 
     def first(self):
@@ -401,15 +397,12 @@ class SearchIterator:
         self.buffer.clear()
         self.count = 0
         self.scanned = 0
-        self.yielded = 0
         self._exhausted = False
 
     @property
     def exhausted(self):
-        """True if there are no more results or the limit has been reached."""
-        reached_limit = self.limit and self.yielded >= self.limit
-        exhausted_buffer = self._exhausted and len(self.buffer) == 0
-        return reached_limit or exhausted_buffer
+        """True if there are no more results."""
+        return self._exhausted and len(self.buffer) == 0
 
     def __repr__(self):
         return search_repr(self.__class__, self.model, self.index)
@@ -418,9 +411,6 @@ class SearchIterator:
         return self
 
     def __next__(self):
-        if self.limit and self.yielded >= self.limit:
-            raise StopIteration
-
         while (not self._exhausted) and len(self.buffer) == 0:
             response = self.session.search_items(self.mode, self.request)
             continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
@@ -433,7 +423,6 @@ class SearchIterator:
             self.buffer.extend(response["Items"])
 
         if self.buffer:
-            self.yielded += 1
             return self.buffer.popleft()
 
         # Buffer must be empty (if _buffer)
@@ -447,17 +436,17 @@ class SearchModelIterator(SearchIterator):
     :param engine: :class:`~bloop.engine.Engine` to unpack models with.
     :param model: :class:`~bloop.models.BaseModel` being searched.
     :param index: :class:`~bloop.models.Index` to search, or None.
-    :param int limit: Maximum number of items to return.  Default is None (unlimited).
     :param dict request: The base request dict for each search call.
     :param set projected: Set of :class:`~bloop.models.Column` that should be included in each result.
     """
-    def __init__(self, *, engine, model, index, limit, request, projected):
+    def __init__(self, *, engine, model, index, request, projected):
         self.engine = engine
 
         self.model = model
 
-        super().__init__(session=engine.session, model=model, index=index,
-                         limit=limit, request=request, projected=projected)
+        super().__init__(
+            session=engine.session, model=model, index=index,
+            request=request, projected=projected)
 
     def __next__(self):
         attrs = super().__next__()
@@ -478,7 +467,6 @@ class ScanIterator(SearchModelIterator):
     :param engine: :class:`~bloop.engine.Engine` to unpack models with.
     :param model: :class:`~bloop.models.BaseModel` being scanned.
     :param index: :class:`~bloop.models.Index` to scan, or None.
-    :param int limit: Maximum number of items to return.  Default is None (unlimited).
     :param dict request: The base request dict for each Scan call.
     :param set projected: Set of :class:`~bloop.models.Column` that should be included in each result.
     """
@@ -493,7 +481,6 @@ class QueryIterator(SearchModelIterator):
     :param engine: :class:`~bloop.engine.Engine` to unpack models with.
     :param model: :class:`~bloop.models.BaseModel` being queried.
     :param index: :class:`~bloop.models.Index` to query, or None.
-    :param int limit: Maximum number of items to return.  Default is None (unlimited).
     :param dict request: The base request dict for each Query call.
     :param set projected: Set of :class:`~bloop.models.Column` that should be included in each result.
     """

@@ -14,7 +14,7 @@
     :target: https://github.com/numberoverzero/bloop/blob/master/LICENSE
 
 
-Bloop is an object mapper for DynamoDB and DynamoDBStreams. *(py35 or newer)*
+Bloop is an object mapper for DynamoDB and DynamoDBStreams. py35+
 
 ::
 
@@ -90,22 +90,29 @@ Let's find them in the stream:
     >>> stream = engine.stream(Account, "trim_horizon")
     >>> next(stream)
     {'key': None,
-     'meta': {'created_at': <Arrow [2016-10-29T19:19:00-07:00]>,
+     'meta': {'created_at': <Arrow [...]>,
       'event': {'id': 'cbb9a9b45eb0a98889b7da85913a5c65',
        'type': 'insert',
        'version': '1.1'},
       'sequence_number': '100000000000588052489'},
-     'new': Account(email='help@domain.com', id=UUID('d30e343f-f067-4fe5-bc5e-0b00cdeaf2ba'), name='this-is-fine.jpg'),
+     'new': Account(
+                email='help@domain.com',
+                id=UUID('d30e343f-...-0b00cdeaf2ba'),
+                name='this-is-fine.jpg'),
      'old': None}
     >>> next(stream)
     {'key': None,
-     'meta': {'created_at': <Arrow [2016-10-29T19:19:00-07:00]>,
+     'meta': {'created_at': <Arrow [...]>,
       'event': {'id': 'cbdfac5671ea38b99017c4b43a8808ce',
        'type': 'insert',
        'version': '1.1'},
       'sequence_number': '200000000000588052506'},
-     'new': Account(email='admin@domain.com', id=UUID('08da44ac-5ff6-4f70-8a3f-b75cadb4dd79'), name='Admin McAdminFace'),
+     'new': Account(
+                email='admin@domain.com',
+                id=UUID('08da44ac-...-b75cadb4dd79'),
+                name='Admin McAdminFace'),
      'old': None}
+    >>> next(stream)
     >>> next(stream)
     >>>
 

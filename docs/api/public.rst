@@ -201,6 +201,8 @@ LocalSecondaryIndex
 
         Provisioned write units for the index.  LSIs share the table's provisioned throughput.
 
+.. _public-types:
+
 =====
 Types
 =====
@@ -277,6 +279,8 @@ String
 
     .. attribute:: python_type
         :annotation: = str
+
+.. _api-public-number:
 
 ------
 Number

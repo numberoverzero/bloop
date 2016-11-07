@@ -7,221 +7,228 @@ Types are used when defining :ref:`Columns <user-models-columns>` and are respon
 local values and their DynamoDB representations.  For example, :class:`~bloop.types.DateTime` maps between
 ``arrow.now()`` and ``"2016-08-09T01:16:25.322849+00:00"``.
 
-With just two methods, you can :ref:`create new types <user-types-custom>` that automatically integrate
-with all of Bloop's features.
+DynamoDB is split into scalar types ("S", "N", "B", "BOOL") and vector types ("SS", "NS", "BS", "L", "M").
+Bloop provides corresponding types, as well as a handful of useful derived types, such as DateTime and UUID.
+
+For the full list of built-in types, see :ref:`the Public API Reference <public-types>`.
+
+===============
+ Backing Types
+===============
+
+In bloop, each Type must have a :attr:`~bloop.types.Type.backing_type` that is one of the DynamoDB types (except NULL).
+The valid DynamoDB types are:
+
+.. hlist::
+    :columns: 3
+
+    * ``"S"`` -- string
+    * ``"N"`` -- number
+    * ``"B"`` -- binary
+    * ``"SS"`` -- string set
+    * ``"NS"`` -- number set
+    * ``"BS"`` -- binary set
+    * ``"M"`` -- map
+    * ``"L"`` -- list
+    * ``"BOOL"`` -- boolean
+
+Most types have a fixed backing_type, such as :class:`~bloop.types.String` and :class:`~bloop.types.Map`.
+Others like :class:`~bloop.types.Set` construct the backing_type when a new instance is created, based on the inner
+typedef.
+
+
+===============
+ Instantiation
+===============
+
+In many cases, a :class:`~bloop.models.Column` will use a Type class.  For example, this and similar constructs
+have been used throughout the User Guide:
+
+.. code-block:: pycon
+
+    >>> from bloop import Column, Number
+    >>> balance = Column(Number)
+
+This is syntactic sugar for a common pattern, and the column is actually creating an instance of the ``Number`` type:
+
+.. code-block:: pycon
+
+    >>> balance = Column(Number())
+
+Most types are simply a binding between a local python format and DynamoDB's wire format, and won't have any
+parameters.  Some types have optional parameters that configure their behavior, such as :class:`~bloop.types.DateTime`:
+
+.. code-block:: pycon
+
+    >>> from bloop import DateTime
+    >>> created_at = Column(DateTime(timezone="Europe/Paris"))
+
+Finally, some types have required parameters and can't be instantiated by the Column directly:
+
+.. code-block:: pycon
+
+    >>> from bloop import Set
+    >>> Column(Set)
+    Traceback (most recent call last):
+      ...
+    TypeError: __init__() missing 1 required positional argument: 'typedef'
+
+These types must be instantiated when defining a column:
+
+    >>> from bloop import Integer
+    >>> Column(Set(Integer))
+
+Note that :class:`~bloop.types.Set` is providing the same sugar, and actually creates an instance of its inner type:
+
+.. code-block:: pycon
+
+    >>> Column(Set(Integer()))
+
 
 ==============
  Scalar Types
 ==============
 
-Bloop supports all scalar types except NULL.
+Bloop provides the following 4 primitive scalar types:
 
---------
- Binary
---------
+* "S" -- :class:`~bloop.types.String`
+* "N" -- :class:`~bloop.types.Number`
+* "B" -- :class:`~bloop.types.Binary`
+* "BOOL" -- :class:`~bloop.types.Boolean`
 
-.. code-block:: python
-
-    class Binary(bloop.Type):
-        backing_type = "B"
-        python_type = bytes
-
----------
- Boolean
----------
+These can be instantiated without a constructor, and map to the expected python types:
 
 .. code-block:: python
 
-    class Boolean(bloop.Type):
-        backing_type = "BOOL"
-        python_type = bool
+    from bloop import BaseModel, Column, String, Number, Binary, Boolean
 
---------
- Number
---------
+    class Account(BaseModel):
+        email = Column(String, hash_key=True)
+        balance = Column(Number)
+        public_key = Column(Binary)
+        verified = Column(Boolean)
 
-.. code-block:: python
+    account = Account(
+        email="user@domain.com",
+        balance=4100,
+        public_key=public_bytes(some_key),
+        verified=False
+    )
 
-    class Number(bloop.Type):
-        backing_type = "N"
-        python_type = decimal.Decimal
-
----------
- Integer
----------
-
-.. code-block:: python
-
-    class Integer(bloop.Float):
-        python_type = int
-
---------
- String
---------
+Bloop also includes a handful of common scalar types that are built on top of the primitive types.  The
+following demonstrates that hash and range key columns can be any Type that is backed by "S", "N", or "B"
+and not just the primitive types above.
 
 .. code-block:: python
 
-    class String(bloop.Type):
-        backing_type = "S"
-        python_type = str
+    import arrow, uuid
+    from bloop import DateTime, UUID, Integer
 
-------
- UUID
-------
 
-.. code-block:: python
+    class Tweet(BaseModel):
+        account_id = Column(Integer, hash_key=True)
+        tweet_id = Column(UUID, range_key=True)
+        created_at = Column(DateTime)
 
-    class UUID(bloop.String):
-        python_type = uuid.UUID
+    tweet = Tweet(
+        account_id=3,
+        tweet_id=uuid.uuid4(),
+        created_at=arrow.now()
+    )
+
+.. note::
+
+    Bloop's :class:`~bloop.types.Number` type uses a :class:`decimal.Context` to control rounding and exactness.
+    When exactness is not required, many people find the default context too conservative for practical use.
+    For example, the default context can't save ``float('3.14')`` due to inexactness.
+
+    As noted in the :ref:`Public API Reference <api-public-number>`, you can provide your own context or use an
+    :ref:`existing pattern <patterns-float>`.  Keep in mind that the convenience comes at the expense of exactness.
+
+======
+ Sets
+======
+
+Bloop exposes a single :class:`~bloop.types.Set` for all three sets.  The particular set type is determined by the
+Set's inner type.  For example, ``Set(Integer)`` has backing_type "NS" and ``Set(DateTime)`` has backing_type "SS".
+
+The inner type must have a backing type of "S", "N", or "B".  When Bloop loads or dumps a set, it defers to the
+inner type for each value in the set.  Using the :ref:`enum example <user-types-enum-str>` below, a set of enums
+can be stored as follows:
 
 .. code-block:: pycon
 
-    >>> import bloop
-    >>> import uuid
-    >>> guid = uuid.uuid4()
-    >>> typedef = bloop.UUID()
-    >>> guid
-    UUID('9eca3291-f1d6-4f19-afe2-b3116b2c0a9f')
-    >>> typedef.dynamo_dump(guid, context={})
-    '9eca3291-f1d6-4f19-afe2-b3116b2c0a9f'
+    >>> from bloop import BaseModel, Column, Set, Integer
+    >>> from my_types import StringEnum
+    >>> import enum
+    >>> class Colors(enum.Enum):
+    ...     red = 1
+    ...     green = 2
+    ...     blue = 3
+    ...
+    >>> class Palette(BaseModel):
+    ...     id = Column(Integer, hash_key=True)
+    ...     colors = Column(Set(StringEnum(Colors)))
+    ...
+    >>> palette = Palette(id=0, colors={Colors.red, Colors.green})
 
-----------
- DateTime
-----------
+The ``pallete.colors`` value would be persisted in DynamoDB as::
 
-DateTime stores an :py:class:`arrow.arrow.Arrow` as an ISO8601 UTC String.
+    {"SS": ["red", "green"]}
 
-.. code-block:: python
 
-    class DateTime(bloop.String):
-        python_type = arrow.Arrow
+===========
+ Documents
+===========
 
-        def __init__(self, timezone="utc"):
-            ...
+DynamoDB's Map and List types can store arbitrarily-types values.  For example, a single attribute can hold a string,
+number, and a nested List::
 
-.. attribute:: timezone
+    {"L": [{"S": {"foo"}}, {"N": {"3.4"}}, {"L": []}]}
 
-    Used for any values loaded from DynamoDB.  Defaults to "utc".
+Unfortunately, Bloop's built-in :class:`~bloop.types.Map` and :class:`~bloop.types.List` types can't provide the same
+generality.  List and Map must explicitly declare the Type to use when loading and dumping values.  Otherwise, Bloop
+can't know if the following should be loaded as a String or DateTime::
 
-    Note that values in DynamoDB are **always** stored in UTC.
+    {"S": "2016-08-09T01:16:25.322849+00:00"}
 
-.. code-block:: pycon
-
-    >>> import arrow
-    >>> import bloop
-    >>> now = arrow.now()
-    >>> typedef = bloop.DateTime()
-    >>> now
-    <Arrow [2016-08-08T23:03:22.948742-07:00]>
-    >>> typedef.dynamo_dump(now, context={})
-    '2016-08-09T06:03:22.948742+00:00'
-
-====================
- Sets and Documents
-====================
-
-Because ``{"S": "red"}`` could be loaded by any type backed by ``S``, there's no way to know which type to
-use.  Therefore, any types that can hold an arbitrary group of inner values must provide enough information to
-unambiguously load all inner values.  Set and List only support a single type, so they can be specified with eg.
-``Set(DateTime)``.
-
-DynamoDB's ``Map`` can have keys with different types per key, but must identify all of the keys it will use:
-
-.. code-block:: python
-
-    class Model:
-        item = Column(Map(**{
-            "name": String,
-            "rating": Float,
-            "stock": Integer}))
-
-    obj = Model()
-    obj.item = {
-        "name": "Pogs",
-        "rating": 0.7,
-        "stock": 1e9}
-
------
- Set
------
-
-.. code-block:: python
-
-    class Set(bloop.Type):
-        python_type = set
-
-        def __init__(self, typedef):
-            ...
-
-.. attribute:: typedef
-    :noindex:
-
-    The type for values in this Set.  Must be backed by one of ``S, N, B``.
-
-When a Set is created, its :data:`~bloop.types.Set.backing_type` is based on the inner type and will be one of
-``SS, NS, BS``.  This does not mean that the inner type must subclass :class:`~bloop.types.String`,
-:class:`~bloop.types.Float`, or :class:`~bloop.types.Binary`.  As long as the backing type is valid, custom types
-are fine:
-
-.. code-block:: python
-
-    # Both valid
-    Set(UUID)
-    Set(DateTime)
-
-    class Hash(bloop.Type):
-        backing_type = "N"
-        python_type = int
-
-    # Also valid
-    Set(Hash)
 
 ------
  List
 ------
 
-Unlike Set, a List's inner type can be anything, including other Lists, Sets, and Maps.
+Unlike Set, a List's inner type can be anything, including other Lists, Sets, and Maps.  Due to the lack of type
+information when loading values, Bloop's built-in :class:`~bloop.types.List` can only hold one type of value:
 
-.. code-block:: python
+.. code-block:: pycon
 
-    class List(bloop.Type):
-        backing_type = "L"
-        python_type = list
+    >>> from bloop import List, Set, Integer
+    >>> exams = Set(Integer)  # Unique scores for one student
+    >>> from bloop import BaseModel, Column
+    >>> class Semester(BaseModel):
+    ...     id = Column(Integer, hash_key=True)
+    ...     scores = List(exam_scores)  # All student scores
+    ...
+    >>> semester = Semester(id=0, scores=[
+    ...     {95, 98, 64, 32},
+    ...     {0},
+    ...     {64, 73, 75, 50, 52}
+    ... ])
 
-        def __init__(self, typedef):
-            ...
+The semester's scores would be saved as (formatted for readability)::
 
-.. attribute:: typedef
-    :noindex:
-
-    The type for values in this List.
-
-.. code-block:: python
-
-    # Both valid
-    List(UUID)
-    List(Set(DateTime))
+    {"L": [
+        {"NS": ['95', '98', '64', '32']},
+        {"NS": ['0']},
+        {"NS": ['64', '73', '75', '50', '52']},
+    ]}
 
 -----
  Map
 -----
 
-This type requires you to specify the modeled keys in the Map, but values don't have to have the same type.
-
-.. code-block:: python
-
-    class Map(bloop.Type):
-        backing_type = "M"
-        python_type = collections.abc.Mapping
-
-        def __init__(self, **types):
-            ...
-
-.. attribute:: types
-    :noindex:
-
-    The type for each key in the Map's structure.  Any keys that aren't included in ``types``
-    will be ignored.
+As stated, :class:`~bloop.types.Map` doesn't support arbitrary types out of the box.  Instead, you must provide
+the type to use for each key in the Map:
 
 .. code-block:: python
 
@@ -235,18 +242,25 @@ This type requires you to specify the modeled keys in the Map, but values don't 
         "cache": String
     })
 
-    class Pin(...):
+Only defined keys will be loaded or saved.  In the following, the impression's "version" metadata will not be saved:
+
+.. code-block:: python
+
+    class Impression(BaseModel):
+        id = Column(UUID, hash_key=True)
         metadata = Column(Metadata)
 
-    pin.metadata = {
+    impression = Impression(id=uuid.uuid4())
+    impression.metadata = {
         "created": arrow.now(),
         "referrer": referrer.id,
-        "cache": "https://img-cache.s3.amazonaws.com/" + img.filename
+        "cache": "https://img-cache.s3.amazonaws.com/" + img.filename,
+        "version": 1.1  # NOT SAVED
     }
 
 .. warning::
 
-    Saving a DynamoDB Map ``"M"`` fully replaces the existing value.
+    Saving a Map ``M`` in DynamoDB fully replaces the existing value.
 
     Despite my desire to `support partial updates`__, DynamoDB does not expose a way to reliably
     update a path within a Map.  `There is no way to upsert along a path`__:
@@ -266,29 +280,33 @@ This type requires you to specify the modeled keys in the Map, but values don't 
     __ https://forums.aws.amazon.com/thread.jspa?threadID=162907
     __ https://forums.aws.amazon.com/message.jspa?messageID=576069#576069
 
-
 .. _user-types-custom:
 
 ==============
  Custom Types
 ==============
 
-Creating new types is straightforward.  Here's a type that stores an :class:`~PIL.Image.Image`
-as bytes:
+Creating new types is straightforward.  Most of the time, you'll only need to implement
+:func:`~bloop.types.Type.dynamo_dump` and :func:`~bloop.types.Type.dynamo_load`.
+Here's a type that stores an :class:`PIL.Image.Image` as bytes:
 
 .. code-block:: python
 
     import io
     from PIL import Image
 
-    class GIF(bloop.Binary):
+    class ImageType(bloop.Binary):
         python_type = Image.Image
+
+        def __init__(self, fmt="JPEG"):
+            self.fmt = fmt
+            super().__init__()
 
         def dynamo_dump(self, image, *, context, **kwargs):
             if image is None:
                 return None
             buffer = io.BytesIO()
-            image.save(buffer, format="GIF")
+            image.save(buffer, format=self.fmt)
             return super().dynamo_dump(
                 buffer.getvalue(), context=context, **kwargs)
 
@@ -301,19 +319,20 @@ as bytes:
             image = Image.open(buffer)
             return image
 
-Now the model doesn't need to know about the storage format:
+Now the model doesn't need to know how to load or save the image bytes, and just interacts with
+instances of :class:`~PIL.Image.Image`:
 
 .. code-block:: python
 
     class User(BaseModel):
         name = Column(String, hash_key=True)
-        profile_gif = Column(GIF)
+        profile_image = Column(ImageType("PNG"))
     engine.bind(User)
 
     user = User(name="numberoverzero")
     engine.load(user)
 
-    user.profile_gif.rotate(90)
+    user.profile_image.rotate(90)
     engine.save(user)
 
 ------------------
@@ -327,7 +346,6 @@ For many types, None is the best sentinel to return for "this has no value" -- M
 removing elements. :class:`~bloop.types.Map` will load None for the type associated with each of its keys,
 and insert those in the dict.
 
-
 You will also need to handle ``None`` when dumping values to DynamoDB.  This can happen when a value is deleted
 from a Model instance, or it's explicitly set to None.  In almost all cases, your ``dynamo_dump`` function should
 simply return None to signal omission (or deletion, depending on the context).
@@ -336,29 +354,31 @@ You should return None when dumping empty values like ``list()``, or DynamoDB wi
 something to an empty list or set.  By returning None, Bloop will know to put that column in
 the DELETE section of the UpdateItem.
 
----------------
- Example: Enum
----------------
+.. _user-types-enum-str:
+
+----------------------
+ Example: String Enum
+----------------------
 
 This is a simple Type that stores an :py:class:`enum.Enum` by its string value.
 
 .. code-block:: python
 
-    class Enum(bloop.String):
-        def __init__(self, enum_cls=None):
-            if enum_cls is None:
-                raise TypeError("Must provide an enum class")
+    class StringEnum(bloop.String):
+        def __init__(self, enum_cls):
             self.enum_cls = enum_cls
             super().__init__()
 
         def dynamo_dump(self, value, *, context, **kwargs):
             if value is None:
                 return value
-            return value.name
+            value = value.name
+            return super().dynamo_dump(value, context=context, **kwargs)
 
         def dynamo_load(self, value, *, context, **kwargs):
             if value is None:
                 return value
+            value = super().dynamo_load(value, context=context, **kwargs)
             return self.enum_cls[value]
 
 That's it!  To see it in action, here's an enum:
@@ -377,16 +397,34 @@ And using that in a model:
 
     class Shirt(BaseModel):
         id = Column(String, hash_key=True)
-        color = Column(Enum(Color))
+        color = Column(StringEnum(Color))
     engine.bind(Shirt)
 
     shirt = Shirt(id="t-shirt", color=Color.red)
     engine.save(shirt)
 
-This is stored in DynamoDB as:
+-----------------------
+ Example: Integer Enum
+-----------------------
 
-+---------+-------+
-| id      | color |
-+---------+-------+
-| t-shirt | red   |
-+---------+-------+
+To instead store enums as their integer values, we can modify the enum class above:
+
+.. code-block:: python
+    :emphasize-lines: 1, 9, 16
+
+    class IntEnum(bloop.Integer):
+        def __init__(self, enum_cls):
+            self.enum_cls = enum_cls
+            super().__init__()
+
+        def dynamo_dump(self, value, *, context, **kwargs):
+            if value is None:
+                return value
+            value = value.value
+            return super().dynamo_dump(value, context=context, **kwargs)
+
+        def dynamo_load(self, value, *, context, **kwargs):
+            if value is None:
+                return value
+            value = super().dynamo_load(value, context=context, **kwargs)
+            return self.enum_cls(value)

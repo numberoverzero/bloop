@@ -1,4 +1,4 @@
-import arrow
+import datetime
 from bloop.stream.shard import Shard
 from bloop.util import Sentinel
 
@@ -65,7 +65,8 @@ def dynamodb_record_with(key=False, new=False, old=False, sequence_number=None, 
     if creation_time is None:
         creation_time = 1.46480527E9
     else:
-        creation_time = creation_time.timestamp
+        creation_time = creation_time.timestamp()
+    creation_time = int(creation_time)
     template = {
         "awsRegion": "us-west-2",
         "dynamodb": {
@@ -100,7 +101,7 @@ def dynamodb_record_with(key=False, new=False, old=False, sequence_number=None, 
 
 def local_record(created_at=missing, sequence_number="default-sequence-number"):
     if created_at is missing:
-        created_at = arrow.now()
+        created_at = datetime.datetime.now(datetime.timezone.utc)
     return {
         "meta": {
             "created_at": created_at,

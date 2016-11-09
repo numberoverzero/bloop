@@ -9,7 +9,7 @@ before_create_table.__doc__ = """Sent by ``engine`` before a model's backing tab
     # Nonce table names to avoid testing collisions
     @before_create_table.connect
     def apply_table_nonce(_, model, **__):
-        nonce = arrow.now().isoformat()
+        nonce = datetime.now().isoformat()
         model.Meta.table_name += "-test-{}".format(nonce)
 
 :param engine: :class:`~bloop.engine.Engine` creating the model's table.

@@ -2,7 +2,7 @@ import collections
 import functools
 from unittest.mock import call
 
-import arrow
+import datetime
 import pytest
 from bloop.exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator
@@ -403,7 +403,7 @@ def test_move_to_future_time(coordinator, session):
     expected_active_ids = ["shard-id-{}".format(i) for i in [2, 3, 5, 7]]
     session.get_shard_iterator.return_value = "child-iterator-id"
 
-    coordinator.move_to(arrow.now().replace(hours=1))
+    coordinator.move_to(datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=1))
 
     # Remote calls - no new records fetched, loaded child shards and jumped to their latest
     session.get_stream_records.assert_not_called()
@@ -423,7 +423,7 @@ def test_move_to_future_time(coordinator, session):
 
 def test_move_to_datetime(coordinator, session):
     """Move to a time somewhere in the middle of a stream"""
-    position = arrow.now()
+    position = datetime.datetime.now(datetime.timezone.utc)
 
     # 0 -> 1
     #   -> 2 -> 3
@@ -441,7 +441,7 @@ def test_move_to_datetime(coordinator, session):
     record = dynamodb_record_with(
         key=True,
         sequence_number="found-record-sequence-number",
-        creation_time=position.replace(hours=1))
+        creation_time=position + datetime.timedelta(hours=1))
 
     responses = {
         # Shard 0 will immediately exhaust without finding records

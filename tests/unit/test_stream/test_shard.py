@@ -1,8 +1,9 @@
 import random
 from unittest.mock import call
 
-import arrow
 import pytest
+import datetime
+
 from bloop.exceptions import ShardIteratorExpired
 from bloop.stream.shard import (
     CALLS_TO_REACH_HEAD,
@@ -18,6 +19,10 @@ from . import (
     dynamodb_record_with,
     stream_description,
 )
+
+
+def now_with_offset(seconds=0):
+    return datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=seconds)
 
 
 def expected_get_calls(chain):
@@ -232,7 +237,7 @@ def test_jump_to(shard, session):
 
 def test_seek_exhausted(shard, session):
     """Shard is exhausted before finding the target time"""
-    position = arrow.now().replace(minutes=-2)
+    position = now_with_offset(-120)
 
     session.get_shard_iterator.return_value = "new-iterator-id"
     session.get_stream_records.side_effect = build_get_records_responses(0)
@@ -246,7 +251,7 @@ def test_seek_exhausted(shard, session):
 
 def test_seek_catches_head(shard, session):
     """Shard is still open, and seek stops after catching up to head"""
-    position = arrow.now().replace(hours=2)
+    position = now_with_offset(3600)
 
     session.get_shard_iterator.return_value = "new-iterator-id"
     session.get_stream_records.side_effect = build_get_records_responses(*([0] * (CALLS_TO_REACH_HEAD + 1)))
@@ -265,9 +270,9 @@ def test_seek_finds_position(time_offset, record_index, shard, session):
     session.get_shard_iterator.return_value = "new-iterator-id"
 
     # The value that will be inserted in the records, that we will find
-    exact_target = arrow.now()
+    exact_target = now_with_offset()
     # The value we will use to find the exact_target with
-    with_offset = exact_target.replace(seconds=time_offset)
+    with_offset = exact_target + datetime.timedelta(seconds=time_offset)
 
     # Build a list of Records, then inject the appropriate spread of create times
     [response] = build_get_records_responses(10)
@@ -275,12 +280,14 @@ def test_seek_finds_position(time_offset, record_index, shard, session):
     # Reverse the iterator so that the offset can increase
     # as we move backwards from the target point on the left side
     for offset, record in enumerate(reversed(records[:record_index])):
-        record["dynamodb"]["ApproximateCreationDateTime"] = exact_target.replace(hours=-(offset + 1)).timestamp
+        previous = (exact_target - datetime.timedelta(hours=offset + 1)).timestamp()
+        record["dynamodb"]["ApproximateCreationDateTime"] = int(previous)
     # Same thing going forward for records after the target
     for offset, record in enumerate(records[record_index + 1:]):
-        record["dynamodb"]["ApproximateCreationDateTime"] = exact_target.replace(hours=offset + 1).timestamp
+        future = (exact_target + datetime.timedelta(hours=offset + 1)).timestamp()
+        record["dynamodb"]["ApproximateCreationDateTime"] = int(future)
     # Set target record's exact value
-    records[record_index]["dynamodb"]["ApproximateCreationDateTime"] = exact_target.timestamp
+    records[record_index]["dynamodb"]["ApproximateCreationDateTime"] = int(exact_target.timestamp())
 
     session.get_stream_records.return_value = response
 
@@ -458,7 +465,7 @@ def test_reformat_record(include):
         else:
             assert record[field] is None
 
-    assert record["meta"]["created_at"].timestamp == raw["dynamodb"]["ApproximateCreationDateTime"]
+    assert record["meta"]["created_at"].timestamp() == raw["dynamodb"]["ApproximateCreationDateTime"]
     assert record["meta"]["event"]["type"] == raw["eventName"].lower()
 
 

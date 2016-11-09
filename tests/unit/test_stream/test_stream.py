@@ -1,5 +1,5 @@
-from unittest.mock import MagicMock
 import datetime
+from unittest.mock import MagicMock
 
 import pytest
 from bloop.models import BaseModel, Column

@@ -1,6 +1,6 @@
 import collections
-
 import datetime
+
 from ..exceptions import ShardIteratorExpired
 from ..util import Sentinel
 

@@ -1,4 +1,5 @@
 import datetime
+
 from bloop.stream.shard import Shard
 from bloop.util import Sentinel
 

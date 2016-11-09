@@ -1,8 +1,8 @@
 import collections
+import datetime
 import functools
 from unittest.mock import call
 
-import datetime
 import pytest
 from bloop.exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator

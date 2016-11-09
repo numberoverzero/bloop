@@ -1,6 +1,7 @@
 import collections
 import collections.abc
 import datetime
+
 from ..exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from .buffer import RecordBuffer
 from .shard import unpack_shards

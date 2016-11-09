@@ -1,9 +1,8 @@
+import datetime
 import random
 from unittest.mock import call
 
 import pytest
-import datetime
-
 from bloop.exceptions import ShardIteratorExpired
 from bloop.stream.shard import (
     CALLS_TO_REACH_HEAD,

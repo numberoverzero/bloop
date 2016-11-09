@@ -1,6 +1,6 @@
+import datetime
 from unittest.mock import Mock
 
-import datetime
 import pytest
 from bloop.stream.buffer import RecordBuffer, heap_item
 from bloop.stream.shard import Shard

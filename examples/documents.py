@@ -1,8 +1,8 @@
 import decimal
 import random
 import uuid
+from datetime import datetime, timezone
 
-import arrow
 from bloop import (
     UUID,
     BaseModel,
@@ -49,7 +49,7 @@ item = Item(id=uuid.uuid4())
 item.data = {
     'Name': 'item-name',
     'Rating': decimal.Decimal(str(random.random())),
-    'Updated': arrow.now(),
+    'Updated': datetime.now(timezone.utc),
     'Description': {
         'Title': 'item-title',
         'Body': 'item-body',

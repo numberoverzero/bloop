@@ -1,9 +1,9 @@
 import base64
 import collections.abc
+import datetime
 import decimal
 import uuid
 
-import arrow
 import declare
 
 
@@ -182,46 +182,54 @@ class UUID(String):
         return str(value)
 
 
+FIXED_ISO8601_FORMAT = "%Y-%m-%dT%H:%M:%S.%f+00:00"
+"""Only this exact format, using a +00:00 suffix for UTC, will be loaded.
+Because string comparisons are used to provide ordering for comparisons,
+this **must** use a consistent format.
+"""
+
+
 class DateTime(String):
-    """DateTimes are always stored in UTC.  A timezone can be specified for local values.
+    """DateTimes are always stored in UTC.
+
+    .. warning::
+
+        Loading or saving a naive datetime will fail.  You must specify the timezone.
 
     .. code-block:: python
 
+        from datetime import datetime, timedelta, timezone
+
         class Model(Base):
             id = Column(Integer, hash_key=True)
-            date = Column(DateTime(timezone="US/Pacific"))
+            date = Column(DateTime)
         engine.bind()
 
-        obj = Model(id=1, date=arrow.now().to("US/Pacific"))
+        obj = Model(id=1, date=datetime.now(timezone.utc))
         engine.save(obj)
 
-        paris_one_day_ago = arrow.now().to("Europe/Paris").replace(days=-1)
+        one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
 
         query = engine.query(
             Model,
             key=Model.id==1,
-            filter=Model.date >= paris_one_day_ago)
+            filter=Model.date >= one_day_ago)
 
         query.first().date
-
-    :param str timezone: *(Optional)* used for local values only.  Default is "utc".
     """
-    python_type = arrow.Arrow
-
-    def __init__(self, timezone="utc"):
-        self.timezone = timezone
-        super().__init__()
+    python_type = datetime.datetime
 
     def dynamo_load(self, value, *, context, **kwargs):
         if value is None:
             return None
-        return arrow.get(value).to(self.timezone)
+        dt = datetime.datetime.strptime(value, FIXED_ISO8601_FORMAT)
+        return dt.replace(tzinfo=datetime.timezone.utc)
 
     def dynamo_dump(self, value, *, context, **kwargs):
         if value is None:
             return None
-        # ALWAYS store in UTC - we can manipulate the timezone on load
-        return value.to("utc").isoformat()
+        dt = value.astimezone(tz=datetime.timezone.utc)
+        return dt.strftime(FIXED_ISO8601_FORMAT)
 
 
 class Number(Type):

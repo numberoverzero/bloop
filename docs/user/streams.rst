@@ -186,12 +186,16 @@ The following pattern will call heartbeat every 12 minutes (if record processing
 
 .. code-block:: pycon
 
-    >>> next_heartbeat = arrow.now()
+    >>> from datetime import datetime, timedelta
+    >>> now = datetime.now
+    >>> future = lambda: datetime.now() + timedelta(minutes=12)
+    >>>
+    >>> next_heartbeat = now()
     >>> while True:
     ...     record = next(stream)
     ...     process(record)
-    ...     if arrow.now() > next_heartbeat:
-    ...         next_heartbeat = arrow.now().replace(minutes=12)
+    ...     if now() > next_heartbeat:
+    ...         next_heartbeat = future()
     ...         stream.heartbeat()
 
 .. _stream-resume:

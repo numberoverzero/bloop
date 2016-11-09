@@ -1,7 +1,7 @@
 import decimal
 import uuid
 
-import arrow
+import datetime
 import declare
 import pytest
 from bloop.types import (
@@ -139,24 +139,9 @@ def test_uuid():
 
 def test_datetime():
     typedef = DateTime()
-
-    tz = "Europe/Paris"
-    now = arrow.now()
-
-    # Not a symmetric type
-    assert typedef.dynamo_load(now.isoformat(), context={}) == now
-    assert typedef.dynamo_dump(now, context={}) == now.to("utc").isoformat()
-
-    assert now == typedef.dynamo_load(now.to(tz).isoformat(), context={})
-    assert now.to("utc").isoformat() == typedef.dynamo_dump(now.to(tz), context={})
-
-    # Should load values in the given timezone.
-    # Because arrow objects compare equal regardless of timezone, we
-    # isoformat each to compare the rendered strings (which preserve tz).
-    local_typedef = DateTime(timezone=tz)
-    loaded_as_string = local_typedef.dynamo_load(now.isoformat(), context={}).isoformat()
-    now_with_tz_as_string = now.to(tz).isoformat()
-    assert loaded_as_string == now_with_tz_as_string
+    now = datetime.datetime.now(datetime.timezone.utc)
+    now_str = now.isoformat()
+    symmetric_test(typedef, (now, now_str))
 
 
 def test_number():
@@ -277,7 +262,7 @@ def test_list_path(key):
 
 def test_map_dump(engine):
     """Map handles nested maps and custom types"""
-    now = arrow.now().to('utc')
+    now = datetime.datetime.now(datetime.timezone.utc)
     loaded = {
         'Rating': 0.5,
         'Stock': 3,

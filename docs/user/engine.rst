@@ -77,10 +77,12 @@ Saving an item or items is very simple:
 
 .. code-block:: pycon
 
+    >>> from datetime import datetime, timezone
+    >>> now = datetime.now(timezone.utc)
     >>> user = User(...)
     >>> engine.save(user)
     >>> tweet = Tweet(...)
-    >>> user.last_activity = arrow.now()
+    >>> user.last_activity = now
     >>> engine.save(user, tweet)
 
 You can perform optimistic saves with a ``condition``.  If a condition is not met when DynamoDB tries to apply the
@@ -140,9 +142,11 @@ shorthand to only delete objects unchanged since you last loaded them from Dynam
 
 .. code-block:: pycon
 
+    >>> from datetime import datetime, timedelta, timezone
     >>> engine.delete(user, tweet)
     >>> engine.delete(tps_report, atomic=True)
-    >>> cutoff = arrow.now().repalce(years=-2)
+    >>> now = datetime.now(timezone.utc)
+    >>> cutoff = now - timedelta(years=2)
     >>> engine.delete(
     ...     account,
     ...     condition=Account.last_login < cutoff)
@@ -296,8 +300,11 @@ Here is the same LSI query as above, but now excluding accounts created in the l
 
 .. code-block:: pycon
 
+    >>> from datetime import datetime, timedelta, timezone
+    >>> now = datetime.now(timezone.utc)
+    >>> recent = now - timedelta(days=30)
     >>> key_condition = owned_by_stacy & at_least_one_mil
-    >>> exclude_recent = Account.created_on < arrow.now().replace(days=-30)
+    >>> exclude_recent = Account.created_on < recent
     >>> q = engine.query(Account.by_balance,
     ...     key=key_condition,
     ...     filter=exclude_recent)
@@ -472,10 +479,12 @@ Alternatively, you can use an existing stream token to reload its previous state
     >>> same_stream = engine.stream(
     ...     Impression, previous_stream.token)
 
-Lastly, you can use an arrow datetime.  This is an **expensive call**, and walks the entire stream from the trim
+Lastly, you can use a datetime.  This is an **expensive call**, and walks the entire stream from the trim
 horizon until it finds the first record in each shard after the target datetime.
 
 .. code-block:: pycon
 
-    >>> yesterday = arrow.now().replace(hours=-12)
+    >>> from datetime import datetime, timedelta, timezone
+    >>> now = datetime.now(timezone.utc)
+    >>> yesterday = now - timedelta(hours=12)
     >>> stream = engine.stream(User, yesterday)

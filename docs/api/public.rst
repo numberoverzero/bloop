@@ -372,7 +372,7 @@ DateTime
         :annotation: = "S"
 
     .. attribute:: python_type
-        :annotation: = arrow.Arrow
+        :annotation: = datetime.datetime
 
     .. attribute:: timezone
         :annotation: = str

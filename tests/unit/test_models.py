@@ -1,6 +1,6 @@
 import operator
 
-import arrow
+import datetime
 import pytest
 from bloop.conditions import ConditionRenderer
 from bloop.exceptions import InvalidIndex, InvalidModel, InvalidStream
@@ -75,13 +75,13 @@ def test_load_default_init(engine):
 def test_load_dump(engine):
     """_load and _dump should be symmetric"""
     user = User(id="user_id", name="test-name", email="email@domain.com", age=31,
-                joined=arrow.now())
+                joined=datetime.datetime.now(datetime.timezone.utc))
     serialized = {
         "id": {"S": user.id},
         "age": {"N": "31"},
         "name": {"S": "test-name"},
         "email": {"S": "email@domain.com"},
-        "j": {"S": user.joined.to("utc").isoformat()}
+        "j": {"S": user.joined.isoformat()}
     }
 
     loaded_user = engine._load(User, serialized)

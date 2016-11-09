@@ -16,7 +16,6 @@ def get_version():
                 return eval(line.split("=")[-1])
 
 REQUIREMENTS = [
-    "arrow==0.8.0",  # TODO remove
     "blinker==1.4",
     "boto3==1.4.1",
     "declare==0.9.11",

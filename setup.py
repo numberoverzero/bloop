@@ -8,6 +8,9 @@ HERE = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(HERE, "README.rst")) as f:
     README = f.read()
 
+with open(os.path.join(HERE, "CHANGELOG.rst")) as f:
+    CHANGES = f.read()
+
 
 def get_version():
     with open(os.path.join(HERE, "bloop/__init__.py")) as f:
@@ -32,7 +35,7 @@ if __name__ == "__main__":
         name="bloop",
         version=get_version(),
         description="ORM for DynamoDB",
-        long_description=README,
+        long_description=README + "\n\n" + CHANGES,
         classifiers=[
             "Development Status :: 4 - Beta",
             "Intended Audience :: Developers",

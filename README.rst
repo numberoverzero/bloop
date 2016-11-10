@@ -20,8 +20,9 @@ Bloop is an object mapper for DynamoDB and DynamoDBStreams. py35+
 
     pip install bloop
 
-Usage
-=====
+=======
+ Usage
+=======
 
 First, we need to import all the things:
 
@@ -116,8 +117,9 @@ Let's find them in the stream:
     >>> next(stream)
     >>>
 
-What's Next
-===========
+=============
+ What's Next
+=============
 
 Check out the `User Guide`_ or `Public API Reference`_ to create your own nested types, overlapping models,
 set up cross-region replication in less than 20 lines, and more!

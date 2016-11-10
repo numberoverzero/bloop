@@ -1,17 +1,15 @@
 .. _changelog:
 
-Changelog
-^^^^^^^^^
+Versions
+^^^^^^^^
 
-========
-Detailed
-========
+This document is broken into two sections.  The first provides examples of upgrading existing code through
+specific changes, as well as common exceptions or errors to look for during the process.  The second is the raw
+change log, dating back to :ref:`v0.9.0<changelog-v0.9.0>` from December 2015.
 
-This section breaks down the CHANGELOG with detailed migration tips and examples.  If you're looking for an
-overview of all changes, see the :ref:`project changelog <changelog>`.
+===============
+ Upgrade Guide
+===============
 
-=======
-Compact
-=======
 
-TODO include ../../CHANGELOG when it exists.
+.. include:: ../../CHANGELOG.rst

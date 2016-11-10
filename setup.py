@@ -17,7 +17,8 @@ def get_version():
 
 PACKAGES = [
     "bloop",
-    "bloop.ext"
+    "bloop.ext",
+    "bloop.stream"
 ]
 
 REQUIREMENTS = [

@@ -181,20 +181,13 @@ class UUID(String):
             return None
         return str(value)
 
-
 FIXED_ISO8601_FORMAT = "%Y-%m-%dT%H:%M:%S.%f+00:00"
-"""Only this exact format, using a +00:00 suffix for UTC, will be loaded.
-Because string comparisons are used to provide ordering for comparisons,
-this **must** use a consistent format.
-"""
 
 
 class DateTime(String):
-    """DateTimes are always stored in UTC.
+    """Always stored in DynamoDB using the :data:`~bloop.types.FIXED_ISO8601_FORMAT` format.
 
-    .. warning::
-
-        Loading or saving a naive datetime will fail.  You must specify the timezone.
+    Does not support naive (no timezone) datetimes.
 
     .. code-block:: python
 
@@ -216,6 +209,21 @@ class DateTime(String):
             filter=Model.date >= one_day_ago)
 
         query.first().date
+
+    .. note::
+
+        To use common datetime libraries such as `arrow`_, `delorean`_, or `pendulum`_,
+        see :ref:`DateTime Extensions <user-extensions-datetime>` in the user guide.  These
+        are drop-in replacements and support non-utc timezones:
+
+        .. code-block:: python
+
+            from bloop import DateTime  # becomes:
+            from bloop.ext.pendulum import DateTime
+
+    .. _arrow: http://crsmithdev.com/arrow
+    .. _delorean: https://delorean.readthedocs.io/en/latest/
+    .. _pendulum: https://pendulum.eustace.io
     """
     python_type = datetime.datetime
 

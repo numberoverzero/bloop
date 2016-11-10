@@ -20,6 +20,8 @@ To start developing Bloop first `create a fork`_, then clone and run the tests::
 Versioning
 ==========
 
+.. _meta-versioning-public:
+
 ----------
 Public API
 ----------

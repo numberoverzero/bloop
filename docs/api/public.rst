@@ -3,9 +3,9 @@
 Public
 ^^^^^^
 
-======
-Engine
-======
+========
+ Engine
+========
 
 By default, Bloop will build clients directly from :func:`boto3.client`.
 To customize the engine's connection, you can provide your own DynamoDB and DynamoDBStreams clients:
@@ -25,15 +25,15 @@ To customize the engine's connection, you can provide your own DynamoDB and Dyna
 .. autoclass:: bloop.engine.Engine
     :members:
 
-======
-Models
-======
+========
+ Models
+========
 
 See :ref:`defining models <define-models>` in the User Guide.
 
----------
-BaseModel
----------
+-----------
+ BaseModel
+-----------
 
 .. autoclass:: bloop.models.BaseModel
 
@@ -42,9 +42,9 @@ BaseModel
         Holds table configuration and computed properties of the model.
         See :ref:`model meta <user-model-meta>` in the User Guide.
 
-------
-Column
-------
+--------
+ Column
+--------
 
 .. autoclass:: bloop.models.Column
     :members:
@@ -81,9 +81,9 @@ Column
 
         True if this is the model's range key.
 
---------------------
-GlobalSecondaryIndex
---------------------
+----------------------
+ GlobalSecondaryIndex
+----------------------
 
 .. autoclass:: bloop.models.GlobalSecondaryIndex
 
@@ -141,9 +141,9 @@ GlobalSecondaryIndex
 
         Provisioned write units for the index.  GSIs have their own provisioned throughput.
 
--------------------
-LocalSecondaryIndex
--------------------
+---------------------
+ LocalSecondaryIndex
+---------------------
 
 .. autoclass:: bloop.models.LocalSecondaryIndex
 
@@ -203,9 +203,9 @@ LocalSecondaryIndex
 
 .. _public-types:
 
-=====
-Types
-=====
+=======
+ Types
+=======
 
 Most custom types only need to specify a backing_type (or subclass a built-in type) and override
 :func:`~bloop.types.Type.dynamo_dump` and :func:`~bloop.types.Type.dynamo_load`:
@@ -233,9 +233,9 @@ The column will create an instance of the type by calling the constructor withou
 In rare cases, complex types may need to implement :func:`~bloop.types.Type._dump`,
 :func:`~bloop.types.Type._load`, or :func:`~bloop.types.Type._register`.
 
-----
-Type
-----
+------
+ Type
+------
 
 .. autoclass:: bloop.types.Type
     :members: dynamo_dump, dynamo_load, _dump, _load, _register
@@ -268,9 +268,9 @@ Type
 
         __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_AttributeValue.html
 
-------
-String
-------
+--------
+ String
+--------
 
 .. autoclass:: bloop.types.String
 
@@ -282,9 +282,9 @@ String
 
 .. _api-public-number:
 
-------
-Number
-------
+--------
+ Number
+--------
 
 You should use :class:`decimal.Decimal` instances to avoid rounding errors:
 
@@ -326,9 +326,9 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
 
         The context used to transfer numbers to DynamoDB.
 
-------
-Binary
-------
+--------
+ Binary
+--------
 
 .. autoclass:: bloop.types.Binary
 
@@ -338,9 +338,9 @@ Binary
     .. attribute:: python_type
         :annotation: = bytes
 
--------
-Boolean
--------
+---------
+ Boolean
+---------
 
 .. autoclass:: bloop.types.Boolean
 
@@ -350,9 +350,9 @@ Boolean
     .. attribute:: python_type
         :annotation: = bool
 
-----
-UUID
-----
+------
+ UUID
+------
 
 .. autoclass:: bloop.types.UUID
 
@@ -362,9 +362,17 @@ UUID
     .. attribute:: python_type
         :annotation: = uuid.UUID
 
---------
-DateTime
---------
+----------
+ DateTime
+----------
+
+.. data:: bloop.types.FIXED_ISO8601_FORMAT
+    :annotation:
+
+    DateTimes **must** be stored in DynamoDB in UTC with this exact format, and a +00:00 suffix.
+    This is necessary for using comparison operators such as ``>`` and ``<=`` on DateTime instance.
+
+    You must not use "Z" or any other suffix than "+00:00" to indicate UTC.  You must not omit the timezone specifier.
 
 .. autoclass:: bloop.types.DateTime
 
@@ -372,16 +380,11 @@ DateTime
         :annotation: = "S"
 
     .. attribute:: python_type
-        :annotation: = arrow.Arrow
+        :annotation: = datetime.datetime
 
-    .. attribute:: timezone
-        :annotation: = str
-
-        The timezone used for local values.
-
--------
-Integer
--------
+---------
+ Integer
+---------
 
 .. autoclass:: bloop.types.Integer
 
@@ -396,9 +399,9 @@ Integer
 
         The context used to transfer numbers to DynamoDB.
 
----
-Set
----
+-----
+ Set
+-----
 
 .. autoclass:: bloop.types.Set
 
@@ -416,9 +419,9 @@ Set
 
         The typedef for values in this Set.  Has a backing type of "S", "N", or "B".
 
-----
-List
-----
+------
+ List
+------
 
 .. autoclass:: bloop.types.List
 
@@ -433,9 +436,9 @@ List
 
         The typedef for values in this List.  All types supported.
 
----
-Map
----
+-----
+ Map
+-----
 
 .. autoclass:: bloop.types.Map
 
@@ -458,9 +461,9 @@ Map
                 "rating": Number()
             }
 
-=====
-Query
-=====
+=======
+ Query
+=======
 
 .. autoclass:: bloop.search.QueryIterator
 
@@ -489,9 +492,9 @@ Query
 
         Number of items that DynamoDB evaluated, before any filter was applied.
 
-====
-Scan
-====
+======
+ Scan
+======
 
 .. autoclass:: bloop.search.ScanIterator
 
@@ -520,9 +523,9 @@ Scan
 
         Number of items that DynamoDB evaluated, before any filter was applied.
 
-======
-Stream
-======
+========
+ Stream
+========
 
 :func:`Engine.stream() <bloop.engine.Engine.stream>` is the recommended way to create a stream.
 If you manually create a stream, you will need to call :func:`~bloop.stream.Stream.move_to` before iterating the
@@ -547,9 +550,9 @@ Stream.
 .. autoclass:: bloop.stream.Stream
     :members:
 
-==========
-Conditions
-==========
+============
+ Conditions
+============
 
 The only public class the conditions system exposes is the empty condition, :class:`~bloop.conditions.Condition`.
 The rest of the conditions system is baked into :class:`~bloop.models.Column` and consumed by the various
@@ -576,9 +579,9 @@ value.  The model's ``Meta`` attribute describes the required keys:
 
 .. _public-signals:
 
-=======
-Signals
-=======
+=========
+ Signals
+=========
 
 .. autodata:: bloop.signals.before_create_table
     :annotation:
@@ -604,9 +607,9 @@ Signals
 .. autodata:: bloop.signals.model_validated
     :annotation:
 
-==========
-Exceptions
-==========
+============
+ Exceptions
+============
 
 Except to configure sessions, Bloop aims to completely abstract the boto3/botocore layers.  If you encounter an
 exception from either boto3 or botocore, please `open an issue`__.  Bloop's exceptions are broadly divided into two
@@ -626,9 +629,9 @@ To catch any exception from Bloop, use :exc:`~bloop.exceptions.BloopException`:
 
 __ https://github.com/numberoverzero/bloop/issues/new
 
-----------------
-Unexpected state
-----------------
+------------------
+ Unexpected state
+------------------
 
 These are exceptions that you should be ready to handle in the normal course of using DynamoDB.  For example,
 failing to load objects will raise :exc:`~bloop.exceptions.MissingObjects`, while conditional operations may
@@ -644,9 +647,9 @@ fail with :exc`~bloop.exceptions.ConstraintViolation`.
 
 .. autoclass:: bloop.exceptions.TableMismatch
 
----------
-Bad Input
----------
+-----------
+ Bad Input
+-----------
 
 These are thrown when an option is invalid or missing, such as forgetting a key condition for a query,
 or trying to use an unknown projection type.
@@ -679,3 +682,46 @@ or trying to use an unknown projection type.
 
 .. autoclass:: bloop.exceptions.UnknownType
 
+.. _public-extensions:
+
+============
+ Extensions
+============
+
+.. _public-ext-datetime:
+
+----------
+ DateTime
+----------
+
+.. class:: DateTime(timezone=datetime.timezone.utc)
+
+    Drop-in replacement for :class:`~bloop.types.DateTime`.  Support for `arrow`_, `delorean`_, and `pendulum`_:
+
+    .. code-block:: python
+
+        from bloop.ext.arrow import DateTime
+        from bloop.ext.delorean import DateTime
+        from bloop.ext.pendulum import DateTime
+
+    .. attribute:: backing_type
+        :annotation: = "S"
+
+    .. attribute:: python_type
+        :annotation:
+
+        Depending on where it's imported from, one of:
+
+        * :class:`arrow.Arrow <arrow.arrow.Arrow>`
+        * :class:`delorean.Delorean`
+        * :class:`pendulum.Pendulum`
+
+    .. attribute:: timezone
+        :annotation: = tzinfo
+
+        The timezone that values loaded from DynamoDB will use.  Note that DateTimes are always stored in DynamoDB
+        according to :data:`~bloop.types.FIXED_ISO8601_FORMAT`.
+
+.. _arrow: http://crsmithdev.com/arrow
+.. _delorean: https://delorean.readthedocs.io/en/latest/
+.. _pendulum: https://pendulum.eustace.io

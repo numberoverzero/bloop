@@ -1,6 +1,6 @@
+import datetime
 from unittest.mock import MagicMock
 
-import arrow
 import pytest
 from bloop.models import BaseModel, Column
 from bloop.stream.coordinator import Coordinator
@@ -86,7 +86,7 @@ def test_next_no_record(stream, coordinator):
 
 
 def test_next_unpacks(stream, coordinator):
-    now = arrow.now()
+    now = datetime.datetime.now(datetime.timezone.utc)
     meta = {
         "created_at": now,
         "sequence_number": "sequence-number",

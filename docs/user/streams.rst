@@ -68,13 +68,13 @@ Next, create a stream on the model.  This example starts at "trim_horizon" to ge
 
     >>> stream = engine.stream(User, "trim_horizon")
 
-If you want to start at a certain point in time, you can also use an :class:`arrow.arrow.Arrow` datetime.
+If you want to start at a certain point in time, you can also use a :class:`datetime.datetime`.
 Creating streams at a specific time is **very expensive**, and will iterate all records since the stream's
 trim_horizon until the target time.
 
 .. code-block:: pycon
 
-    >>> stream = engine.stream(User, arrow.now().replace(hours=-12))
+    >>> stream = engine.stream(User, datetime.now() - timedelta(hours=12))
 
 If you are trying to resume processing from the same position as another stream, you should load from a persisted
 :data:`Stream.token <bloop.stream.Stream.token>` instead of using a specific time.
@@ -142,7 +142,7 @@ The first record won't have an old value, since it was the first time this item 
      'old': None,
      'new': User(email='user@domain.com', id=3, verified=None),
      'meta': {
-         'created_at': <Arrow [2016-10-23T00:28:00-07:00]>,
+         'created_at': datetime.datetime(2016, 10, 23, ...),
          'event': {
              'id': '3fe6d339b7cb19a1474b3d853972c12a',
              'type': 'insert',
@@ -159,7 +159,7 @@ The second record shows the change to email, and has both old and new objects:
      'old': User(email='user@domain.com', id=3, verified=None),
      'new': User(email='admin@domain.com', id=3, verified=None),
      'meta': {
-         'created_at': <Arrow [2016-10-23T00:28:00-07:00]>,
+         'created_at': datetime.datetime(2016, 10, 23, ...),
          'event': {
              'id': '73a4b8568a85a0bcac25799f806df239',
              'type': 'modify',
@@ -186,12 +186,16 @@ The following pattern will call heartbeat every 12 minutes (if record processing
 
 .. code-block:: pycon
 
-    >>> next_heartbeat = arrow.now()
+    >>> from datetime import datetime, timedelta
+    >>> now = datetime.now
+    >>> future = lambda: datetime.now() + timedelta(minutes=12)
+    >>>
+    >>> next_heartbeat = now()
     >>> while True:
     ...     record = next(stream)
     ...     process(record)
-    ...     if arrow.now() > next_heartbeat:
-    ...         next_heartbeat = arrow.now().replace(minutes=12)
+    ...     if now() > next_heartbeat:
+    ...         next_heartbeat = future()
     ...         stream.heartbeat()
 
 .. _stream-resume:
@@ -247,7 +251,7 @@ This function takes the same ``position`` argument as :func:`Engine.stream <bloo
     >>> stream.move_to(stream.token)
 
     # Jump back in time 2 hours
-    >>> stream.move_to(arrow.now().replace(hours=-2))
+    >>> stream.move_to(datetime.now() - timedelta(hours=2))
 
     # Move to the oldest record in the stream
     >>> stream.move_to("trim_horizon")

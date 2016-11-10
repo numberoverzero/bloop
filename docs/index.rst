@@ -89,6 +89,7 @@ Get started by :ref:`installing <user-install>` Bloop, or check out a :ref:`larg
     user/conditions
     user/signals
     user/patterns
+    user/extensions
 
 .. toctree::
     :maxdepth: 2

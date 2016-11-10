@@ -3,9 +3,9 @@ Bloop Patterns
 
 .. _patterns-local:
 
-==============
-DynamoDB Local
-==============
+================
+ DynamoDB Local
+================
 
 Connect to a local DynamoDB instance.
 
@@ -27,9 +27,9 @@ Connect to a local DynamoDB instance.
 
 .. _patterns-if-not-exist:
 
-======================
-Generic "if not exist"
-======================
+========================
+ Generic "if not exist"
+========================
 
 Create a condition for any model or object that fails the operation if the item already exists.
 
@@ -51,9 +51,9 @@ Create a condition for any model or object that fails the operation if the item 
 
 .. _patterns-float:
 
-==========
-Float Type
-==========
+============
+ Float Type
+============
 
 A number type with a :class:`decimal.Context` that doesn't trap :class:`decimal.Rounded` or :class:`decimal.Inexact`.
 

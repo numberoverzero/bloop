@@ -4,7 +4,9 @@ blinker==1.4
 boto3==1.4.1
 coverage==4.2
 declare==0.9.11
+delorean==0.6.0
 flake8==3.0.4
+pendulum==0.6.5
 pytest==3.0.3
 Sphinx==1.4.8
 sphinx_rtd_theme==0.1.9

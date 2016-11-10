@@ -1,7 +1,7 @@
 """ Setup file """
 import os
 
-from setuptools import find_packages, setup
+from setuptools import setup
 
 
 HERE = os.path.abspath(os.path.dirname(__file__))
@@ -15,20 +15,16 @@ def get_version():
             if line.startswith("__version__"):
                 return eval(line.split("=")[-1])
 
-REQUIREMENTS = [
-    "arrow==0.8.0",
-    "blinker==1.4",
-    "boto3==1.4.1",
-    "declare==0.9.11"
+PACKAGES = [
+    "bloop",
+    "bloop.ext",
+    "bloop.stream"
 ]
 
-TEST_REQUIREMENTS = [
-    "alabaster",
-    "coverage",
-    "flake8",
-    "pytest",
-    "sphinx",
-    "tox",
+REQUIREMENTS = [
+    "blinker==1.4",
+    "boto3==1.4.1",
+    "declare==0.9.11",
 ]
 
 if __name__ == "__main__":
@@ -54,7 +50,6 @@ if __name__ == "__main__":
         keywords="aws dynamo dynamodb orm",
         platforms="any",
         include_package_data=True,
-        packages=find_packages(exclude=("tests", "docs", "examples")),
+        packages=PACKAGES,
         install_requires=REQUIREMENTS,
-        tests_require=REQUIREMENTS + TEST_REQUIREMENTS,
     )

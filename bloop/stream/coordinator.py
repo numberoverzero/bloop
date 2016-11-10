@@ -1,7 +1,6 @@
 import collections
 import collections.abc
-
-import arrow
+import datetime
 
 from ..exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from .buffer import RecordBuffer
@@ -155,12 +154,12 @@ class Coordinator:
     def move_to(self, position):
         """Set the Coordinator to a specific endpoint or time, or load state from a token.
 
-        :param position: "trim_horizon", "latest", :class:`~arrow.arrow.Arrow`, or a
+        :param position: "trim_horizon", "latest", :class:`~datetime.datetime`, or a
             :attr:`Coordinator.token <bloop.stream.coordinator.Coordinator.token>`
         """
         if isinstance(position, collections.abc.Mapping):
             move = _move_stream_token
-        elif isinstance(position, arrow.Arrow):
+        elif hasattr(position, "timestamp") and callable(position.timestamp):
             move = _move_stream_time
         elif isinstance(position, str) and position.lower() in ["latest", "trim_horizon"]:
             move = _move_stream_endpoint
@@ -209,7 +208,7 @@ def _move_stream_time(coordinator, time):
 
     The corner cases are worse; short trees, recent splits, trees with different branch heights.
     """
-    if time > arrow.now():
+    if time > datetime.datetime.now(datetime.timezone.utc):
         _move_stream_endpoint(coordinator, "latest")
         return
 

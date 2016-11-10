@@ -25,7 +25,7 @@ from bloop.conditions import (
 )
 from bloop.models import BaseModel, Column
 from bloop.signals import object_deleted, object_loaded, object_saved
-from bloop.types import String, Binary, Integer, Set, List, Map, Boolean
+from bloop.types import Binary, Boolean, Integer, List, Map, Set, String
 
 from ..helpers.models import Document, User
 

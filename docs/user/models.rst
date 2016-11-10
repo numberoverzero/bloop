@@ -70,16 +70,17 @@ The default ``__init__`` takes \*\*kwargs and applies them by each column's mode
 
 .. code-block:: pycon
 
-    >>> import arrow, uuid
+    >>> import datetime, uuid
+    >>> now = datetime.datetime.now(datetime.timezone.utc)
     >>> user = User(
     ...     id=uuid.uuid4(),
     ...     version="1",
     ...     email="user@domain.com",
-    ...     created_at=arrow.now())
+    ...     created_at=now)
     >>> user.email
     'user@domain.com'
     >>> user
-    User(created_on=<Arrow [2016-10-29T22:08:08.930137-07:00]>, ...)
+    User(created_on=datetime.datetime(2016, 10, 29, ...), ...)
 
 A local object's hash and range keys don't need values until you're ready to interact with DynamoDB:
 

@@ -5,7 +5,7 @@ Types
 
 Types are used when defining :ref:`Columns <user-models-columns>` and are responsible for translating between
 local values and their DynamoDB representations.  For example, :class:`~bloop.types.DateTime` maps between
-``arrow.now()`` and ``"2016-08-09T01:16:25.322849+00:00"``.
+``datetime.now(timezone.utc)`` and ``"2016-08-09T01:16:25.322849+00:00"``.
 
 DynamoDB is split into scalar types ("S", "N", "B", "BOOL") and vector types ("SS", "NS", "BS", "L", "M").
 Bloop provides corresponding types, as well as a handful of useful derived types, such as DateTime and UUID.
@@ -121,7 +121,8 @@ and not just the primitive types above.
 
 .. code-block:: python
 
-    import arrow, uuid
+    import uuid
+    from datetime import datetime, timezone
     from bloop import DateTime, UUID, Integer
 
 
@@ -133,7 +134,7 @@ and not just the primitive types above.
     tweet = Tweet(
         account_id=3,
         tweet_id=uuid.uuid4(),
-        created_at=arrow.now()
+        created_at=datetime.now(timezone.utc)
     )
 
 .. note::
@@ -252,7 +253,7 @@ Only defined keys will be loaded or saved.  In the following, the impression's "
 
     impression = Impression(id=uuid.uuid4())
     impression.metadata = {
-        "created": arrow.now(),
+        "created": datetime.now(timezone.utc),
         "referrer": referrer.id,
         "cache": "https://img-cache.s3.amazonaws.com/" + img.filename,
         "version": 1.1  # NOT SAVED

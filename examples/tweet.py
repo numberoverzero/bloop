@@ -1,6 +1,6 @@
 import uuid
+from datetime import datetime, timezone
 
-import arrow
 from bloop import (
     UUID,
     BaseModel,
@@ -57,6 +57,6 @@ tweet = Tweet(
     account=account.id, id='616102582239399936',
     content='today, I wrote a type validator in Python, as you do',
     favorites=9,
-    date=arrow.now())
+    date=datetime.now(timezone.utc))
 
 engine.save(account, tweet)

@@ -1,6 +1,6 @@
+import datetime
 from unittest.mock import Mock
 
-import arrow
 import pytest
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
@@ -179,7 +179,7 @@ def test_load_shared_table(engine, session):
 
     id = "foo"
     range = "bar"
-    now = arrow.now().to("utc")
+    now = datetime.datetime.now(datetime.timezone.utc)
     now_str = now.isoformat()
     session.load_items.return_value = {
         "SharedTable": [{

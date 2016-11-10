@@ -90,7 +90,7 @@ Let's find them in the stream:
     >>> stream = engine.stream(Account, "trim_horizon")
     >>> next(stream)
     {'key': None,
-     'meta': {'created_at': <Arrow [...]>,
+     'meta': {'created_at': datetime.datetime(...),
       'event': {'id': 'cbb9a9b45eb0a98889b7da85913a5c65',
        'type': 'insert',
        'version': '1.1'},
@@ -102,7 +102,7 @@ Let's find them in the stream:
      'old': None}
     >>> next(stream)
     {'key': None,
-     'meta': {'created_at': <Arrow [...]>,
+     'meta': {'created_at': datetime.datetime(...),
       'event': {'id': 'cbdfac5671ea38b99017c4b43a8808ce',
        'type': 'insert',
        'version': '1.1'},

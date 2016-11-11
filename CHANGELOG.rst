@@ -96,7 +96,7 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  0.9.8 - 2016-06-05
 --------------------
 
-(No significant changes)
+*(no public changes)*
 
 --------------------
  0.9.7 - 2016-06-05
@@ -230,6 +230,8 @@ You'll now create a base without any relation to an engine, and then bind it to 
 --------------------
  0.9.1 - 2015-12-07
 --------------------
+
+*(no public changes)*
 
 .. _changelog-v0.9.0:
 

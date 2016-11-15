@@ -12,7 +12,7 @@ from .exceptions import (
 )
 from .models import Column, GlobalSecondaryIndex
 from .signals import object_loaded
-from .util import printable_column_name, printable_query, unpack_from_dynamodb
+from .util import printable_query, unpack_from_dynamodb
 
 
 __all__ = ["ScanIterator", "QueryIterator"]
@@ -150,7 +150,7 @@ def check_range_key(query_on, key):
 def fail_bad_hash(query_on):
     msg = "The key condition for a Query on {!r} must be `{}.{} == value`."
     raise InvalidKeyCondition(msg.format(
-        printable_query(query_on), query_on.model.__name__, printable_column_name(query_on.hash_key)))
+        printable_query(query_on), query_on.model.__name__, query_on.hash_key.model_name))
 
 
 def fail_bad_range(query_on):

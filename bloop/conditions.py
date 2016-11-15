@@ -10,7 +10,7 @@ from .signals import (
     object_saved,
 )
 from .types import supports_operation
-from .util import WeakDefaultDictionary, missing, printable_column_name
+from .util import WeakDefaultDictionary, missing
 
 
 __all__ = ["Condition", "render"]
@@ -151,7 +151,7 @@ class ReferenceTracker:
 
     def _path_ref(self, column):
         pieces = [column.dynamo_name]
-        pieces.extend(column._path)
+        pieces.extend(path_of(column))
         str_pieces = []
         for piece in pieces:
             # List indexes are attached to last path item directly
@@ -169,7 +169,7 @@ class ReferenceTracker:
         # Need to dump this value
         if not dumped:
             typedef = column.typedef
-            for segment in column._path:
+            for segment in path_of(column):
                 typedef = typedef[segment]
             if inner:
                 typedef = typedef.inner_typedef
@@ -528,9 +528,9 @@ class BaseCondition:
             return False
         # If one isn't None, neither is None
         if self.column is not None:
-            if self.column._proxied is not other.column._proxied:
+            if proxied(self.column) is not proxied(other.column):
                 return False
-            if self.column._path != other.column._path:
+            if path_of(self.column) != path_of(other.column):
                 return False
         # Can't use a straight list == list because
         # values could contain columns, which will break equality.
@@ -799,7 +799,7 @@ class InCondition(BaseCondition):
 def check_support(column, operation):
     # TODO parametrize tests for (all condition types) X (all backing types)
     typedef = column.typedef
-    for segment in column._path:
+    for segment in path_of(column):
         typedef = typedef[segment]
     if not supports_operation(operation, typedef):
         tpl = "Backing type {!r} for {}.{} does not support condition {!r}."
@@ -812,27 +812,14 @@ def check_support(column, operation):
 
 
 class ComparisonMixin:
-    def __init__(self, *args, proxied=None, path=None, **kwargs):
-        self._path = path or []
-        self._proxied = self if proxied is None else proxied
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def _repr_with_path(self, path):
+    def __repr__(self):
         return "<ComparisonMixin>"
 
-    def __repr__(self):
-        # Need to delegate the __repr__ to the proxied object, BUT
-        # that object won't have the path that this proxy does.
-        # So, push this path into the proxy's repr
-        return self._proxied._repr_with_path(self._path)
-
-    def __getattr__(self, item):
-        if self._proxied is self:
-            raise AttributeError
-        return getattr(self._proxied, item)
-
     def __getitem__(self, path):
-        return ComparisonMixin(proxied=self._proxied, path=self._path + [path])
+        return Proxy(self, [path])
 
     def __eq__(self, value):
         check_support(self, "==")
@@ -877,6 +864,52 @@ class ComparisonMixin:
     is_ = __eq__
 
     is_not = __ne__
+
+
+class Proxy(ComparisonMixin):
+    def __init__(self, obj, path):
+        self._obj = obj
+        self._path = path
+        super().__init__()
+
+    def __getattr__(self, item):
+        return getattr(self._obj, item)
+
+    def __getitem__(self, item):
+        return Proxy(self._obj, self._path + [item])
+
+    def __repr__(self):
+        # "<Proxy[File.metadata[3].foo.bar[0]]>"
+        name = self._obj.model.__name__
+        path = printable_column_name(self._obj, self._path)
+        return "<Proxy[{}.{}]>".format(name, path)
+
+
+def printable_column_name(column, path=None):
+    """Provided for debug output when rendering conditions.
+
+    User.name[3]["foo"][0]["bar"] -> name[3].foo[0].bar
+    """
+    pieces = [column.model_name]
+    path = path or path_of(column)
+    for segment in path:
+        if isinstance(segment, str):
+            pieces.append(segment)
+        else:
+            pieces[-1] += "[{}]".format(segment)
+    return ".".join(pieces)
+
+
+def path_of(obj):
+    if isinstance(obj, Proxy):
+        return obj._path
+    return []
+
+
+def proxied(obj):
+    if isinstance(obj, Proxy):
+        return obj._obj
+    return obj
 
 
 def iter_conditions(condition):

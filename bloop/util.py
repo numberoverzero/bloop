@@ -33,21 +33,6 @@ def ordered(obj):
         return obj
 
 
-def printable_column_name(column, path=None):
-    """Provided for debug output when rendering conditions.
-
-    User.name[3]["foo"][0]["bar"] -> name[3].foo[0].bar
-    """
-    pieces = [column.model_name]
-    path = path or column._path or []
-    for segment in path:
-        if isinstance(segment, str):
-            pieces.append(segment)
-        else:
-            pieces[-1] += "[{}]".format(segment)
-    return ".".join(pieces)
-
-
 def printable_query(query_on):
     # Model.Meta -> Model
     if getattr(query_on, "__name__", "") == "Meta":

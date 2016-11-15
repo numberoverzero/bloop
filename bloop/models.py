@@ -5,7 +5,7 @@ import declare
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel, InvalidStream
 from .signals import model_created, object_modified
-from .util import missing, printable_column_name, unpack_from_dynamodb
+from .util import missing, unpack_from_dynamodb
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
@@ -463,7 +463,7 @@ class Column(declare.Field, ComparisonMixin):
 
     __hash__ = object.__hash__
 
-    def _repr_with_path(self, path):
+    def __repr__(self):
         if self.hash_key:
             extra = "=hash"
         elif self.range_key:
@@ -474,7 +474,11 @@ class Column(declare.Field, ComparisonMixin):
         # <Column[Pin.url]>
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
-        return "<Column[{}.{}{}]>".format(self.model.__name__, printable_column_name(self, path), extra)
+        return "<Column[{}.{}{}]>".format(
+            self.model.__name__,
+            self.model_name,
+            extra
+        )
 
     @property
     def dynamo_name(self):

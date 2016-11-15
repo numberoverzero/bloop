@@ -15,12 +15,14 @@ from bloop.conditions import (
     InvalidCondition,
     NotCondition,
     OrCondition,
+    Proxy,
     Reference,
     ReferenceTracker,
     get_marked,
     get_snapshot,
     iter_columns,
     iter_conditions,
+    printable_column_name,
     render,
 )
 from bloop.models import BaseModel, Column
@@ -30,20 +32,14 @@ from bloop.types import Binary, Boolean, Integer, List, Map, Set, String
 from ..helpers.models import Document, User
 
 
-class MockColumn(ComparisonMixin):
+class MockColumn(Column):
     """model, model_name, dynamo_name, __repr__"""
     def __init__(self, name):
+        super().__init__(String(), name="d_" + name)
+        self.model_name = name
+
         # Mock model so this can render as M.name
         self.model = type("M", tuple(), {})
-
-        self.model_name = name
-        self.dynamo_name = "d_" + name
-        self.typedef = String()
-
-        super().__init__()
-
-    def _repr_with_path(self, path):
-        return self.model_name
 
 c = MockColumn("c")
 d = MockColumn("d")
@@ -1129,7 +1125,7 @@ def test_ior_basic():
     # in
     (InCondition(column=c, values=[]), "(M.c in [])"),
     (InCondition(column=c, values=[2, 3]), "(M.c in [2, 3])"),
-    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [d, 3])"),
+    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [<Column[M.d]>, 3])"),
 
     # empty
     (Condition(), "()")
@@ -1160,7 +1156,7 @@ def test_eq_wrong_type():
     BaseCondition("??", values=list("xy"), column=c["foo"]["bar"]),
     BaseCondition("op", values=list("xy"), column=None),
     # Need to attach a path to the wrong proxy object
-    BaseCondition("op", values=list("xy"), column=ComparisonMixin(proxied=None, path=["foo", "bar"])),
+    BaseCondition("op", values=list("xy"), column=Proxy(obj=None, path=["foo", "bar"])),
     BaseCondition("op", values=list("xyz"), column=c["foo"]["bar"]),
     BaseCondition("op", values=list("yx"), column=c["foo"]["bar"]),
 ])
@@ -1309,45 +1305,15 @@ def test_render_and_or_simplify(condition_cls, renderer):
 
 
 def test_mixin_repr():
-    """repr without non-proxy objects"""
-    self = ComparisonMixin()
-    assert repr(self) == "<ComparisonMixin>"
-
-    inner_is_mixin = ComparisonMixin(proxied=MockColumn("foobar"))
-    assert repr(inner_is_mixin) == "foobar"
+    assert repr(ComparisonMixin()) == "<ComparisonMixin>"
 
 
-def test_mixin_getattr_delegates():
-    """getattr points to the proxied object (unless it's self)"""
-    self = ComparisonMixin()
-    # Can't delegate, proxied object is self (infinite recursion)
-    with pytest.raises(AttributeError):
-        getattr(self, "foo")
-
-    class Foo:
-        getattr_calls = 0
-
-        def __getattr__(self, item):
-            self.getattr_calls += 1
-            return "foo"
-
-    obj = Foo()
-    proxy = ComparisonMixin(proxied=obj)
-    assert proxy.whatever == "foo"
-
-    assert obj.getattr_calls == 1
-    assert proxy.getattr_calls == 1
-
-
-def test_mixin_path_chaining():
-    """No depth limit to the chained path"""
-    obj = ComparisonMixin()
-
-    for i in range(10):
-        obj = obj[i]
-        obj = obj[str(i)]
-
-    assert len(obj._path) == 20
+def test_mixin_path():
+    mixin = ComparisonMixin()
+    proxy = mixin["some_attribute"][3]
+    assert isinstance(proxy, Proxy)
+    assert proxy._obj is mixin
+    assert proxy._path == ["some_attribute", 3]
 
 
 @pytest.mark.parametrize("op, expected", [
@@ -1463,7 +1429,57 @@ def test_unsupported_mixin_comparison_conditions(op, typedef):
         op(column, "value")
 
 
+def test_printable_column_no_path():
+    """Model.column"""
+    assert printable_column_name(User.email) == "email"
+
+
+def test_printable_column_mixed_path():
+    """Model.column[3].foo[1]"""
+    assert printable_column_name(User.id, path=[3, "foo", "bar", 0, 1]) == "id[3].foo.bar[0][1]"
+
+
+def test_printable_column_included_path():
+    """Path is part of the 'column' that's provided"""
+    assert printable_column_name(User.id[3]["foo"]["bar"][0][1]) == "id[3].foo.bar[0][1]"
+
+
+def test_printable_column_both_paths():
+    """When both paths are provided, the explicit path wins"""
+    assert printable_column_name(User.id["not used"], path=[3, "foo", "bar", 0, 1]) == "id[3].foo.bar[0][1]"
+
+
 # END COMPARISON MIXIN ========================================================================== END COMPARISON MIXIN
+
+
+# PROXY ======================================================================================================== PROXY
+
+
+def test_proxy_delegates_getattr():
+    sentinel = object()
+    column = MockColumn("col")
+    column.attribute = sentinel
+    proxy = column["some"]["path"]
+    assert proxy.attribute is sentinel
+
+
+def test_proxy_masks_protected_path_attr():
+    """If a proxied object has a _path or _obj attribute, it's not returned through the proxy"""
+    sentinel = object()
+    column = MockColumn("col")
+    column._obj = sentinel
+    column._path = sentinel
+    proxy = column["some"]["path"]
+    assert proxy._obj is not column._obj
+    assert proxy._path is not column._path
+
+
+def test_proxy_repr():
+    column = MockColumn("col")
+    proxy = column["some"][2]["path"]
+    assert repr(proxy) == "<Proxy[M.col.some[2].path]>"
+
+# END PROXY ================================================================================================ END PROXY
 
 
 # ITERATORS ================================================================================================ ITERATORS

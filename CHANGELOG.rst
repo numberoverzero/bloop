@@ -13,6 +13,158 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  [Unreleased]
 --------------
 
+Added
+=====
+
+* ``bloop.signals`` exposes Blinker signals for consumption.  These can be used to monitor object changes, when
+  instances are loaded from a query, before models are bound, etc.
+
+    * ``before_create_table``
+    * ``object_loaded``
+    * ``object_saved``
+    * ``object_deleted``
+    * ``object_modified``
+    * ``model_bound``
+    * ``model_created``
+    * ``model_validated``
+
+* *(internal)* ``bloop.conditions.ReferenceTracker`` handles building ``#n0``, ``:v1``, and associated values.
+  Use ``any_ref`` to build a reference to a name/path/value, and ``pop_refs`` when backtracking (eg. when a value is
+  actually another column, or when correcting a partially valid condition)
+* *(internal)* ``bloop.conditions.render`` is the preferred entry point for rendering, and handles all permutations
+  of conditions, filters, projections.  Use over ``ConditionRenderer`` unless you need very specific control over
+  rendering sequencing.
+* ``Engine.stream`` can be used to iterate over all records in a stream, with a total ordering over approximate
+  record creation time.  Use ``engine.stream(model, "trim_horizon")`` to get started.  See the User Guide
+* New exceptions ``RecordsExpired`` and ``ShardIteratorExpired`` for errors in stream state
+* New exceptions ``Invalid*`` for bad input subclass ``BloopException`` and ``ValueError``
+
+* ``DateTime`` types for the three most common date time libraries:
+
+    * ``bloop.ext.arrow.DateTime``
+    * ``bloop.ext.delorean.DateTime``
+    * ``bloop.ext.pendulum.DateTime``
+
+* ``model.Meta`` has a new optional attribute ``stream`` which can be used to enable a stream on the model's table.
+  See the User Guide for details
+* ``model.Meta`` exposes the same ``projection`` attribute as ``Index`` so that ``(index or model.Meta).projection``
+  can be used interchangeably
+* *(internal)* ``bloop.session.SessionWrapper`` exposes DynamoDBStreams operations in addition to previous
+  ``bloop.Client`` wrappers around DynamoDB client
+* New ``Stream`` class exposes DynamoDBStreams API as a single iterable with powerful seek/jump options, and simple
+  json-friendly tokens for pausing and resuming iteration.  See the User Guide for details
+* *(internal)* New supporting classes ``streams.buffer.RecordBuffer``, ``streams.shard.Shard``, and
+  ``streams.coordinator.Coordinator`` to encapsulate the hell^Wjoy that is working with DynamoDBStreams
+* *(internal)* New class ``util.Sentinel`` for placeholder values like ``missing`` and ``last_token``
+  that provide clearer docstrings, instead of showing ``func(..., default=object<0x...>)`` these will show
+  ``func(..., default=Sentinel<[Missing]>)``
+* over 1200 unit tests added
+* Initial integration tests added
+
+Changed
+=======
+
+* *(internal)* ``bloop.Client`` became ``bloop.session.SessionWrapper``
+* ``bloop.Column`` emits ``object_modified`` on ``__set__`` and ``__del__``
+* *(internal)* Path lookups on ``Column`` (eg. ``User.profile["name"]["last"]``) use simpler proxies
+* *(internal)* Proxy behavior split out from ``Column``'s base class ``bloop.conditions.ComparisonMixin``
+  for a cleaner namespace
+* *(internal)* ``bloop.conditions.ConditionRenderer`` rewritten, uses a new ``bloop.conditions.ReferenceTracker``
+  with a much clearer api
+* *(internal)* ``ConditionRenderer`` can backtrack references and handles columns as values (eg.
+  ``User.name.in_([User.email, "literal"])``)
+* *(internal)* ``_MultiCondition`` logic rolled into ``bloop.conditions.BaseCondition``, ``AndCondition`` and
+  ``OrCondition`` no longer have intermediate base class
+* *(internal)* ``AttributeExists`` logic rolled into ``bloop.conditions.ComparisonCondition``
+* *(internal)* ``bloop.tracking`` rolled into ``bloop.conditions`` and is hooked into the ``object_*`` signals.
+  Methods are no longer called directly (eg. no need for ``tracking.sync(some_obj, engine)``)
+* *(internal)* update condition is built from a set of columns, not a dict of updates to apply
+* *(internal)* ``bloop.conditions.BaseCondition`` is a more comprehensive base class, and handles all manner of
+  out-of-order merges (``and(x, y)`` vs ``and(y, x)`` where x is an ``and`` condition and y is not)
+* *(internal)* almost all ``*Condition`` classes simply implement ``__repr__`` and ``render``; ``BaseCondition``
+  takes care of everything else
+* Conditions now check if they can be used with a column's ``typedef`` and raise ``InvalidCondition`` when they can't.
+  For example, ``contains`` can't be used on ``Number``, nor ``>`` on ``Set(String)``
+* ``bloop.Engine`` no longer takes an optional ``bloop.Client`` but instead optional ``dynamodb`` and
+  ``dynamodbstreams`` clients (usually created from ``boto3.client("dynamodb")`` etc.)
+* ``Engine`` no longer takes ``**config`` -- its settings have been dispersed to their local touch points
+
+    * ``atomic`` is a parameter of ``save`` and ``delete`` and defaults to ``False``
+    * ``consistent`` is a parameter of ``load``, ``query``, ``scan`` and defaults to ``False``
+    * ``prefetch`` has no equivalent, and is baked into the new Query/Scan iterator logic
+    * ``strict`` is a parameter of a ``LocalSecondaryIndex``, defaults to ``True``
+
+* ``Engine`` no longer has a ``context`` to create temporary views with different configuration
+* *(internal)* ``Engine._dump`` takes an optional ``context``, ``**kwargs``, matching the
+  signature of ``Engine._load``
+* ``Engine.bind`` is no longer by keyword arg only: ``engine.bind(MyBase)`` is acceptable in addition to
+  ``engine.bind(base=MyBase)``
+* ``Engine.bind`` emits new signals ``before_create_table``, ``model_validated``, and ``model_bound``
+* ``Engine.delete`` and ``Engine.save`` take ``*objs`` instead of ``objs`` to easily save/delete small multiples of
+  objects (``engine.save(user, tweet)`` instead of ``engine.save([user, tweet])``)
+* ``Engine`` guards against loading, saving, querying, etc against abstract models
+* ``Engine.load`` raises ``MissingObjects`` instead of ``NotModified`` (exception rename)
+* ``Engine.scan`` and ``Engine.query`` take all query and scan arguments immediately, instead of using the builder
+  pattern.  For example, ``engine.scan(model).filter(Model.x==3)`` has become
+  ``engine.scan(model, filter=Model.x==3)``.
+* ``bloop.exceptions.NotModified`` renamed to ``bloop.exceptions.MissingObjects``
+* Any code that raised ``AbstractModelException`` now raises ``UnboundModel``
+* ``bloop.types.DateTime`` is now backed by ``datetime.datetime`` instead of ``arrow``.  Only supports UTC now, no
+  local timezone.  Use the ``bloop.ext.arrow.DateTime`` class to continue using ``arrow``.
+* The query and scan interfaces have been entirely refactored: ``count``, ``consistent``, ``ascending`` and other
+  properties are part of the ``Engine.query(...)`` parameters.  ``all()`` is no longer needed, as ``Engine.scan`` and
+  ``.query`` immediately return an iterable object.  There is no ``prefetch`` setting, or ``limit``.
+* The ``complete`` property for Query and Scan have been replaced with ``exhausted``, to be consistent with the Stream
+  module
+* The query and scan iterator no longer cache results
+* The ``projection`` parameter is now required for ``GlobalSecondaryIndex`` and ``LocalSecondaryIndex``
+* Calling ``Index.__set__`` or ``Index.__del__`` will raise ``AttributeError``.  For example,
+  ``some_user.by_email = 3`` raises if ``User.by_email`` is a GSI
+* *(internal)* ``BaseModel`` no longer implements ``__hash__``, ``__eq__``, or ``__ne__`` but ``ModelMetaclass`` will
+  always ensure a ``__hash__`` function when the subclass is created
+* *(internal)* ``Filter`` and ``FilterIterator`` rewritten entirely in the ``bloop.search`` module across multiple
+  classes
+* ``bloop.Number`` replaces ``bloop.Float`` and takes an optional ``decimal.Context`` for converting numbers.
+  For a less strict, **lossy** ``Float`` type see the Patterns section of the User Guide
+* ``bloop.String.dynamo_dump`` no longer calls ``str()`` on the value, which was hiding bugs where a non-string
+  object was passed (eg. ``some_user.name = object()`` would save with a name of ``<object <0x...>``)
+* ``bloop.DateTime`` is now backed by ``datetime.datetime`` and only knows UTC in a fixed format.  Adapters for
+  ``arrow``, ``delorean``, and ``pendulum`` are available in ``bloop.ext``
+* ``bloop.DateTime`` does not support naive datetimes; they must always have a ``tzinfo``
+* docs:
+
+    * use RTD theme
+    * rewritten three times
+    * now includes public and internal api references
+
+Removed
+=======
+
+* *(internal)* ``bloop.engine.LoadManager`` logic was rolled into ``bloop.engine.load(...)``
+* ``EngineView`` has been removed since engines no longer have a baseline ``config`` and don't need a
+  context to temporarily modify it
+* *(internal)* ``Engine._update`` has been removed in favor of ``util.unpack_from_dynamodb``
+* *(internal)* ``Engine._instance`` has been removed in favor of directly creating instances from
+  ``model.Meta.init()`` in ``unpack_from_dynamodb``
+* ``AbstractModelException`` has been rolled into ``UnboundModel``
+* The ``all()`` method has been removed from the query and scan iterator interface.  Simply iterate with
+  ``next(query)`` or ``for result in query:``
+* ``Query.results`` and ``Scan.results`` have been removed and results are no longer cached.  You can begin the
+  search again with ``query.reset()``
+* The ``new_base()`` function has been removed in favor of subclassing ``BaseModel`` directly
+* ``bloop.Float`` has been replaced by ``bloop.Number``
+
+Fixed
+=====
+
+* ``Column.contains(value)`` now renders ``value`` with the column typedef's inner type.  Previously, the container
+  type was used, so ``Data.some_list.contains("foo"))`` would render as ``(contains(some_list, ["f", "o", "o"]))``
+  instead of ``(contains(some_list, "foo"))``
+* *(internal)* ``Set`` and ``List`` expose an ``inner_typedef`` for conditions to force rendering of inner values
+  (currently only used by ``ContainsCondition``)
+* ``Set`` renders correct wire format -- previously, it incorrectly sent ``{"SS": [{"S": "h"}, {"S": "i"}]}`` instead
+  of the correct ``{"SS": ["h", "i"]}``
+
 ---------------------
  0.9.13 - 2016-10-31
 ---------------------

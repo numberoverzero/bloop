@@ -13,10 +13,31 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  [Unreleased]
 --------------
 
+1.0.0 is the culmination of just under a year of redesigns, bug fixes, and new features.  Over 550 commits, more than
+60 issues closed, over 1200 new unit tests.  At an extremely high level:
+
+* The query and scan interfaces have been polished and simplified.  Extraneous methods and configuration settings have
+  been cut out, while ambiguous properties and methods have been merged into a single call.
+* A new, simple API exposes DynamoDBStreams with just a few methods; no need to manage individual shards, maintain
+  shard hierarchies and open/closed polling.  I believe this is a first since the Kinesis Adapter and KCL, although
+  they serve different purposes.  When a single worker can keep up with a model's stream, Bloop's interface is
+  immensely easier to use.
+* Engine's methods are more consistent with each other and across the code base, and all of the configuration settings
+  have been made redundant.  This removes the need for ``EngineView`` and its associated temporary config changes.
+* Blinker-powered signals make it easy to plug in additional logic when certain events occur: before a table is
+  created; after a model is validated; whenever an object is modified.
+* Types have been pared down while their flexibility has increased significantly.  It's possible to create a type that
+  loads another object as a column's value, using the engine and context passed into the load and dump functions.  Be
+  careful with this; transactions on top of DynamoDB are very hard to get right.
+
+See the Migration Guide above for specific examples of breaking changes and how to fix them, or the User Guide for
+a tour of the new Bloop.  Lastly, the Public and Internal API References are finally available and should cover
+everything you need to extend or replace whole subsystems in Bloop (if not, please open an issue).
+
 Added
 =====
 
-* ``bloop.signals`` exposes Blinker signals for consumption.  These can be used to monitor object changes, when
+* ``bloop.signals`` exposes Blinker signals which can be used to monitor object changes, when
   instances are loaded from a query, before models are bound, etc.
 
     * ``before_create_table``
@@ -28,17 +49,10 @@ Added
     * ``model_created``
     * ``model_validated``
 
-* *(internal)* ``bloop.conditions.ReferenceTracker`` handles building ``#n0``, ``:v1``, and associated values.
-  Use ``any_ref`` to build a reference to a name/path/value, and ``pop_refs`` when backtracking (eg. when a value is
-  actually another column, or when correcting a partially valid condition)
-* *(internal)* ``bloop.conditions.render`` is the preferred entry point for rendering, and handles all permutations
-  of conditions, filters, projections.  Use over ``ConditionRenderer`` unless you need very specific control over
-  rendering sequencing.
 * ``Engine.stream`` can be used to iterate over all records in a stream, with a total ordering over approximate
   record creation time.  Use ``engine.stream(model, "trim_horizon")`` to get started.  See the User Guide
 * New exceptions ``RecordsExpired`` and ``ShardIteratorExpired`` for errors in stream state
 * New exceptions ``Invalid*`` for bad input subclass ``BloopException`` and ``ValueError``
-
 * ``DateTime`` types for the three most common date time libraries:
 
     * ``bloop.ext.arrow.DateTime``
@@ -49,40 +63,29 @@ Added
   See the User Guide for details
 * ``model.Meta`` exposes the same ``projection`` attribute as ``Index`` so that ``(index or model.Meta).projection``
   can be used interchangeably
-* *(internal)* ``bloop.session.SessionWrapper`` exposes DynamoDBStreams operations in addition to previous
-  ``bloop.Client`` wrappers around DynamoDB client
 * New ``Stream`` class exposes DynamoDBStreams API as a single iterable with powerful seek/jump options, and simple
   json-friendly tokens for pausing and resuming iteration.  See the User Guide for details
+* Over 1200 unit tests added
+* Initial integration tests added
+* *(internal)* ``bloop.conditions.ReferenceTracker`` handles building ``#n0``, ``:v1``, and associated values.
+  Use ``any_ref`` to build a reference to a name/path/value, and ``pop_refs`` when backtracking (eg. when a value is
+  actually another column, or when correcting a partially valid condition)
+* *(internal)* ``bloop.conditions.render`` is the preferred entry point for rendering, and handles all permutations
+  of conditions, filters, projections.  Use over ``ConditionRenderer`` unless you need very specific control over
+  rendering sequencing.
+* *(internal)* ``bloop.session.SessionWrapper`` exposes DynamoDBStreams operations in addition to previous
+  ``bloop.Client`` wrappers around DynamoDB client
 * *(internal)* New supporting classes ``streams.buffer.RecordBuffer``, ``streams.shard.Shard``, and
   ``streams.coordinator.Coordinator`` to encapsulate the hell^Wjoy that is working with DynamoDBStreams
 * *(internal)* New class ``util.Sentinel`` for placeholder values like ``missing`` and ``last_token``
   that provide clearer docstrings, instead of showing ``func(..., default=object<0x...>)`` these will show
   ``func(..., default=Sentinel<[Missing]>)``
-* over 1200 unit tests added
-* Initial integration tests added
+
 
 Changed
 =======
 
-* *(internal)* ``bloop.Client`` became ``bloop.session.SessionWrapper``
 * ``bloop.Column`` emits ``object_modified`` on ``__set__`` and ``__del__``
-* *(internal)* Path lookups on ``Column`` (eg. ``User.profile["name"]["last"]``) use simpler proxies
-* *(internal)* Proxy behavior split out from ``Column``'s base class ``bloop.conditions.ComparisonMixin``
-  for a cleaner namespace
-* *(internal)* ``bloop.conditions.ConditionRenderer`` rewritten, uses a new ``bloop.conditions.ReferenceTracker``
-  with a much clearer api
-* *(internal)* ``ConditionRenderer`` can backtrack references and handles columns as values (eg.
-  ``User.name.in_([User.email, "literal"])``)
-* *(internal)* ``_MultiCondition`` logic rolled into ``bloop.conditions.BaseCondition``, ``AndCondition`` and
-  ``OrCondition`` no longer have intermediate base class
-* *(internal)* ``AttributeExists`` logic rolled into ``bloop.conditions.ComparisonCondition``
-* *(internal)* ``bloop.tracking`` rolled into ``bloop.conditions`` and is hooked into the ``object_*`` signals.
-  Methods are no longer called directly (eg. no need for ``tracking.sync(some_obj, engine)``)
-* *(internal)* update condition is built from a set of columns, not a dict of updates to apply
-* *(internal)* ``bloop.conditions.BaseCondition`` is a more comprehensive base class, and handles all manner of
-  out-of-order merges (``and(x, y)`` vs ``and(y, x)`` where x is an ``and`` condition and y is not)
-* *(internal)* almost all ``*Condition`` classes simply implement ``__repr__`` and ``render``; ``BaseCondition``
-  takes care of everything else
 * Conditions now check if they can be used with a column's ``typedef`` and raise ``InvalidCondition`` when they can't.
   For example, ``contains`` can't be used on ``Number``, nor ``>`` on ``Set(String)``
 * ``bloop.Engine`` no longer takes an optional ``bloop.Client`` but instead optional ``dynamodb`` and
@@ -95,8 +98,6 @@ Changed
     * ``strict`` is a parameter of a ``LocalSecondaryIndex``, defaults to ``True``
 
 * ``Engine`` no longer has a ``context`` to create temporary views with different configuration
-* *(internal)* ``Engine._dump`` takes an optional ``context``, ``**kwargs``, matching the
-  signature of ``Engine._load``
 * ``Engine.bind`` is no longer by keyword arg only: ``engine.bind(MyBase)`` is acceptable in addition to
   ``engine.bind(base=MyBase)``
 * ``Engine.bind`` emits new signals ``before_create_table``, ``model_validated``, and ``model_bound``
@@ -120,10 +121,6 @@ Changed
 * The ``projection`` parameter is now required for ``GlobalSecondaryIndex`` and ``LocalSecondaryIndex``
 * Calling ``Index.__set__`` or ``Index.__del__`` will raise ``AttributeError``.  For example,
   ``some_user.by_email = 3`` raises if ``User.by_email`` is a GSI
-* *(internal)* ``BaseModel`` no longer implements ``__hash__``, ``__eq__``, or ``__ne__`` but ``ModelMetaclass`` will
-  always ensure a ``__hash__`` function when the subclass is created
-* *(internal)* ``Filter`` and ``FilterIterator`` rewritten entirely in the ``bloop.search`` module across multiple
-  classes
 * ``bloop.Number`` replaces ``bloop.Float`` and takes an optional ``decimal.Context`` for converting numbers.
   For a less strict, **lossy** ``Float`` type see the Patterns section of the User Guide
 * ``bloop.String.dynamo_dump`` no longer calls ``str()`` on the value, which was hiding bugs where a non-string
@@ -137,15 +134,34 @@ Changed
     * rewritten three times
     * now includes public and internal api references
 
+* *(internal)* Path lookups on ``Column`` (eg. ``User.profile["name"]["last"]``) use simpler proxies
+* *(internal)* Proxy behavior split out from ``Column``'s base class ``bloop.conditions.ComparisonMixin``
+  for a cleaner namespace
+* *(internal)* ``bloop.conditions.ConditionRenderer`` rewritten, uses a new ``bloop.conditions.ReferenceTracker``
+  with a much clearer api
+* *(internal)* ``ConditionRenderer`` can backtrack references and handles columns as values (eg.
+  ``User.name.in_([User.email, "literal"])``)
+* *(internal)* ``_MultiCondition`` logic rolled into ``bloop.conditions.BaseCondition``, ``AndCondition`` and
+  ``OrCondition`` no longer have intermediate base class
+* *(internal)* ``AttributeExists`` logic rolled into ``bloop.conditions.ComparisonCondition``
+* *(internal)* ``bloop.tracking`` rolled into ``bloop.conditions`` and is hooked into the ``object_*`` signals.
+  Methods are no longer called directly (eg. no need for ``tracking.sync(some_obj, engine)``)
+* *(internal)* update condition is built from a set of columns, not a dict of updates to apply
+* *(internal)* ``bloop.conditions.BaseCondition`` is a more comprehensive base class, and handles all manner of
+  out-of-order merges (``and(x, y)`` vs ``and(y, x)`` where x is an ``and`` condition and y is not)
+* *(internal)* almost all ``*Condition`` classes simply implement ``__repr__`` and ``render``; ``BaseCondition``
+  takes care of everything else
+* *(internal)* ``bloop.Client`` became ``bloop.session.SessionWrapper``
+* *(internal)* ``Engine._dump`` takes an optional ``context``, ``**kwargs``, matching the
+  signature of ``Engine._load``
+* *(internal)* ``BaseModel`` no longer implements ``__hash__``, ``__eq__``, or ``__ne__`` but ``ModelMetaclass`` will
+  always ensure a ``__hash__`` function when the subclass is created
+* *(internal)* ``Filter`` and ``FilterIterator`` rewritten entirely in the ``bloop.search`` module across multiple
+  classes
+
 Removed
 =======
 
-* *(internal)* ``bloop.engine.LoadManager`` logic was rolled into ``bloop.engine.load(...)``
-* ``EngineView`` has been removed since engines no longer have a baseline ``config`` and don't need a
-  context to temporarily modify it
-* *(internal)* ``Engine._update`` has been removed in favor of ``util.unpack_from_dynamodb``
-* *(internal)* ``Engine._instance`` has been removed in favor of directly creating instances from
-  ``model.Meta.init()`` in ``unpack_from_dynamodb``
 * ``AbstractModelException`` has been rolled into ``UnboundModel``
 * The ``all()`` method has been removed from the query and scan iterator interface.  Simply iterate with
   ``next(query)`` or ``for result in query:``
@@ -153,6 +169,12 @@ Removed
   search again with ``query.reset()``
 * The ``new_base()`` function has been removed in favor of subclassing ``BaseModel`` directly
 * ``bloop.Float`` has been replaced by ``bloop.Number``
+* *(internal)* ``bloop.engine.LoadManager`` logic was rolled into ``bloop.engine.load(...)``
+* ``EngineView`` has been removed since engines no longer have a baseline ``config`` and don't need a
+  context to temporarily modify it
+* *(internal)* ``Engine._update`` has been removed in favor of ``util.unpack_from_dynamodb``
+* *(internal)* ``Engine._instance`` has been removed in favor of directly creating instances from
+  ``model.Meta.init()`` in ``unpack_from_dynamodb``
 
 Fixed
 =====
@@ -160,10 +182,10 @@ Fixed
 * ``Column.contains(value)`` now renders ``value`` with the column typedef's inner type.  Previously, the container
   type was used, so ``Data.some_list.contains("foo"))`` would render as ``(contains(some_list, ["f", "o", "o"]))``
   instead of ``(contains(some_list, "foo"))``
-* *(internal)* ``Set`` and ``List`` expose an ``inner_typedef`` for conditions to force rendering of inner values
-  (currently only used by ``ContainsCondition``)
 * ``Set`` renders correct wire format -- previously, it incorrectly sent ``{"SS": [{"S": "h"}, {"S": "i"}]}`` instead
   of the correct ``{"SS": ["h", "i"]}``
+* *(internal)* ``Set`` and ``List`` expose an ``inner_typedef`` for conditions to force rendering of inner values
+  (currently only used by ``ContainsCondition``)
 
 ---------------------
  0.9.13 - 2016-10-31

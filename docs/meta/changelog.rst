@@ -142,6 +142,122 @@ These functions take ``*objs`` instead of ``objs``, which makes passing a small 
     some_users = get_modified()
     engine.save(*some_users)
 
+-------------
+ Query, Scan
+-------------
+
+Queries and Scans are now created in a single call, instead of using an ambiguous builder pattern.  This will simplify
+most calls, but will be disruptive if you rely on partially building queries in different parts of your code.
+
+Creating Queries
+================
+
+The most common issue with the builder pattern was creating multi-condition filters.  Each call would **replace** the
+existing filter, not append to it.  For example:
+
+.. code-block:: python
+
+    # This only checks the date, NOT the count
+    q = engine.query(User).key(User.id == 0)
+    q = q.filter(User.friends >= 3)
+    q = q.filter(User.created >= arrow.now().replace(years=-1))
+
+    # 1.0.0 only has one filter option
+    q = engine.query(
+        User, key=User.id == 0,
+        filter=(
+            (User.friends >= 3) &
+            (User.created >= ...)
+        )
+    )
+
+The other query controls have been baked in, including ``projection``, ``consistent``, and ``forward``.  Previously,
+you changed the ``forward`` option through the properties ``ascending`` and ``descending``.  Use ``forward=False`` to
+sort descending.
+
+Here is a query with all options before and after.  The structure is largely the same, with a lower symbolic overhead:
+
+.. code-block:: python
+
+    # Pre 1.0.0
+    q = (
+        engine.query(User)
+            .key(User.id == 0)
+            .projection("all")
+            .descending
+            .consistent
+            .filter(User.name.begins_with("a"))
+    )
+
+    # 1.0.0
+    q = engine.query(
+        User,
+        key=User.id == 0,
+        projection="all",
+        forward=False,
+        consistent=True,
+        filter=User.name.begins_with("a")
+    )
+
+
+The same changes apply to :func:`Engine.scan <bloop.engine.Engine.scan>`, although Scans can't be performed in
+descending order.
+
+Parallel Scans
+==============
+
+1.0.0 allows you to create a parallel scan by specifying the segment that this scan covers.  This is just a tuple of
+``(Segment, TotalSegments)``.  For example, to scan ``Users`` in three pieces:
+
+.. code-block:: python
+
+    scans = [
+        engine.scan(User, parallel=(0, 3)),
+        engine.scan(User, parallel=(1, 3)),
+        engine.scan(User, parallel=(2, 3))
+    ]
+
+    for worker, scan in zip(workers, scans):
+        worker.process(scan)
+
+Iteration and Properties
+========================
+
+The ``all`` method and ``prefetch`` and ``limit`` options have been removed.  Each call to :func:`Engine.query` or
+:func:`Engine.scan` will create a new iterator that tracks its progress and can be reset.  To create different
+iterators over the same parameters, you must call :func:`Engine.query` multiple times.
+
+.. code-block:: pycon
+
+    # All the same iterator
+    >>> scan = engine.scan(User, filter=...)
+    >>> it_one = iter(scan)
+    >>> it_two = iter(scan)
+    >>> it_one is it_two is scan
+    True
+
+Query and Scan no longer buffer their results, and you will need to reset the query to execute it again.
+
+.. code-block:: python
+
+    >>> scan = engine.scan(User)
+    >>> for result in scan:
+    ...     pass
+    ...
+    >>> scan.exhausted
+    True
+    >>> scan.reset()
+    >>> for result in scan:
+    ...     print(result.id)
+    ...
+    0
+    1
+    2
+
+* The ``complete`` property has been renamed to ``exhausted`` to match the new ``Stream`` interface.
+* The ``results`` property has been removed.
+* ``count``, ``scanned``, ``one()``, and ``first()`` are unchanged.
+
 --------
  Models
 --------

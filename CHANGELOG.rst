@@ -2,7 +2,7 @@
  Changelog
 ===========
 
-This changelog structure is structured based on `Keep a Changelog v0.3.0`__.
+This changelog structure is based on `Keep a Changelog v0.3.0`__.
 Bloop follows `Semantic Versioning 2.0.0`__ and a `draft appendix`__ for its :ref:`Public API <api-public>`.
 
 __ http://keepachangelog.com/en/0.3.0/

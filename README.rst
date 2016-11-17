@@ -4,15 +4,8 @@
     :target: https://travis-ci.org/numberoverzero/bloop
 .. image:: https://img.shields.io/coveralls/numberoverzero/bloop/master.svg?style=flat-square
     :target: https://coveralls.io/github/numberoverzero/bloop
-.. image:: https://img.shields.io/pypi/v/bloop.svg?style=flat-square
-    :target: https://pypi.python.org/pypi/bloop
-.. image:: https://img.shields.io/pypi/status/bloop.svg?style=flat-square
-    :target: https://pypi.python.org/pypi/bloop
-.. image:: https://img.shields.io/github/issues-raw/numberoverzero/bloop.svg?style=flat-square
-    :target: https://github.com/numberoverzero/bloop/issues
-.. image:: https://img.shields.io/pypi/l/bloop.svg?style=flat-square
-    :target: https://github.com/numberoverzero/bloop/blob/master/LICENSE
-
+.. image:: https://img.shields.io/gitter/room/numberoverzero/bloop.svg?style=flat-square
+    :target: https://gitter.im/numberoverzero/bloop
 
 Bloop is an object mapper for DynamoDB and DynamoDBStreams. py35+
 

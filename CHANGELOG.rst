@@ -3,7 +3,7 @@
 ===========
 
 This changelog structure is based on `Keep a Changelog v0.3.0`__.
-Bloop follows `Semantic Versioning 2.0.0`__ and a `draft appendix`__ for its :ref:`Public API <api-public>`.
+Bloop follows `Semantic Versioning 2.0.0`__ and a `draft appendix`__ for its Public API.
 
 __ http://keepachangelog.com/en/0.3.0/
 __ http://semver.org/spec/v2.0.0.html
@@ -12,6 +12,11 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 --------------
  [Unreleased]
 --------------
+
+* Index validates against a superset of the projection (see `Issue #71`_)
+
+.. _Issue #71: https://github.com/numberoverzero/bloop/issues/71
+
 
 --------------------
  1.0.0 - 2016-11-16
@@ -346,7 +351,7 @@ You'll now create a base without any relation to an engine, and then bind it to 
   no longer created in ``Engine.__init__``, which provides an opportunity to swap out the client entirely before
   the first ``Engine.bind`` call.  The semantics of session and client are unchanged.
 * ``Engine._load``, ``Engine._dump``, and all Type signatures now pass an engine explicitly through the ``context``
-  parameter.  This was mentioned in :ref:`0.9.2 <changelog-v0.9.2>` and ``context`` is now required.
+  parameter.  This was mentioned in 0.9.2 and ``context`` is now required.
 * ``Engine.bind`` now binds the given class **and all subclasses**.  This simplifies most workflows, since you can
   now create a base with ``MyBase = new_base()`` and then bind every model you create with
   ``engine.bind(base=MyBase)``.
@@ -400,7 +405,7 @@ You'll now create a base without any relation to an engine, and then bind it to 
 =========
 
 * Type functions ``_load``, ``_dump``, ``dynamo_load``, ``dynamo_dump`` now take an optional keyword-only arg
-  ``context``.  This dict will become required in :ref:`0.9.6 <changelog-v0.9.6>`, and contains the engine
+  ``context``.  This dict will become required in 0.9.6, and contains the engine
   instance that should be used for recursive types.  If your type currently uses ``cls.Meta.bloop_engine``,
   you should start using ``context["engine"]`` in the next release.  The ``bloop_engine`` attribute is being removed,
   since models will be able to bind to multiple engines.

@@ -13,6 +13,10 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  [Unreleased]
 --------------
 
+--------------------
+ 1.0.0 - 2016-11-16
+--------------------
+
 1.0.0 is the culmination of just under a year of redesigns, bug fixes, and new features.  Over 550 commits, more than
 60 issues closed, over 1200 new unit tests.  At an extremely high level:
 

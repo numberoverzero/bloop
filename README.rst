@@ -128,3 +128,8 @@ set up cross-region replication in less than 20 lines, and more!
 
 .. _User Guide: http://bloop.readthedocs.org/
 .. _Public API Reference: http://bloop.readthedocs.org/
+
+
+.. image:: https://badges.gitter.im/numberoverzero/bloop.svg
+   :alt: Join the chat at https://gitter.im/numberoverzero/bloop
+   :target: https://gitter.im/numberoverzero/bloop?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge

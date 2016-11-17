@@ -1,13 +1,11 @@
+import datetime
 from unittest.mock import Mock
 
-import arrow
-import boto3
-import declare
 import pytest
-from bloop.engine import Engine, dump_key, object_saved
+from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
-    AbstractModelError,
     InvalidModel,
+    InvalidStream,
     MissingKey,
     MissingObjects,
     UnboundModel,
@@ -15,20 +13,11 @@ from bloop.exceptions import (
 )
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper
+from bloop.signals import object_saved
 from bloop.types import DateTime, Integer, String
 from bloop.util import ordered
 
 from ..helpers.models import ComplexModel, User, VectorModel
-
-
-def test_shared_type_engine():
-    """Engine can use a specific type_engine to share bound instances"""
-    type_engine = declare.TypeEngine.unique()
-    session = Mock(spec=boto3.Session)
-    first = Engine(type_engine=type_engine, session=session)
-    second = Engine(type_engine=type_engine, session=session)
-
-    assert first.type_engine is second.type_engine
 
 
 def test_missing_objects(engine, session):
@@ -167,8 +156,7 @@ def test_load_equivalent_objects(engine, session):
 
 
 def test_load_shared_table(engine, session):
-    """
-    Two different models backed by the same table try to load the same hash key.
+    """Two different models backed by the same table try to load the same hash key.
     They share the column "shared" but load the content differently
     """
     class FirstModel(BaseModel):
@@ -191,7 +179,7 @@ def test_load_shared_table(engine, session):
 
     id = "foo"
     range = "bar"
-    now = arrow.now().to("utc")
+    now = datetime.datetime.now(datetime.timezone.utc)
     now_str = now.isoformat()
     session.load_items.return_value = {
         "SharedTable": [{
@@ -220,8 +208,7 @@ def test_load_shared_table(engine, session):
 
 
 def test_load_missing_attrs(engine, session):
-    """
-    When an instance of a Model is loaded into, existing attributes should be
+    """When an instance of a Model is loaded into, existing attributes should be
     overwritten with new values, or if there is no new value, should be deleted
     """
     obj = User(id="user_id", age=4, name="user")
@@ -367,7 +354,7 @@ def test_save_atomic_new(engine, session):
 def test_save_atomic_condition(engine, session):
     user = User(id="user_id")
     # Tell the tracking system the user's id was saved to DynamoDB
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
     # Mutate a field; part of the update but not an expected condition
     user.name = "new_foo"
     # Condition on the mutated field with a different value
@@ -389,8 +376,7 @@ def test_save_atomic_condition(engine, session):
 
 
 def test_save_condition_key_only(engine, session):
-    """
-    Even when the diff is empty, an UpdateItem should be issued
+    """Even when the diff is empty, an UpdateItem should be issued
     (in case this is really a create - the item doesn't exist yet)
     """
     user = User(id="user_id")
@@ -455,7 +441,7 @@ def test_delete_atomic(engine, session):
     user = User(id="user_id")
 
     # Tell the tracking system the user's id was saved to DynamoDB
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
 
     expected = {
         "ConditionExpression": "(#n0 = :v1)",
@@ -485,10 +471,7 @@ def test_delete_atomic_new(engine, session):
 
 
 def test_delete_new(engine, session):
-    """
-    When an object is first created, a non-atomic delete shouldn't expect
-    anything.
-    """
+    """When an object is first created, a non-atomic delete shouldn't expect anything."""
     user = User(id="user_id")
     expected = {
         "TableName": "User",
@@ -501,7 +484,7 @@ def test_delete_atomic_condition(engine, session):
     user = User(id="user_id", email="foo@bar.com")
 
     # Tell the tracking system the user's id and email were saved to DynamoDB
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
 
     expected = {
         "ConditionExpression": "((#n0 = :v1) AND (#n2 = :v3) AND (#n4 = :v5))",
@@ -518,8 +501,12 @@ def test_delete_atomic_condition(engine, session):
 
 
 def test_query(engine):
-    """ Engine.query supports model and index-based queries """
-    index_query = engine.query(User.by_email, key=User.by_email.hash_key == "placeholder")
+    """Engine.query supports model and index-based queries"""
+    index_query = engine.query(
+        User.by_email,
+        key=User.by_email.hash_key == "placeholder",
+        forward=False
+    )
     assert index_query.model is User
     assert index_query.index is User.by_email
 
@@ -529,8 +516,8 @@ def test_query(engine):
 
 
 def test_scan(engine):
-    """ Engine.scan supports model and index-based queries """
-    index_scan = engine.scan(User.by_email)
+    """Engine.scan supports model and index-based queries"""
+    index_scan = engine.scan(User.by_email, parallel=(1, 5))
     assert index_scan.model is User
     assert index_scan.index is User.by_email
 
@@ -552,6 +539,11 @@ def test_stream(engine, session):
 
     stream = engine.stream(StreamModel, "latest")
     assert stream.model is StreamModel
+
+
+def test_invalid_stream(engine, session):
+    with pytest.raises(InvalidStream):
+        engine.stream(User, "latest")
 
 
 def test_bind_non_model(engine):
@@ -596,11 +588,10 @@ def test_bind_concrete_base(engine, session):
     session.validate_table.assert_called_once_with(Concrete)
 
 
-def test_bind_different_engines():
+def test_bind_different_engines(dynamodb, dynamodbstreams):
     # Required so engine doesn't pass boto3 to the wrapper
-    _session = Mock(spec=boto3.Session)
-    first_engine = Engine(session=_session)
-    second_engine = Engine(session=_session)
+    first_engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    second_engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
     first_engine.session = Mock(spec=SessionWrapper)
     second_engine.session = Mock(spec=SessionWrapper)
@@ -632,11 +623,11 @@ def test_abstract_object_operations_raise(engine, op_name, plural):
     abstract = Abstract(id=5)
     concrete = User(age=5)
 
-    with pytest.raises(AbstractModelError):
+    with pytest.raises(InvalidModel):
         operation = getattr(engine, op_name)
         operation(abstract)
     if plural:
-        with pytest.raises(AbstractModelError):
+        with pytest.raises(InvalidModel):
             operation = getattr(engine, op_name)
             operation(abstract, concrete)
 
@@ -649,10 +640,13 @@ def test_abstract_model_operations_raise(engine, op_name):
         id = Column(Integer, hash_key=True)
         other = Column(Integer)
         by_other = GlobalSecondaryIndex(projection="all", hash_key="other")
+    args = [Abstract]
+    if op_name == "query":
+        args.append("KeyCondition")
 
-    with pytest.raises(AbstractModelError):
+    with pytest.raises(InvalidModel):
         operation = getattr(engine, op_name)
-        operation(Abstract)
+        operation(*args)
 
 
 def test_load_missing_vector_types(engine, session):

@@ -14,120 +14,117 @@
     :target: https://github.com/numberoverzero/bloop/blob/master/LICENSE
 
 
-DynamoDB object mapper for python 3.5+
+Bloop is an object mapper for DynamoDB and DynamoDBStreams. py35+
 
-Installation
-------------
 ::
 
     pip install bloop
 
-Usage
------
+=======
+ Usage
+=======
 
-Define some models:
-
-.. code-block:: python
-
-    from bloop import (
-        BaseModel, Column, DateTime, Engine,
-        GlobalSecondaryIndex, Integer, String, UUID)
-
-    engine = Engine()
-
-
-    class Account(BaseModel):
-        class Meta:
-            read_units = 5
-            write_units = 2
-
-        id = Column(UUID, hash_key=True)
-        name = Column(String)
-        email = Column(String)
-        by_email = GlobalSecondaryIndex(
-            hash_key='email', projection='keys',
-            write_units=1, read_units=5)
-
-
-    class Tweet(BaseModel):
-        class Meta:
-            write_units = 10
-        account = Column(UUID, hash_key=True)
-        id = Column(String, range_key=True)
-        content = Column(String)
-        date = Column(DateTime)
-        favorites = Column(Integer)
-
-        by_date = GlobalSecondaryIndex(
-            hash_key='date', projection='keys')
-
-    engine.bind(BaseModel)
-
-
-Create an instance:
+First, we need to import all the things:
 
 .. code-block:: python
 
-    import arrow
-    import uuid
+    >>> from bloop import (
+    ...     BaseModel, Column, String, UUID,
+    ...     GlobalSecondaryIndex, Engine
+    ... )
 
-    account = Account(id=uuid.uuid4(), name='@garybernhardt',
-                      email='foo@bar.com')
-    tweet = Tweet(
-        account=account.id, id='600783770925420546', date=arrow.now(),
-        content=(
-            'Consulting service: you bring your big data problems'
-            ' to me, I say "your data set fits in RAM", you pay me'
-            ' $10,000 for saving you $500,000.'))
-
-    engine.save([account, tweet])
-
-Query or scan by column values:
+Next we'll define the account model (with streaming enabled), and create the backing table:
 
 .. code-block:: python
 
-    email = 'foo@bar.com'
-    yesterday = arrow.now().replace(days=-1)
+    >>> class Account(BaseModel):
+    ...     class Meta:
+    ...         stream = {
+    ...             "include": {"old", "new"}
+    ...         }
+    ...     id = Column(UUID, hash_key=True)
+    ...     name = Column(String)
+    ...     email = Column(String)
+    ...    by_email = GlobalSecondaryIndex(projection='keys', hash_key='email')
+    ...
+    >>> engine = Engine()
+    >>> engine.bind(Account)
 
-    acct_query = engine.query(
-        Account.by_email,
-        key=Account.email == email)
-    account = acct_query.first()
+Let's make a few users and persist them:
 
-    tweet_query = engine.query(
-        Tweet, key=Tweet.account == account.id,
-        filter=Tweet.date >= yesterday)
+.. code-block:: python
 
-    for tweet in tweet_query:
-        print(tweet.content)
+    >>> import uuid
+    >>> admin = Account(id=uuid.uuid4(), email="admin@domain.com")
+    >>> admin.name = "Admin McAdminFace"
+    >>> support = Account(name="this-is-fine.jpg", email="help@domain.com")
+    >>> support.id = uuid.uuid4()
+    >>> engine.save(admin, support)
 
+And find them again:
 
-Versioning
-----------
+.. code-block:: python
 
-* bloop follows semver for its **public** API.
+    >>> q = engine.query(
+    ...     Account.by_email,
+    ...     key=Account.email=="help@domain.com"
+    ... )
+    >>> q.first()
+    Account(email='help@domain.com',
+            id=UUID('d30e343f-f067-4fe5-bc5e-0b00cdeaf2ba'))
 
-  * You should not rely on the internal api staying the same between minor
-    versions.
-  * Over time, private apis may be raised to become public.  The reverse
-    will never occur.
+.. code-block:: python
 
-Contributing
-------------
+    >>> s = engine.scan(
+    ...     Account,
+    ...     filter=Account.name.begins_with("Admin")
+    ... )
+    >>> s.one()
+    Account(email='admin@domain.com',
+            id=UUID('08da44ac-5ff6-4f70-8a3f-b75cadb4dd79'),
+            name='Admin McAdminFace')
 
-Contributions welcome!  Please make sure ``tox`` passes (including flake8)
-before submitting a PR.
+Let's find them in the stream:
 
-Development
------------
+.. code-block:: python
 
-bloop uses ``tox``, ``pytest``, ``coverage``, and ``flake8``.  To get
-everything set up with `pyenv`_::
+    >>> stream = engine.stream(Account, "trim_horizon")
+    >>> next(stream)
+    {'key': None,
+     'meta': {'created_at': datetime.datetime(...),
+      'event': {'id': 'cbb9a9b45eb0a98889b7da85913a5c65',
+       'type': 'insert',
+       'version': '1.1'},
+      'sequence_number': '100000000000588052489'},
+     'new': Account(
+                email='help@domain.com',
+                id=UUID('d30e343f-...-0b00cdeaf2ba'),
+                name='this-is-fine.jpg'),
+     'old': None}
+    >>> next(stream)
+    {'key': None,
+     'meta': {'created_at': datetime.datetime(...),
+      'event': {'id': 'cbdfac5671ea38b99017c4b43a8808ce',
+       'type': 'insert',
+       'version': '1.1'},
+      'sequence_number': '200000000000588052506'},
+     'new': Account(
+                email='admin@domain.com',
+                id=UUID('08da44ac-...-b75cadb4dd79'),
+                name='Admin McAdminFace'),
+     'old': None}
+    >>> next(stream)
+    >>> next(stream)
+    >>>
 
-    # RECOMMENDED: create a virtualenv with:
-    #     pyenv virtualenv 3.4.3 bloop
-    git clone https://github.com/numberoverzero/bloop.git
-    pip install tox
-    tox
+=============
+ What's Next
+=============
 
-.. _pyenv: https://github.com/yyuu/pyenv
+Check out the `User Guide`_ or `Public API Reference`_ to create your own nested types, overlapping models,
+set up cross-region replication in less than 20 lines, and more!
+
+(placeholder links until docs are merged)
+
+.. _User Guide: http://bloop.readthedocs.org/
+.. _Public API Reference: http://bloop.readthedocs.org/

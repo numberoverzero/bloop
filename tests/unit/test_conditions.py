@@ -15,34 +15,31 @@ from bloop.conditions import (
     InvalidCondition,
     NotCondition,
     OrCondition,
+    Proxy,
     Reference,
     ReferenceTracker,
     get_marked,
     get_snapshot,
     iter_columns,
     iter_conditions,
-    object_deleted,
-    object_loaded,
-    object_saved,
+    printable_column_name,
     render,
 )
+from bloop.models import BaseModel, Column
+from bloop.signals import object_deleted, object_loaded, object_saved
+from bloop.types import Binary, Boolean, Integer, List, Map, Set, String
 
 from ..helpers.models import Document, User
 
 
-class MockColumn(ComparisonMixin):
+class MockColumn(Column):
     """model, model_name, dynamo_name, __repr__"""
     def __init__(self, name):
+        super().__init__(String(), name="d_" + name)
+        self.model_name = name
+
         # Mock model so this can render as M.name
         self.model = type("M", tuple(), {})
-
-        self.model_name = name
-        self.dynamo_name = "d_" + name
-
-        super().__init__()
-
-    def _repr_with_path(self, path):
-        return self.model_name
 
 c = MockColumn("c")
 d = MockColumn("d")
@@ -126,18 +123,18 @@ empty_user_condition = (
 def test_on_deleted(engine):
     """When an object is deleted, the snapshot expects all columns to be empty"""
     user = User(age=3, name="foo")
-    object_deleted.send(engine, obj=user)
+    object_deleted.send(engine, engine=engine, obj=user)
     assert get_snapshot(user) == empty_user_condition
 
     # It doesn't matter if the object had non-empty values saved from a previous sync
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
     assert get_snapshot(user) == (
         User.age.is_({"N": "3"}) &
         User.name.is_({"S": "foo"})
     )
 
     # The deleted signal still clears everything
-    object_deleted.send(engine, obj=user)
+    object_deleted.send(engine, engine=engine, obj=user)
     assert get_snapshot(user) == empty_user_condition
 
     # But the current values aren't replaced
@@ -156,7 +153,7 @@ def test_on_loaded_partial(engine):
     # columns included in the snapshot.  A normal load
     # would set the other values to None, and the
     # snapshot would expect those.
-    object_loaded.send(engine, obj=user)
+    object_loaded.send(engine, engine=engine, obj=user)
 
     # Values are stored dumped.  Since the dumped flag isn't checked as
     # part of equality testing, we can simply construct the dumped
@@ -170,7 +167,7 @@ def test_on_loaded_partial(engine):
 def test_on_loaded_full(engine):
     """Same as the partial test, but with explicit Nones to simulate a real engine.load"""
     user = User(age=3, email=None, id=None, joined=None, name="foo")
-    object_loaded.send(engine, obj=user)
+    object_loaded.send(engine, engine=engine, obj=user)
     assert get_snapshot(user) == (
         User.age.is_({"N": "3"}) &
         User.email.is_(None) &
@@ -206,7 +203,7 @@ def test_on_saved(engine):
 
     The state after saving is snapshotted for future atomic operations."""
     user = User(name="foo", age=3)
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
 
     # Since "name" and "age" were the only marked columns saved to DynamoDB,
     # they are the only columns that must match for an atomic save.  The
@@ -552,7 +549,7 @@ def test_render_atomic_only_partial(engine):
     """Atomic condition on an object already partially synced"""
     user = User(id="user_id", age=3, email=None)
     # Sync gives us an atomic condition
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
 
     # Unlike a new save, this one has no expectation about the values of "joined" or "name"
     rendered = render(engine, obj=user, atomic=True)
@@ -568,7 +565,7 @@ def test_render_atomic_and_condition(engine):
     """Atomic condition and condition are ANDed together (condition first)"""
     user = User(id="user_id", age=3, email=None)
     # Sync gives us an atomic condition
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
 
     # Value ref isn't re-used
     condition = User.email.contains("@")
@@ -596,7 +593,7 @@ def test_render_complex(engine):
     """Render a filter condition, key condition, projection, condition, atomic and update"""
     user = User(id="uid", age=3, email=None)
     # Sync gives us an atomic condition on id, age, email (sorted)
-    object_saved.send(engine, obj=user)
+    object_saved.send(engine, engine=engine, obj=user)
 
     filter_condition = User.email.contains("@")
     key_condition = User.age == 4
@@ -754,8 +751,8 @@ def test_iter_empty():
 
 def test_render_empty(renderer):
     condition = Condition()
-    with pytest.raises(InvalidCondition):
-        condition.render(renderer)
+    condition.render(renderer)
+    assert not renderer.rendered
 
 
 @pytest.mark.parametrize("condition", non_meta_conditions())
@@ -1128,7 +1125,7 @@ def test_ior_basic():
     # in
     (InCondition(column=c, values=[]), "(M.c in [])"),
     (InCondition(column=c, values=[2, 3]), "(M.c in [2, 3])"),
-    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [d, 3])"),
+    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [<Column[M.d]>, 3])"),
 
     # empty
     (Condition(), "()")
@@ -1159,7 +1156,7 @@ def test_eq_wrong_type():
     BaseCondition("??", values=list("xy"), column=c["foo"]["bar"]),
     BaseCondition("op", values=list("xy"), column=None),
     # Need to attach a path to the wrong proxy object
-    BaseCondition("op", values=list("xy"), column=ComparisonMixin(proxied=None, path=["foo", "bar"])),
+    BaseCondition("op", values=list("xy"), column=Proxy(obj=None, path=["foo", "bar"])),
     BaseCondition("op", values=list("xyz"), column=c["foo"]["bar"]),
     BaseCondition("op", values=list("yx"), column=c["foo"]["bar"]),
 ])
@@ -1241,12 +1238,12 @@ def test_render_valid_condition(condition, as_str, expected_names, expected_valu
     User.age > None,
     User.age <= None,
     User.age >= None,
-    User.age.begins_with(None),
+    User.email.begins_with(None),
     # At least one None
     User.age.between(3, None),
     User.age.between(None, 4),
     User.age.between(None, None),
-    User.age.contains(None),
+    User.email.contains(None),
     # No values
     User.age.in_(),
     # At least one None
@@ -1254,7 +1251,7 @@ def test_render_valid_condition(condition, as_str, expected_names, expected_valu
     User.age.in_(3, None),
     User.age.in_(None, None),
     # Not literal None, but becomes None
-    Document.data <= dict(),
+    Document.nested_numbers.contains([]),
 
     # Empty meta conditions
     AndCondition(),
@@ -1308,45 +1305,15 @@ def test_render_and_or_simplify(condition_cls, renderer):
 
 
 def test_mixin_repr():
-    """repr without non-proxy objects"""
-    self = ComparisonMixin()
-    assert repr(self) == "<ComparisonMixin>"
-
-    inner_is_mixin = ComparisonMixin(proxied=MockColumn("foobar"))
-    assert repr(inner_is_mixin) == "foobar"
+    assert repr(ComparisonMixin()) == "<ComparisonMixin>"
 
 
-def test_mixin_getattr_delegates():
-    """getattr points to the proxied object (unless it's self)"""
-    self = ComparisonMixin()
-    # Can't delegate, proxied object is self (infinite recursion)
-    with pytest.raises(AttributeError):
-        getattr(self, "foo")
-
-    class Foo:
-        getattr_calls = 0
-
-        def __getattr__(self, item):
-            self.getattr_calls += 1
-            return "foo"
-
-    obj = Foo()
-    proxy = ComparisonMixin(proxied=obj)
-    assert proxy.whatever == "foo"
-
-    assert obj.getattr_calls == 1
-    assert proxy.getattr_calls == 1
-
-
-def test_mixin_path_chaining():
-    """No depth limit to the chained path"""
-    obj = ComparisonMixin()
-
-    for i in range(10):
-        obj = obj[i]
-        obj = obj[str(i)]
-
-    assert len(obj._path) == 20
+def test_mixin_path():
+    mixin = ComparisonMixin()
+    proxy = mixin["some_attribute"][3]
+    assert isinstance(proxy, Proxy)
+    assert proxy._obj is mixin
+    assert proxy._path == ["some_attribute", 3]
 
 
 @pytest.mark.parametrize("op, expected", [
@@ -1405,7 +1372,114 @@ def test_mixin_is_():
     assert condition.values == [3]
 
 
+@pytest.mark.parametrize("op, typedefs, args", [
+    (
+        "begins_with",
+        [
+            Integer(), List(String), Map(s=String), Boolean(),
+            Set(Integer), Set(Binary), Set(String)
+        ],
+        ("one-arg",)
+    ),
+    (
+        "contains",
+        [
+            Integer(), Boolean(), Map(s=String)
+        ],
+        ("one-arg",)
+    ),
+    (
+        "between",
+        [
+            Set(String), Set(Binary), Set(String),
+            List(String), Map(s=String), Boolean()
+        ],
+        ("first-arg", "second-arg")
+    )
+])
+def test_unsupported_mixin_function_conditions(op, typedefs, args):
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+    for typedef in typedefs:
+        column = Column(typedef, name="d")
+        column.model = Model
+        column.model_name = "c"
+        with pytest.raises(InvalidCondition):
+            getattr(column, op)(*args)
+            column.begins_with(object())
+
+
+@pytest.mark.parametrize("typedef", [
+    Set(Integer), Set(Binary), Set(String),
+    List(String), Map(s=String), Boolean()
+])
+@pytest.mark.parametrize("op", [
+    operator.lt,
+    operator.gt,
+    operator.le,
+    operator.ge
+])
+def test_unsupported_mixin_comparison_conditions(op, typedef):
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+    column = Column(typedef, name="d")
+    column.model = Model
+    column.model_name = "c"
+    with pytest.raises(InvalidCondition):
+        op(column, "value")
+
+
+def test_printable_column_no_path():
+    """Model.column"""
+    assert printable_column_name(User.email) == "email"
+
+
+def test_printable_column_mixed_path():
+    """Model.column[3].foo[1]"""
+    assert printable_column_name(User.id, path=[3, "foo", "bar", 0, 1]) == "id[3].foo.bar[0][1]"
+
+
+def test_printable_column_included_path():
+    """Path is part of the 'column' that's provided"""
+    assert printable_column_name(User.id[3]["foo"]["bar"][0][1]) == "id[3].foo.bar[0][1]"
+
+
+def test_printable_column_both_paths():
+    """When both paths are provided, the explicit path wins"""
+    assert printable_column_name(User.id["not used"], path=[3, "foo", "bar", 0, 1]) == "id[3].foo.bar[0][1]"
+
+
 # END COMPARISON MIXIN ========================================================================== END COMPARISON MIXIN
+
+
+# PROXY ======================================================================================================== PROXY
+
+
+def test_proxy_delegates_getattr():
+    sentinel = object()
+    column = MockColumn("col")
+    column.attribute = sentinel
+    proxy = column["some"]["path"]
+    assert proxy.attribute is sentinel
+
+
+def test_proxy_masks_protected_path_attr():
+    """If a proxied object has a _path or _obj attribute, it's not returned through the proxy"""
+    sentinel = object()
+    column = MockColumn("col")
+    column._obj = sentinel
+    column._path = sentinel
+    proxy = column["some"]["path"]
+    assert proxy._obj is not column._obj
+    assert proxy._path is not column._path
+
+
+def test_proxy_repr():
+    column = MockColumn("col")
+    proxy = column["some"][2]["path"]
+    assert repr(proxy) == "<Proxy[M.col.some[2].path]>"
+
+# END PROXY ================================================================================================ END PROXY
 
 
 # ITERATORS ================================================================================================ ITERATORS

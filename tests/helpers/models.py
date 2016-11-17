@@ -4,19 +4,19 @@ from bloop import (
     Column,
     Condition,
     DateTime,
-    Float,
     GlobalSecondaryIndex,
     Integer,
     List,
     LocalSecondaryIndex,
     Map,
+    Number,
     Set,
     String,
 )
 
 
 DocumentType = Map(**{
-    'Rating': Float(),
+    'Rating': Number(),
     'Stock': Integer(),
     'Description': Map(**{
         'Heading': String,
@@ -32,8 +32,10 @@ class Document(BaseModel):
     id = Column(Integer, hash_key=True)
     data = Column(DocumentType)
     numbers = Column(List(Integer))
-    value = Column(Float)
-    another_value = Column(Float)
+    value = Column(Number)
+    another_value = Column(Number)
+    some_string = Column(String)
+    nested_numbers = Column(List(List(Integer)))
 
 
 class User(BaseModel):
@@ -123,17 +125,16 @@ def _build_conditions():
     not_exists_id = Document.id.is_(None)
     exists_id = Document.id.is_not(None)
 
-    begins_hello = Document.id.begins_with("hello")
-    begins_world = Document.id.begins_with("world")
-    begins_numbers = Document.numbers.begins_with(8)
+    begins_hello = Document.some_string.begins_with("hello")
+    begins_world = Document.some_string.begins_with("world")
 
-    contains_hello = Document.id.contains("hello")
-    contains_world = Document.id.contains("world")
+    contains_hello = Document.some_string.contains("hello")
+    contains_world = Document.some_string.contains("world")
     contains_numbers = Document.numbers.contains(9)
 
     between_small = Document.id.between(5, 6)
     between_big = Document.id.between(100, 200)
-    between_numbers = Document.numbers.between({8080}, {8088})
+    between_strings = Document.some_string.between("alpha", "zebra")
 
     in_small = Document.id.in_([3, 7, 11])
     in_big = Document.id.in_([123, 456])
@@ -146,9 +147,9 @@ def _build_conditions():
         basic_or, swapped_or, multiple_or,
         not_lt, not_gt,
         not_exists_data, not_exists_id, exists_id,
-        begins_hello, begins_world, begins_numbers,
+        begins_hello, begins_world, between_strings,
         contains_hello, contains_world, contains_numbers,
-        between_small, between_big, between_numbers,
+        between_small, between_big, between_strings,
         in_small, in_big, in_numbers
     ))
 _build_conditions()

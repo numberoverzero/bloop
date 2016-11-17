@@ -1,59 +1,22 @@
-from ..exceptions import InvalidStream
 from ..signals import object_loaded
 from ..util import unpack_from_dynamodb
 from .coordinator import Coordinator
 
 
-def stream_for(engine, model):
-    if not model.Meta.stream or not model.Meta.stream.get("arn"):
-        raise InvalidStream("{!r} does not have a stream arn".format(model))
-    coordinator = Coordinator(engine=engine, session=engine.session, stream_arn=model.Meta.stream["arn"])
-    stream = Stream(model=model, engine=engine, coordinator=coordinator)
-    return stream
-
-
 class Stream:
-    """An iterator over all Records in all Shards in a Stream.
+    """Iterator over all records in a stream.
 
-    Guaranteed chronological ordering across all shards in a distributed system isn't possible; this will
-    provide a good approximation based on each record's ApproximateCreationDateTime.
-
-    The usual Shard guarantees still apply, such as strict ordering of changes to the same hash/range key.
-    Records in a child shard will never precede records from its parent shard.
-
-    Basic Usage:
-
-    .. code-block:: python
-
-        stream = engine.stream(Model, position="trim_horizon")
-        record = next(stream)
-        if record:
-            print("{old} became {new}".format(**record))
-
-
-    With periodic :meth:`heartbeats <~.heartbeat>`:
-
-    .. code-block:: python
-
-        stream = engine.stream(Model, position="trim_horizon")
-        next_heartbeat = arrow.now()
-
-        while True:
-            process(next(stream))
-            if arrow.now() > next_heartbeat:
-                next_heartbeat = arrow.now().replace(minutes=12)
-                stream.heartbeat()
+    :param model: The model to stream records from.
+    :param engine: The engine to load model objects through.
+    :type engine: :class:`~bloop.engine.Engine`
     """
-    def __init__(self, *, model, engine, coordinator):
+    def __init__(self, *, model, engine):
 
-        #: The :class:`BaseModel` of the Stream to iterate.
         self.model = model
-
-        #: The :class:`Engine` to create instances with.
         self.engine = engine
-
-        #: The :class:`Coordinator` that manages shard iterators and record ordering.
-        self.coordinator = coordinator
+        self.coordinator = Coordinator(
+            session=engine.session,
+            stream_arn=model.Meta.stream["arn"])
 
     def __repr__(self):
         # <Stream[User]>
@@ -73,63 +36,45 @@ class Stream:
                     self._unpack(record, key, expected)
         return record
 
-    @property
-    def token(self):
-        """Dict that can be used to reconstruct the current progress of the iterator.
-
-        .. code-block:: python
-
-            with open(".stream-state", "w") as f:
-                json.dump(stream.token, f)
-
-            # Some time later
-            ...
-
-            with open(".stream-state", "r") as f:
-                token = json.load(f)
-
-            stream = engine.stream(MyModel, position=token)
-        """
-        return self.coordinator.token
-
     def heartbeat(self):
-        """Call periodically to ensure iterators without a fixed sequence number don't expire.
+        """Refresh iterators without sequence numbers so they don't expire.
 
-        You should call this once every ~12 minutes so that your "latest" and "trim_horizon" shard iterators don't
-        expire.  While iterators have an advertised lifetime of 15 minutes, calling more frequently can avoid
-        expiration due to clock skew.
-
-        If an iterator with a sequence number expires, it can be refreshed at the same position.  If an iterator
-        at "latest" expires, there's no way to refresh it where it expired; refreshing at "latest" could
-        miss records between the expiration position and the new "latest".
-
-        .. code-block:: python
-
-            stream = engine.stream(Model, position="trim_horizon")
-            next_heartbeat = arrow.now()
-
-            while True:
-                process(next(stream))
-                if arrow.now() > next_heartbeat:
-                    next_heartbeat = arrow.now().replace(minutes=12)
-                    stream.heartbeat()
+        Call this at least every 14 minutes.
         """
         self.coordinator.heartbeat()
 
     def move_to(self, position):
-        """Move to either endpoint of the stream, a stream token, or a specific time.
+        """Move the Stream to a specific endpoint or time, or load state from a token.
 
-        Moving to "trim_horizon" or "latest" is fast; moving to a point in time is very slow.
+        Moving to an endpoint with "trim_horizon" or "latest" and loading from a previous token are both
+        very efficient.
 
-        .. code-block:: python
+        In contrast, seeking to a specific time requires iterating **all records in the stream up to that time**.
+        This can be **very expensive**.  Once you have moved a stream to a time, you should save the
+        :attr:`Stream.token <bloop.stream.stream.Stream.token>` so reloading will be extremely fast.
 
-            stream.move_to(stream.token)
+        :param position: "trim_horizon", "latest", :class:`~datetime.datetime`, or a
+            :attr:`Stream.token <bloop.stream.stream.Stream.token>`
+        """
+        """
 
-            stream.move_to(arrow.now().replace(days=-1))
-
-            stream.move_to("trim_horizon")
+        * Move to either endpoint of the stream with "trim_horizon" or "latest".
+        * Move to a stream token (``other_stream.token``)
+        * Move to a specific time ie. ``datetime.now() - timedelta(hours=2)``
         """
         self.coordinator.move_to(position)
+
+    @property
+    def token(self):
+        """JSON-serializable representation of the current Stream state.
+
+        Use :func:`Engine.stream(YourModel, token) <bloop.engine.Engine.stream>` to create an identical stream,
+        or :func:`stream.move_to(token) <bloop.stream.Stream.move_to>` to move an existing stream to this position.
+
+        :returns: Stream state as a json-friendly dict
+        :rtype: dict
+        """
+        return self.coordinator.token
 
     def _unpack(self, record, key, expected):
         """Replaces the attr dict at the given key with an instance of a Model"""
@@ -142,5 +87,5 @@ class Stream:
             model=self.model,
             engine=self.engine
         )
-        object_loaded.send(self.engine, obj=obj)
+        object_loaded.send(self.engine, engine=self.engine, obj=obj)
         record[key] = obj

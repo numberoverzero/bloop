@@ -6,94 +6,103 @@ DynamoDB's concurrency model is great, but using it correctly is tedious and unf
 
 __ https://gist.github.com/numberoverzero/9584cfc375de0e087c8e1ae35ab8559c
 
+========
 Features
 ========
 
 * Simple declarative modeling
 * Extensible type system, useful built-in types
+* DynamoDBStreams interface that makes sense
 * Secure expression-based wire format
 * Simple atomic operations
 * Expressive conditions
 * Diff-based saves
 
-Installation
-============
-::
-
-    pip install bloop
-
-Quickstart
+==========
+Ergonomics
 ==========
 
-First, define and bind our model:
-
 .. code-block:: python
-
-    import uuid
-
-    from bloop import (
-        BaseModel, Column, Engine,
-        GlobalSecondaryIndex, String, UUID)
-
 
     class Account(BaseModel):
         id = Column(UUID, hash_key=True)
         name = Column(String)
         email = Column(String)
-        by_email = GlobalSecondaryIndex(hash_key='email')
+        by_email = GlobalSecondaryIndex(
+            projection='keys', hash_key='email')
 
-    engine = Engine()
     engine.bind(Account)
 
-Save an instance, load by key, and get the first query result:
-
-.. code-block:: python
-
-    account = Account(
+    some_account = Account(
         id=uuid.uuid4(),
-        name='username',
         email='foo@bar.com')
-    engine.save(account)
-
-
-    same_account = Account(id=account.id)
-    engine.load(same_account)
-
+    engine.save(some_account)
 
     q = engine.query(
         Account.by_email,
-        key=Account.email == "foo@bar.com")
+        key=Account.email == 'foo@bar.com')
 
-    also_same_account = q.first()
+    same_account = q.one()
+    print(same_account.id)
 
-Kick it up a notch with conditional operations:
+Never worry about `iterator types`__, or `tracking shard lineage`__ again:
 
 .. code-block:: python
 
-    # Exactly the same save as above, but now we
-    # fail if the id isn't unique.
-    if_not_exist = Account.id.is_(None)
-    engine.save(account, condition=if_not_exist)
+    template = '''
+    Old: {old}
+    New: {new}
 
+    Event Details:
+    {meta}
 
-    # Update the account, as long as the name hasn't changed
-    same_username = Account.name == "username"
-    account.email = "new@email.com"
-    engine.save(account, condition=same_username)
+    '''
 
+    stream = engine.stream(User, 'trim_horizon')
+    while True:
+        record = next(stream)
+        if record:
+            print(template.format(**record)
+        else:
+            time.sleep(0.5)
 
-    # Delete the account, as long as none of the fields have
-    # changed since we last loaded the account
-    engine.delete(account, atomic=True)
+__ https://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_GetShardIterator.html#DDB-GetShardIterator-request-ShardIteratorType
+__ https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html#Streams.Processing
+
+===========
+What's Next
+===========
+
+Get started by :ref:`installing <user-install>` Bloop, or check out a :ref:`larger example <user-quickstart>`.
 
 .. toctree::
+    :maxdepth: 2
+    :caption: User Guide
     :hidden:
-    :maxdepth: 3
 
+    user/install
+    user/quickstart
     user/models
     user/engine
-    user/query
     user/streams
     user/types
     user/conditions
-    internals
+    user/signals
+    user/patterns
+    user/extensions
+
+.. toctree::
+    :maxdepth: 2
+    :caption: API
+    :hidden:
+
+    api/public
+    api/internal
+
+.. toctree::
+    :maxdepth: 2
+    :caption: Project
+    :hidden:
+
+    meta/changelog
+    meta/about

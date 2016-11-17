@@ -1,6 +1,6 @@
+import datetime
 from unittest.mock import Mock
 
-import arrow
 import pytest
 from bloop.stream.buffer import RecordBuffer, heap_item
 from bloop.stream.shard import Shard
@@ -18,11 +18,15 @@ def new_clock():
     return call
 
 
+def now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
+
 def new_shard() -> Shard:
     return Mock(spec=Shard)
 
 
-@pytest.mark.parametrize("created_at", [None, arrow.now()])
+@pytest.mark.parametrize("created_at", [None, now()])
 @pytest.mark.parametrize("sequence_number", [None, 2])
 def test_heap_item_clock(created_at, sequence_number):
     """heap_item guarantees total ordering, even for identical items."""
@@ -42,7 +46,7 @@ def test_heap_item_clock(created_at, sequence_number):
     assert clock() == 3
 
 
-@pytest.mark.parametrize("created_at", [None, arrow.now()])
+@pytest.mark.parametrize("created_at", [None, now()])
 @pytest.mark.parametrize("sequence_number", [None, 2])
 def test_heap_item_broken_clock(created_at, sequence_number):
     """When the clock can return the same value, total ordering is lost."""
@@ -69,7 +73,7 @@ def test_empty_buffer():
 
 def test_single_record():
     """Push a record, peek at it, then get the same thing back"""
-    record = local_record(arrow.now(), 1)
+    record = local_record(now(), 1)
     shard = new_shard()
     buffer = RecordBuffer()
 
@@ -87,8 +91,8 @@ def test_single_record():
 
 def test_sort_every_push():
     """Push high to low, retrieve low to high"""
-    now = arrow.now()
-    records = [local_record(now, i) for i in reversed(range(5))]
+    now_ = now()
+    records = [local_record(now_, i) for i in reversed(range(5))]
     shard = new_shard()
     buffer = RecordBuffer()
 
@@ -107,8 +111,8 @@ def test_sort_every_push():
 
 def test_push_all():
     """Bulk push is slightly more efficient"""
-    now = arrow.now()
-    records = [local_record(now, i) for i in reversed(range(5))]
+    now_ = now()
+    records = [local_record(now_, i) for i in reversed(range(5))]
     shard = new_shard()
     buffer = RecordBuffer()
 
@@ -124,7 +128,7 @@ def test_push_all():
 
 
 def test_clear():
-    record = local_record(arrow.now(), 1)
+    record = local_record(now(), 1)
     shard = new_shard()
     buffer = RecordBuffer()
 
@@ -137,7 +141,7 @@ def test_clear():
 
 def test_buffer_heap():
     """RecordBuffer directly exposes its heap"""
-    record = local_record(arrow.now(), 1)
+    record = local_record(now(), 1)
     shard = new_shard()
     buffer = RecordBuffer()
 

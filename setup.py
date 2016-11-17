@@ -1,12 +1,15 @@
 """ Setup file """
 import os
 
-from setuptools import find_packages, setup
+from setuptools import setup
 
 
 HERE = os.path.abspath(os.path.dirname(__file__))
 with open(os.path.join(HERE, "README.rst")) as f:
     README = f.read()
+
+with open(os.path.join(HERE, "CHANGELOG.rst")) as f:
+    CHANGES = f.read()
 
 
 def get_version():
@@ -15,20 +18,16 @@ def get_version():
             if line.startswith("__version__"):
                 return eval(line.split("=")[-1])
 
-REQUIREMENTS = [
-    "arrow==0.8.0",
-    "blinker==1.4",
-    "boto3==1.4.0",
-    "declare==0.9.11"
+PACKAGES = [
+    "bloop",
+    "bloop.ext",
+    "bloop.stream"
 ]
 
-TEST_REQUIREMENTS = [
-    "alabaster",
-    "coverage",
-    "flake8",
-    "pytest",
-    "sphinx",
-    "tox",
+REQUIREMENTS = [
+    "blinker==1.4",
+    "boto3==1.4.1",
+    "declare==0.9.11",
 ]
 
 if __name__ == "__main__":
@@ -36,7 +35,7 @@ if __name__ == "__main__":
         name="bloop",
         version=get_version(),
         description="ORM for DynamoDB",
-        long_description=README,
+        long_description=README + "\n\n" + CHANGES,
         classifiers=[
             "Development Status :: 4 - Beta",
             "Intended Audience :: Developers",
@@ -54,7 +53,6 @@ if __name__ == "__main__":
         keywords="aws dynamo dynamodb orm",
         platforms="any",
         include_package_data=True,
-        packages=find_packages(exclude=("tests", "docs", "examples")),
+        packages=PACKAGES,
         install_requires=REQUIREMENTS,
-        tests_require=REQUIREMENTS + TEST_REQUIREMENTS,
     )

@@ -1,17 +1,16 @@
-import boto3
 import declare
 
 from .conditions import render
 from .exceptions import (
-    AbstractModelError,
     InvalidModel,
+    InvalidStream,
     MissingKey,
     MissingObjects,
     UnboundModel,
     UnknownType,
 )
 from .models import Index, ModelMetaclass
-from .search import Query, Scan
+from .search import Search
 from .session import SessionWrapper
 from .signals import (
     before_create_table,
@@ -21,7 +20,7 @@ from .signals import (
     object_loaded,
     object_saved,
 )
-from .stream import Stream, stream_for
+from .stream import Stream
 from .util import missing, unpack_from_dynamodb, walk_subclasses
 
 
@@ -66,7 +65,7 @@ def validate_not_abstract(*objs):
     for obj in objs:
         if obj.Meta.abstract:
             cls = obj if isinstance(obj, type) else obj.__class__
-            raise AbstractModelError("{!r} is abstract.".format(cls.__name__))
+            raise InvalidModel("{!r} is abstract.".format(cls.__name__))
 
 
 def validate_is_model(model):
@@ -87,11 +86,16 @@ def fail_unknown(model, from_declare):
 
 
 class Engine:
-    def __init__(self, session=None, type_engine=None):
+    """Primary means of interacting with DynamoDB.
+
+    :param dynamodb: DynamoDB client.  Defaults to ``boto3.client("dynamodb")``.
+    :param dynamodbstreams: DynamoDbStreams client.  Defaults to ``boto3.client("dynamodbstreams")``.
+    """
+    def __init__(self, *, dynamodb=None, dynamodbstreams=None):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
-        self.type_engine = type_engine or declare.TypeEngine.unique()
-        self.session = SessionWrapper(session or boto3)
+        self.type_engine = declare.TypeEngine.unique()
+        self.session = SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
     def _dump(self, model, obj, context=None, **kwargs):
         context = context or {"engine": self}
@@ -107,62 +111,60 @@ class Engine:
         except declare.DeclareException as from_declare:
             fail_unknown(model, from_declare)
 
-    def bind(self, base):
-        """Create tables for all models subclassing base"""
-        # Make sure we're looking at models
-        validate_is_model(base)
+    def bind(self, model):
+        """Create backing tables for a model and its non-abstract subclasses.
 
-        concrete = set(filter(lambda m: not m.Meta.abstract, walk_subclasses(base)))
+        :param model: Base model to bind.  Can be abstract.
+        :raises bloop.exceptions.InvalidModel: if ``model`` is not a subclass of :class:`~bloop.models.BaseModel`.
+        """
+        # Make sure we're looking at models
+        validate_is_model(model)
+
+        concrete = set(filter(lambda m: not m.Meta.abstract, walk_subclasses(model)))
 
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
         for model in concrete:
-            before_create_table.send(self, model=model)
+            before_create_table.send(self, engine=self, model=model)
             self.session.create_table(model)
 
         for model in concrete:
             self.session.validate_table(model)
-            model_validated.send(self, model=model)
+            model_validated.send(self, engine=self, model=model)
 
             self.type_engine.register(model)
             self.type_engine.bind(context={"engine": self})
-            model_bound.send(self, model=model)
+            model_bound.send(self, engine=self, model=model)
 
     def delete(self, *objs, condition=None, atomic=False):
+        """Delete one or more objects.
+
+        :param objs: objects to delete.
+        :param condition: only perform each delete if this condition holds.
+        :param bool atomic: only perform each delete if the local and DynamoDB versions of the object match.
+        :raises bloop.exceptions.ConstraintViolation: if the condition (or atomic) is not met.
+        """
         objs = set(objs)
         validate_not_abstract(*objs)
         for obj in objs:
-            self.session.delete_item({
+            item = {
                 "TableName": obj.Meta.table_name,
-                "Key": dump_key(self, obj),
-                **render(self, obj=obj, atomic=atomic, condition=condition)
-            })
-            object_deleted.send(self, obj=obj)
+                "Key": dump_key(self, obj)
+            }
+            item.update(render(self, obj=obj, atomic=atomic, condition=condition))
+            self.session.delete_item(item)
+            object_deleted.send(self, engine=self, obj=obj)
 
     def load(self, *objs, consistent=False):
-        """Populate objects from dynamodb, optionally using consistent reads.
+        """Populate objects from DynamoDB.
 
-        If any objects are not found, raises MissingObjects with the attribute
-        `objects` containing a list of the objects that were not loaded.
+        :param objs: objects to delete.
+        :param bool consistent: Use `strongly consistent reads`__ if True.  Default is False.
+        :raises bloop.exceptions.MissingKey: if any object doesn't provide a value for a key column.
+        :raises bloop.exceptions.MissingObjects: if one or more objects aren't loaded.
 
-        Example
-        -------
-        class HashOnly(bloop.BaseModel):
-            user_id = Column(NumberType, hash_key=True)
-
-        class HashAndRange(bloop.BaseModel):
-            user_id = Column(NumberType, hash_key=True)
-            game_title = Column(StringType, range_key=True)
-
-        hash_only = HashOnly(user_id=101)
-        hash_and_range = HashAndRange(user_id=101, game_title="Starship X")
-
-        # Load only one instance, with consistent reads
-        engine.load(hash_only, consistent=True)
-
-        # Load multiple instances
-        engine.load([hash_only, hash_and_range])
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
         """
         objs = set(objs)
         validate_not_abstract(*objs)
@@ -195,7 +197,7 @@ class Engine:
                 for obj in object_index[table_name].pop(index):
                     unpack_from_dynamodb(
                         attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
-                    object_loaded.send(self, obj=obj)
+                    object_loaded.send(self, engine=self, obj=obj)
                 if not object_index[table_name]:
                     object_index.pop(table_name)
 
@@ -206,42 +208,93 @@ class Engine:
                     not_loaded.update(index_set)
             raise MissingObjects("Failed to load some objects.", objects=not_loaded)
 
-    def query(self, model_or_index, key=None, filter=None, projection="all", limit=None,
-              consistent=False, forward=True):
+    def query(self, model_or_index, key, filter=None, projection="all", consistent=False, forward=True):
+        """Create a reusable :class:`~bloop.search.QueryIterator`.
+
+        :param model_or_index: A model or index to query.  For example, ``User`` or ``User.by_email``.
+        :param key:
+            Key condition.  This must include an equality against the hash key, and optionally one
+            of a restricted set of conditions on the range key.
+        :param filter: Filter condition.  Only matching objects will be included in the results.
+        :param projection:
+            "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.  When projection is
+            "count", you must advance the iterator to retrieve the count.
+        :param bool consistent: Use `strongly consistent reads`__ if True.  Default is False.
+        :param bool forward:  Query in ascending or descending order.  Default is True (ascending).
+
+        :return: A reusable query iterator with helper methods.
+        :rtype: :class:`~bloop.search.QueryIterator`
+
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+        """
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
         else:
             model, index = model_or_index, None
         validate_not_abstract(model)
-        q = Query(
-            engine=self, session=self.session, model=model, index=index, key=key, filter=filter,
-            projection=projection, limit=limit, consistent=consistent, forward=forward)
+        q = Search(
+            mode="query", engine=self, model=model, index=index, key=key, filter=filter,
+            projection=projection, consistent=consistent, forward=forward)
         return iter(q.prepare())
 
     def save(self, *objs, condition=None, atomic=False):
+        """Save one or more objects.
+
+        :param objs: objects to save.
+        :param condition: only perform each save if this condition holds.
+        :param bool atomic: only perform each save if the local and DynamoDB versions of the object match.
+        :raises bloop.exceptions.ConstraintViolation: if the condition (or atomic) is not met.
+        """
         objs = set(objs)
         validate_not_abstract(*objs)
         for obj in objs:
-            self.session.save_item({
+            item = {
                 "TableName": obj.Meta.table_name,
                 "Key": dump_key(self, obj),
-                **render(self, obj=obj, atomic=atomic, condition=condition, update=True)
-            })
-            object_saved.send(self, obj=obj)
+            }
+            item.update(render(self, obj=obj, atomic=atomic, condition=condition, update=True))
+            self.session.save_item(item)
+            object_saved.send(self, engine=self, obj=obj)
 
-    def scan(self, model_or_index, filter=None, projection="all", limit=None, consistent=False):
+    def scan(self, model_or_index, filter=None, projection="all", consistent=False, parallel=None):
+        """Create a reusable :class:`~bloop.search.ScanIterator`.
+
+        :param model_or_index: A model or index to scan.  For example, ``User`` or ``User.by_email``.
+        :param filter: Filter condition.  Only matching objects will be included in the results.
+        :param projection:
+            "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.  When projection is
+            "count", you must exhaust the iterator to retrieve the count.
+        :param bool consistent: Use `strongly consistent reads`__ if True.  Default is False.
+        :param tuple parallel: Perform a `parallel scan`__.  A tuple of (Segment, TotalSegments)
+            for this portion the scan. Default is None.
+        :return: A reusable scan iterator with helper methods.
+        :rtype: :class:`~bloop.search.ScanIterator`
+
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+        __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#QueryAndScanParallelScan
+        """
         if isinstance(model_or_index, Index):
             model, index = model_or_index.model, model_or_index
         else:
             model, index = model_or_index, None
         validate_not_abstract(model)
-        s = Scan(
-            engine=self, session=self.session, model=model, index=index, filter=filter,
-            projection=projection, limit=limit, consistent=consistent)
+        s = Search(
+            mode="scan", engine=self, model=model, index=index, filter=filter,
+            projection=projection, consistent=consistent, parallel=parallel)
         return iter(s.prepare())
 
-    def stream(self, model, position) -> Stream:
+    def stream(self, model, position):
+        """Create a :class:`~bloop.stream.Stream` that provides approximate chronological ordering.
+
+        :param model: The model to stream records from.
+        :param position: "trim_horizon", "latest", a stream token, or a :class:`datetime.datetime`.
+        :return: An iterator for records in all shards.
+        :rtype: :class:`~bloop.stream.Stream`
+        :raises bloop.exceptions.InvalidStream: if the model does not have a stream.
+        """
         validate_not_abstract(model)
-        stream = stream_for(self, model)
+        if not model.Meta.stream or not model.Meta.stream.get("arn"):
+            raise InvalidStream("{!r} does not have a stream arn".format(model))
+        stream = Stream(model=model, engine=self)
         stream.move_to(position=position)
         return stream

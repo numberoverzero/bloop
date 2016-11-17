@@ -1,19 +1,232 @@
-Internals
-^^^^^^^^^
+.. _api-internal:
 
-======
-Models
-======
+Internal
+^^^^^^^^
 
-.. _internal-model-hash:
+In addition to documenting internal classes, this section describes complex internal systems (such as Streams,
+atomic tracking via weakrefs) and specific parameters and error handling that Bloop employs when talking to DynamoDB
+(such as SessionWrapper's error inspection, and partial table validation).
 
----------------------
-Locating ``__hash__``
----------------------
+==============
+SessionWrapper
+==============
 
-By default, all user classes are hashable:
+.. autoclass:: bloop.session.SessionWrapper
+    :members:
 
-.. code-block:: python
+========
+Modeling
+========
+
+--------------
+ModelMetaclass
+--------------
+
+.. autoclass:: bloop.models.ModelMetaclass
+    :members:
+
+    The metaclass for :class:`~bloop.models.BaseModel`.  Binds ``model_name`` to each :class:`~bloop.models.Column`;
+    validates key configuration; binds the model to each :class:`~bloop.models.Index`; populates model's ``Meta``
+    with modeling metadata (``columns``, ``keys``, ``indexes``, etc).
+
+-----
+Index
+-----
+
+.. autoclass:: bloop.models.Index
+    :members: _bind
+
+    .. attribute:: dynamo_name
+
+        The name of this index in DynamoDB.  Defaults to the index's :data:`~Index.model_name`.
+
+    .. attribute:: hash_key
+
+        The column that the index can be queried against.
+        *(LSI's hash_key is always the table hash_key.)*
+
+    .. attribute:: model
+
+        The model this index is attached to.
+
+    .. attribute:: model_name
+
+        The name of this index in the model.  Set during :func:`~bloop.models.Index._bind`.
+
+    .. attribute:: projection
+
+        Computed during :func:`~bloop.models.Index._bind`.
+
+        .. code-block:: python
+
+            {
+                "available":  # Set of columns that can be returned from a query or search.
+                "included":   # Set of columns that can be used in query and scan filters.
+                "mode":       # "all", "keys", or "include"
+                "strict":     # False if queries and scans can fetch non-included columns
+            }
+
+    .. attribute:: range_key
+
+        The column that the index can be sorted on.
+
+=========
+Searching
+=========
+
+------
+Search
+------
+
+.. autoclass:: bloop.search.Search
+    :members:
+
+--------------
+PreparedSearch
+--------------
+
+.. autoclass:: bloop.search.PreparedSearch
+    :members:
+
+--------------
+SearchIterator
+--------------
+
+.. autoclass:: bloop.search.SearchIterator
+    :members:
+
+
+-------------------
+SearchModelIterator
+-------------------
+
+.. autoclass:: bloop.search.SearchModelIterator
+
+    .. attribute:: count
+
+        Number of items that have been loaded from DynamoDB so far, including buffered items.
+
+    .. attribute:: exhausted
+
+        True if there are no more results.
+
+    .. function:: first()
+
+        Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
+
+    .. function:: one()
+
+        Return the unique result.  If there is not exactly one result,
+        raises :exc:`~bloop.exceptions.ConstraintViolation`.
+
+    .. function:: reset()
+
+        Reset to the initial state, clearing the buffer and zeroing count and scanned.
+
+    .. attribute:: scanned
+
+        Number of items that DynamoDB evaluated, before any filter was applied.
+
+=========
+Streaming
+=========
+
+-----------
+Coordinator
+-----------
+
+.. autoclass:: bloop.stream.coordinator.Coordinator
+    :members:
+
+-----
+Shard
+-----
+
+.. autoclass:: bloop.stream.shard.Shard
+    :members:
+
+------------
+RecordBuffer
+------------
+
+.. autoclass:: bloop.stream.buffer.RecordBuffer
+    :members:
+
+==========
+Conditions
+==========
+
+----------------
+ReferenceTracker
+----------------
+
+.. autoclass:: bloop.conditions.ReferenceTracker
+        :members: any_ref, pop_refs
+
+-----------------
+ConditionRenderer
+-----------------
+
+.. autoclass:: bloop.conditions.ConditionRenderer
+        :members: render, rendered
+
+-------------------
+Built-in Conditions
+-------------------
+
+.. autoclass:: bloop.conditions.BaseCondition
+        :members:
+
+.. autoclass:: bloop.conditions.AndCondition
+        :members:
+
+.. autoclass:: bloop.conditions.OrCondition
+        :members:
+
+.. autoclass:: bloop.conditions.NotCondition
+        :members:
+
+.. autoclass:: bloop.conditions.ComparisonCondition
+        :members:
+
+.. autoclass:: bloop.conditions.BeginsWithCondition
+        :members:
+
+.. autoclass:: bloop.conditions.BetweenCondition
+        :members:
+
+.. autoclass:: bloop.conditions.ContainsCondition
+        :members:
+
+.. autoclass:: bloop.conditions.InCondition
+        :members:
+
+.. autoclass:: bloop.conditions.ComparisonMixin
+        :members:
+
+=========
+Utilities
+=========
+
+.. autoclass:: bloop.util.Sentinel
+    :members:
+
+.. autoclass:: bloop.util.WeakDefaultDictionary
+    :members:
+
+======================
+Implementation Details
+======================
+
+.. _implementation-model-hash:
+
+-----------------------
+Models must be Hashable
+-----------------------
+
+By default python makes all user classes are hashable:
+
+.. code-block:: pycon
 
     >>> class Dict(): pass
     >>> hash(Dict())
@@ -25,9 +238,8 @@ Classes are unhashable in two cases:
 #. The class declares ``__hash__ = None``.
 #. The class implements ``__eq__`` but not ``__hash__``
 
-In the first case, Bloop will simply raise ``InvalidModel``
-
-In the second case, Bloop's ``ModelMetaclass`` manually locates a ``__hash__`` method in the model's base classes:
+In the first case, Bloop will simply raise ``InvalidModel``.  In the second case, Bloop's
+:class:`~bloop.models.ModelMetaclass` manually locates a ``__hash__`` method in the model's base classes:
 
 .. code-block:: python
 
@@ -42,7 +254,7 @@ In the second case, Bloop's ``ModelMetaclass`` manually locates a ``__hash__`` m
 This is required because python doesn't provide a default hash method when ``__eq__`` is implemented,
 and won't fall back to a parent class's definition:
 
-.. code-block:: python
+.. code-block:: pycon
 
     >>> class Base():
     ...     def __hash__(self):
@@ -62,9 +274,9 @@ and won't fall back to a parent class's definition:
 
 .. _internal-streams:
 
-=======
-Streams
-=======
+--------------------------
+Stream Ordering Guarantees
+--------------------------
 
 The `DynamoDB Streams API`__ exposes a limited amount temporal information and few options for navigating
 within a shard.  Due to these constraints, it was hard to reduce the API down to a single ``__next__`` call
@@ -83,7 +295,7 @@ The major challenges described below include:
 
 * Managing multiple shards:
 
-    * Mapping stream ``trim_horizon`` and ``latest`` to a set of shards
+    * Mapping stream "trim_horizon" and "latest" to a set of shards
     * Buffering records from multiple shards and applying a total ordering
 
 * Loading and saving tokens:
@@ -95,29 +307,25 @@ The major challenges described below include:
 
 __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/Welcome.html
 
---------
-Notation
---------
+The following sections use a custom notation to describe shards and records.
 
-The following sections use custom notation to describe shards and records:
-
-* ``Sn`` and ``Rn`` represent shards and records, where ``n`` is an integer. ::
+``Sn`` and ``Rn`` represent shards and records, where ``n`` is an integer::
 
     R11, R13, R32  # In general, RnX comes from Sn
     S1, S12, S23   # In general, SnX is a child of Sn
 
-* ``<`` represents chronological ordering between records. ::
+``<`` represents chronological ordering between records::
 
     R12 < R13  # In general, RX < RX when X < Y
 
-* ``=>`` represents parent/child relationships between shards. ::
+``=>`` represents parent/child relationships between shards::
 
     S1 => {}          # S1 has no children
     S2 => S21         # S2 has one child
     # In general, SnX and SnY are adjacent children of Sn
     S3 => {S31, S32}
 
-* ``~`` represents two shards that are not within the same lineage.  ::
+``~`` represents two shards that are not within the same lineage::
 
     S1 ~ S2  # Not related
 
@@ -125,18 +333,14 @@ The following sections use custom notation to describe shards and records:
     # Both child shards, but of different lineages
     S12 ~ S41
 
-* ``:`` represents a set of records from a single shard. ::
+``:`` represents a set of records from a single shard::
 
     S1: R11, R12   # no guaranteed order
     S2: R23 < R24  # guaranteed order
 
 
---------
-Ordering
---------
-
-Guarantees
-==========
+Shards and Lineage
+==================
 
 DynamoDB only offers three guarantees for chronological ordering:
 
@@ -213,9 +417,9 @@ Consider the following stream::
 
 Where each record has the following (simplified) creation times:
 
-======= ===============================
-Record  ``ApproximateCreationDateTime``
-======= ===============================
+======= ===========================
+Record  ApproximateCreationDateTime
+======= ===========================
 ``R00`` 7 hours ago
 ``R11`` 6 hours ago
 ``R12`` 4 hours ago
@@ -223,7 +427,7 @@ Record  ``ApproximateCreationDateTime``
 ``R24`` 4 hours ago
 ``R25`` 3 hours ago
 ``R26`` 3 hours ago
-======= ===============================
+======= ===========================
 
 Bloop performs the following in one step:
 
@@ -249,9 +453,8 @@ The final ordering is::
     R00 < R11 < R12 < R24 < R25 < R26 < R13
 
 
------------
 Record Gaps
------------
+===========
 
 Bloop initially performs up to 5 "catch up" calls to GetRecords when advancing an iterator.  If a GetRecords call
 returns a ``NextShardIterator`` but no records it's either due to being nearly caught up to "latest" in an open
@@ -264,8 +467,8 @@ that any gaps in the shard have been advanced.  This is because it takes approxi
 empty shard completely.  In other words, the 6th empty response almost certainly indicates that the iterator is
 caught up to latest in an open shard, and it's safe to cut back to one call at a time.
 
-Why 5 Calls
-===========
+Why only 5 calls?
+-----------------
 
 This number came from `extensive testing`__ which compared the number of empty responses returned for shards with
 various activity cadences.  It's reasonable to assume that this number would only decrease with time, as advances in
@@ -278,8 +481,8 @@ At worst DynamoDB starts requiring more calls to fully traverse an empty shard, 
 between records in shards with vastly different activity patterns.  Since the creation-time-based ordering
 is approximate, this doesn't relax the guarantees that Bloop's streaming interface provides.
 
-Change the Limit
-================
+Changing the Limit
+------------------
 
 In general you should not need to worry about this value, and leave it alone.  In the unlikely case that DynamoDB
 **does** increase the number of calls required to traverse an empty shard, Bloop will be updated soon after.

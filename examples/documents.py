@@ -1,17 +1,17 @@
 import decimal
 import random
 import uuid
+from datetime import datetime, timezone
 
-import arrow
 from bloop import (
     UUID,
     BaseModel,
     Column,
     DateTime,
     Engine,
-    Float,
     Integer,
     Map,
+    Number,
     Set,
     String,
 )
@@ -23,7 +23,7 @@ from bloop import (
 
 Product = Map(**{
     'Name': String,
-    'Rating': Float,
+    'Rating': Number,
     'Updated': DateTime('US/Pacific'),
     'Description': Map(**{
         'Title': String,
@@ -49,7 +49,7 @@ item = Item(id=uuid.uuid4())
 item.data = {
     'Name': 'item-name',
     'Rating': decimal.Decimal(str(random.random())),
-    'Updated': arrow.now(),
+    'Updated': datetime.now(timezone.utc),
     'Description': {
         'Title': 'item-title',
         'Body': 'item-body',

@@ -8,14 +8,14 @@ from .exceptions import (
     InvalidFilterCondition,
     InvalidKeyCondition,
     InvalidProjection,
-    UnknownSearchMode,
+    InvalidSearchMode,
 )
 from .models import Column, GlobalSecondaryIndex
 from .signals import object_loaded
-from .util import printable_column_name, printable_query, unpack_from_dynamodb
+from .util import printable_query, unpack_from_dynamodb
 
 
-__all__ = ["Scan", "Query", "ScanIterator", "QueryIterator"]
+__all__ = ["ScanIterator", "QueryIterator"]
 
 
 def search_repr(cls, model, index):
@@ -33,7 +33,7 @@ def search_repr(cls, model, index):
 
 def validate_search_mode(mode):
     if mode not in {"query", "scan"}:
-        raise UnknownSearchMode("{!r} is not a valid search mode.".format(mode))
+        raise InvalidSearchMode("{!r} is not a valid search mode.".format(mode))
 
 
 def validate_key_condition(model, index, key):
@@ -80,6 +80,8 @@ def validate_search_projection(model, index, projection):
 
     if projection == "all":
         return (index or model.Meta).projection["included"]
+    elif isinstance(projection, str):
+        raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
 
     # Keep original around for error messages
     original_projection = projection
@@ -148,7 +150,7 @@ def check_range_key(query_on, key):
 def fail_bad_hash(query_on):
     msg = "The key condition for a Query on {!r} must be `{}.{} == value`."
     raise InvalidKeyCondition(msg.format(
-        printable_query(query_on), query_on.model.__name__, printable_column_name(query_on.hash_key)))
+        printable_query(query_on), query_on.model.__name__, query_on.hash_key.model_name))
 
 
 def fail_bad_range(query_on):
@@ -157,55 +159,71 @@ def fail_bad_range(query_on):
 
 
 class Search:
-    mode = None
+    """A user-created search object.
+
+    Used to prepare a :class:`~bloop.search.PreparedSearch` which build search iterators.
+
+    :param str mode: Search type, either "query" or "scan".
+    :param engine: :class:`~bloop.engine.Engine` to unpack models with.
+    :param model: :class:`~bloop.models.BaseModel` being searched.
+    :param index: :class:`~bloop.models.Index` to search, or None.
+    :param key: *(Query only)* Key condition.  This must include an equality against the hash key,
+        and optionally one of a restricted set of conditions on the range key.
+    :param filter: Filter condition.  Only matching objects will be included in the results.
+    :param projection: "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.
+        When projection is "count", you must advance the iterator to retrieve the count.
+    :param bool consistent: Use `strongly consistent reads`__ if True.  Not applicable to GSIs.  Default is False.
+    :param bool forward: *(Query only)* Use ascending or descending order.  Default is True (ascending).
+    :param tuple parallel: *(Scan only)* A tuple of (Segment, TotalSegments) for this portion of a `parallel scan`__.
+            Default is None.
+
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
+    __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#QueryAndScanParallelScan
+    """
 
     def __init__(
-            self, engine=None, session=None, model=None, index=None, key=None, filter=None,
-            projection=None, limit=None, consistent=False, forward=True):
+            self, mode=None, engine=None, model=None, index=None, key=None, filter=None,
+            projection=None, consistent=False, forward=True, parallel=None):
+        self.mode = mode
         self.engine = engine
-        self.session = session
         self.model = model
         self.index = index
         self.key = key
         self.filter = filter
         self.projection = projection
-        self.limit = limit
         self.consistent = consistent
         self.forward = forward
+        self.parallel = parallel
 
     def __repr__(self):
         return search_repr(self.__class__, self.model, self.index)
 
     def prepare(self):
+        """Constructs a :class:`~bloop.search.PreparedSearch`."""
         p = PreparedSearch()
         p.prepare(
             engine=self.engine,
             mode=self.mode,
-            session=self.session,
             model=self.model,
             index=self.index,
             key=self.key,
             filter=self.filter,
             projection=self.projection,
-            limit=self.limit,
             consistent=self.consistent,
-            forward=self.forward
+            forward=self.forward,
+            parallel=self.parallel
         )
         return p
 
 
-class Scan(Search):
-    mode = "scan"
-
-
-class Query(Search):
-    mode = "query"
-
-
 class PreparedSearch:
+    """Mutable search object.
+
+     Creates :class:`~bloop.search.SearchModelIterator` objects which can be
+     used to iterate the results of a query or search multiple times.
+     """
     def __init__(self):
         self.engine = None
-        self.session = None
         self.mode = None
         self._iterator_cls = None
 
@@ -220,27 +238,27 @@ class PreparedSearch:
 
         self.filter = None
 
-        self.limit = None
         self.forward = None
+        self.parallel = None
 
         self._request = None
 
     def prepare(
-            self, engine=None, mode=None, session=None, model=None, index=None, key=None,
-            filter=None, projection=None, limit=None, consistent=None, forward=None):
+            self, engine=None, mode=None, model=None, index=None, key=None,
+            filter=None, projection=None, consistent=None, forward=None, parallel=None):
+        """Validates the search parameters and builds the base request dict for each Query/Scan call."""
 
-        self.prepare_session(engine, session, mode)
+        self.prepare_iterator_cls(engine, mode)
         self.prepare_model(model, index, consistent)
         self.prepare_key(key)
         self.prepare_projection(projection)
         self.prepare_filter(filter)
-        self.prepare_constraints(limit, forward)
+        self.prepare_constraints(forward, parallel)
 
         self.prepare_request()
 
-    def prepare_session(self, engine, session, mode):
+    def prepare_iterator_cls(self, engine, mode):
         self.engine = engine
-        self.session = session
         self.mode = mode
         validate_search_mode(mode)
         self._iterator_cls = ScanIterator if mode == "scan" else QueryIterator
@@ -277,16 +295,19 @@ class PreparedSearch:
         available_columns = (self.index or self.model.Meta).projection["available"]
         validate_filter_condition(self.filter, available_columns, column_blacklist)
 
-    def prepare_constraints(self, limit, forward):
-        self.limit = limit
+    def prepare_constraints(self, forward, parallel):
         self.forward = forward
+        self.parallel = parallel
 
     def prepare_request(self):
         request = self._request = {}
         request["TableName"] = self.model.Meta.table_name
         request["ConsistentRead"] = self.consistent
 
-        if self.mode != "scan":
+        if self.mode == "scan":
+            if self.parallel:
+                request["Segments"], request["TotalSegments"] = self.parallel
+        else:
             request["ScanIndexForward"] = self.forward
 
         if self.index:
@@ -302,8 +323,7 @@ class PreparedSearch:
             request["Select"] = "SPECIFIC_ATTRIBUTES"
             projected = self._projected_columns
 
-        request.update(render(
-            self.engine, filter=self.filter, projection=projected, key=self.key))
+        request.update(render(self.engine, filter=self.filter, projection=projected, key=self.key))
 
     def __repr__(self):
         return search_repr(self.__class__, self.model, self.index)
@@ -311,33 +331,48 @@ class PreparedSearch:
     def __iter__(self):
         return self._iterator_cls(
             engine=self.engine,
-            session=self.session,
             model=self.model,
             index=self.index,
-            limit=self.limit,
             request=self._request,
             projected=self._projected_columns
         )
 
 
 class SearchIterator:
+    """Reusable search iterator.
+
+    :param session: :class:`~bloop.session.SessionWrapper` to make Query, Scan calls.
+    :param model: :class:`~bloop.models.BaseModel` for repr only.
+    :param index: :class:`~bloop.models.Index` to search, or None.
+    :param dict request: The base request dict for each search.
+    :param set projected: Set of :class:`~bloop.models.Column` that should be included in each result.
+    """
     mode = "<mode-placeholder>"
 
-    def __init__(self, *, session, model, index, limit, request, projected):
+    def __init__(self, *, session, model, index, request, projected):
         self.session = session
         self.request = request
-        self.limit = limit
+
         self.model = model
         self.index = index
         self.projected = projected
 
         self.buffer = collections.deque()
+
         self.count = 0
+        """Number of items that have been loaded from DynamoDB so far, including buffered items."""
+
         self.scanned = 0
-        self.yielded = 0
+        """Number of items that DynamoDB evaluated, before any filter was applied."""
+
         self._exhausted = False
 
     def first(self):
+        """Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
+
+        :return: The first result.
+        :raises bloop.exceptions.ConstraintViolation: No results.
+        """
         self.reset()
         value = next(self, None)
         if value is None:
@@ -345,6 +380,12 @@ class SearchIterator:
         return value
 
     def one(self):
+        """Return the unique result.  If there is not exactly one result,
+        raises :exc:`~bloop.exceptions.ConstraintViolation`.
+
+        :return: The unique result.
+        :raises bloop.exceptions.ConstraintViolation: Not exactly one result.
+        """
         first = self.first()
         second = next(self, None)
         if second is not None:
@@ -352,17 +393,16 @@ class SearchIterator:
         return first
 
     def reset(self):
+        """Reset to the initial state, clearing the buffer and zeroing count and scanned."""
         self.buffer.clear()
         self.count = 0
         self.scanned = 0
-        self.yielded = 0
         self._exhausted = False
 
     @property
     def exhausted(self):
-        reached_limit = self.limit and self.yielded >= self.limit
-        exhausted_buffer = self._exhausted and len(self.buffer) == 0
-        return reached_limit or exhausted_buffer
+        """True if there are no more results."""
+        return self._exhausted and len(self.buffer) == 0
 
     def __repr__(self):
         return search_repr(self.__class__, self.model, self.index)
@@ -371,9 +411,6 @@ class SearchIterator:
         return self
 
     def __next__(self):
-        if self.limit and self.yielded >= self.limit:
-            raise StopIteration
-
         while (not self._exhausted) and len(self.buffer) == 0:
             response = self.session.search_items(self.mode, self.request)
             continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
@@ -386,7 +423,6 @@ class SearchIterator:
             self.buffer.extend(response["Items"])
 
         if self.buffer:
-            self.yielded += 1
             return self.buffer.popleft()
 
         # Buffer must be empty (if _buffer)
@@ -395,10 +431,22 @@ class SearchIterator:
 
 
 class SearchModelIterator(SearchIterator):
-    def __init__(self, *, engine, session, model, index, limit, request, projected):
+    """Reusable search iterator that unpacks result dicts into model instances.
+
+    :param engine: :class:`~bloop.engine.Engine` to unpack models with.
+    :param model: :class:`~bloop.models.BaseModel` being searched.
+    :param index: :class:`~bloop.models.Index` to search, or None.
+    :param dict request: The base request dict for each search call.
+    :param set projected: Set of :class:`~bloop.models.Column` that should be included in each result.
+    """
+    def __init__(self, *, engine, model, index, request, projected):
         self.engine = engine
-        super().__init__(session=session, model=model, index=index,
-                         limit=limit, request=request, projected=projected)
+
+        self.model = model
+
+        super().__init__(
+            session=engine.session, model=model, index=index,
+            request=request, projected=projected)
 
     def __next__(self):
         attrs = super().__next__()
@@ -407,13 +455,33 @@ class SearchModelIterator(SearchIterator):
             expected=self.projected,
             model=self.model,
             engine=self.engine)
-        object_loaded.send(self.engine, obj=obj)
+        object_loaded.send(self.engine, engine=self.engine, obj=obj)
         return obj
 
 
 class ScanIterator(SearchModelIterator):
+    """Reusable scan iterator that unpacks result dicts into model instances.
+
+    Returned from :func:`Engine.scan <bloop.engine.Engine.scan>`.
+
+    :param engine: :class:`~bloop.engine.Engine` to unpack models with.
+    :param model: :class:`~bloop.models.BaseModel` being scanned.
+    :param index: :class:`~bloop.models.Index` to scan, or None.
+    :param dict request: The base request dict for each Scan call.
+    :param set projected: Set of :class:`~bloop.models.Column` that should be included in each result.
+    """
     mode = "scan"
 
 
 class QueryIterator(SearchModelIterator):
+    """Reusable query iterator that unpacks result dicts into model instances.
+
+    Returned from :func:`Engine.query <bloop.engine.Engine.query>`.
+
+    :param engine: :class:`~bloop.engine.Engine` to unpack models with.
+    :param model: :class:`~bloop.models.BaseModel` being queried.
+    :param index: :class:`~bloop.models.Index` to query, or None.
+    :param dict request: The base request dict for each Query call.
+    :param set projected: Set of :class:`~bloop.models.Column` that should be included in each result.
+    """
     mode = "query"

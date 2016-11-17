@@ -1,15 +1,13 @@
+import datetime
 from unittest.mock import MagicMock
 
-import arrow
 import pytest
-from bloop.exceptions import InvalidStream
 from bloop.models import BaseModel, Column
 from bloop.stream.coordinator import Coordinator
-from bloop.stream.stream import Stream, stream_for
+from bloop.stream.stream import Stream
 from bloop.types import Integer, String
 from bloop.util import ordered
 
-from ...helpers.models import User
 from . import build_shards
 
 
@@ -21,7 +19,9 @@ def coordinator():
 
 @pytest.fixture
 def stream(coordinator, engine):
-    return Stream(model=Email, engine=engine, coordinator=coordinator)
+    stream = Stream(model=Email, engine=engine)
+    stream.coordinator = coordinator
+    return stream
 
 
 class Email(BaseModel):
@@ -32,12 +32,6 @@ class Email(BaseModel):
         }
     id = Column(Integer, hash_key=True)
     data = Column(String)
-
-
-def test_no_stream_arn(engine):
-    """Can't create a stream for a model that doesn't have an arn"""
-    with pytest.raises(InvalidStream):
-        stream_for(engine, User)
 
 
 def test_repr(stream):
@@ -56,7 +50,7 @@ def test_token(engine):
     shards[2].iterator_type = "at_sequence"
     shards[2].sequence_number = "sequence-number"
 
-    stream = stream_for(engine, Email)
+    stream = Stream(model=Email, engine=engine)
     stream.coordinator.roots.append(shards[0])
     stream.coordinator.active.extend(shards[1:])
 
@@ -92,7 +86,7 @@ def test_next_no_record(stream, coordinator):
 
 
 def test_next_unpacks(stream, coordinator):
-    now = arrow.now()
+    now = datetime.datetime.now(datetime.timezone.utc)
     meta = {
         "created_at": now,
         "sequence_number": "sequence-number",

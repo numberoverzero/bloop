@@ -1,7 +1,8 @@
 import operator
 
-import arrow
+import datetime
 import pytest
+from bloop.conditions import ConditionRenderer
 from bloop.exceptions import InvalidIndex, InvalidModel, InvalidStream
 from bloop.models import (
     BaseModel,
@@ -12,11 +13,9 @@ from bloop.models import (
     model_created,
     object_modified,
 )
-from bloop.session import expected_table_description
-from bloop.signals import table_validated
 from bloop.types import UUID, Boolean, DateTime, Integer, String
 
-from ..helpers.models import User
+from ..helpers.models import User, VectorModel
 
 
 operations = [
@@ -54,7 +53,7 @@ def test_load_default_init(engine):
             super().__init__(**kwargs)
         id = Column(String, hash_key=True)
         data = Column(String)
-    engine.bind(base=Blob)
+    engine.bind(Blob)
 
     assert Blob.Meta.init is Blob
 
@@ -76,13 +75,13 @@ def test_load_default_init(engine):
 def test_load_dump(engine):
     """_load and _dump should be symmetric"""
     user = User(id="user_id", name="test-name", email="email@domain.com", age=31,
-                joined=arrow.now())
+                joined=datetime.datetime.now(datetime.timezone.utc))
     serialized = {
         "id": {"S": user.id},
         "age": {"N": "31"},
         "name": {"S": "test-name"},
         "email": {"S": "email@domain.com"},
-        "j": {"S": user.joined.to("utc").isoformat()}
+        "j": {"S": user.joined.isoformat()}
     }
 
     loaded_user = engine._load(User, serialized)
@@ -310,43 +309,6 @@ def test_created_signal():
     assert new_model is SomeModel
 
 
-def test_table_validated_signal():
-    """Emitted when the backing table for a model is validated"""
-    class NoStream(BaseModel):
-        id = Column(Integer, hash_key=True)
-
-    class HasStream(BaseModel):
-        class Meta:
-            stream = {
-                "include": ["new"]
-            }
-        id = Column(Integer, hash_key=True)
-
-    actual = {
-        "AttributeDefinitions": [
-            {"AttributeName": "id", "AttributeType": "N"}],
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        "LatestStreamArn": "table/stream_name/stream/2016-08-29T03:30:15.582",
-        "LatestStreamLabel": "2016-08-29T03:30:15.582",
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-        "StreamSpecification": {
-            "StreamEnabled": True,
-            "StreamViewType": "KEYS_ONLY"},
-        "TableName": "Model",
-        "TableStatus": "ACTIVE"}
-
-    # arn isn't recorded when Meta doesn't expect a stream
-    expected = expected_table_description(NoStream)
-    table_validated.send(None, model=NoStream, actual_description=actual, expected_description=expected)
-    assert NoStream.Meta.stream is None
-
-    assert HasStream.Meta.stream["arn"] is None
-    expected = expected_table_description(HasStream)
-    table_validated.send(None, model=HasStream, actual_description=actual, expected_description=expected)
-    assert HasStream.Meta.stream["arn"] == "table/stream_name/stream/2016-08-29T03:30:15.582"
-
-
 @pytest.mark.parametrize("invalid_stream", [
     False,
     True,
@@ -468,10 +430,10 @@ def test_column_repr_path():
     column.model = User
     column.model_name = "foo"
 
-    assert repr(column[3]["foo"]["bar"][2][1]) == "<Column[User.foo[3].foo.bar[2][1]]>"
+    assert repr(column[3]["foo"]["bar"][2][1]) == "<Proxy[User.foo[3].foo.bar[2][1]]>"
 
     column.hash_key = True
-    assert repr(column[3]["foo"]["bar"][2][1]) == "<Column[User.foo[3].foo.bar[2][1]=hash]>"
+    assert repr(column[3]["foo"]["bar"][2][1]) == "<Proxy[User.foo[3].foo.bar[2][1]]>"
 
 
 def test_modified_signal():
@@ -531,6 +493,21 @@ def test_modified_signal():
 
     user.id = None
     assert called
+
+
+@pytest.mark.parametrize("container_column", [VectorModel.list_str, VectorModel.set_str])
+def test_contains_container_types(container_column, engine):
+    """Contains should render with the column type's inner type"""
+    renderer = ConditionRenderer(engine)
+    condition = container_column.contains("foo")
+    renderer.render_condition_expression(condition)
+
+    expected = {
+        'ExpressionAttributeValues': {':v1': {'S': "foo"}},
+        'ConditionExpression': '(contains(#n0, :v1))',
+        'ExpressionAttributeNames': {'#n0': container_column.dynamo_name}
+    }
+    assert renderer.rendered == expected
 
 
 # END COLUMN =============================================================================================== END COLUMN

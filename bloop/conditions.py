@@ -9,7 +9,8 @@ from .signals import (
     object_modified,
     object_saved,
 )
-from .util import WeakDefaultDictionary, missing, printable_column_name
+from .types import supports_operation
+from .util import WeakDefaultDictionary, missing
 
 
 __all__ = ["Condition", "render"]
@@ -36,17 +37,17 @@ _obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None
 
 
 @object_deleted.connect
-def on_object_deleted(_, obj, **kwargs):
+def on_object_deleted(_, *, obj, **kwargs):
     _obj_tracking[obj].pop("snapshot", None)
 
 
 @object_loaded.connect
-def on_object_loaded(engine, obj, **kwargs):
+def on_object_loaded(_, *, engine, obj, **kwargs):
     sync(obj, engine)
 
 
 @object_modified.connect
-def on_object_modified(_, obj, column, **kwargs):
+def on_object_modified(_, *, obj, column, **kwargs):
     # Mark a column for a given object as being modified in any way.
     # Any marked columns will be pushed (possibly as DELETES) in
     # future UpdateItem calls that include the object.
@@ -54,7 +55,7 @@ def on_object_modified(_, obj, column, **kwargs):
 
 
 @object_saved.connect
-def on_object_saved(engine, obj, **kwargs):
+def on_object_saved(_, *, engine, obj, **kwargs):
     sync(obj, engine)
 
 
@@ -111,6 +112,14 @@ def is_empty(ref):
 
 
 class ReferenceTracker:
+    """De-dupes reference names for the same path segments and generates unique placeholders for all
+    names, paths, and values.  The reference tracker can also forget references if, for example, a value fails to
+    render but the rest of the condition should be left intact.  This is primarily used when a value is unexpectedly
+    dumped as None, or an expression uses another column as a value.
+
+    :param engine: Used to dump column values for value refs.
+    :type engine: :class:`~bloop.engine.Engine`
+    """
     def __init__(self, engine):
         self.__next_index = 0
         self.counts = collections.defaultdict(lambda: 0)
@@ -142,7 +151,7 @@ class ReferenceTracker:
 
     def _path_ref(self, column):
         pieces = [column.dynamo_name]
-        pieces.extend(column._path)
+        pieces.extend(path_of(column))
         str_pieces = []
         for piece in pieces:
             # List indexes are attached to last path item directly
@@ -153,22 +162,52 @@ class ReferenceTracker:
                 str_pieces.append(self._name_ref(piece))
         return ".".join(str_pieces)
 
-    def _value_ref(self, column, value, *, dumped=False):
+    def _value_ref(self, column, value, *, dumped=False, inner=False):
+        """inner=True uses column.typedef.inner_type instead of column.typedef"""
         ref = ":v{}".format(self.next_index)
 
         # Need to dump this value
         if not dumped:
             typedef = column.typedef
-            for segment in column._path:
+            for segment in path_of(column):
                 typedef = typedef[segment]
+            if inner:
+                typedef = typedef.inner_typedef
             value = self.engine._dump(typedef, value)
 
         self.attr_values[ref] = value
         self.counts[ref] += 1
         return ref, value
 
-    def any_ref(self, *, column=None, value=missing, dumped=False):
-        """Returns {"type": Union["name", "value"], "ref": str, "value": Optional[Any]}"""
+    def any_ref(self, *, column, value=missing, dumped=False, inner=False):
+        """Returns a NamedTuple of (name, type, value) for any type of reference.
+
+        .. code-block:: python
+
+            # Name ref
+            >>> tracker.any_ref(column=User.email)
+            Reference(name='email', type='name', value=None)
+
+            # Value ref
+            >>> tracker.any_ref(column=User.email, value='user@domain')
+            Reference(name='email', type='value', value={'S': 'user@domain'})
+
+            # Passed as value ref, but value is another column
+            >>> tracker.any_ref(column=User.email, value=User.other_column)
+            Reference(name='other_column', type='name', value=None)
+
+        :param column: The column to reference.  If ``value`` is None, this will render a name ref for this column.
+        :type column: :class:`~bloop.conditions.ComparisonMixin`
+        :param value: *(Optional)* If provided, this is likely a value ref.  If ``value`` is also a column,
+            this will render a name ref for that column (not the ``column`` parameter).
+        :param bool dumped:  *(Optional)* True if the value has already been dumped and should not be dumped
+            through the column's typedef again.  Commonly used with atomic conditions (which store the object's dumped
+            representation).  Default is False.
+        :param bool inner: *(Optional)* True if this is a value ref and it should be dumped through a collection's
+            inner type, and not the collection type itself.  Default is False.
+        :return: A name or value reference
+        :rtype: :class:`bloop.conditions.Reference`
+        """
         # Can't use None since it's a legal value for comparisons (attribute_not_exists)
         if value is missing:
             # Simple path ref to the column.
@@ -182,30 +221,31 @@ class ReferenceTracker:
             value = None
         else:
             # Simple value ref.
-            name, value = self._value_ref(column=column, value=value, dumped=dumped)
+            name, value = self._value_ref(column=column, value=value, dumped=dumped, inner=inner)
             ref_type = "value"
         return Reference(name=name, type=ref_type, value=value)
 
     def pop_refs(self, *refs):
         """Decrement the usage of each ref by 1.
 
-        If this was the last use of the ref, pop it from attr_names or attr_values"""
+        If this was the last use of a ref, remove it from attr_names or attr_values.
+        """
         for ref in refs:
             name = ref.name
             count = self.counts[name]
-            # Not tracking this ref, nothing to do
+            # Not tracking this ref
             if count < 1:
                 continue
-            # Someone else is using this ref, so decrement and continue
+            # Someone else is using this ref
             elif count > 1:
                 self.counts[name] -= 1
-            # Last reference, time to remove it from an index (or two)
-            else:  # count == 1
+            # Last reference
+            else:
                 self.counts[name] -= 1
                 if ref.type == "value":
                     del self.attr_values[name]
-                else:  # type == "name"
-                    # Grab the name to clean up the reverse lookup
+                else:
+                    # Clean up both name indexes
                     path_segment = self.attr_names[name]
                     del self.attr_names[name]
                     del self.name_attr_index[path_segment]
@@ -222,12 +262,60 @@ def render(engine, obj=None, filter=None, projection=None, key=None, atomic=None
 
 
 class ConditionRenderer:
+    """Renders collections of :class:`~bloop.conditions.BaseCondition` into DynamoDB's wire format for expressions,
+    including:
+
+    * ``"ConditionExpression"`` -- used in conditional operations
+    * ``"FilterExpression"`` -- used in queries and scans to ignore results that don't match the filter
+    * ``"KeyConditionExpressions"`` -- used to describe a query's hash (and range) key(s)
+    * ``"ProjectionExpression"`` -- used to include a subset of possible columns in the results of a query or scan
+    * ``"UpdateExpression"`` -- used to save objects
+
+    Normally, you will only need to call :func:`~bloop.conditions.ConditionRenderer.render` to handle any combination
+    of conditions.  You can also call each individual ``render_*`` function to control how multiple conditions of
+    each type are applied.
+
+    You can collect the rendered condition at any time through :attr:`~bloop.conditions.ConditionRenderer.rendered`.
+
+    .. code-block:: python
+
+        >>> renderer.render(obj=user, atomic=True)
+        >>> renderer.rendered
+        {'ConditionExpression': '((#n0 = :v1) AND (attribute_not_exists(#n2)) AND (#n4 = :v5))',
+         'ExpressionAttributeNames': {'#n0': 'age', '#n2': 'email', '#n4': 'id'},
+         'ExpressionAttributeValues': {':v1': {'N': '3'}, ':v5': {'S': 'some-user-id'}}}
+
+
+    :param engine: Used to dump values in conditions into the appropriate wire format.
+    :type engine: :class:`~bloop.engine.Engine`
+    """
     def __init__(self, engine):
         self.refs = ReferenceTracker(engine)
         self.engine = engine
         self.expressions = {}
 
     def render(self, obj=None, condition=None, atomic=False, update=False, filter=None, projection=None, key=None):
+        """Main entry point for rendering multiple expressions.  All parameters are optional, except obj when
+        atomic or update are True.
+
+        :param obj: *(Optional)* An object to render an atomic condition or update expression for.  Required if
+            update or atomic are true.  Default is False.
+        :param condition: *(Optional)* Rendered as a "ConditionExpression" for a conditional operation.
+            If atomic is True, the two are rendered in an AND condition.  Default is None.
+        :type condition: :class:`~bloop.conditions.BaseCondition`
+        :param bool atomic: *(Optional)*  True if an atomic condition should be created for ``obj`` and rendered as
+            a "ConditionExpression".  Default is False.
+        :param bool update: *(Optional)*  True if an "UpdateExpression" should be rendered for ``obj``.
+            Default is False.
+        :param filter: *(Optional)* A filter condition for a query or scan, rendered as a "FilterExpression".
+            Default is None.
+        :type filter: :class:`~bloop.conditions.BaseCondition`
+        :param projection: *(Optional)* A set of Columns to include in a query or scan, redered as a
+            "ProjectionExpression".  Default is None.
+        :type projection: set :class:`~bloop.models.Column`
+        :param key: *(Optional)* A key condition for queries, rendered as a "KeyConditionExpression".  Default is None.
+        :type key: :class:`~bloop.conditions.BaseCondition`
+        """
         if (atomic or update) and not obj:
             raise InvalidCondition("An object is required to render atomic conditions or updates without an object.")
 
@@ -296,6 +384,8 @@ class ConditionRenderer:
 
     @property
     def rendered(self):
+        """The rendered wire format for all conditions that have been rendered.  Rendered conditions are never
+        cleared.  A new :class:`~bloop.conditions.ConditionRenderer` should be used for each operation."""
         expressions = {k: v for (k, v) in self.expressions.items() if v is not None}
         if self.refs.attr_names:
             expressions["ExpressionAttributeNames"] = self.refs.attr_names
@@ -350,10 +440,10 @@ class BaseCondition:
             return other
         # (a & b) & (c & d) -> (a & b & c & d)
         elif self.operation == other.operation == "and":
-            return AndCondition(*self.values, *other.values)
+            return AndCondition(*(self.values + other.values))
         # (a & b) & (c > 2) -> (a & b & (c > 2))
         elif self.operation == "and":
-            return AndCondition(*self.values, other)
+            return AndCondition(*(self.values + [other]))
         # (a > 2) & (b & c) -> ((a > 2) & b & c)
         elif other.operation == "and":
             return AndCondition(self, *other.values)
@@ -394,10 +484,10 @@ class BaseCondition:
             return other
         # (a | b) | (c | d) -> (a | b | c | d)
         elif self.operation == other.operation == "or":
-            return OrCondition(*self.values, *other.values)
+            return OrCondition(*(self.values + other.values))
         # (a | b) | (c > 2) -> (a | b | (c > 2))
         elif self.operation == "or":
-            return OrCondition(*self.values, other)
+            return OrCondition(*(self.values + [other]))
         # (a > 2) | (b | c) -> ((a > 2) | b | c)
         elif other.operation == "or":
             return OrCondition(self, *other.values)
@@ -438,9 +528,9 @@ class BaseCondition:
             return False
         # If one isn't None, neither is None
         if self.column is not None:
-            if self.column._proxied is not other.column._proxied:
+            if proxied(self.column) is not proxied(other.column):
                 return False
-            if self.column._path != other.column._path:
+            if path_of(self.column) != path_of(other.column):
                 return False
         # Can't use a straight list == list because
         # values could contain columns, which will break equality.
@@ -463,6 +553,29 @@ class BaseCondition:
 
 
 class Condition(BaseCondition):
+    """An empty condition.
+
+    .. code-block:: python
+
+        combined = Condition()
+
+        for each_condition in get_conditions_list():
+            combined &= each_condition
+
+        if not combined:
+            print("Conditions list only had empty conditions, or no conditions")
+
+    Useful for iteratively building complex conditions, you can concatenate multiple conditions
+    together without finding an initial condition in a possibly-empty list.
+
+    An empty condition is equivalent to omitting a condition:
+
+    .. code-block:: python
+
+        engine.save(some_user)
+        engine.save(some_user, condition=Condition())
+
+    """
     def __init__(self):
         super().__init__(operation=None)
 
@@ -473,7 +586,8 @@ class Condition(BaseCondition):
         return "()"
 
     def render(self, renderer):
-        raise InvalidCondition("Condition is not renderable")
+        """Empty conditions don't render anything."""
+        pass
 
 
 class AndCondition(BaseCondition):
@@ -643,7 +757,7 @@ class ContainsCondition(BaseCondition):
         column_ref = renderer.refs.any_ref(
             column=self.column, dumped=self.dumped)
         value_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped, value=self.values[0])
+            column=self.column, dumped=self.dumped, value=self.values[0], inner=True)
         if is_empty(value_ref):
             # Try to revert the renderer to a valid state
             renderer.refs.pop_refs(column_ref, value_ref)
@@ -682,62 +796,120 @@ class InCondition(BaseCondition):
 # END CONDITIONS ====================================================================================== END CONDITIONS
 
 
+def check_support(column, operation):
+    # TODO parametrize tests for (all condition types) X (all backing types)
+    typedef = column.typedef
+    for segment in path_of(column):
+        typedef = typedef[segment]
+    if not supports_operation(operation, typedef):
+        tpl = "Backing type {!r} for {}.{} does not support condition {!r}."
+        raise InvalidCondition(tpl.format(
+            column.typedef.backing_type,
+            column.model.__name__,
+            printable_column_name(column),
+            operation
+        ))
+
+
 class ComparisonMixin:
-    def __init__(self, *args, proxied=None, path=None, **kwargs):
-        self._path = path or []
-        self._proxied = self if proxied is None else proxied
+    def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-    def _repr_with_path(self, path):
+    def __repr__(self):
         return "<ComparisonMixin>"
 
-    def __repr__(self):
-        # Need to delegate the __repr__ to the proxied object, BUT
-        # that object won't have the path that this proxy does.
-        # So, push this path into the proxy's repr
-        return self._proxied._repr_with_path(self._path)
-
-    def __getattr__(self, item):
-        if self._proxied is self:
-            raise AttributeError
-        return getattr(self._proxied, item)
-
     def __getitem__(self, path):
-        return ComparisonMixin(proxied=self._proxied, path=self._path + [path])
+        return Proxy(self, [path])
 
     def __eq__(self, value):
+        check_support(self, "==")
         return ComparisonCondition(operation="==", column=self, value=value)
 
     def __ne__(self, value):
+        check_support(self, "!=")
         return ComparisonCondition(operation="!=", column=self, value=value)
 
     def __lt__(self, value):
+        check_support(self, "<")
         return ComparisonCondition(operation="<", column=self, value=value)
 
     def __gt__(self, value):
+        check_support(self, ">")
         return ComparisonCondition(operation=">", column=self, value=value)
 
     def __le__(self, value):
+        check_support(self, "<=")
         return ComparisonCondition(operation="<=", column=self, value=value)
 
     def __ge__(self, value):
+        check_support(self, ">=")
         return ComparisonCondition(operation=">=", column=self, value=value)
 
     def begins_with(self, value):
+        check_support(self, "begins_with")
         return BeginsWithCondition(column=self, value=value)
 
     def between(self, lower, upper):
+        check_support(self, "between")
         return BetweenCondition(column=self, lower=lower, upper=upper)
 
     def contains(self, value):
+        check_support(self, "contains")
         return ContainsCondition(column=self, value=value)
 
     def in_(self, *values):
+        check_support(self, "in")
         return InCondition(column=self, values=values)
 
     is_ = __eq__
 
     is_not = __ne__
+
+
+class Proxy(ComparisonMixin):
+    def __init__(self, obj, path):
+        self._obj = obj
+        self._path = path
+        super().__init__()
+
+    def __getattr__(self, item):
+        return getattr(self._obj, item)
+
+    def __getitem__(self, item):
+        return Proxy(self._obj, self._path + [item])
+
+    def __repr__(self):
+        # "<Proxy[File.metadata[3].foo.bar[0]]>"
+        name = self._obj.model.__name__
+        path = printable_column_name(self._obj, self._path)
+        return "<Proxy[{}.{}]>".format(name, path)
+
+
+def printable_column_name(column, path=None):
+    """Provided for debug output when rendering conditions.
+
+    User.name[3]["foo"][0]["bar"] -> name[3].foo[0].bar
+    """
+    pieces = [column.model_name]
+    path = path or path_of(column)
+    for segment in path:
+        if isinstance(segment, str):
+            pieces.append(segment)
+        else:
+            pieces[-1] += "[{}]".format(segment)
+    return ".".join(pieces)
+
+
+def path_of(obj):
+    if isinstance(obj, Proxy):
+        return obj._path
+    return []
+
+
+def proxied(obj):
+    if isinstance(obj, Proxy):
+        return obj._obj
+    return obj
 
 
 def iter_conditions(condition):

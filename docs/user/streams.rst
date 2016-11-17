@@ -1,4 +1,4 @@
-.. _streams:
+.. _user-streams:
 
 Streams
 ^^^^^^^
@@ -9,28 +9,29 @@ adjacent shards, and saving and loading processing state.
 
 .. warning::
 
-    In general, DynamoDB **does not guarantee** chronological ordering of changes **across shards**. Chronological
-    ordering for the entire stream is only guaranteed for a table with a **single partition**; exactly one shard
-    will be open at any time.
+        **Chronological order is not guaranteed for high throughput streams.**
 
-    Bloop creates a total ordering across shards using DynamoDB's ordering rules
-    and each record's |ApproximateCreationDateTime|_ and |SequenceNumber|_.
+        DynamoDB guarantees ordering:
 
-    For a detailed explanation, see :ref:`Stream Internals<internal-streams>`.
+        * within any single shard
+        * across shards for a single hash/range key
+
+        There is no way to exactly order records from adjacent shards.  High throughput streams
+        provide approximate ordering using each record's "ApproximateCreationDateTime".
+
+        Tables with a single partition guarantee order across all records.
+
+        See :ref:`Stream Internals <internal-streams>` for details.
 
 
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Streams.html
 __ http://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/Welcome.html
-.. |ApproximateCreationDateTime| replace:: ``ApproximateCreationDateTime``
-.. _ApproximateCreationDateTime: https://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamRecord.html#DDB-Type-StreamRecord-ApproximateCreationDateTime
-.. |SequenceNumber| replace:: ``SequenceNumber``
-.. _SequenceNumber: https://docs.aws.amazon.com/dynamodbstreams/latest/APIReference/API_StreamRecord.html#DDB-Type-StreamRecord-SequenceNumber
 
 ================
 Enable Streaming
 ================
 
-To add a stream that includes new and old images in each record, add the following to a model's meta:
+Add the following to a model's ``Meta`` to enable a stream with new and old objects in each record:
 
 .. code-block:: python
 
@@ -63,153 +64,139 @@ Create a Stream
 Next, create a stream on the model.  This example starts at "trim_horizon" to get all records from the last
 24 hours, but could also be "latest" to only return records created after the stream was instantiated.
 
-.. code-block:: python
+.. code-block:: pycon
 
-    stream = engine.stream(User, "trim_horizon")
+    >>> stream = engine.stream(User, "trim_horizon")
 
-If you want to start at a certain point in time, you can also use an :py:class:`arrow.arrow.Arrow` datetime:
-
-.. code-block:: python
-
-    stream = engine.stream(User, arrow.now().replace(hours=-12))
-
+If you want to start at a certain point in time, you can also use a :class:`datetime.datetime`.
 Creating streams at a specific time is **very expensive**, and will iterate all records since the stream's
 trim_horizon until the target time.
 
-If you are trying to resume processing from the same position as another
-stream, you should persist the ``Stream.token`` and load from that instead of using a specific time:
+.. code-block:: pycon
 
-.. code-block:: python
+    >>> stream = engine.stream(User, datetime.now() - timedelta(hours=12))
 
-    previous_stream = engine.stream(User, "trim_horizon")
-    # Do a bunch of processing...
-    ...
-
-    # Save the state to a file
-    with open("/tmp/state", "w") as f:
-        json.dump(previous_stream.token, f)
-
-    ...
-    # Some time later, resume processing from the same point
-    with open("/tmp/state", "r") as f:
-        previous_token = json.load(f)
-    stream = engine.stream(User, previous_token)
-
+If you are trying to resume processing from the same position as another stream, you should load from a persisted
+:data:`Stream.token <bloop.stream.Stream.token>` instead of using a specific time.
 See :ref:`stream-resume` for an example of a stream token.
+
+.. code-block:: pycon
+
+    >>> import json
+    >>> original_stream = engine.stream(User, "trim_horizon")
+    >>> with open("/tmp/state", "w") as f:
+    ...     json.dump(original_stream.token, f)
+    ...
+    # Some time later
+    >>> with open("/tmp/state", "r") as f:
+    ...     token = json.load(f)
+    ...
+    >>> stream = engine.stream(User, token)
 
 ================
 Retrieve Records
 ================
 
-You only need to call :py:func:`next` on a Stream to get the next record:
+You only need to call :func:`next` on a Stream to get the next record:
 
-.. code-block:: python
+.. code-block:: pycon
 
-    record = next(stream)
+    >>> record = next(stream)
 
 If there are no records at the current position, record will be ``None``.  A common pattern is to poll immediately
-when a record is found, but to wait a small amount when no record is found.  Which you use will depend on how
-aggressively you want to process new records:
+when a record is found, but to wait a small amount when no record is found.
 
-.. code-block:: python
+.. code-block:: pycon
 
-    while True:
-        record = next(stream)
-        if not record:
-            time.sleep(0.2)
-        else:
-            process(record)
-
-.. _stream-records:
+    >>> while True:
+    ...     record = next(stream)
+    ...     if not record:
+    ...         time.sleep(0.2)
+    ...     else:
+    ...         process(record)
 
 ----------------
 Record Structure
 ----------------
 
-Each record is a dict with an instance of the stream model in one or more of ``"key"``, ``"old"``, and ``"new"``.
-This will depend on the stream declaration above, as well as the record type.  A key-only stream will have
-``None`` in the ``"old"`` and ``"new"`` fields.  If a stream includes both ``old`` and ``new`` images but the
-record type is delete, ``"new"`` will be ``None`` because there is no new value.
+Each record is a dict with instances of the model in one or more of ``"key"``, ``"old"``, and ``"new"``.
+These are populated according to the stream's ``"include"`` above, as well as the event type.  A key-only
+stream will never have new or old objects.  If a stream includes new and old objects and the event type is delete,
+new will be ``None``.
 
 Save a new user, and then update the email address:
 
-.. code-block:: python
+.. code-block:: pycon
 
-    user = User(id=3, email="user@domain.com")
-    engine.save(user)
+    >>> user = User(id=3, email="user@domain.com")
+    >>> engine.save(user)
+    >>> user.email = "admin@domain.com"
+    >>> engine.save(user)
 
-    user.email = "admin@domain.com"
-    engine.save(user)
+The first record won't have an old value, since it was the first time this item was saved:
 
-The first record won't have an ``old`` value, since it was the first time this item was saved:
+.. code-block:: pycon
 
-.. code-block:: python
-
-    first = next(stream)
-    print(json.dumps(first, indent=4, default=repr))
-
-    {
-        "key": null,
-        "old": null,
-        "new": "User(email='user@domain.com', id=3, verified=None)",
-        "meta": {
-            "created_at": "<Arrow [2016-10-23T00:28:00-07:00]>",
-            "event": {
-                "id": "3fe6d339b7cb19a1474b3d853972c12a",
-                "type": "insert",
-                "version": "1.1"
-            },
-            "sequence_number": "700000000007366876916"
-        },
+    >>> next(stream)
+    {'key': None,
+     'old': None,
+     'new': User(email='user@domain.com', id=3, verified=None),
+     'meta': {
+         'created_at': datetime.datetime(2016, 10, 23, ...),
+         'event': {
+             'id': '3fe6d339b7cb19a1474b3d853972c12a',
+             'type': 'insert',
+             'version': '1.1'},
+         'sequence_number': '700000000007366876916'}
     }
 
-The second record shows the change to email, and has both ``old`` and ``new``:
+The second record shows the change to email, and has both old and new objects:
 
-.. code-block:: python
+.. code-block:: pycon
 
-    second = next(stream)
-    print(json.dumps(second, indent=4, default=repr))
-
-    {
-        "key": null,
-        "old": "User(email='user@domain.com', id=3, verified=None)",
-        "new": "User(email='admin@domain.com', id=3, verified=None)",
-        "meta": {
-            "created_at": "<Arrow [2016-10-23T00:28:00-07:00]>",
-            "event": {
-                "id": "73a4b8568a85a0bcac25799f806df239",
-                "type": "modify",
-                "version": "1.1"
-            },
-            "sequence_number": "800000000007366876936"
-        },
+    >>> next(stream)
+    {'key': None,
+     'old': User(email='user@domain.com', id=3, verified=None),
+     'new': User(email='admin@domain.com', id=3, verified=None),
+     'meta': {
+         'created_at': datetime.datetime(2016, 10, 23, ...),
+         'event': {
+             'id': '73a4b8568a85a0bcac25799f806df239',
+             'type': 'modify',
+             'version': '1.1'},
+         'sequence_number': '800000000007366876936'}
     }
 
 -------------------
 Periodic Heartbeats
 -------------------
 
-You should call ``stream.heartbeat()`` every 12 minutes in your processing loop.
+You should call :func:`Stream.heartbeat() <bloop.stream.Stream.heartbeat>`
+at least every 14 minutes in your processing loop.
 
-Iterators only last 15 minutes which means they need to be refreshed periodically.  There's no way to
-safely refresh an iterator that hasn't found a record; refreshing an iterator at "latest" could miss records since
-the time that the previous iterator was at "latest".
+Iterators only last 15 minutes, and need to be refreshed periodically.  There's no way to
+safely refresh an iterator that hasn't found a record.  For example, refreshing an iterator at "latest" could miss
+records since the time that the previous iterator was at "latest".  If you call this every 15 minutes, an iterator
+may expire due to clock skew or processing time.
 
-``Stream.heartbeat`` only refreshes iterators that it needs to.  Once a shard finds a record it's
-skipped on every subsequent heartbeat.  In practice the overhead of ``heartbeat()`` is very low,
-about one call per shard.
+Only iterators without sequence numbers will be refreshed.  Once a shard finds a record it's
+skipped on every subsequent heartbeat.  For a moderately active stream, heartbeat will make about one call per shard.
 
-The following pattern will call heartbeat every 12 minutes if ``process`` is quick:
+The following pattern will call heartbeat every 12 minutes (if record processing is quick):
 
-.. code-block:: python
+.. code-block:: pycon
 
-    next_heartbeat = arrow.now()
-    while True:
-        record = next(stream)
-        process(record)
-        if arrow.now() > next_heartbeat:
-            next_heartbeat = arrow.now().replace(minutes=12)
-            stream.heartbeat()
+    >>> from datetime import datetime, timedelta
+    >>> now = datetime.now
+    >>> future = lambda: datetime.now() + timedelta(minutes=12)
+    >>>
+    >>> next_heartbeat = now()
+    >>> while True:
+    ...     record = next(stream)
+    ...     process(record)
+    ...     if now() > next_heartbeat:
+    ...         next_heartbeat = future()
+    ...         stream.heartbeat()
 
 .. _stream-resume:
 
@@ -217,23 +204,21 @@ The following pattern will call heartbeat every 12 minutes if ``process`` is qui
 Pausing and Resuming
 --------------------
 
-Use ``Stream.token`` to save the current state and resume processing later:
+Use :data:`Stream.token <bloop.stream.Stream.token>` to save the current state and resume processing later:
 
-.. code-block:: python
+.. code-block:: pycon
 
-    import json
+    >>> with open("/tmp/stream-token", "r" as f):
+    ...     token = json.load(f)
+    ...
+    >>> stream = engine.stream(User, token)
 
-    with open("/tmp/stream-token", "w") as f:
-        json.dump(stream.token, f)
+When reloading from a token, Bloop will automatically prune shards that have expired, and extend the
+state to include new shards.  Any iterators that fell behind the current trim_horizon will be moved
+to each of their children's trim_horizons.
 
-    with open("/tmp/stream-token", "r" as f):
-        token = json.load(f)
-    stream = engine.stream(User, token)
-
-When reloading from a token, Bloop will automatically prune shards that have expired, and extend the state to include
-new shards.  Any iterators that fell behind the current trim_horizon will be moved to their childrens' trim_horizons.
-
-Here is the token from the stream in :ref:`stream-records`:
+Here's a token from a new stream. After 8-12 hours there will be one active shard, but also a few
+closed shards that form the lineage of the stream.
 
 .. code-block:: python
 
@@ -251,25 +236,24 @@ Here is the token from the stream in :ref:`stream-records`:
         "stream_arn": "arn:.../stream/2016-10-23T07:26:33.312"
     }
 
-There is only one shard because the stream was created less than 4 hours ago.  After 24 hours there will still be
-one active shard, but there would be 5 other closed shards that form the lineage of the stream.
+
 
 -------------
 Moving Around
 -------------
 
-This function takes the same ``position`` argument as ``engine.stream``:
+This function takes the same ``position`` argument as :func:`Engine.stream <bloop.engine.Engine.stream>`:
 
-.. code-block:: python
+.. code-block:: pycon
 
     # Any stream token; this one rebuilds the
     # stream in its current location
-    stream.move_to(stream.token)
+    >>> stream.move_to(stream.token)
 
     # Jump back in time 2 hours
-    stream.move_to(arrow.now().replace(hours=-2))
+    >>> stream.move_to(datetime.now() - timedelta(hours=2))
 
     # Move to the oldest record in the stream
-    stream.move_to("trim_horizon")
+    >>> stream.move_to("trim_horizon")
 
-As noted in :ref:`stream-create`, moving to a specific time is **very expensive**.
+As noted :ref:`above <stream-create>`, moving to a specific time is **very expensive**.

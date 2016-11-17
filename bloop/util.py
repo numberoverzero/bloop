@@ -33,21 +33,6 @@ def ordered(obj):
         return obj
 
 
-def printable_column_name(column, path=None):
-    """Provided for debug output when rendering conditions.
-
-    User.name[3]["foo"][0]["bar"] -> name[3].foo[0].bar
-    """
-    pieces = [column.model_name]
-    path = path or column._path or []
-    for segment in path:
-        if isinstance(segment, str):
-            pieces.append(segment)
-        else:
-            pieces[-1] += "[{}]".format(segment)
-    return ".".join(pieces)
-
-
 def printable_query(query_on):
     # Model.Meta -> Model
     if getattr(query_on, "__name__", "") == "Meta":
@@ -69,10 +54,9 @@ def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, 
     if model:
         obj = model.Meta.init()
 
-    load = context["engine"]._load
     for column in expected:
         value = attrs.get(column.dynamo_name, None)
-        value = load(column.typedef, value, context=context, **kwargs)
+        value = engine._load(column.typedef, value, context=context, **kwargs)
         setattr(obj, column.model_name, value)
     return obj
 
@@ -90,6 +74,53 @@ def walk_subclasses(cls):
 
 
 class Sentinel:
+    """Simple string-based placeholders for missing or special values.
+
+    Names are unique, and instances are re-used for the same name:
+
+    .. code-block:: pycon
+
+        >>> from bloop.util import Sentinel
+        >>> empty = Sentinel("empty")
+        >>> empty
+        <Sentinel[empty]>
+        >>> same_token = Sentinel("empty")
+        >>> empty is same_token
+        True
+
+    This removes the need to import the same signal or placeholder value everywhere; two modules can create
+    ``Sentinel("some-value")`` and refer to the same object.  This is especially helpful where ``None`` is a possible
+    value, and so can't be used to indicate omission of an optional parameter.
+
+    Implements \_\_repr\_\_ to render nicely in function signatures.  Standard object-based sentinels:
+
+    .. code-block:: pycon
+
+        >>> missing = object()
+        >>> def some_func(optional=missing):
+        ...     pass
+        ...
+        >>> help(some_func)
+        Help on function some_func in module __main__:
+
+        some_func(optional=<object object at 0x7f0f3f29e5d0>)
+
+    With the Sentinel class:
+
+    .. code-block:: pycon
+
+        >>> from bloop.util import Sentinel
+        >>> missing = Sentinel("Missing")
+        >>> def some_func(optional=missing):
+        ...     pass
+        ...
+        >>> help(some_func)
+        Help on function some_func in module __main__:
+
+        some_func(optional=<Sentinel[Missing]>)
+
+    :param str name: The name for this sentinel.
+    """
     def __new__(cls, name, *args, **kwargs):
         name = name.lower()
         sentinel = _symbols.get(name, None)
@@ -105,6 +136,7 @@ class Sentinel:
 
 
 class WeakDefaultDictionary(weakref.WeakKeyDictionary):
+    """The cross product of :class:`weakref.WeakKeyDictionary` and :class:`collections.defaultdict`."""
     def __init__(self, default_factory):
         self.default_factory = default_factory
         super().__init__()

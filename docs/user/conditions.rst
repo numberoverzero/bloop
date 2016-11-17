@@ -1,22 +1,20 @@
 .. _conditions:
 
-Using Conditions
-^^^^^^^^^^^^^^^^
+Conditions
+^^^^^^^^^^
 
 Conditions are used for:
 
-* Optimistic concurrency when :ref:`Saving or Deleting <save-delete-interface>` objects
-* To specify a Query's :ref:`key condition <query-key>`
-* To :ref:`filter results <query-filter>` from a Query or Scan
+* Optimistic concurrency when :ref:`saving <user-engine-save>` or :ref:`deleting <user-engine-delete>` objects
+* To specify a Query's :ref:`key condition <user-query-key>`
+* To :ref:`filter results <user-query-filter>` from a Query or Scan
 
-.. _available-conditions:
-
-====================
-Available Conditions
-====================
+=====================
+ Built-In Conditions
+=====================
 
 There is no DynamoDB type that supports all of the conditions.  For example, ``contains`` does not work with
-a numeric type ``"N"`` such as Float or Integer.  DynamoDB's `ConditionExpression Reference`__ has the full
+a numeric type ``"N"`` such as Number or Integer.  DynamoDB's `ConditionExpression Reference`__ has the full
 specification.
 
 .. code-block:: python
@@ -49,11 +47,9 @@ specification.
 
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html#ConditionExpressionReference
 
-.. _condition-paths:
-
-=====
-Paths
-=====
+================
+ Document Paths
+================
 
 You can construct conditions against individual elements of List and Map types with the usual indexing notation.
 
@@ -61,10 +57,10 @@ You can construct conditions against individual elements of List and Map types w
 
     Item = Map(
         name=String,
-        price=Float,
+        price=Number,
         quantity=Integer)
     Metrics = Map(**{
-        "payment-duration": Float,
+        "payment-duration": Number,
         "coupons.used"=Integer,
         "coupons.available"=Integer
     })
@@ -82,13 +78,14 @@ Here are some basic conditions using paths:
     Receipt.metrics["payment-duration"] > 30000
     Receipt.items[0]["name"].begins_with("deli:salami:")
 
-.. _atomic:
+.. _user-conditions-atomic:
 
-=================
-Atomic Conditions
-=================
+===================
+ Atomic Conditions
+===================
 
-When you specify ``atomic=True`` during ``Engine.save`` or ``Engine.delete``, Bloop will insert a pre-constructed
+When you specify ``atomic=True`` during :func:`Engine.save <bloop.engine.Engine.save>` or
+:func:`Engine.delete <bloop.engine.Engine.delete>`, Bloop will insert a pre-constructed
 condition on each object to be modified.
 
 The condition depends on how the local version of your object was last synchronized with the corresponding
@@ -105,7 +102,7 @@ row in DynamoDB.  Here are the rules:
       and expect the value to be None in DynamoDB.
    2. If a column is missing and **wasn't** expected (query on a projected Index), don't include it.
 
-3. Recompute the atomic condition Whenever the local state is synchronized with the DynamoDB value.
+3. Recompute the atomic condition whenever the local state is synchronized with the DynamoDB value.
 
 The following examples use this model:
 
@@ -122,9 +119,9 @@ The following examples use this model:
         by_name = GlobalSecondaryIndex(
             projection=["size"], hash_key="name")
 
-----------
-New Object
-----------
+---------------------
+ Example: New Object
+---------------------
 
 This demonstrates :ref:`Rule 1 <atomic-rules>`.
 
@@ -148,14 +145,14 @@ The following atomic condition would be generated:
 
 In this case, atomic means "only save if this object didn't exist before".
 
----------------------
-Load a Partial Object
----------------------
+--------------------------------
+ Example: Load a Partial Object
+--------------------------------
 
 This demonstrates :ref:`Rule 2.1 <atomic-rules>`.
 
-``Engine.load`` will return all columns for an object; if a column's value is missing, it hasn't been set.  An atomic
-save or delete would expect those missing columns to still not have values.
+:func:`Engine.load <bloop.engine.Engine.load>` will return all columns for an object; if a column's value is
+missing, it hasn't been set.  An atomic save or delete would expect those missing columns to still not have values.
 
 First, save an object and then load it into a new instance:
 
@@ -199,9 +196,9 @@ from DynamoDB -- **not** the values you just set.  The atomic condition is:
 
 If another call changed folder or name, or set a value for size or data, the atomic save will fail.
 
----------------
-Scan on a Table
----------------
+--------------------------
+ Example: Scan on a Table
+--------------------------
 
 This demonstrates :ref:`Rule 2.2 <atomic-rules>`.
 
@@ -240,9 +237,9 @@ There's no way to know if the previous value for eg. ``folder`` had a value, sin
 include that column when it performed the scan.  There's no save assumption for the state of that column in DynamoDB,
 so it's not part of the generated atomic condition.
 
----------------------
-Query on a Projection
----------------------
+--------------------------------
+ Example: Query on a Projection
+--------------------------------
 
 This demonstrates :ref:`Rule 2.1 <atomic-rules>`.
 
@@ -256,8 +253,8 @@ subset of all columns (using the index's projection) but the value will be missi
         key=Document.name == ".profile")
     result = query.first()
 
-This index projects the ``size`` column, which means it's expected to populate the columns ``id, name, size``.
-If the result looks like this:
+This index projects the ``size`` column, which means it's expected to populate the
+``id``, ``name``, and ``size`` columns.  If the result looks like this:
 
 .. code-block:: python
 
@@ -280,9 +277,9 @@ The atomic condition used for this object will be:
 If the value in DynamoDB has a value for ``size``, the operation will fail.  If the document's ``data`` column has
 changed since the query executed, this atomic condition won't care.
 
---------------
-Save then Save
---------------
+-------------------------
+ Example: Save then Save
+-------------------------
 
 This demonstrates :ref:`Rule 3 <atomic-rules>`.
 

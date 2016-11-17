@@ -4,17 +4,11 @@ import declare
 
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel, InvalidStream
-from .signals import model_created, object_modified, table_validated
-from .util import missing, printable_column_name, unpack_from_dynamodb
+from .signals import model_created, object_modified
+from .util import missing, unpack_from_dynamodb
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
-
-
-@table_validated.connect
-def on_table_validated(_, model, actual_description, **kwargs):
-    if model.Meta.stream:
-        model.Meta.stream["arn"] = actual_description["LatestStreamArn"]
 
 
 def loaded_columns(obj):
@@ -127,7 +121,7 @@ class ModelMetaclass(declare.ModelMetaclass):
 
         validate_stream(meta.stream)
 
-        model_created.send(model=model)
+        model_created.send(None, model=model)
         return model
 
     def __repr__(cls):
@@ -145,8 +139,7 @@ def setup_columns(meta):
     # This is a set instead of a list, because set uses __hash__
     # while some list operations uses __eq__ which will break
     # with the ComparisonMixin
-    meta.columns = set(filter(
-        lambda field: isinstance(field, Column), meta.fields))
+    meta.columns = set(filter(lambda field: isinstance(field, Column), meta.fields))
 
     meta.hash_key = None
     meta.range_key = None
@@ -204,7 +197,20 @@ def setup_indexes(meta):
 
 
 class BaseModel(metaclass=ModelMetaclass):
-    """An unbound, abstract base model"""
+    """Abstract base that all models derive from.
+
+    Provides a basic ``__init__`` method that takes \*\*kwargs whose
+    keys are columns names:
+
+    .. code-block:: python
+
+        class URL(BaseModel):
+            id = Column(UUID, hash_key=True)
+            ip = Column(IPv6)
+            name = Column(String)
+
+        url = URL(id=uuid.uuid4(), name="google")
+    """
     class Meta:
         abstract = True
 
@@ -250,6 +256,21 @@ class BaseModel(metaclass=ModelMetaclass):
 
 
 class Index(declare.Field):
+    """Abstract base class for GSIs and LSIs.
+
+    An index needs to be bound to a model by calling :func:`Index._bind(model) <bloop.models.Index._bind>`, which
+    lets the index compute projected columns, validate hash and range keys, etc.
+
+    .. seealso::
+
+        :class:`~bloop.models.GlobalSecondaryIndex` and :class:`~bloop.models.LocalSecondaryIndex`
+
+    :param projection: Either "keys", "all", or a list of column name or objects.
+        Included columns will be projected into the index.  Key columns are always included.
+    :param hash_key: The column that the index can be queried against.  Always the table hash_key for LSIs.
+    :param range_key: The column that the index can be sorted on.  Always required for an LSI.  Default is None.
+    :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    """
     def __init__(self, *, projection, hash_key=None, range_key=None, name=None, **kwargs):
         self.model = None
         self.hash_key = hash_key
@@ -283,7 +304,17 @@ class Index(declare.Field):
         return self._dynamo_name
 
     def _bind(self, model):
-        """Set up hash, range keys and compute projection"""
+        """Compute attributes and resolve column names.
+
+        * If hash and/or range keys are strings, resolve them to :class:`~bloop.models.Column` instances from
+          the model by ``model_name``.
+        * If projection is a list of strings, resolve each to a Column instance.
+        * Compute :data:`~Index.projection` dict from model Metadata and Index's temporary ``projection``
+          attribute.
+
+        :param model: The :class:`~bloop.models.BaseModel` this Index is attached to.
+        :raises bloop.exceptions.InvalidIndex: If the hash or range keys are misconfigured.
+        """
         self.model = model
 
         # Index by model_name so we can replace hash_key, range_key with the proper `bloop.Column` object
@@ -343,6 +374,18 @@ class Index(declare.Field):
 
 
 class GlobalSecondaryIndex(Index):
+    """See `GlobalSecondaryIndex`_ in the DynamoDB Developer Guide for details.
+
+    :param projection: Either "keys", "all", or a list of column name or objects.
+        Included columns will be projected into the index.  Key columns are always included.
+    :param hash_key: The column that the index can be queried against.
+    :param range_key: *(Optional)* The column that the index can be sorted on.  Default is None.
+    :param int read_units: *(Optional)* Provisioned read units for the index.  Default is 1.
+    :param int write_units:  *(Optional)* Provisioned write units for the index.  Default is 1.
+    :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+
+    .. _GlobalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
+    """
     def __init__(self, *, projection, hash_key, range_key=None, read_units=1, write_units=1, name=None, **kwargs):
         super().__init__(hash_key=hash_key, range_key=range_key, name=name, projection=projection, **kwargs)
         self.write_units = write_units
@@ -350,7 +393,21 @@ class GlobalSecondaryIndex(Index):
 
 
 class LocalSecondaryIndex(Index):
-    """ LSIs don't have individual read/write units """
+    """See `LocalSecondaryIndex`_ in the DynamoDB Developer GUide for details.
+
+    Unlike :class:`~bloop.models.GlobalSecondaryIndex`\, LSIs share their throughput with the table,
+    and their hash key is always the table hash key.
+
+    :param projection: Either "keys", "all", or a list of column name or objects.
+        Included columns will be projected into the index.  Key columns are always included.
+    :param range_key: The column that the index can be sorted against.
+    :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    :param bool strict: *(Optional)* Restricts queries and scans on the LSI to columns in the projection.
+        When False, DynamoDB may silently incur additional reads to load results.  You should not disable this
+        unless you have an explicit need.  Default is True.
+
+    .. _LocalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
+    """
     def __init__(self, *, projection, range_key, name=None, strict=True, **kwargs):
         # Hash key MUST be the table hash; do not specify
         if "hash_key" in kwargs:
@@ -361,7 +418,6 @@ class LocalSecondaryIndex(Index):
         self.projection["strict"] = strict
 
     def _bind(self, model):
-        """Raise if the model doesn't have a range key"""
         if not model.Meta.range_key:
             raise InvalidIndex("An LSI requires the Model to have a range key.")
         # this is model_name (string) because super()._bind will do the string -> Column lookup
@@ -386,8 +442,19 @@ class LocalSecondaryIndex(Index):
 
 
 class Column(declare.Field, ComparisonMixin):
-    def __init__(self, typedef, hash_key=None, range_key=None,
-                 name=None, **kwargs):
+    """Represents a single attribute in DynamoDB.
+
+    :param typedef: The type of this attribute.  Can be either a :class:`~bloop.types.Type` or
+        an instance thereof.  If a type class is provided, the column will call the constructor without arguments
+        to create an instance.  For example, ``Column(Integer)`` and ``Column(Integer())`` are equivalent.
+    :param bool hash_key: *(Optional)* True if this is the model's hash key.
+        A model must have exactly one Column with ``hash_key=True``.  Default is False.
+    :param bool range_key:  *(Optional)* True if this is the model's range key.
+        A model can have at most one Column with
+        ``range_key=True``.  Default is False.
+    :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    """
+    def __init__(self, typedef, hash_key=False, range_key=False, name=None, **kwargs):
         self.hash_key = hash_key
         self.range_key = range_key
         self._dynamo_name = name
@@ -396,7 +463,7 @@ class Column(declare.Field, ComparisonMixin):
 
     __hash__ = object.__hash__
 
-    def _repr_with_path(self, path):
+    def __repr__(self):
         if self.hash_key:
             extra = "=hash"
         elif self.range_key:
@@ -407,7 +474,11 @@ class Column(declare.Field, ComparisonMixin):
         # <Column[Pin.url]>
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
-        return "<Column[{}.{}{}]>".format(self.model.__name__, printable_column_name(self, path), extra)
+        return "<Column[{}.{}{}]>".format(
+            self.model.__name__,
+            self.model_name,
+            extra
+        )
 
     @property
     def dynamo_name(self):
@@ -418,7 +489,7 @@ class Column(declare.Field, ComparisonMixin):
     def set(self, obj, value):
         super().set(obj, value)
         # Notify the tracking engine that this value was intentionally mutated
-        object_modified.send(obj=obj, column=self, value=value)
+        object_modified.send(self, obj=obj, column=self, value=value)
 
     def delete(self, obj):
         try:
@@ -426,4 +497,4 @@ class Column(declare.Field, ComparisonMixin):
         finally:
             # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
             # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
-            object_modified.send(obj=obj, column=self, value=None)
+            object_modified.send(self, obj=obj, column=self, value=None)

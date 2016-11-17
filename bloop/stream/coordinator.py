@@ -1,6 +1,6 @@
 import collections
 import collections.abc
-import arrow
+import datetime
 
 from ..exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from .buffer import RecordBuffer
@@ -8,18 +8,23 @@ from .shard import unpack_shards
 
 
 class Coordinator:
-    def __init__(self, *, engine, session, stream_arn):
+    """Encapsulates the shard-level management for a whole Stream.
 
-        self.engine = engine
+    :param session: Used to make DynamoDBStreams calls.
+    :type session: :class:`~bloop.session.SessionWrapper`
+    :param str stream_arn: Stream arn, usually from the model's ``Meta.stream["arn"]``.
+    """
+    def __init__(self, *, session, stream_arn):
+
         self.session = session
 
-        #: The stream that's being coordinated
+        # The stream that's being coordinated
         self.stream_arn = stream_arn
 
-        #: The oldest shards in each shard tree (no parents)
+        # The oldest shards in each shard tree (no parents)
         self.roots = []
 
-        #: Shards being iterated right now
+        # Shards being iterated right now
         self.active = []
 
         # Single buffer for the lifetime of the Coordinator, but mutates frequently
@@ -29,8 +34,8 @@ class Coordinator:
         #   shard.sequence_number = record["meta"]["sequence_number"]
         #   shard.iterator_type = "after_record"
 
-        #: Holds records from advancing all active shard iterators.
-        #: Shards aren't advanced again until the buffer drains completely.
+        # Holds records from advancing all active shard iterators.
+        # Shards aren't advanced again until the buffer drains completely.
         self.buffer = RecordBuffer()
 
     def __repr__(self):
@@ -56,9 +61,8 @@ class Coordinator:
         return None
 
     def advance_shards(self):
-        """Try to refill the buffer by collecting records from the active shards.
+        """Poll active shards for records and insert them into the buffer.  Rotate exhausted shards.
 
-        Rotates exhausted shards.
         Returns immediately if the buffer isn't empty.
         """
         # Don't poll shards when there are pending records.
@@ -76,7 +80,7 @@ class Coordinator:
         self._handle_exhausted()
 
     def heartbeat(self):
-        """Keep active shards with "latest" and "trim_horizon" iterators alive."""
+        """Keep active shards with "trim_horizon", "latest" iterators alive by advancing their iterators."""
         for shard in self.active:
             if shard.sequence_number is None:
                 records = next(shard)
@@ -97,6 +101,14 @@ class Coordinator:
 
     @property
     def token(self):
+        """JSON-serializable representation of the current Stream state.
+
+        Use :func:`Engine.stream(YourModel, token) <bloop.engine.Engine.stream>` to create an identical stream,
+        or :func:`stream.move_to(token) <bloop.stream.Stream.move_to>` to move an existing stream to this position.
+
+        :returns: Stream state as a json-friendly dict
+        :rtype: dict
+        """
         shard_tokens = []
         for root in self.roots:
             for shard in root.walk_tree():
@@ -109,6 +121,13 @@ class Coordinator:
         }
 
     def remove_shard(self, shard):
+        """Remove a Shard from the Coordinator.  Drops all buffered records from the Shard.
+
+        If the Shard is active or a root, it is removed and any children promoted to those roles.
+
+        :param shard: The shard to remove
+         :type shard: :class:`~bloop.stream.shard.Shard`
+        """
         try:
             self.roots.remove(shard)
         except ValueError:
@@ -133,9 +152,14 @@ class Coordinator:
             heap.remove(x)
 
     def move_to(self, position):
+        """Set the Coordinator to a specific endpoint or time, or load state from a token.
+
+        :param position: "trim_horizon", "latest", :class:`~datetime.datetime`, or a
+            :attr:`Coordinator.token <bloop.stream.coordinator.Coordinator.token>`
+        """
         if isinstance(position, collections.abc.Mapping):
             move = _move_stream_token
-        elif isinstance(position, arrow.Arrow):
+        elif hasattr(position, "timestamp") and callable(position.timestamp):
             move = _move_stream_time
         elif isinstance(position, str) and position.lower() in ["latest", "trim_horizon"]:
             move = _move_stream_endpoint
@@ -184,7 +208,7 @@ def _move_stream_time(coordinator, time):
 
     The corner cases are worse; short trees, recent splits, trees with different branch heights.
     """
-    if time > arrow.now():
+    if time > datetime.datetime.now(datetime.timezone.utc):
         _move_stream_endpoint(coordinator, "latest")
         return
 

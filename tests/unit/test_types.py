@@ -1,7 +1,7 @@
 import decimal
 import uuid
 
-import arrow
+import datetime
 import declare
 import pytest
 from bloop.types import (
@@ -9,10 +9,10 @@ from bloop.types import (
     Binary,
     Boolean,
     DateTime,
-    Float,
     Integer,
     List,
     Map,
+    Number,
     Set,
     String,
     Type,
@@ -61,7 +61,7 @@ def test_load_dump_best_effort(engine):
     assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={"engine": engine})
 
 
-@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Float, Integer, Binary, Boolean])
+@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Number, Integer, Binary, Boolean])
 def test_none_scalar_types(typedef):
     """single-value types without an explicit 'lack of value' sentinel should return None when given None"""
     type = typedef()
@@ -114,7 +114,7 @@ def test_dump_none_vector_types(engine, typedef, nones):
 
 
 @pytest.mark.parametrize("typedef, values, expected", [
-    (Set(String), [None, "hello"], [{"S": "hello"}]),
+    (Set(String), [None, "hello"], ["hello"]),
     (List(String), ["foo", None], [{"S": "foo"}]),
     (DocumentType, {"Rating": 3.0, "Stock": None}, {"Rating": {"N": "3"}})
 ])
@@ -139,28 +139,13 @@ def test_uuid():
 
 def test_datetime():
     typedef = DateTime()
-
-    tz = "Europe/Paris"
-    now = arrow.now()
-
-    # Not a symmetric type
-    assert typedef.dynamo_load(now.isoformat(), context={}) == now
-    assert typedef.dynamo_dump(now, context={}) == now.to("utc").isoformat()
-
-    assert now == typedef.dynamo_load(now.to(tz).isoformat(), context={})
-    assert now.to("utc").isoformat() == typedef.dynamo_dump(now.to(tz), context={})
-
-    # Should load values in the given timezone.
-    # Because arrow objects compare equal regardless of timezone, we
-    # isoformat each to compare the rendered strings (which preserve tz).
-    local_typedef = DateTime(timezone=tz)
-    loaded_as_string = local_typedef.dynamo_load(now.isoformat(), context={}).isoformat()
-    now_with_tz_as_string = now.to(tz).isoformat()
-    assert loaded_as_string == now_with_tz_as_string
+    now = datetime.datetime.now(datetime.timezone.utc)
+    now_str = now.isoformat()
+    symmetric_test(typedef, (now, now_str))
 
 
-def test_float():
-    typedef = Float()
+def test_number():
+    typedef = Number()
     d = decimal.Decimal
     symmetric_test(typedef, (1.5, "1.5"), (d(4) / d(3), "1.333333333333333333333333333"))
 
@@ -175,7 +160,7 @@ def test_float():
         (decimal.Decimal("NaN"), TypeError)])
 def test_float_errors(value, raises):
     with pytest.raises(raises):
-        Float().dynamo_dump(value, context={})
+        Number().dynamo_dump(value, context={})
 
 
 def test_integer():
@@ -197,10 +182,10 @@ def test_binary():
 
 @pytest.mark.parametrize(
     "set_type, loaded, dumped", [
-        (String, {"Hello", "World"}, [{"S": "Hello"}, {"S": "World"}]),
-        (Float, {4.5, 3}, [{"N": "4.5"}, {"N": "3"}]),
-        (Integer, {0, -1, 1}, [{"N": "0"}, {"N": "-1"}, {"N": "1"}]),
-        (Binary, {b"123", b"456"}, [{"B": "MTIz"}, {"B": "NDU2"}])], ids=str)
+        (String, {"Hello", "World"}, ["Hello", "World"]),
+        (Number, {4.5, 3}, ["4.5", "3"]),
+        (Integer, {0, -1, 1}, ["0", "-1", "1"]),
+        (Binary, {b"123", b"456"}, ["MTIz", "NDU2"])], ids=str)
 def test_sets(engine, set_type, loaded, dumped):
     typedef = Set(set_type)
     engine.type_engine.register(typedef)
@@ -219,11 +204,11 @@ def test_set_type_instance():
     """Set can take an instance of a Type as well as a Type subclass"""
     type_instance = String()
     instance_set = Set(type_instance)
-    assert instance_set.typedef is type_instance
+    assert instance_set.inner_typedef is type_instance
 
     type_subclass = String
     subclass_set = Set(type_subclass)
-    assert isinstance(subclass_set.typedef, type_subclass)
+    assert isinstance(subclass_set.inner_typedef, type_subclass)
 
 
 def test_set_illegal_backing_type():
@@ -277,7 +262,7 @@ def test_list_path(key):
 
 def test_map_dump(engine):
     """Map handles nested maps and custom types"""
-    now = arrow.now().to('utc')
+    now = datetime.datetime.now(datetime.timezone.utc)
     loaded = {
         'Rating': 0.5,
         'Stock': 3,

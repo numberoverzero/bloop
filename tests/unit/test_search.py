@@ -19,7 +19,7 @@ from bloop.exceptions import (
     InvalidFilterCondition,
     InvalidKeyCondition,
     InvalidProjection,
-    UnknownSearchMode,
+    InvalidSearchMode,
 )
 from bloop.models import (
     BaseModel,
@@ -29,9 +29,7 @@ from bloop.models import (
 )
 from bloop.search import (
     PreparedSearch,
-    Query,
     QueryIterator,
-    Scan,
     ScanIterator,
     Search,
     SearchIterator,
@@ -59,8 +57,9 @@ range_conditions = {BeginsWithCondition, BetweenCondition, ComparisonCondition}
 bad_range_conditions = all_conditions - {BeginsWithCondition, BetweenCondition}
 
 
-def model_for(has_model_range=False, has_index=False, has_index_range=False,
-              index_type="gsi", index_projection="all", strict=True):
+def model_for(
+        has_model_range=False, has_index=False, has_index_range=False,
+        index_type="gsi", index_projection="all", strict=True):
     """Not all permutations are possible.  Impossible selections will always self-correct.
 
     For instance, has_model_range=False, has_index=True, index_type="gsi" can't happen.
@@ -271,21 +270,23 @@ def simple_iter(engine, session):
             "session": session,
             "model": model,
             "index": index,
-            "limit": None,
             "request": {},
             "projected": set()
         }
-        if cls is SearchIterator:
+        if issubclass(cls, SearchModelIterator):
+            kwargs.pop("session")
+        elif cls is SearchIterator:
             kwargs.pop("engine")
+
         return cls(**kwargs)
     return _simple_iter
 
 
 @pytest.fixture
-def valid_search(engine, session):
+def valid_search(engine):
     search = Search(
-        engine=engine, session=session, model=ComplexModel, index=None, key=ComplexModel.name == "foo",
-        filter=None, projection="all", limit=None, consistent=True, forward=False)
+        engine=engine, model=ComplexModel, index=None, key=ComplexModel.name == "foo",
+        filter=None, projection="all", consistent=True, forward=False)
     search.mode = "query"
     return search
 
@@ -425,14 +426,22 @@ def test_search_projection_includes_non_projected_column(model, index):
     projection = [model.model_hash, model.not_projected]
 
     if should_succeed:
-        projected = validate_search_projection(
-            model, index, projection=projection)
+        projected = validate_search_projection(model, index, projection=projection)
         assert projected == [model.model_hash, model.not_projected]
 
     else:
         with pytest.raises(InvalidProjection):
-            validate_search_projection(
-                model, index, projection=projection)
+            validate_search_projection(model, index, projection=projection)
+
+
+@pytest.mark.parametrize("model, index", all_permutations)
+def test_search_projection_unknown_string(model, index):
+    """Don't confuse a string for an iterable list.
+    Users can be explicit with list("string") if their column names are all single-characters
+    """
+
+    with pytest.raises(InvalidProjection):
+        validate_search_projection(model, index, projection="keys")
 
 
 def test_validate_no_filter():
@@ -468,19 +477,18 @@ def test_validate_filter_success():
 
 
 @pytest.mark.parametrize("mode, cls", [("query", QueryIterator), ("scan", ScanIterator)])
-def test_prepare_session(valid_search, engine, session, mode, cls):
+def test_prepare_iterator_cls(valid_search, engine, mode, cls):
     valid_search.mode = mode
     prepared = valid_search.prepare()
 
     assert prepared.engine is engine
-    assert prepared.session is session
     assert prepared.mode == mode
     assert prepared._iterator_cls is cls
 
 
 def test_prepare_unknown_mode(valid_search):
     valid_search.mode = "foo"
-    with pytest.raises(UnknownSearchMode):
+    with pytest.raises(InvalidSearchMode):
         valid_search.prepare()
 
 
@@ -553,11 +561,11 @@ def test_prepare_invalid_filter(valid_search):
 
 
 def test_prepare_constraints(valid_search):
-    valid_search.limit = 456
     valid_search.forward = False
+    valid_search.parallel = (1, 5)
     prepared = valid_search.prepare()
-    assert prepared.limit == 456
     assert prepared.forward is False
+    assert prepared.parallel == (1, 5)
 
 
 @pytest.mark.parametrize("mode, cls", [("query", QueryIterator), ("scan", ScanIterator)])
@@ -604,6 +612,20 @@ def test_prepare_request_specific(valid_search, index):
     assert prepared._request["ProjectionExpression"] == "#n0"
 
 
+@pytest.mark.parametrize("mode", ["query", "scan"])
+@pytest.mark.parametrize("parallel", [False, (2, 5)])
+def test_prepare_request_parallel(valid_search, mode, parallel):
+    valid_search.mode = mode
+    valid_search.parallel = parallel
+    prepared = valid_search.prepare()
+    if parallel and (mode == "scan"):
+        actual = prepared._request["Segments"], prepared._request["TotalSegments"]
+        assert actual == parallel
+    else:
+        assert "Segments" not in prepared._request
+        assert "TotalSegments" not in prepared._request
+
+
 # END PREPARE TESTS ================================================================================= END PREPARE TESTS
 
 
@@ -623,8 +645,6 @@ def test_search_repr():
 
 def test_reprs(simple_iter):
     assert repr(Search(model=User, index=None)) == "<Search[User]>"
-    assert repr(Scan(model=User, index=User.by_email)) == "<Scan[User.by_email]>"
-    assert repr(Query(model=None, index=None)) == "<Query[None]>"
     prepared_search = PreparedSearch()
     prepared_search.model = None
     prepared_search.index = User.by_email
@@ -645,11 +665,10 @@ def test_iterator_returns_self(simple_iter):
 
 
 def test_iterator_reset(simple_iter):
-    """reset clears buffer, count, scanned, exhausted, yielded"""
+    """reset clears buffer, count, scanned, exhausted"""
     iterator = simple_iter()
 
     # Pretend we've stepped the iterator a few times
-    iterator.yielded = 8
     iterator.count = 9
     iterator.scanned = 12
     iterator.buffer.append("obj")
@@ -658,51 +677,21 @@ def test_iterator_reset(simple_iter):
     iterator.reset()
 
     # Ready to go again, buffer empty and counters reset
-    assert iterator.yielded == 0
     assert iterator.count == 0
     assert iterator.scanned == 0
     assert len(iterator.buffer) == 0
     assert not iterator.exhausted
 
 
-@pytest.mark.parametrize("limit", [None, 1])
-@pytest.mark.parametrize("yielded", [0, 1, 2])
 @pytest.mark.parametrize("buffer_size", [0, 1])
 @pytest.mark.parametrize("has_tokens", [False, True])
-def test_iterator_exhausted(simple_iter, limit, yielded, buffer_size, has_tokens):
-    """Various states for the buffer's limit, yielded, _exhausted, and buffer.
-
-    Exhausted if either:
-    1. The iterator has a limit, and it's yielded at least that many items.
-    2. The iterator has run out of continuation tokens, and the buffer is empty.
-
-    Any other combination of states is not exhausted.
-    """
+def test_iterator_exhausted(simple_iter, buffer_size, has_tokens):
+    """Only exhausted when the iterator has run out of continuation tokens and the buffer is empty."""
     iterator = simple_iter()
-
-    iterator.limit = limit
-    iterator.yielded = yielded
     iterator.buffer = collections.deque([True] * buffer_size)
     iterator._exhausted = not has_tokens
-
-    should_be_exhausted = (limit and yielded >= limit) or (not buffer_size and not has_tokens)
+    should_be_exhausted = not buffer_size and not has_tokens
     assert iterator.exhausted == should_be_exhausted
-
-
-def test_iterator_next_limit_reached(simple_iter):
-    """If the iterator has yielded >= limit, next raises (regardless of buffer, continue tokens)"""
-    iterator = simple_iter()
-
-    # Put something in the buffer so that isn't the cause of StopIteration
-    iterator.buffer.append(True)
-
-    iterator.limit = 1
-    iterator.yielded = 1
-    assert next(iterator, None) is None
-
-    iterator.limit = 1
-    iterator.yielded = 2
-    assert next(iterator, None) is None
 
 
 def test_next_states(simple_iter, session):
@@ -749,7 +738,6 @@ def test_next_states(simple_iter, session):
             current_steps += 1
             expected_call_count = calls_for_current_steps(chain, current_steps)
             assert session.search_items.call_count == expected_call_count
-        assert iterator.yielded == sum(chain)
         assert iterator.exhausted
 
     # Kick it all off

@@ -37,7 +37,7 @@ if __name__ == "__main__":
         description="ORM for DynamoDB",
         long_description=README + "\n\n" + CHANGES,
         classifiers=[
-            "Development Status :: 4 - Beta",
+            "Development Status :: 5 - Production/Stable",
             "Intended Audience :: Developers",
             "License :: OSI Approved :: MIT License",
             "Operating System :: OS Independent",
@@ -50,7 +50,7 @@ if __name__ == "__main__":
         author_email="joe.mcross@gmail.com",
         url="https://github.com/numberoverzero/bloop",
         license="MIT",
-        keywords="aws dynamo dynamodb orm",
+        keywords="aws dynamo dynamodb dynamodbstreams orm",
         platforms="any",
         include_package_data=True,
         packages=PACKAGES,

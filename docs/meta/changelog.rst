@@ -16,9 +16,9 @@ The 1.0.0 release includes a number of api changes, although functionally not mu
 biggest changes are to Query and Scan syntax, which has changed from a builder pattern to a single call.  The
 remaining changes are mostly resolved through a different import or parameter/attribute name.
 
---------------------------
- Custom Session or Client
---------------------------
+-----------------
+ Session, Client
+-----------------
 
 In 1.0.0 the Engine wraps two clients: one for DynamoDB, and one for DynamoDBStreams.  Bloop will create default
 clients for any missing parameters using ``boto3.client``:
@@ -86,12 +86,12 @@ The intermediate bloop Client is no longer necessary, but a dynamodbstreams clie
     streams = boto3.client("dynamodbstreams", endpoint_url="http://localhost:8000")
     engine = Engine(dynamodb=ddb, dynamodbstreams=streams)
 
----------------
- Engine Config
----------------
+--------
+ Engine
+--------
 
-Defaults
-========
+Config
+======
 
 Prior to 1.0.0, Engine took a number of configuration options.  These have all been removed, and baked into existing
 structures, or are only specified at the operation level.  Engine no longer takes ``**config`` kwargs.
@@ -121,6 +121,26 @@ changing the underlying engine's configuration:
         # a bunch of operations that perform atomic saves
 
 ``Engine.context`` and the ``EngineView`` class have been removed since there is no longer an ``Engine.config``.
+
+Engine.save, Engine.delete
+==========================
+
+These functions take ``*objs`` instead of ``objs``, which makes passing a small number of items more comfortable.
+
+.. code-block:: python
+
+    user = User(...)
+    tweet = Tweet(...)
+
+    # Old: explicit list required
+    engine.save([user, tweet])
+
+    # 1.0.0: *varargs
+    engine.save(user, tweet)
+
+    # 1.0.0: save a list
+    some_users = get_modified()
+    engine.save(*some_users)
 
 --------
  Models
@@ -258,35 +278,180 @@ To bind all concrete (``Meta.abstract=False``) models from a single base, pass t
 
 This will bind ``User`` but not ``S3Blob``.
 
-----------------------------
- Engine.save, Engine.delete
-----------------------------
+---------
+ Indexes
+---------
 
-These functions take ``*objs`` instead of ``objs``, which makes passing a small number of items more comfortable.
-Previously, you would save two items with:
+Projection is Required
+======================
 
-.. code-block:: python
+In 1.0.0, ``projection`` is required for both :class:`~bloop.models.GlobalSecondaryIndex` and
+:class:`~bloop.models.LocalSecondaryIndex`.  This is because Bloop now supports binding multiple models to the same
+table, and the ``"all"`` projection is not really DynamoDB's all, but instead an ``INCLUDE`` with all columns that
+the model defines.
 
-    user = User(...)
-    tweet = Tweet(...)
-
-    engine.save([user, tweet])
-
-This is now:
+Previously:
 
 .. code-block:: python
 
-    user = User(...)
-    tweet = Tweet(...)
+    from bloop import new_base, Column, Integer, GlobalSecondaryIndex
 
-    engine.save(user, tweet)
+    class MyModel(new_base()):
+        id = Column(Integer, hash_key=True)
+        data = Column(Integer)
 
-And to save a list:
+        # implicit "keys"
+        by_data = GlobalSecondaryIndex(hash_key="data")
+
+Now, this must explicitly state that the projection is "keys":
 
 .. code-block:: python
 
-    some_list = get_users_to_save()
-    engine.save(*some_list)
+    from bloop import BaseModel, Column, Integer, GlobalSecondaryIndex
 
+    class MyModel(BaseModel):
+        id = Column(Integer, hash_key=True)
+        data = Column(Integer)
+
+        by_data = GlobalSecondaryIndex(
+            projection="keys", hash_key="data")
+
+Hash and Range Key
+==================
+
+1.0.0 also lets you use the Column object (and not just its model name) as the parameter to ``hash_key`` and
+``range_key``:
+
+.. code-block:: python
+
+    class MyModel(BaseModel):
+        id = Column(Integer, hash_key=True)
+        data = Column(Integer)
+
+        by_data = GlobalSecondaryIndex(
+            projection="keys", hash_key=data)
+
+``__set__`` and ``__del__``
+===========================
+
+Finally, Bloop disallows setting and deleting attributes on objects with the same name as an index.  Previously, it
+would simply set that value on the object and silently ignore it when loading or saving.  It wasn't clear that the
+value wasn't applied to the Index's hash or range key.
+
+.. code-block:: python
+
+    >>> class MyModel(BaseModel):
+    ...     id = Column(Integer, hash_key=True)
+    ...     data = Column(Integer)
+    ...     by_data = GlobalSecondaryIndex(
+    ...         projection="keys", hash_key=data)
+    ...
+    >>> obj = MyModel()
+    >>> obj.by_data = "foo"
+    Traceback (most recent call last):
+      ...
+    AttributeError: MyModel.by_data is a GlobalSecondaryIndex
+
+-------
+ Types
+-------
+
+DateTime
+========
+
+Previously, :class:`~bloop.types.DateTime` was backed by arrow.  Instead of forcing a particular library on users --
+and there are a number of high-quality choices -- Bloop's built-in datetime type is now backed by the standard
+library's :class:`datetime.datetime`.  This type only loads and dumps values in UTC, and uses a fixed ISO8601 format
+string which always uses ``+00:00`` for the timezone.  :class:`~bloop.types.DateTime` will forcefully convert the
+timezone when saving to DynamoDB with :func:`datetime.datetime.astimezone` which raises on naive datetime objects.
+For this reason, you must specify a timezone when using this type.
+
+Most users are expected to have a preferred datetime library, and so Bloop now includes implementations of DateTime
+in a new extensions module ``bloop.ext`` for the three most popular datetime libraries: arrow, delorean, and pendulum.
+These expose the previous interface, which allows you to specify a local timezone to apply when loading values from
+DynamoDB.  It still defaults to UTC.
+
+To swap out an existing DateTime class and continue using arrow objects:
+
+.. code-block:: python
+
+    # from bloop import DateTime
+    from bloop.ext.arrow import DateTime
+
+To use delorean instead:
+
+.. code-block:: python
+
+    # from bloop import DateTime
+    from bloop.ext.delorean import DateTime
+
+Future extensions will also be grouped by external package, and are not limited to types.  For example, an alternate
+Engine implementation could be provided in ``bloop.ext.sqlalchemy`` that can bind SQLAlchemy's ORM models and
+transparently maps Bloop types to SQLALchemy types.
+
+Float
+=====
+
+Float has been renamed to :class:`~bloop.types.Number` and now takes an optional :class:`decimal.Context` to use when
+translating numbers to DynamoDB's wire format.  The same context used in previous versions (which comes
+from the specifications in DynamoDB's User Guide) is used as the default; existing code only needs to use the new
+name or alias it on import:
+
+.. code-block:: python
+
+    # from bloop import Float
+    from bloop import Number as Float
+
+:ref:`A new pattern <patterns-float>` has been added that provides a less restrictive type which always loads and
+dumps ``float`` instead of :class:`decimal.Decimal`.  This comes at the expense of exactness, since Float's decimal
+context does not trap Rounding or Inexact signals.  This is a common request for boto3; keep its limitations in mind
+when storing and loading values.  It's probably fine for a cached version of a product rating, but you're playing with
+fire storing account balances with it.
+
+String
+======
+
+A minor change, :class:`~bloop.types.String` no longer calls ``str(value)`` when dumping to DynamoDB.  This was
+obscuring cases where the wrong value was provided, but the type silently coerced a string using that object's
+``__str__``.  Now, you will need to manually call ``str`` on objects, or boto3 will complain of an incorrect type.
+
+.. code-block:: pycon
+
+    >>> from bloop import BaseModel, Column, Engine, String
+
+    >>> class MyModel(BaseModel):
+    ...     id = Column(String, hash_key=True)
+    ...
+    >>> engine = Engine()
+    >>> engine.bind(MyModel)
+
+    >>> not_a_str = object()
+    >>> obj = MyModel(id=not_a_str)
+
+    # previously, this would store "<object object at 0x7f92a5a2f680>"
+    # since that is str(not_a_str).
+    >>> engine.save(obj)
+
+    # now, this raises (newlines for readability)
+    Traceback (most recent call last):
+      ..
+    ParamValidationError: Parameter validation failed:
+    Invalid type for
+        parameter Key.id.S,
+        value: <object object at 0x7f92a5a2f680>,
+        type: <class 'object'>,
+        valid types: <class 'str'>
+
+------------
+ Exceptions
+------------
+
+``NotModified`` was raised by :func:`Engine.load <bloop.engine.Engine.load>` when some objects were not found.  This
+has been renamed to :exc:`~bloop.exceptions.MissingObjects` and is otherwise unchanged.
+
+Exceptions for unknown or abstract models have changed slightly.  When an Engine fails to load or dump a model,
+it will raise :exc:`~bloop.exceptions.UnboundModel`.  When a value fails to load or dump but isn't a subclass of
+:class:`~bloop.models.BaseModel`, the engine raises :exc:`~bloop.exceptions.UnknownType`.  When you attempt to perform
+a mutating operation (load, save, ...) on an abstract model, the engine raises :exc:`~bloop.exceptions.InvalidModel`.
 
 .. include:: ../../CHANGELOG.rst

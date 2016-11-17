@@ -37,8 +37,8 @@ from .types import (
 
 __all__ = [
     # Models
-    "BaseModel", "Boolean", "Binary", "Column", "DateTime", "Engine", "Float", "GlobalSecondaryIndex", "Integer",
-    "List", "LocalSecondaryIndex", "Map", "Set", "String", "UUID",
+    "BaseModel", "Boolean", "Binary", "Column", "DateTime", "Engine", "GlobalSecondaryIndex", "Integer",
+    "List", "LocalSecondaryIndex", "Map", "Number", "Set", "String", "UUID",
 
     # Exceptions
     "BloopException", "ConstraintViolation", "MissingObjects",

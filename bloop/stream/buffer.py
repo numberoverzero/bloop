@@ -1,4 +1,10 @@
 import heapq
+import random
+
+
+def jitter():
+    """Used to advance a monotonic clock by a small amount"""
+    return random.randint(1, 5)
 
 
 def heap_item(clock, record, shard):
@@ -85,6 +91,7 @@ class RecordBuffer:
 
         .. code-block:: python
 
+            >>> buffer = RecordBuffer()
             >>> buffer.clock()
             3
             >>> buffer.clock()
@@ -97,7 +104,9 @@ class RecordBuffer:
         :return: A unique clock value guaranteed to be larger than every previous value
         :rtype: int
         """
-        # Try to prevent collisions from someone accessing the underlying int. This offset
-        # ensures __monotonic_integer will never have the same value as any call to clock().
-        self.__monotonic_integer += 2
-        return self.__monotonic_integer - 1
+        # Try to prevent collisions from someone accessing the underlying int.
+        # This offset ensures _RecordBuffer__monotonic_integer will never have
+        # the same value as any call to clock().
+        value = self.__monotonic_integer + jitter()
+        self.__monotonic_integer = value + jitter()
+        return value

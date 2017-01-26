@@ -117,7 +117,5 @@ Let's find them in the stream:
 Check out the `User Guide`_ or `Public API Reference`_ to create your own nested types, overlapping models,
 set up cross-region replication in less than 20 lines, and more!
 
-(placeholder links until docs are merged)
-
-.. _User Guide: http://bloop.readthedocs.org/
-.. _Public API Reference: http://bloop.readthedocs.org/
+.. _User Guide: https://bloop.readthedocs.io/en/latest/user/quickstart.html
+.. _Public API Reference: https://bloop.readthedocs.io/en/latest/api/public.html

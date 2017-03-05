@@ -28,7 +28,7 @@ Changed
 =======
 
 * The ``arrow``, ``delorean``, and ``pendulum`` extensions now have a default timezone of ``"utc"`` instead of
-  ``datetime.timezone.utc.  There are open issues for both projects to verify if that is the expected behavior.
+  ``datetime.timezone.utc``.  There are open issues for both projects to verify if that is the expected behavior.
 
 Fixed
 =====

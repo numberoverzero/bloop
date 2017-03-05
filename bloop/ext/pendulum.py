@@ -1,11 +1,10 @@
-import datetime
-
 import pendulum
 
 from .. import types
 
 
-DEFAULT_TIMEZONE = datetime.timezone.utc
+# https://github.com/sdispater/pendulum/issues/97
+DEFAULT_TIMEZONE = "utc"
 
 
 class DateTime(types.DateTime):

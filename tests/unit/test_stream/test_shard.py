@@ -20,6 +20,10 @@ from . import (
 )
 
 
+def drop_milliseconds(dt):
+    return datetime.datetime.fromtimestamp(int(dt.timestamp()))
+
+
 def now_with_offset(seconds=0):
     return datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(seconds=seconds)
 
@@ -279,14 +283,14 @@ def test_seek_finds_position(time_offset, record_index, shard, session):
     # Reverse the iterator so that the offset can increase
     # as we move backwards from the target point on the left side
     for offset, record in enumerate(reversed(records[:record_index])):
-        previous = (exact_target - datetime.timedelta(hours=offset + 1)).timestamp()
-        record["dynamodb"]["ApproximateCreationDateTime"] = int(previous)
+        previous = exact_target - datetime.timedelta(hours=offset + 1)
+        record["dynamodb"]["ApproximateCreationDateTime"] = drop_milliseconds(previous)
     # Same thing going forward for records after the target
     for offset, record in enumerate(records[record_index + 1:]):
-        future = (exact_target + datetime.timedelta(hours=offset + 1)).timestamp()
-        record["dynamodb"]["ApproximateCreationDateTime"] = int(future)
+        future = exact_target + datetime.timedelta(hours=offset + 1)
+        record["dynamodb"]["ApproximateCreationDateTime"] = drop_milliseconds(future)
     # Set target record's exact value
-    records[record_index]["dynamodb"]["ApproximateCreationDateTime"] = int(exact_target.timestamp())
+    records[record_index]["dynamodb"]["ApproximateCreationDateTime"] = drop_milliseconds(exact_target)
 
     session.get_stream_records.return_value = response
 
@@ -464,7 +468,7 @@ def test_reformat_record(include):
         else:
             assert record[field] is None
 
-    assert record["meta"]["created_at"].timestamp() == raw["dynamodb"]["ApproximateCreationDateTime"]
+    assert record["meta"]["created_at"] == raw["dynamodb"]["ApproximateCreationDateTime"]
     assert record["meta"]["event"]["type"] == raw["eventName"].lower()
 
 

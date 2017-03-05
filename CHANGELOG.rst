@@ -19,6 +19,26 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 
 
 --------------------
+ 1.0.1 - 2017-03-04
+--------------------
+
+DateTime extensions now use the literal ``"utc"`` for a default timezone, and ``next(stream)`` now works.
+
+Changed
+=======
+
+* The ``arrow``, ``delorean``, and ``pendulum`` extensions now have a default timezone of ``"utc"`` instead of
+  ``datetime.timezone.utc.  There are open issues for both projects to verify if that is the expected behavior.
+
+Fixed
+=====
+
+* DynamoDBStreams return a Timestamp for each record's ApproximateCreationDateTime, which botocore is translating
+  into a real datetime.datetime object.  Previously, the record parser assumed an int was used.  While this fix is
+  a breaking change for an internal API, this bug broke the Stream iterator interface entirely, which means no one
+  could have been using it anyway.
+
+--------------------
  1.0.0 - 2016-11-16
 --------------------
 

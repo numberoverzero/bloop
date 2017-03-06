@@ -361,11 +361,11 @@ def test_get_records_after_head(shard, session):
     returned_records = shard.get_records()
 
     assert len(returned_records) == 1
-    assert returned_records[0]["meta"]["sequence_number"] == 0
+    assert returned_records[0]["meta"]["sequence_number"] == "0"
     assert session.get_stream_records.called_once_with(shard.iterator_id)
 
     assert shard.iterator_type == "at_sequence"
-    assert shard.sequence_number == 0
+    assert shard.sequence_number == "0"
 
 
 @pytest.mark.parametrize("chain", [
@@ -420,7 +420,7 @@ def test_get_records_shard(chain, shard, session):
     assert len(records) == sum(chain)
 
 
-@pytest.mark.parametrize("initial_sequence_number", [None, "sequence-number"])
+@pytest.mark.parametrize("initial_sequence_number", ["11", "913"])
 @pytest.mark.parametrize("record_count", [0, 1, 2])
 def test_apply_records(initial_sequence_number, record_count, session):
     # Temporarily ignoring that an iterator should never be "latest" and have a sequence_number..

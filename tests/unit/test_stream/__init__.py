@@ -1,4 +1,5 @@
 import datetime
+import random
 
 from bloop.stream.shard import Shard
 from bloop.util import Sentinel
@@ -72,7 +73,7 @@ def dynamodb_record_with(key=False, new=False, old=False, sequence_number=None, 
         "awsRegion": "us-west-2",
         "dynamodb": {
             "ApproximateCreationDateTime": creation_time,
-            "SequenceNumber": sequence_number if sequence_number is not None else "400000000000000499660",
+            "SequenceNumber": str(sequence_number) if sequence_number is not None else "400000000000000499660",
             "SizeBytes": 41,
             "StreamViewType": "KEYS_ONLY",
 
@@ -100,9 +101,11 @@ def dynamodb_record_with(key=False, new=False, old=False, sequence_number=None, 
     return template
 
 
-def local_record(created_at=missing, sequence_number="default-sequence-number"):
+def local_record(created_at=missing, sequence_number=None):
     if created_at is missing:
         created_at = datetime.datetime.now(datetime.timezone.utc)
+    if sequence_number is None:
+        sequence_number = str(random.randint(-100, 100))
     return {
         "meta": {
             "created_at": created_at,

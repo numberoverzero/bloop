@@ -1,11 +1,9 @@
-import datetime
-
 import arrow
 
 from .. import types
 
 
-DEFAULT_TIMEZONE = datetime.timezone.utc
+DEFAULT_TIMEZONE = "utc"
 
 
 class DateTime(types.DateTime):

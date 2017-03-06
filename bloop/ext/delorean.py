@@ -1,11 +1,10 @@
-import datetime
-
 import delorean
 
 from .. import types
 
 
-DEFAULT_TIMEZONE = datetime.timezone.utc
+# https://github.com/myusuf3/delorean/issues/97
+DEFAULT_TIMEZONE = "utc"
 
 
 class DateTime(types.DateTime):

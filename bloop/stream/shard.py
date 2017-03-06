@@ -1,5 +1,4 @@
 import collections
-import datetime
 
 from ..exceptions import ShardIteratorExpired
 from ..util import Sentinel
@@ -282,8 +281,7 @@ def reformat_record(record):
         "old": record["dynamodb"].get("OldImage", None),
 
         "meta": {
-            "created_at": datetime.datetime.fromtimestamp(
-                record["dynamodb"]["ApproximateCreationDateTime"], datetime.timezone.utc),
+            "created_at": record["dynamodb"]["ApproximateCreationDateTime"],
             "event": {
                 "id": record["eventID"],
                 "type": record["eventName"].lower(),

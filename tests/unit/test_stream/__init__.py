@@ -67,7 +67,7 @@ def dynamodb_record_with(key=False, new=False, old=False, sequence_number=None, 
         creation_time = 1.46480527E9
     else:
         creation_time = creation_time.timestamp()
-    creation_time = int(creation_time)
+    creation_time = datetime.datetime.fromtimestamp(int(creation_time))
     template = {
         "awsRegion": "us-west-2",
         "dynamodb": {

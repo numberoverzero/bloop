@@ -112,7 +112,7 @@ def test_sort_every_push():
 def test_push_all():
     """Bulk push is slightly more efficient"""
     now_ = now()
-    records = [local_record(now_, i) for i in reversed(range(5))]
+    records = [local_record(now_, str(i)) for i in reversed(range(100))]
     shard = new_shard()
     buffer = RecordBuffer()
 

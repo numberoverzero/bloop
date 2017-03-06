@@ -38,14 +38,14 @@ def test_next_from_buffer(coordinator, shard, session):
     shard.sequence_number = None
     coordinator.active.append(shard)
 
-    record = local_record(sequence_number="record-sequence-number")
+    record = local_record(sequence_number="25")
     coordinator.buffer.push(record, shard)
 
     returned_record = next(coordinator)
 
     assert returned_record is record
     assert shard.iterator_type == "after_sequence"
-    assert shard.sequence_number == "record-sequence-number"
+    assert shard.sequence_number == "25"
     assert not coordinator.buffer
     # No outbound calls
     session.get_stream_records.assert_not_called()
@@ -98,7 +98,7 @@ def test_advance_pulls_from_all_active_shards(coordinator, session):
 
     def mock_get_stream_records(iterator_id):
         response = {
-            "Records": [dynamodb_record_with(key=True, sequence_number="record-number")],
+            "Records": [dynamodb_record_with(key=True)],
             "NextShardIterator": "next-iterator-id"
         }
         if iterator_id != "has-records-id":
@@ -224,7 +224,7 @@ def test_heartbeat(coordinator, session):
     assert len(coordinator.buffer) == 3
     pairs = [coordinator.buffer.pop() for _ in range(len(coordinator.buffer))]
     sequence_numbers = [record["meta"]["sequence_number"] for (record, _) in pairs]
-    assert sequence_numbers == [0, 1, 2]
+    assert sequence_numbers == ["0", "1", "2"]
 
 
 def test_heartbeat_until_sequence_number(coordinator, session):
@@ -273,10 +273,10 @@ def test_token(coordinator):
 @pytest.mark.parametrize("has_buffered", [True, False])
 def test_remove_shard(is_active, is_root, has_buffered, coordinator):
     shard = Shard(stream_arn=coordinator.stream_arn, shard_id="shard-id",
-                  iterator_type="at_sequence", sequence_number="sequence-number")
+                  iterator_type="at_sequence", sequence_number="13")
     # Always has a buffered record
     other = Shard(stream_arn=coordinator.stream_arn, shard_id="other-shard-id",
-                  iterator_type="after_sequence", sequence_number="other-sequence-number")
+                  iterator_type="after_sequence", sequence_number="200")
     children = [Shard(stream_arn="child-arn", shard_id="child-" + str(i)) for i in range(4)]
     shard.children.extend(children)
 
@@ -285,9 +285,9 @@ def test_remove_shard(is_active, is_root, has_buffered, coordinator):
     if is_root:
         coordinator.roots.append(shard)
     if has_buffered:
-        records = [local_record(sequence_number=i) for i in range(7)]
+        records = [local_record(sequence_number=str(i)) for i in range(7)]
         coordinator.buffer.push_all((r, shard) for r in records)
-    coordinator.buffer.push(local_record(sequence_number="other-record"), other)
+    coordinator.buffer.push(local_record(sequence_number="200"), other)
 
     coordinator.remove_shard(shard)
 
@@ -440,7 +440,7 @@ def test_move_to_datetime(coordinator, session):
     continue_response = {"Records": [], "NextShardIterator": fail_to_seek}
     record = dynamodb_record_with(
         key=True,
-        sequence_number="found-record-sequence-number",
+        sequence_number="345",
         creation_time=position + datetime.timedelta(hours=1))
 
     responses = {
@@ -464,7 +464,7 @@ def test_move_to_datetime(coordinator, session):
     # Records from seeking are pushed into the buffer.  Only one record from second child.
     actual_record, source_shard = coordinator.buffer.pop()
     assert not coordinator.buffer
-    assert actual_record["meta"]["sequence_number"] == "found-record-sequence-number"
+    assert actual_record["meta"]["sequence_number"] == "345"
     assert source_shard.shard_id == find_records
 
     # Both child shards are active, even though only one found a child.

@@ -27,7 +27,7 @@ def new_shard() -> Shard:
 
 
 @pytest.mark.parametrize("created_at", [None, now()])
-@pytest.mark.parametrize("sequence_number", [None, 2])
+@pytest.mark.parametrize("sequence_number", ["2", "140"])
 def test_heap_item_clock(created_at, sequence_number):
     """heap_item guarantees total ordering, even for identical items."""
     shard = new_shard()
@@ -47,7 +47,7 @@ def test_heap_item_clock(created_at, sequence_number):
 
 
 @pytest.mark.parametrize("created_at", [None, now()])
-@pytest.mark.parametrize("sequence_number", [None, 2])
+@pytest.mark.parametrize("sequence_number", ["0", "12"])
 def test_heap_item_broken_clock(created_at, sequence_number):
     """When the clock can return the same value, total ordering is lost."""
     shard = new_shard()
@@ -73,7 +73,7 @@ def test_empty_buffer():
 
 def test_single_record():
     """Push a record, peek at it, then get the same thing back"""
-    record = local_record(now(), 1)
+    record = local_record(now(), "1")
     shard = new_shard()
     buffer = RecordBuffer()
 
@@ -92,7 +92,7 @@ def test_single_record():
 def test_sort_every_push():
     """Push high to low, retrieve low to high"""
     now_ = now()
-    records = [local_record(now_, i) for i in reversed(range(5))]
+    records = [local_record(now_, str(i)) for i in reversed(range(15))]
     shard = new_shard()
     buffer = RecordBuffer()
 
@@ -128,7 +128,7 @@ def test_push_all():
 
 
 def test_clear():
-    record = local_record(now(), 1)
+    record = local_record(now(), "1")
     shard = new_shard()
     buffer = RecordBuffer()
 
@@ -141,7 +141,7 @@ def test_clear():
 
 def test_buffer_heap():
     """RecordBuffer directly exposes its heap"""
-    record = local_record(now(), 1)
+    record = local_record(now(), "1")
     shard = new_shard()
     buffer = RecordBuffer()
 

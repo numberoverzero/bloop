@@ -19,10 +19,28 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 
 
 --------------------
+ 1.0.3 - 2017-03-05
+--------------------
+
+Bug fix.
+
+Fixed
+=====
+
+* Stream orders records on the integer of SequenceNumber, not the lexicographical sorting of its string
+  representation.  This is an annoying bug, because `as documented`__ we **should** be using lexicographical sorting
+  on the opaque string.  However, without leading 0s that sort fails, and we must assume the string represents an
+  integer to sort on.  Particularly annoying, tomorrow the SequenceNumber could start with non-numeric characters
+  and still conform to the spec, but the sorting-as-int assumption breaks.  However, we can't properly sort without
+  making that assumption.
+
+__ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_streams_StreamRecord.html#DDB-Type-streams_StreamRecord-SequenceNumber
+
+--------------------
  1.0.2 - 2017-03-05
 --------------------
 
-Minor bugfix.
+Minor bug fix.
 
 Fixed
 =====
@@ -33,7 +51,7 @@ Fixed
  1.0.1 - 2017-03-04
 --------------------
 
-DateTime extensions now use the literal ``"utc"`` for a default timezone, and ``next(stream)`` now works.
+Bug fixes.
 
 Changed
 =======

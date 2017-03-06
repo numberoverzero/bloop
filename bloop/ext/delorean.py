@@ -15,9 +15,13 @@ class DateTime(types.DateTime):
         super().__init__()
 
     def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         value = value.shift("utc").datetime
         return super().dynamo_dump(value, context=context, **kwargs)
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
         dt = super().dynamo_load(value, context=context, **kwargs)
         return delorean.Delorean(dt).shift(self.timezone)

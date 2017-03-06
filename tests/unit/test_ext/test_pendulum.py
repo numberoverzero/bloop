@@ -19,3 +19,9 @@ def test_datetime(timezone):
 
     assert typedef.dynamo_dump(delorean_now, context={}) == now_iso8601
     assert typedef.dynamo_load(now_iso8601, context={}).in_timezone("utc") == now
+
+
+def test_none():
+    typedef = DateTime()
+    assert typedef.dynamo_dump(None, context={}) is None
+    assert typedef.dynamo_load(None, context={}) is None

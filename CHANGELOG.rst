@@ -19,6 +19,17 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 
 
 --------------------
+ 1.0.2 - 2017-03-05
+--------------------
+
+Minor bugfix.
+
+Fixed
+=====
+
+* extension types in ``ext.arrow``, ``ext.delorean``, and ``ext.pendulum`` now load and dump ``None`` correctly.
+
+--------------------
  1.0.1 - 2017-03-04
 --------------------
 

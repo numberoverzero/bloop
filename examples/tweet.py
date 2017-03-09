@@ -36,11 +36,12 @@ class Tweet(BaseModel):
     account = Column(UUID, hash_key=True)
     id = Column(String, range_key=True)
     content = Column(String)
-    date = Column(DateTime(timezone='EU/Paris'))
+    date = Column(DateTime)
     favorites = Column(Integer)
 
     by_date = GlobalSecondaryIndex(
         hash_key='date', projection='keys')
+
 
 engine = Engine()
 engine.bind(BaseModel)

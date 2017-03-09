@@ -41,6 +41,7 @@ class MockColumn(Column):
         # Mock model so this can render as M.name
         self.model = type("M", tuple(), {})
 
+
 c = MockColumn("c")
 d = MockColumn("d")
 

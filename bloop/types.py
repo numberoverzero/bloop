@@ -181,6 +181,7 @@ class UUID(String):
             return None
         return str(value)
 
+
 FIXED_ISO8601_FORMAT = "%Y-%m-%dT%H:%M:%S.%f+00:00"
 
 

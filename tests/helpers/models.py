@@ -93,6 +93,7 @@ class ProjectedIndexes(BaseModel):
     by_gsi = GlobalSecondaryIndex(hash_key="h", projection=["both", "gsi_only"])
     by_lsi = LocalSecondaryIndex(range_key="r", projection=["both", "lsi_only"])
 
+
 conditions = set()
 
 
@@ -152,4 +153,6 @@ def _build_conditions():
         between_small, between_big, between_strings,
         in_small, in_big, in_numbers
     ))
+
+
 _build_conditions()

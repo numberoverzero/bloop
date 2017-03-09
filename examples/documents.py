@@ -24,7 +24,7 @@ from bloop import (
 Product = Map(**{
     'Name': String,
     'Rating': Number,
-    'Updated': DateTime('US/Pacific'),
+    'Updated': DateTime,
     'Description': Map(**{
         'Title': String,
         'Body': String
@@ -36,6 +36,7 @@ Product = Map(**{
 class Item(BaseModel):
     id = Column(UUID, hash_key=True)
     data = Column(Product)
+
 
 engine = Engine()
 engine.bind(BaseModel)

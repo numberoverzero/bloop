@@ -103,6 +103,7 @@ def model_for(
 
     return TestModel, by_index_
 
+
 # LSIs always require a model range key, and index range key.
 lsi_for = functools.partial(model_for, has_model_range=True, has_index=True, has_index_range=True, index_type="lsi")
 gsi_for = functools.partial(model_for, has_index=True, index_type="gsi")

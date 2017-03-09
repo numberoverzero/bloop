@@ -26,7 +26,7 @@ PACKAGES = [
 
 REQUIREMENTS = [
     "blinker==1.4",
-    "boto3==1.4.1",
+    "boto3==1.4.4",
     "declare==0.9.11",
 ]
 

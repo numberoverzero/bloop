@@ -153,4 +153,5 @@ class WeakDefaultDictionary(weakref.WeakKeyDictionary):
 
     __iter__ = weakref.WeakKeyDictionary.__iter__
 
+
 missing = Sentinel("missing")

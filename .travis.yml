@@ -11,11 +11,11 @@ env:
   - TOXENV=unit
   - TOXENV=integ
   - TOXENV=docs
-install: pip install tox coveralls
+install: pip install tox codecov
 script: scripts/travis_script.sh
 after_success:
-- test $TOXENV = "unit" && coveralls
-- test $TOXENV = "integ" && coveralls
+- test $TOXENV = "unit" && codecov
+- test $TOXENV = "integ" && codecov
 notifications:
   slack:
     secure: cXjzhmFI0oAWifBilGvTApiL8VSyM7/4v3Ve4TZeU+15EoYf05AhNoHs0FKVcj+ockYPqlj3p+SIUXnGfcI41QFlO09gGvFVB/FA/PHH2n4hb20+zxSx5Ic9ac3B2Nb5u2lWGsSsRTvCHtC0Wcxx878ML5UFrP5yu4vKIgj8AyE=

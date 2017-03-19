@@ -53,7 +53,7 @@ def run_test(name: str, verbose=False, suppress=False, append=False) -> None:
     if not test:
         print(">>> NO COVERAGE FOR {} <<<".format(name))
         return
-    template = "coverage run {append} --branch --source={src} -m py.test {test} {verbose}"
+    template = "coverage run {append} --branch --include={src} -m py.test {test} {verbose}"
     try:
         src = src.relative_to(CWD)
     except ValueError:

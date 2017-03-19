@@ -1,7 +1,7 @@
 .PHONY: cov docs publish
 
 cov:
-	scripts/individual_coverage.sh
+	scripts/single-test
 
 docs:
 	cd docs && $(MAKE) html

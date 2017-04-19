@@ -19,6 +19,14 @@ Once you've :ref:`defined some models <define-models>`, you're ready to start
 As noted in the previous section, every model must first be bound to a backing table with
 :func:`Engine.bind <bloop.engine.Engine.bind>` before we can interact with instances in DynamoDB.
 
+.. note::
+
+    Starting with 1.1.0, the ``skip_table_setup`` parameter is available to bypass the create/verify calls
+    to DynamoDB.  This is not recommended except in situations where models are bound frequently, ie. a high-volume
+    Lambda function.  See `Issue #83`_.
+
+.. _Issue #83: https://github.com/numberoverzero/bloop/issues/83
+
 When an engine binds a model, it also binds all non-abstract subclasses.  This means you can bind all models in one
 call, centralizing any error handling or table correction.  For example, you may have specialized models for users,
 notifications, and impressions.  Each of these can be grouped with an abstract base, and then all specialized models

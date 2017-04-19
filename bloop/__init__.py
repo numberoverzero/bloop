@@ -54,4 +54,4 @@ __all__ = [
     # Misc
     "Condition", "QueryIterator", "ScanIterator", "Stream"
 ]
-__version__ = "1.0.3"
+__version__ = "1.1.0"

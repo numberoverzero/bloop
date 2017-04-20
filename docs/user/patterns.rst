@@ -94,3 +94,68 @@ A number type with a :class:`decimal.Context` that doesn't trap :class:`decimal.
 
     __ https://github.com/boto/boto3/issues/665
     __ https://github.com/boto/boto3/issues/369
+
+============================
+ Sharing Tables and Indexes
+============================
+
+Bloop allows you to map multiple models to the same table.  You can rename columns during
+init with the ``name=`` param, change column types across models, and still use conditional
+operations and Bloop's atomic builder.  This flexibility extends to GSIs and LSIs as long
+as a Model's Index projects a subset of the actual Index.  On shared tables, a shared index
+provides tighter query validation and reduces consumed throughput.
+
+In the following (very contrived) example, the ``employees-uk`` table is used for both employees
+and managers.  Queries against ``by_level`` provide emails for Employees of a certain level, and
+provides all directs for managers at a certain level.
+
+
+.. code-block:: python
+
+    class Employee(BaseModel):
+        class Meta:
+            table_name = "employees-uk"
+        id = Column(UUID, hash_key=True)
+        level = Column(Integer)
+        email = Column(String)
+        manager_id = Column(UUID)
+
+        by_level = GlobalSecondaryIndex(
+            projection=[email], hash_key=level)
+
+
+    class Manager(BaseModel):
+        class Meta:
+            table_name = "employees-uk"
+        id = Column(UUID, hash_key=True)
+        level = Column(Integer)
+        email = Column(String)
+        manager_id = Column(UUID)
+        directs = Column(Set(UUID))
+
+        by_level = GlobalSecondaryIndex(
+            projection=[directs], hash_key=level)
+
+
+.. note::
+
+    If you try to create these tables by binding the models, one of them will fail.
+    If ``Employee`` is bound first, ``Manager`` won't see ``directs`` in the ``by_level`` GSI.
+    You must create the indexes through the console, or use a dummy model.
+
+    .. code-block:: python
+
+        def build_indexes(engine):
+            """Call before binding Employee or Manager"""
+            class _(BaseModel):
+                class Meta:
+                    table_name = "employees-uk"
+                id = Column(UUID, hash_key=True)
+                level = Column(Integer)
+                email = Column(String)
+                manager_id = Column(UUID)
+                directs = Column(Set(UUID))
+                by_level = GlobalSecondaryIndex(
+                    projection=[directs, email],
+                    hash_key=level)
+            engine.bind(_)

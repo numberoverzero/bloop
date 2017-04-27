@@ -303,25 +303,58 @@ def create_batch_get_chunks(items):
 
 
 def compare_tables(model, actual, expected):
-    sanitized_actual = sanitize_table_description(actual)
+    actual = sanitize_table_description(actual)
     # 1. If the table doesn't specify an expected stream type,
     #    don't inspect the StreamSpecification at all.
     if not model.Meta.stream:
-        sanitized_actual.pop("StreamSpecification", None)
-    # 2. If the table backs multiple models, the AttributeDefinitions,
-    #    GlobalSecondaryIndexes, and LocalSecondaryIndexes may contain
-    #    additional entries that this model doesn't care about.
-    #    Drop any values in the sanitized table that aren't expected.
-    subset_only = ["AttributeDefinitions", "GlobalSecondaryIndexes", "LocalSecondaryIndexes"]
-    for section_name in subset_only:
-        if section_name not in sanitized_actual:
+        actual.pop("StreamSpecification", None)
+    # 2. Check indexes.  Actual projections must be a superset of the expected,
+    #    and additional indexes are allowed.
+    #    GSIs/LSIs are popped so that ordered comparison succeeds with projection supersets.
+    for model_indexes, index_type in zip(
+            (model.Meta.gsis, model.Meta.lsis),
+            ("GlobalSecondaryIndexes", "LocalSecondaryIndexes")):
+        if not model_indexes:
             continue
-        possible_superset = sanitized_actual[section_name]
-        # Ordering because some inner values are lists, and we don't care about their order
-        expected_values = ordered(expected.get(section_name, []))
-        filtered_superset = [x for x in possible_superset if ordered(x) in expected_values]
-        sanitized_actual[section_name] = filtered_superset
-    return ordered(sanitized_actual) == ordered(expected)
+        actual_indexes = {index["IndexName"]: index for index in actual.pop(index_type, [])}
+        expected_indexes = {index["IndexName"]: index for index in expected.pop(index_type, [])}
+        for index in model_indexes:
+            actual_index = actual_indexes.get(index.dynamo_name, None)
+            expected_index = expected_indexes[index.dynamo_name]
+            if not actual_index:
+                return False
+            index_type = actual_index["Projection"]["ProjectionType"]
+            # "ALL" will always include the model's projection
+            if index_type == "ALL":
+                continue
+            elif index_type == "KEYS_ONLY":
+                projected = {
+                    *[k.dynamo_name for k in model.Meta.keys],
+                    *[k.dynamo_name for k in index.keys]
+                }
+            elif index_type == "INCLUDE":
+                projected = set(actual_index["Projection"]["NonKeyAttributes"])
+            else:
+                return False
+            index_includes = set(column.dynamo_name for column in index.projection["included"])
+            missing = index_includes - projected
+            if missing:
+                return False
+            if ordered(expected_index["KeySchema"]) != ordered(actual_index["KeySchema"]):
+                return False
+            if "ProvisionedThroughput" not in expected_index:
+                # LSI
+                continue
+            if ordered(expected_index["ProvisionedThroughput"]) != ordered(actual_index["ProvisionedThroughput"]):
+                return False
+    # 3. AttributeNames expected are a subset of actual (ie. an unknown index's hash key)
+    # Ignore order for inner lists
+    all_attributes = ordered(actual.pop("AttributeDefinitions"))
+    required_attributes = ordered(expected.pop("AttributeDefinitions"))
+    missing_attributes = [x for x in required_attributes if x not in all_attributes]
+    if missing_attributes:
+        return False
+    return ordered(actual) == ordered(expected)
 
 
 def attribute_definitions(model):

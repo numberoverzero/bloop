@@ -111,10 +111,11 @@ class Engine:
         except declare.DeclareException as from_declare:
             fail_unknown(model, from_declare)
 
-    def bind(self, model):
+    def bind(self, model, *, skip_table_setup=False):
         """Create backing tables for a model and its non-abstract subclasses.
 
         :param model: Base model to bind.  Can be abstract.
+        :param skip_table_setup: Don't create or verify the table in DynamoDB.  Default is False.
         :raises bloop.exceptions.InvalidModel: if ``model`` is not a subclass of :class:`~bloop.models.BaseModel`.
         """
         # Make sure we're looking at models
@@ -127,10 +128,12 @@ class Engine:
         # to call multiple times for the same unbound model.
         for model in concrete:
             before_create_table.send(self, engine=self, model=model)
-            self.session.create_table(model)
+            if not skip_table_setup:
+                self.session.create_table(model)
 
         for model in concrete:
-            self.session.validate_table(model)
+            if not skip_table_setup:
+                self.session.validate_table(model)
             model_validated.send(self, engine=self, model=model)
 
             self.type_engine.register(model)

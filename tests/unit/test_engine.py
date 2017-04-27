@@ -613,6 +613,16 @@ def test_bind_different_engines(dynamodb, dynamodbstreams):
     assert Concrete in second_engine.type_engine.bound_types
 
 
+def test_bind_skip_table_setup(dynamodb, dynamodbstreams):
+    # Required so engine doesn't pass boto3 to the wrapper
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    engine.session = Mock(spec=SessionWrapper)
+
+    engine.bind(User, skip_table_setup=True)
+    engine.session.create_table.assert_not_called()
+    engine.session.validate_table.assert_not_called()
+
+
 @pytest.mark.parametrize("op_name, plural", [("save", True), ("load", True), ("delete", True)], ids=str)
 def test_abstract_object_operations_raise(engine, op_name, plural):
     class Abstract(BaseModel):

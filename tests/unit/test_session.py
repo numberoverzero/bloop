@@ -25,7 +25,7 @@ from bloop.session import (
 from bloop.types import String
 from bloop.util import Sentinel, ordered
 
-from ..helpers.models import ComplexModel, SimpleModel, User
+from ..helpers.models import ComplexModel, ProjectedIndexes, SimpleModel, User
 
 
 missing = Sentinel("missing")
@@ -454,7 +454,7 @@ def test_validate_compares_tables(session, dynamodb):
 def test_validate_checks_status(session, dynamodb):
     # Don't care about the value checking, just want to observe retries
     # based on busy tables or indexes
-    full = expected_table_description(User)
+    full = expected_table_description(ProjectedIndexes)
     full["TableStatus"] = "ACTIVE"
     full["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
 
@@ -465,8 +465,8 @@ def test_validate_checks_status(session, dynamodb):
                        {"IndexStatus": "CREATING"}]}},
         {"Table": full}
     ]
-    session.validate_table(User)
-    dynamodb.describe_table.assert_called_with(TableName="User")
+    session.validate_table(ProjectedIndexes)
+    dynamodb.describe_table.assert_called_with(TableName="ProjectedIndexes")
     assert dynamodb.describe_table.call_count == 3
 
 
@@ -612,11 +612,8 @@ def test_validate_raises(session, dynamodb):
 
 
 def test_validate_unexpected_index(session, dynamodb):
-    """Validation doesn't fail when the backing table has an extra GSI and named attribute"""
+    """Validation doesn't fail when the backing table has an extra GSI"""
     full = expected_table_description(ComplexModel)
-    full["AttributeDefinitions"].append(
-        {"AttributeType": "N", "AttributeName": "extra_attribute"}
-    )
     full["GlobalSecondaryIndexes"].append({
         "IndexName": "extra_gsi",
         "Projection": {"ProjectionType": "KEYS_ONLY"},
@@ -637,6 +634,79 @@ def test_validate_unexpected_index(session, dynamodb):
         gsi["IndexStatus"] = "ACTIVE"
     # Validation passes even though there are extra Indexes and AttributeDefinitions
     session.validate_table(ComplexModel)
+
+
+def test_validate_superset_index(session, dynamodb):
+    """Validation passes if an Index's projection is a superset of the required projection"""
+    description = expected_table_description(ProjectedIndexes)
+    description["TableStatus"] = "ACTIVE"
+    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
+
+    # projection is ALL in DynamoDB, not the exact ["both", "gsi_only"] from the model
+    description["GlobalSecondaryIndexes"][0]["Projection"] = {"ProjectionType": "ALL"}
+
+    dynamodb.describe_table.return_value = {"Table": description}
+    session.validate_table(ProjectedIndexes)
+    dynamodb.describe_table.assert_called_once_with(TableName="ProjectedIndexes")
+
+
+def test_validate_missing_index(session, dynamodb):
+    """Required GSI is missing"""
+    description = expected_table_description(ProjectedIndexes)
+    description["TableStatus"] = "ACTIVE"
+    dynamodb.describe_table.return_value = {"Table": description}
+
+    del description["GlobalSecondaryIndexes"]
+    with pytest.raises(TableMismatch):
+        session.validate_table(ProjectedIndexes)
+
+
+def test_validate_bad_index_projection_type(session, dynamodb):
+    """Required GSI is missing"""
+    description = expected_table_description(ProjectedIndexes)
+    description["TableStatus"] = "ACTIVE"
+    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
+    dynamodb.describe_table.return_value = {"Table": description}
+
+    description["GlobalSecondaryIndexes"][0]["Projection"] = {"ProjectionType": "KEYS_ONLY"}
+    with pytest.raises(TableMismatch):
+        session.validate_table(ProjectedIndexes)
+
+
+def test_validate_bad_index_key_schema(session, dynamodb):
+    """KeySchema doesn't match"""
+    description = expected_table_description(ProjectedIndexes)
+    description["TableStatus"] = "ACTIVE"
+    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
+    dynamodb.describe_table.return_value = {"Table": description}
+
+    description["GlobalSecondaryIndexes"][0]["KeySchema"] = [{"KeyType": "HASH", "AttributeName": "unknown"}]
+    with pytest.raises(TableMismatch):
+        session.validate_table(ProjectedIndexes)
+
+
+def test_validate_bad_index_provisioned_throughput(session, dynamodb):
+    """KeySchema doesn't match"""
+    description = expected_table_description(ProjectedIndexes)
+    description["TableStatus"] = "ACTIVE"
+    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
+    dynamodb.describe_table.return_value = {"Table": description}
+
+    description["GlobalSecondaryIndexes"][0]["ProvisionedThroughput"]["WriteCapacityUnits"] = -2
+    with pytest.raises(TableMismatch):
+        session.validate_table(ProjectedIndexes)
+
+
+def test_validate_unknown_projection_type(session, dynamodb):
+    """DynamoDB starts returning a new projection type"""
+    description = expected_table_description(ProjectedIndexes)
+    description["TableStatus"] = "ACTIVE"
+    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
+    dynamodb.describe_table.return_value = {"Table": description}
+
+    description["GlobalSecondaryIndexes"][0]["Projection"]["ProjectionType"] = "NewProjectionType"
+    with pytest.raises(TableMismatch):
+        session.validate_table(ProjectedIndexes)
 
 
 # END VALIDATE TABLE ============================================================================== END VALIDATE TABLE

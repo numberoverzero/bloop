@@ -13,8 +13,17 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  [Unreleased]
 --------------
 
+--------------------
+ 1.1.0 - 2017-04-26
+--------------------
+
+Added
+=====
+* ``Engine.bind`` takes optional kwarg ``skip_table_setup``
+  to skip CreateTable and DescribeTable calls (see `Issue #83`_)
 * Index validates against a superset of the projection (see `Issue #71`_)
 
+.. _Issue #83: https://github.com/numberoverzero/bloop/issues/83
 .. _Issue #71: https://github.com/numberoverzero/bloop/issues/71
 
 

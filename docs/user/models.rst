@@ -296,6 +296,11 @@ Locally, the model names "referrer" and "version" are still used.  An instance w
 Indexes provide additional ways to query and scan your data.  If you have not used indexes, you should first read
 the Developer's Guide on `Improving Data Access with Secondary Indexes`__.
 
+A single GSI or LSI can be used by two models with different projections, so long as the projections that each
+model expects are a subset of the actual projection.  This can be a useful way to restrict which columns are loaded
+by eg. a partially hydrated version of a model, while the table's underlying index still provides access to all
+attributes.
+
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SecondaryIndexes.html
 
 ----------------------

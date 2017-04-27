@@ -13,6 +13,10 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  [Unreleased]
 --------------
 
+--------------------
+ 1.1.0 - 2017-04-26
+--------------------
+
 Added
 =====
 * ``Engine.bind`` takes optional kwarg ``skip_table_setup``

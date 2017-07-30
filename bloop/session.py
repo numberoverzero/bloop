@@ -146,7 +146,8 @@ class SessionWrapper:
         """Polls until a creating table is ready, then verifies the description against the model's requirements.
 
         The model may have a subset of all GSIs and LSIs on the table, but the key structure must be exactly
-        the same.  The table must have a stream if the model expects one, but not the other way around.
+        the same.  The table must have a stream if the model expects one, but not the other way around.  When read or
+        write units are not specified for the model or any GSI, the existing values will always pass validation.
 
         :param model: The :class:`~bloop.models.BaseModel` to validate the table of.
         :raises bloop.exceptions.TableMismatch: When the table does not meet the constraints of the model.
@@ -164,6 +165,8 @@ class SessionWrapper:
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
         if model.Meta.stream:
             model.Meta.stream["arn"] = actual["LatestStreamArn"]
+        # TODO re-apply table read/write units after validation if they're None in model.Meta
+        # TODO re-apply GSI read/write units after validation if they're None in the modeled index
 
     def describe_stream(self, stream_arn, first_shard=None):
         """Wraps :func:`boto3.DynamoDBStreams.Client.describe_stream`, handling continuation tokens.
@@ -303,11 +306,18 @@ def create_batch_get_chunks(items):
 
 
 def compare_tables(model, actual, expected):
+    # returns a new dict so we can safely modify before using ordered(..) == ordered(..)
+    # without losing access to attributes in the table that we'll apply back to the model
+    # (eg. ignoreing the stream arn if stream is None for validation but then preserving the
+    # value in the model post-validation)
     actual = sanitize_table_description(actual)
+
     # 1. If the table doesn't specify an expected stream type,
     #    don't inspect the StreamSpecification at all.
     if not model.Meta.stream:
         actual.pop("StreamSpecification", None)
+    # TODO pop read/write units from expected, actual if they're None in model.Meta
+
     # 2. Check indexes.  Actual projections must be a superset of the expected,
     #    and additional indexes are allowed.
     #    GSIs/LSIs are popped so that ordered comparison succeeds with projection supersets.
@@ -345,6 +355,7 @@ def compare_tables(model, actual, expected):
             if "ProvisionedThroughput" not in expected_index:
                 # LSI
                 continue
+            # TODO relax the below comparison by popping where index.read_units/index.write_units are None
             if ordered(expected_index["ProvisionedThroughput"]) != ordered(actual_index["ProvisionedThroughput"]):
                 return False
     # 3. AttributeNames expected are a subset of actual (ie. an unknown index's hash key)
@@ -422,8 +433,9 @@ def global_secondary_index(index):
         "KeySchema": key_schema(index=index),
         "Projection": index_projection(index),
         "ProvisionedThroughput": {
-            "WriteCapacityUnits": index.write_units,
-            "ReadCapacityUnits": index.read_units
+            # On create when not specified, use minimum values instead of None
+            "WriteCapacityUnits": index.write_units or 1,
+            "ReadCapacityUnits": index.read_units or 1
         },
     }
 
@@ -441,8 +453,9 @@ def create_table_request(model):
         "AttributeDefinitions": attribute_definitions(model),
         "KeySchema": key_schema(model=model),
         "ProvisionedThroughput": {
-            "WriteCapacityUnits": model.Meta.write_units,
-            "ReadCapacityUnits": model.Meta.read_units
+            # On create when not specified, use minimum values instead of None
+            "WriteCapacityUnits": model.Meta.write_units or 1,
+            "ReadCapacityUnits": model.Meta.read_units or 1,
         },
         "TableName": model.Meta.table_name,
     }

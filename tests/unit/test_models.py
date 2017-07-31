@@ -640,6 +640,16 @@ def test_lsi_delegates_throughput():
     assert lsi.read_units == meta.read_units
 
 
+def test_gsi_default_throughput():
+    """When not specified, GSI read_units and write_units are None"""
+    class Model(BaseModel):
+        name = Column(String, hash_key=True)
+        other = Column(String)
+        by_joined = GlobalSecondaryIndex(hash_key="other", projection="keys")
+    gsi = Model.by_joined
+    assert gsi.read_units is gsi.write_units is None
+
+
 @pytest.mark.parametrize("projection", ["all", "keys", ["foo"]])
 def test_index_repr(projection):
     index = Index(projection=projection, name="f")

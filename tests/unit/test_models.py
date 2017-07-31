@@ -112,12 +112,12 @@ def test_load_dump_none(engine):
 
 
 def test_meta_read_write_units():
-    """If `read_units` or `write_units` is missing from a model's Meta, it defaults to 1"""
+    """If `read_units` or `write_units` is missing from a model's Meta, it defaults to None until bound"""
     class Model(BaseModel):
         id = Column(UUID, hash_key=True)
 
-    assert Model.Meta.write_units == 1
-    assert Model.Meta.read_units == 1
+    assert Model.Meta.write_units is None
+    assert Model.Meta.read_units is None
 
     class Other(BaseModel):
         class Meta:

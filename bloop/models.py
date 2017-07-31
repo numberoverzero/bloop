@@ -390,7 +390,11 @@ class GlobalSecondaryIndex(Index):
 
     .. _GlobalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
     """
-    def __init__(self, *, projection, hash_key, range_key=None, read_units=None, write_units=None, name=None, **kwargs):
+    def __init__(
+            self, *, projection,
+            hash_key, range_key=None,
+            read_units=None, write_units=None,
+            name=None, **kwargs):
         super().__init__(hash_key=hash_key, range_key=range_key, name=name, projection=projection, **kwargs)
         self.write_units = write_units
         self.read_units = read_units

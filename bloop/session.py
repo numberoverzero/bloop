@@ -169,7 +169,11 @@ class SessionWrapper:
             model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
         if model.Meta.write_units is None:
             model.Meta.write_units = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
-        # TODO re-apply GSI read/write units after validation if they're None in the modeled index
+        # Replace any ``None`` values for read_units, write_units in GSIs with their actual values
+        gsis = {index["IndexName"]: index for index in actual.pop("GlobalSecondaryIndexes", [])}
+        for index in model.Meta.gsis:
+            index.read_units = gsis[index.dynamo_name]["ProvisionedThroughput"]["ReadCapacityUnits"]
+            index.write_units = gsis[index.dynamo_name]["ProvisionedThroughput"]["WriteCapacityUnits"]
 
     def describe_stream(self, stream_arn, first_shard=None):
         """Wraps :func:`boto3.DynamoDBStreams.Client.describe_stream`, handling continuation tokens.
@@ -363,7 +367,12 @@ def compare_tables(model, actual, expected):
             if "ProvisionedThroughput" not in expected_index:
                 # LSI
                 continue
-            # TODO relax the below comparison by popping where index.read_units/index.write_units are None
+            if index.read_units is None:
+                actual_index["ProvisionedThroughput"].pop("ReadCapacityUnits")
+                expected_index["ProvisionedThroughput"].pop("ReadCapacityUnits")
+            if index.write_units is None:
+                actual_index["ProvisionedThroughput"].pop("WriteCapacityUnits")
+                expected_index["ProvisionedThroughput"].pop("WriteCapacityUnits")
             if ordered(expected_index["ProvisionedThroughput"]) != ordered(actual_index["ProvisionedThroughput"]):
                 return False
     # 3. AttributeNames expected are a subset of actual (ie. an unknown index's hash key)

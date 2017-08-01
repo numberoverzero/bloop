@@ -12,7 +12,7 @@ from bloop.exceptions import (
     ShardIteratorExpired,
     TableMismatch,
 )
-from bloop.models import BaseModel, Column
+from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,
     SessionWrapper,
@@ -491,6 +491,55 @@ def test_validate_simple_model(session, dynamodb):
     session.validate_table(SimpleModel)
     dynamodb.describe_table.assert_called_once_with(
         TableName="Simple")
+
+
+def test_validate_unspecified_throughput(session, dynamodb):
+    """Model doesn't care what table read/write units are"""
+    class Model(BaseModel):
+        class Meta:
+            pass
+        id = Column(String, hash_key=True)
+
+    full = {
+        "AttributeDefinitions": [
+            {"AttributeName": "id", "AttributeType": "S"}],
+        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
+        "ProvisionedThroughput": {
+            "ReadCapacityUnits": 15, "WriteCapacityUnits": 20},
+        "TableName": "Model",
+        "TableStatus": "ACTIVE"}
+    dynamodb.describe_table.return_value = {"Table": full}
+
+    assert Model.Meta.read_units is None
+    assert Model.Meta.write_units is None
+    session.validate_table(Model)
+    assert Model.Meta.read_units == 15
+    assert Model.Meta.write_units == 20
+
+
+def test_validate_unspecified_gsi_throughput(session, dynamodb):
+    """Model doesn't care what GSI read/write units are"""
+    class Model(BaseModel):
+        class Meta:
+            pass
+        id = Column(String, hash_key=True)
+        other = Column(String)
+        by_other = GlobalSecondaryIndex(projection="keys", hash_key=other)
+
+    description = expected_table_description(Model)
+    description["TableStatus"] = "ACTIVE"
+    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
+    throughput = description["GlobalSecondaryIndexes"][0]["ProvisionedThroughput"]
+    throughput["ReadCapacityUnits"] = 15
+    throughput["WriteCapacityUnits"] = 20
+
+    dynamodb.describe_table.return_value = {"Table": description}
+
+    assert Model.by_other.read_units is None
+    assert Model.by_other.write_units is None
+    session.validate_table(Model)
+    assert Model.by_other.read_units == 15
+    assert Model.by_other.write_units == 20
 
 
 def test_validate_stream_exists(session, dynamodb):

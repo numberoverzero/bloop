@@ -165,7 +165,10 @@ class SessionWrapper:
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
         if model.Meta.stream:
             model.Meta.stream["arn"] = actual["LatestStreamArn"]
-        # TODO re-apply table read/write units after validation if they're None in model.Meta
+        if model.Meta.read_units is None:
+            model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
+        if model.Meta.write_units is None:
+            model.Meta.write_units = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
         # TODO re-apply GSI read/write units after validation if they're None in the modeled index
 
     def describe_stream(self, stream_arn, first_shard=None):
@@ -316,7 +319,12 @@ def compare_tables(model, actual, expected):
     #    don't inspect the StreamSpecification at all.
     if not model.Meta.stream:
         actual.pop("StreamSpecification", None)
-    # TODO pop read/write units from expected, actual if they're None in model.Meta
+    if model.Meta.read_units is None:
+        actual["ProvisionedThroughput"].pop("ReadCapacityUnits")
+        expected["ProvisionedThroughput"].pop("ReadCapacityUnits")
+    if model.Meta.write_units is None:
+        actual["ProvisionedThroughput"].pop("WriteCapacityUnits")
+        expected["ProvisionedThroughput"].pop("WriteCapacityUnits")
 
     # 2. Check indexes.  Actual projections must be a superset of the expected,
     #    and additional indexes are allowed.

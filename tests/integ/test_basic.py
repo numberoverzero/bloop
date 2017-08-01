@@ -106,3 +106,26 @@ def test_model_overlap(dynamodb, engine):
     engine.bind(FirstOverlap)
     engine.bind(SecondOverlap)
     assert True
+
+
+def test_unknown_throughput(dynamodb, engine):
+    """A model doesn't have to specify read_units or write_units but will take the existing value"""
+    class ExplicitValues(BaseModel):
+        class Meta:
+            read_units = 10
+            write_units = 1
+            table_name = "throughput-test"
+        id = Column(Integer, hash_key=True)
+
+    class ImplicitValues(BaseModel):
+        class Meta:
+            write_units = 1
+            table_name = "throughput-test"
+        id = Column(Integer, hash_key=True)
+
+    engine.bind(ExplicitValues)
+    assert ImplicitValues.Meta.read_units is None
+
+    # Now binding to the same table but not specifying read_units should have the same value
+    engine.bind(ImplicitValues)
+    assert ImplicitValues.Meta.read_units == 10

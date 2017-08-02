@@ -1,5 +1,6 @@
 """Basic scenarios, symmetric tests"""
 import pytest
+
 from bloop import (
     BaseModel,
     Column,

@@ -1,10 +1,11 @@
-import pytest
-import pendulum
-from bloop.types import FIXED_ISO8601_FORMAT
 from datetime import datetime
+
+import pendulum
+import pytest
 import pytz
 
 from bloop.ext.pendulum import DateTime
+from bloop.types import FIXED_ISO8601_FORMAT
 
 
 now = datetime.now(pytz.utc)

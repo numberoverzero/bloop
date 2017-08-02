@@ -2,6 +2,7 @@ import datetime
 from unittest.mock import MagicMock
 
 import pytest
+
 from bloop.models import BaseModel, Column
 from bloop.stream.coordinator import Coordinator
 from bloop.stream.stream import Stream

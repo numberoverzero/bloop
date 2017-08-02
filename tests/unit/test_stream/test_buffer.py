@@ -2,6 +2,7 @@ import datetime
 from unittest.mock import Mock
 
 import pytest
+
 from bloop.stream.buffer import RecordBuffer, heap_item
 from bloop.stream.shard import Shard
 

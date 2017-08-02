@@ -1,7 +1,8 @@
+import datetime
 import operator
 
-import datetime
 import pytest
+
 from bloop.conditions import ConditionRenderer
 from bloop.exceptions import InvalidIndex, InvalidModel, InvalidStream
 from bloop.models import (

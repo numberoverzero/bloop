@@ -1,6 +1,7 @@
 import operator
 
 import pytest
+
 from bloop.conditions import (
     AndCondition,
     BaseCondition,

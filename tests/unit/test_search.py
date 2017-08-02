@@ -2,6 +2,7 @@ import collections
 import functools
 
 import pytest
+
 from bloop.conditions import (
     AndCondition,
     BeginsWithCondition,

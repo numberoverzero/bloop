@@ -3,6 +3,7 @@ import random
 from unittest.mock import call
 
 import pytest
+
 from bloop.exceptions import ShardIteratorExpired
 from bloop.stream.shard import (
     CALLS_TO_REACH_HEAD,

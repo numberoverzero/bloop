@@ -2,6 +2,7 @@ from unittest.mock import Mock
 
 import botocore.exceptions
 import pytest
+
 from bloop.exceptions import (
     BloopException,
     ConstraintViolation,

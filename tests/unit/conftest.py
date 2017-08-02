@@ -1,6 +1,7 @@
 from unittest.mock import Mock
 
 import pytest
+
 from bloop import BaseModel, Engine
 from bloop.session import SessionWrapper
 from bloop.signals import (

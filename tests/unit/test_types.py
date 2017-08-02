@@ -1,9 +1,10 @@
+import datetime
 import decimal
 import uuid
 
-import datetime
 import declare
 import pytest
+
 from bloop.types import (
     UUID,
     Binary,

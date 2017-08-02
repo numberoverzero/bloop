@@ -4,6 +4,7 @@ import functools
 from unittest.mock import call
 
 import pytest
+
 from bloop.exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator
 from bloop.util import ordered

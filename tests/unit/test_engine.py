@@ -2,6 +2,7 @@ import datetime
 from unittest.mock import Mock
 
 import pytest
+
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
     InvalidModel,

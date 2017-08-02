@@ -151,12 +151,11 @@ class Engine:
         objs = set(objs)
         validate_not_abstract(*objs)
         for obj in objs:
-            item = {
+            self.session.delete_item({
                 "TableName": obj.Meta.table_name,
-                "Key": dump_key(self, obj)
-            }
-            item.update(render(self, obj=obj, atomic=atomic, condition=condition))
-            self.session.delete_item(item)
+                "Key": dump_key(self, obj),
+                **render(self, obj=obj, atomic=atomic, condition=condition)
+            })
             object_deleted.send(self, engine=self, obj=obj)
 
     def load(self, *objs, consistent=False):
@@ -251,12 +250,11 @@ class Engine:
         objs = set(objs)
         validate_not_abstract(*objs)
         for obj in objs:
-            item = {
+            self.session.save_item({
                 "TableName": obj.Meta.table_name,
                 "Key": dump_key(self, obj),
-            }
-            item.update(render(self, obj=obj, atomic=atomic, condition=condition, update=True))
-            self.session.save_item(item)
+                **render(self, obj=obj, atomic=atomic, condition=condition, update=True)
+            })
             object_saved.send(self, engine=self, obj=obj)
 
     def scan(self, model_or_index, filter=None, projection="all", consistent=False, parallel=None):

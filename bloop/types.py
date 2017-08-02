@@ -15,13 +15,10 @@ BOOLEAN = "BOOL"
 MAP = "M"
 LIST = "L"
 
-PRIMITIVES = ["S", "N", "B"]
-SETS = ["SS", "NS", "BS"]
-DOCUMENTS = ["L", "M"]
-# TODO | revert this commit when RTD gets 3.5 support, because getting conda to work with autodoc was
-# TODO | atrocious.  It's actually easier to go through and drop all the nice 3.5 syntax than lose
-# TODO | another 4 hours fucking around with RTD's build settings and a bunch of .yml files.
-ALL = PRIMITIVES + SETS + DOCUMENTS + [BOOLEAN]
+PRIMITIVES = {"S", "N", "B"}
+SETS = {"SS", "NS", "BS"}
+DOCUMENTS = {"L", "M"}
+ALL = {*PRIMITIVES, *SETS, *DOCUMENTS, BOOLEAN}
 
 # Dynamo takes numbers as strings to reduce inter-language problems
 DYNAMODB_CONTEXT = decimal.Context(
@@ -39,9 +36,9 @@ SUPPORTED_OPERATIONS = {
     ">": PRIMITIVES,
     "<=": PRIMITIVES,
     ">=": PRIMITIVES,
-    "begins_with": [STRING, BINARY],
+    "begins_with": {STRING, BINARY},
     "between": PRIMITIVES,
-    "contains": SETS + [STRING, BINARY, LIST],
+    "contains": {*SETS, STRING, BINARY, LIST},
     "in": ALL
 }
 

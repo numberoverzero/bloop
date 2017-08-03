@@ -1,4 +1,6 @@
 import collections
+import json
+import logging
 
 import boto3
 import botocore.exceptions
@@ -15,7 +17,7 @@ from .exceptions import (
 )
 from .util import Sentinel, ordered
 
-
+logger = logging.getLogger("bloop.session")
 missing = Sentinel("missing")
 ready = Sentinel("ready")
 
@@ -154,26 +156,54 @@ class SessionWrapper:
         """
         table_name = model.Meta.table_name
         status, actual = None, {}
+        calls = 0
         while status is not ready:
+            calls += 1
             try:
                 actual = self.dynamodb_client.describe_table(TableName=table_name)["Table"]
             except botocore.exceptions.ClientError as error:
                 raise BloopException("Unexpected error while describing table.") from error
             status = simple_table_status(actual)
+        logger.debug("validate_table: table \"{}\" was in ACTIVE state after {} calls".format(table_name, calls))
         expected = expected_table_description(model)
         if not compare_tables(model, actual, expected):
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
         if model.Meta.stream:
-            model.Meta.stream["arn"] = actual["LatestStreamArn"]
+            stream_arn = model.Meta.stream["arn"] = actual["LatestStreamArn"]
+            logger.debug(
+                "Set {}.Meta.stream[\"arn\"] to \"{}\" from DescribeTable response".format(
+                    model.__name__, stream_arn
+                )
+            )
         if model.Meta.read_units is None:
-            model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
+            read_units = model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
+            logger.debug(
+                "{}.Meta does not specify read_units, set to {} from DescribeTable response".format(
+                    model.__name__, read_units)
+            )
         if model.Meta.write_units is None:
-            model.Meta.write_units = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
+            write_units = model.Meta.write_units = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
+            logger.debug(
+                "{}.Meta does not specify write_units, set to {} from DescribeTable response".format(
+                    model.__name__, write_units)
+            )
         # Replace any ``None`` values for read_units, write_units in GSIs with their actual values
         gsis = {index["IndexName"]: index for index in actual.pop("GlobalSecondaryIndexes", [])}
         for index in model.Meta.gsis:
-            index.read_units = gsis[index.dynamo_name]["ProvisionedThroughput"]["ReadCapacityUnits"]
-            index.write_units = gsis[index.dynamo_name]["ProvisionedThroughput"]["WriteCapacityUnits"]
+            read_units = gsis[index.dynamo_name]["ProvisionedThroughput"]["ReadCapacityUnits"]
+            write_units = gsis[index.dynamo_name]["ProvisionedThroughput"]["WriteCapacityUnits"]
+            if index.read_units is None:
+                index.read_units = read_units
+                logger.debug(
+                    "{}.{} does not specify read_units, set to {} from DescribeTable response".format(
+                        model.__name__, index.model_name, read_units)
+                )
+            if index.write_units is None:
+                index.write_units = write_units
+                logger.debug(
+                    "{}.{} does not specify write_units, set to {} from DescribeTable response".format(
+                        model.__name__, index.model_name, write_units)
+                )
 
     def describe_stream(self, stream_arn, first_shard=None):
         """Wraps :func:`boto3.DynamoDBStreams.Client.describe_stream`, handling continuation tokens.
@@ -315,7 +345,7 @@ def create_batch_get_chunks(items):
 def compare_tables(model, actual, expected):
     # returns a new dict so we can safely modify before using ordered(..) == ordered(..)
     # without losing access to attributes in the table that we'll apply back to the model
-    # (eg. ignoreing the stream arn if stream is None for validation but then preserving the
+    # (eg. ignoring the stream arn if stream is None for validation but then preserving the
     # value in the model post-validation)
     actual = sanitize_table_description(actual)
 
@@ -344,6 +374,7 @@ def compare_tables(model, actual, expected):
             actual_index = actual_indexes.get(index.dynamo_name, None)
             expected_index = expected_indexes[index.dynamo_name]
             if not actual_index:
+                logger.debug("compare_tables: table is missing expected index \"{}\"".format(index.model_name))
                 return False
             index_type = actual_index["Projection"]["ProjectionType"]
             # "ALL" will always include the model's projection
@@ -357,12 +388,21 @@ def compare_tables(model, actual, expected):
             elif index_type == "INCLUDE":
                 projected = set(actual_index["Projection"]["NonKeyAttributes"])
             else:
+                logger.debug("compare_tables: unknown index projection type \"{}\"".format(index_type))
                 return False
-            index_includes = set(column.dynamo_name for column in index.projection["included"])
+            index_includes = {column.dynamo_name for column in index.projection["included"]}
             missing = index_includes - projected
             if missing:
+                logger.debug(
+                    "compare_tables: actual projection for index \"{}\" is missing expected columns {}".format(
+                        index.model_name, missing))
                 return False
             if ordered(expected_index["KeySchema"]) != ordered(actual_index["KeySchema"]):
+                logger.debug("compare_tables: key schema mismatch for \"{}\": {} != {}".format(
+                    index.model_name,
+                    json.dumps(ordered(actual_index["KeySchema"]), sort_keys=True),
+                    json.dumps(ordered(expected_index["KeySchema"]), sort_keys=True),
+                ))
                 return False
             if "ProvisionedThroughput" not in expected_index:
                 # LSI
@@ -374,6 +414,10 @@ def compare_tables(model, actual, expected):
                 actual_index["ProvisionedThroughput"].pop("WriteCapacityUnits")
                 expected_index["ProvisionedThroughput"].pop("WriteCapacityUnits")
             if ordered(expected_index["ProvisionedThroughput"]) != ordered(actual_index["ProvisionedThroughput"]):
+                logger.debug("compare_tables: GSI ProvisionedThroughput mismatch: {} != {}".format(
+                    json.dumps(ordered(actual_index["ProvisionedThroughput"]), sort_keys=True),
+                    json.dumps(ordered(expected_index["ProvisionedThroughput"]), sort_keys=True),
+                ))
                 return False
     # 3. AttributeNames expected are a subset of actual (ie. an unknown index's hash key)
     # Ignore order for inner lists
@@ -381,8 +425,19 @@ def compare_tables(model, actual, expected):
     required_attributes = ordered(expected.pop("AttributeDefinitions"))
     missing_attributes = [x for x in required_attributes if x not in all_attributes]
     if missing_attributes:
+        logger.debug(
+            "compare_tables: the following attributes are missing for model \"{}\": {}".format(
+                model.__name__, missing_attributes))
         return False
-    return ordered(actual) == ordered(expected)
+    matches = ordered(actual) == ordered(expected)
+    if not matches:
+        logger.debug(
+            "compare_tables: expected and actual table descriptions for model \"{}\" do not match: {} != {}".format(
+                model.__name__,
+                json.dumps(ordered(actual), sort_keys=True),
+                json.dumps(ordered(expected), sort_keys=True))
+        )
+    return matches
 
 
 def attribute_definitions(model):

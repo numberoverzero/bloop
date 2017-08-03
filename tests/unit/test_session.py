@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import Mock
 
 import botocore.exceptions
@@ -471,12 +472,14 @@ def test_validate_checks_status(session, dynamodb):
     assert dynamodb.describe_table.call_count == 3
 
 
-def test_validate_invalid_table(session, dynamodb):
+def test_validate_invalid_table(session, dynamodb, caplog):
     """DynamoDB returns an invalid json document"""
     dynamodb.describe_table.return_value = \
         {"Table": {"TableStatus": "ACTIVE"}}
     with pytest.raises(TableMismatch):
         session.validate_table(SimpleModel)
+
+    assert "the following attributes are missing for model \"SimpleModel\"" in caplog.text
 
 
 def test_validate_simple_model(session, dynamodb):
@@ -494,9 +497,9 @@ def test_validate_simple_model(session, dynamodb):
         TableName="Simple")
 
 
-def test_validate_unspecified_throughput(session, dynamodb):
+def test_validate_unspecified_throughput(session, dynamodb, caplog):
     """Model doesn't care what table read/write units are"""
-    class Model(BaseModel):
+    class MyModel(BaseModel):
         class Meta:
             pass
         id = Column(String, hash_key=True)
@@ -507,27 +510,37 @@ def test_validate_unspecified_throughput(session, dynamodb):
         "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
         "ProvisionedThroughput": {
             "ReadCapacityUnits": 15, "WriteCapacityUnits": 20},
-        "TableName": "Model",
+        "TableName": "MyModel",
         "TableStatus": "ACTIVE"}
     dynamodb.describe_table.return_value = {"Table": full}
 
-    assert Model.Meta.read_units is None
-    assert Model.Meta.write_units is None
-    session.validate_table(Model)
-    assert Model.Meta.read_units == 15
-    assert Model.Meta.write_units == 20
+    assert MyModel.Meta.read_units is None
+    assert MyModel.Meta.write_units is None
+    session.validate_table(MyModel)
+    assert MyModel.Meta.read_units == 15
+    assert MyModel.Meta.write_units == 20
+
+    assert caplog.record_tuples == [
+        ("bloop.session", logging.DEBUG,
+         "validate_table: table \"MyModel\" was in ACTIVE state after 1 calls"),
+        ("bloop.session", logging.DEBUG,
+         "MyModel.Meta does not specify read_units, set to 15 from DescribeTable response"),
+        ("bloop.session", logging.DEBUG,
+         "MyModel.Meta does not specify write_units, set to 20 from DescribeTable response")
+    ]
 
 
-def test_validate_unspecified_gsi_throughput(session, dynamodb):
+def test_validate_unspecified_gsi_throughput(session, dynamodb, caplog):
     """Model doesn't care what GSI read/write units are"""
-    class Model(BaseModel):
+    class MyModel(BaseModel):
         class Meta:
-            pass
+            read_units = 1
+            write_units = 1
         id = Column(String, hash_key=True)
         other = Column(String)
         by_other = GlobalSecondaryIndex(projection="keys", hash_key=other)
 
-    description = expected_table_description(Model)
+    description = expected_table_description(MyModel)
     description["TableStatus"] = "ACTIVE"
     description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
     throughput = description["GlobalSecondaryIndexes"][0]["ProvisionedThroughput"]
@@ -536,17 +549,28 @@ def test_validate_unspecified_gsi_throughput(session, dynamodb):
 
     dynamodb.describe_table.return_value = {"Table": description}
 
-    assert Model.by_other.read_units is None
-    assert Model.by_other.write_units is None
-    session.validate_table(Model)
-    assert Model.by_other.read_units == 15
-    assert Model.by_other.write_units == 20
+    assert MyModel.by_other.read_units is None
+    assert MyModel.by_other.write_units is None
+    session.validate_table(MyModel)
+    assert MyModel.by_other.read_units == 15
+    assert MyModel.by_other.write_units == 20
+
+    assert caplog.record_tuples == [
+        ("bloop.session", logging.DEBUG,
+         "validate_table: table \"MyModel\" was in ACTIVE state after 1 calls"),
+        ("bloop.session", logging.DEBUG,
+         "MyModel.by_other does not specify read_units, set to 15 from DescribeTable response"),
+        ("bloop.session", logging.DEBUG,
+         "MyModel.by_other does not specify write_units, set to 20 from DescribeTable response")
+    ]
 
 
-def test_validate_stream_exists(session, dynamodb):
+def test_validate_stream_exists(session, dynamodb, caplog):
     """Model expects a stream that exists and matches"""
-    class Model(BaseModel):
+    class MyModel(BaseModel):
         class Meta:
+            read_units = 1
+            write_units = 1
             stream = {
                 "include": ["keys"]
             }
@@ -563,11 +587,19 @@ def test_validate_stream_exists(session, dynamodb):
         "StreamSpecification": {
             "StreamEnabled": True,
             "StreamViewType": "KEYS_ONLY"},
-        "TableName": "Model",
+        "TableName": "MyModel",
         "TableStatus": "ACTIVE"}
     dynamodb.describe_table.return_value = {"Table": full}
-    session.validate_table(Model)
-    assert Model.Meta.stream["arn"] == "table/stream_both/stream/2016-08-29T03:30:15.582"
+    session.validate_table(MyModel)
+    assert MyModel.Meta.stream["arn"] == "table/stream_both/stream/2016-08-29T03:30:15.582"
+
+    assert caplog.record_tuples == [
+        ("bloop.session", logging.DEBUG,
+         "validate_table: table \"MyModel\" was in ACTIVE state after 1 calls"),
+        ("bloop.session", logging.DEBUG,
+         ("Set MyModel.Meta.stream[\"arn\"] to "
+          "\"table/stream_both/stream/2016-08-29T03:30:15.582\" from DescribeTable response"))
+    ]
 
 
 def test_validate_stream_wrong_view_type(session, dynamodb):
@@ -595,7 +627,7 @@ def test_validate_stream_wrong_view_type(session, dynamodb):
         session.validate_table(Model)
 
 
-def test_validate_stream_missing(session, dynamodb):
+def test_validate_stream_missing(session, dynamodb, caplog):
     """Model expects a stream that doesn't exist"""
     class Model(BaseModel):
         class Meta:
@@ -615,6 +647,8 @@ def test_validate_stream_missing(session, dynamodb):
     dynamodb.describe_table.return_value = {"Table": full}
     with pytest.raises(TableMismatch):
         session.validate_table(Model)
+
+    assert "expected and actual table descriptions for model \"Model\" do not match" in caplog.text
 
 
 def test_validate_stream_unexpected(session, dynamodb):
@@ -700,7 +734,7 @@ def test_validate_superset_index(session, dynamodb):
     dynamodb.describe_table.assert_called_once_with(TableName="ProjectedIndexes")
 
 
-def test_validate_missing_index(session, dynamodb):
+def test_validate_missing_index(session, dynamodb, caplog):
     """Required GSI is missing"""
     description = expected_table_description(ProjectedIndexes)
     description["TableStatus"] = "ACTIVE"
@@ -710,8 +744,10 @@ def test_validate_missing_index(session, dynamodb):
     with pytest.raises(TableMismatch):
         session.validate_table(ProjectedIndexes)
 
+    assert "table is missing expected index \"by_gsi\"" in caplog.text
 
-def test_validate_bad_index_projection_type(session, dynamodb):
+
+def test_validate_bad_index_projection_type(session, dynamodb, caplog):
     """Required GSI is missing"""
     description = expected_table_description(ProjectedIndexes)
     description["TableStatus"] = "ACTIVE"
@@ -722,8 +758,10 @@ def test_validate_bad_index_projection_type(session, dynamodb):
     with pytest.raises(TableMismatch):
         session.validate_table(ProjectedIndexes)
 
+    assert "actual projection for index \"by_gsi\" is missing expected columns" in caplog.text
 
-def test_validate_bad_index_key_schema(session, dynamodb):
+
+def test_validate_bad_index_key_schema(session, dynamodb, caplog):
     """KeySchema doesn't match"""
     description = expected_table_description(ProjectedIndexes)
     description["TableStatus"] = "ACTIVE"
@@ -734,8 +772,10 @@ def test_validate_bad_index_key_schema(session, dynamodb):
     with pytest.raises(TableMismatch):
         session.validate_table(ProjectedIndexes)
 
+    assert "key schema mismatch for \"by_gsi\"" in caplog.text
 
-def test_validate_bad_index_provisioned_throughput(session, dynamodb):
+
+def test_validate_bad_index_provisioned_throughput(session, dynamodb, caplog):
     """KeySchema doesn't match"""
     description = expected_table_description(ProjectedIndexes)
     description["TableStatus"] = "ACTIVE"
@@ -746,8 +786,10 @@ def test_validate_bad_index_provisioned_throughput(session, dynamodb):
     with pytest.raises(TableMismatch):
         session.validate_table(ProjectedIndexes)
 
+    assert "GSI ProvisionedThroughput mismatch" in caplog.text
 
-def test_validate_unknown_projection_type(session, dynamodb):
+
+def test_validate_unknown_projection_type(session, dynamodb, caplog):
     """DynamoDB starts returning a new projection type"""
     description = expected_table_description(ProjectedIndexes)
     description["TableStatus"] = "ACTIVE"
@@ -757,6 +799,8 @@ def test_validate_unknown_projection_type(session, dynamodb):
     description["GlobalSecondaryIndexes"][0]["Projection"]["ProjectionType"] = "NewProjectionType"
     with pytest.raises(TableMismatch):
         session.validate_table(ProjectedIndexes)
+
+    assert "unknown index projection type \"NewProjectionType\"" in caplog.text
 
 
 # END VALIDATE TABLE ============================================================================== END VALIDATE TABLE

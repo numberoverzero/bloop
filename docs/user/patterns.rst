@@ -159,3 +159,44 @@ provides all directs for managers at a certain level.
                     projection=[directs, email],
                     hash_key=level)
             engine.bind(_)
+
+==========================
+ Cross-region Replication
+==========================
+
+Replicating the same model across multiple regions using streams is straightforward.  We'll need one engine per region,
+which can be instantiated with the following helper:
+
+.. code-block:: python
+
+    import boto3
+    import bloop
+
+
+    def engine_for_region(region):
+        dynamodb = boto3.client("dynamodb", region_name=region)
+        dynamodbstreams = boto3.client("dynamodbstreams", region_name=region)
+        return bloop.Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+
+
+    src_engine = engine_for_region("us-west-2")
+    dst_engine = engine_for_region("us-east-1")
+
+And here's our replication.  This assumes that the model has been bound to both engines.  Although this starts at the
+trim horizon, we'd usually keep track of progress somewhere else using ``Stream.token`` to avoid replicating stale
+changes (every run would start at trim_horizon).
+
+.. code-block:: python
+
+    stream = src_engine.stream(MyModelHere, "trim_horizon")
+    while True:
+        record = next(stream)
+        if not record:
+            continue
+        old, new = record["old"], record["new"]
+        if new:
+            dst_engine.save(new)
+        else:
+            dst_engine.delete(old)
+
+This is a simplified example; see :ref:`periodic-heartbeats` for automatically managing shard iterator expiration.

@@ -167,6 +167,8 @@ The second record shows the change to email, and has both old and new objects:
          'sequence_number': '800000000007366876936'}
     }
 
+.. _periodic-heartbeats:
+
 -------------------
 Periodic Heartbeats
 -------------------

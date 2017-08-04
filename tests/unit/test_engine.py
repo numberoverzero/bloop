@@ -1,4 +1,5 @@
 import datetime
+import logging
 from unittest.mock import Mock
 
 import pytest
@@ -21,7 +22,7 @@ from bloop.util import ordered
 from ..helpers.models import ComplexModel, User, VectorModel
 
 
-def test_missing_objects(engine, session):
+def test_missing_objects(engine, session, caplog):
     """When objects aren't loaded, MissingObjects is raised with a list of missing objects"""
     # Patch batch_get_items to return no results
     session.load_items.return_value = {}
@@ -31,6 +32,10 @@ def test_missing_objects(engine, session):
     with pytest.raises(MissingObjects) as excinfo:
         engine.load(*users)
     assert set(excinfo.value.objects) == set(users)
+
+    assert caplog.record_tuples == [
+        ("bloop.engine", logging.WARNING, "loaded 0 of 3 objects")
+    ]
 
 
 def test_dump_key(engine):
@@ -156,7 +161,7 @@ def test_load_equivalent_objects(engine, session):
     assert same_user.name == "foo"
 
 
-def test_load_shared_table(engine, session):
+def test_load_shared_table(engine, session, caplog):
     """Two different models backed by the same table try to load the same hash key.
     They share the column "shared" but load the content differently
     """
@@ -194,6 +199,7 @@ def test_load_shared_table(engine, session):
     first = FirstModel(id=id, range=range)
     second = SecondModel(id=id, range=range)
 
+    caplog.handler.records.clear()
     engine.load(first, second)
 
     expected_first = FirstModel(id=id, range=range, first="first", as_date=now)
@@ -206,6 +212,10 @@ def test_load_shared_table(engine, session):
         assert getattr(second, attr, missing) == getattr(expected_second, attr, missing)
     assert not hasattr(first, "second")
     assert not hasattr(second, "first")
+
+    assert caplog.record_tuples == [
+        ("bloop.engine", logging.INFO, "successfully loaded 2 objects")
+    ]
 
 
 def test_load_missing_attrs(engine, session):
@@ -308,7 +318,7 @@ def test_save_twice(engine, session):
     assert session.save_item.call_count == 2
 
 
-def test_save_list_with_condition(engine, session):
+def test_save_list_with_condition(engine, session, caplog):
     users = [User(id=str(i)) for i in range(3)]
     condition = User.id.is_(None)
     expected_calls = [
@@ -322,6 +332,10 @@ def test_save_list_with_condition(engine, session):
     for expected in expected_calls:
         session.save_item.assert_any_call(expected)
     assert session.save_item.call_count == 3
+
+    assert caplog.record_tuples == [
+        ("bloop.engine", logging.INFO, "successfully saved 3 objects")
+    ]
 
 
 def test_save_single_with_condition(engine, session):
@@ -422,7 +436,7 @@ def test_save_del_only(engine, session):
     session.save_item.assert_called_once_with(expected)
 
 
-def test_delete_multiple_condition(engine, session):
+def test_delete_multiple_condition(engine, session, caplog):
     users = [User(id=str(i)) for i in range(3)]
     condition = User.id == "foo"
     expected_calls = [
@@ -436,6 +450,10 @@ def test_delete_multiple_condition(engine, session):
     for expected in expected_calls:
         session.delete_item.assert_any_call(expected)
     assert session.delete_item.call_count == 3
+
+    assert caplog.record_tuples == [
+        ("bloop.engine", logging.INFO, "successfully deleted 3 objects")
+    ]
 
 
 def test_delete_atomic(engine, session):
@@ -553,7 +571,7 @@ def test_bind_non_model(engine):
         engine.bind(object())
 
 
-def test_bind_skip_abstract_models(engine, session):
+def test_bind_skip_abstract_models(engine, session, caplog):
     class Abstract(BaseModel):
         class Meta:
             abstract = True
@@ -576,6 +594,11 @@ def test_bind_skip_abstract_models(engine, session):
     session.validate_table.assert_any_call(Concrete)
     session.create_table.assert_any_call(AlsoConcrete)
     session.validate_table.assert_any_call(AlsoConcrete)
+
+    assert caplog.record_tuples == [
+        ("bloop.engine", logging.DEBUG, "binding non-abstract models ['AlsoConcrete', 'Concrete']"),
+        ("bloop.engine", logging.INFO, "successfully bound 2 models to the engine"),
+    ]
 
 
 def test_bind_concrete_base(engine, session):
@@ -614,7 +637,7 @@ def test_bind_different_engines(dynamodb, dynamodbstreams):
     assert Concrete in second_engine.type_engine.bound_types
 
 
-def test_bind_skip_table_setup(dynamodb, dynamodbstreams):
+def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):
     # Required so engine doesn't pass boto3 to the wrapper
     engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
     engine.session = Mock(spec=SessionWrapper)
@@ -622,6 +645,13 @@ def test_bind_skip_table_setup(dynamodb, dynamodbstreams):
     engine.bind(User, skip_table_setup=True)
     engine.session.create_table.assert_not_called()
     engine.session.validate_table.assert_not_called()
+
+    assert caplog.record_tuples == [
+        ("bloop.engine", logging.DEBUG, "binding non-abstract models ['Admin', 'User']"),
+        ("bloop.engine", logging.INFO,
+         "skip_table_setup is True; not trying to create tables or validate models during bind"),
+        ("bloop.engine", logging.INFO, "successfully bound 2 models to the engine"),
+    ]
 
 
 @pytest.mark.parametrize("op_name, plural", [("save", True), ("load", True), ("delete", True)], ids=str)

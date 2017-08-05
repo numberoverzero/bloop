@@ -1,4 +1,5 @@
 import datetime
+import logging
 import random
 from unittest.mock import call
 
@@ -178,7 +179,7 @@ def test_exhausted(shard):
     assert not shard.exhausted
 
 
-def test_token():
+def test_token(caplog):
     parent = Shard(stream_arn="parent-stream-arn", shard_id="parent-id")
     shard = Shard(stream_arn="stream-arn", shard_id="shard-id",
                   iterator_id="iterator-id", iterator_type="at_sequence",
@@ -196,6 +197,13 @@ def test_token():
     shard.parent = None
     expected.pop("parent")
     assert shard.token == expected
+    assert not caplog.records
+
+    shard.iterator_type = "trim_horizon"
+    shard.token
+    assert caplog.record_tuples == [
+        ("bloop.stream", logging.WARNING, "creating shard token at non-exact location \"trim_horizon\"")
+    ]
 
 
 def test_walk_tree():

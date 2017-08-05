@@ -1,10 +1,12 @@
 import collections
 import collections.abc
 import datetime
+import logging
 
 from ..exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from .buffer import RecordBuffer
 from .shard import unpack_shards
+logger = logging.getLogger("bloop.stream")
 
 
 class Coordinator:
@@ -260,7 +262,7 @@ def _move_stream_token(coordinator, token):
     while unverified:
         shard = unverified.popleft()
         if shard.shard_id not in current_shards:
-            # TODO: log at WARNING for unrecognized shard id
+            logger.info("Unknown or expired shard \"{}\" - pruning from stream token".format(shard.shard_id))
             coordinator.remove_shard(shard)
             unverified.extend(shard.children)
 
@@ -279,5 +281,6 @@ def _move_stream_token(coordinator, token):
         except RecordsExpired:
             # This token shard's sequence_number is beyond the trim_horizon.
             # The next closest record is at trim_horizon.
+            msg = "SequenceNumber \"{}\" in shard \"{}\" beyond trim horizon: jumping to trim_horizon"
+            logger.info(msg.format(shard.sequence_number, shard.shard_id))
             shard.jump_to(iterator_type="trim_horizon")
-            # TODO logger.info "SequenceNumber from token was past trim_horizon, moving to trim_horizon instead"

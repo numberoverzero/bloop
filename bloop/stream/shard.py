@@ -1,12 +1,16 @@
 import collections
+import logging
 
 from ..exceptions import ShardIteratorExpired
 from ..util import Sentinel
 
-
 # Approximate number of calls to fully traverse an empty shard
 CALLS_TO_REACH_HEAD = 5
 
+EXACT_ITERATORS = {"at_sequence", "after_sequence"}
+RELATIVE_ITERATORS = {"trim_horizon", "latest"}
+
+logger = logging.getLogger("bloop.stream")
 last_iterator = Sentinel("LastIterator")
 missing = Sentinel("missing")
 
@@ -74,7 +78,7 @@ class Shard:
         elif self.iterator_type == "after_sequence":
             # <Shard[after=300000000000000499659, id='shardId-00000001414562045508-2bac9cd2']>
             details = "after_seq=" + repr(self.sequence_number)
-        elif self.iterator_type in ["trim_horizon", "latest"]:
+        elif self.iterator_type in RELATIVE_ITERATORS:
             # <Shard[latest, id='shardId-00000001414562045508-2bac9cd2']>
             # <Shard[trim_horizon, id='shardId-00000001414562045508-2bac9cd2']>
             details = self.iterator_type
@@ -122,7 +126,8 @@ class Shard:
         :returns: Shard state as a json-friendly dict
         :rtype: dict
         """
-        # TODO logger.info when iterator_type is "trim_horizon" or "latest"
+        if self.iterator_type in RELATIVE_ITERATORS:
+            logger.warning("creating shard token at non-exact location \"{}\"".format(self.iterator_type))
         token = {
             "stream_arn": self.stream_arn,
             "shard_id": self.shard_id,

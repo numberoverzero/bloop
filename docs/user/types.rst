@@ -429,3 +429,40 @@ To instead store enums as their integer values, we can modify the enum class abo
                 return value
             value = super().dynamo_load(value, context=context, **kwargs)
             return self.enum_cls(value)
+
+.. _type-validation:
+
+=================
+ Type Validation
+=================
+
+By default Bloop does not verify that each model's values have the correct types.  For example, consider this model:
+
+.. code-block:: python
+
+    class Appointment(BaseModel):
+        id = Column(UUID, hash_key=True)
+        date = Column(DateTime)
+        location = Column(String)
+
+
+The following code won't throw type errors until we try to persist to DynamoDB:
+
+.. code-block:: pycon
+
+    >>> engine.bind(Appointment)
+    >>> a = Appointment(id="not-a-uuid")
+    >>> a.location = 421
+    >>> a
+    Appointment(id='not-a-uuid', location=421)
+
+    >>> engine.save(a)
+    ParamValidationError: ...
+
+This is because Bloop is designed to be maximally customizable, and easily extend your existing object model framework.
+There's also no built-in way to specify that a column is non-nullable.  For an example of adding both these constraints
+to your :class:`~bloop.models.Column`, see :ref:`custom-column`.  Alternatively, consider a more robust option such as
+the exceptional `marshmallow`__.  An example integrating with marshmallow and flask is
+:ref:`available here <marshmallow-pattern>`.
+
+__ https://marshmallow.readthedocs.io

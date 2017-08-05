@@ -161,7 +161,7 @@ provides all directs for managers at a certain level.
             engine.bind(_)
 
 ==========================
- Cross-region Replication
+ Cross-Region Replication
 ==========================
 
 Replicating the same model across multiple regions using streams is straightforward.  We'll need one engine per region,
@@ -200,3 +200,116 @@ changes (every run would start at trim_horizon).
             dst_engine.delete(old)
 
 This is a simplified example; see :ref:`periodic-heartbeats` for automatically managing shard iterator expiration.
+
+.. _custom-column:
+
+==================================
+ Customizing the ``Column`` Class
+==================================
+
+As mentioned in :ref:`type-validation`, Bloop intentionally does not impose its own concept of type validation or
+a nullable constraint on columns.  Instead, these can be trivially added to the existing Column class:
+
+.. code-block:: python
+
+    import bloop
+
+    class Column(bloop.Column):
+
+        def __init__(self, *args, nullable=True, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.nullable = nullable
+
+        def set(self, obj, value):
+            if value is None:
+                if not self.nullable:
+                    msg = "Tried to set {} to None but column is not nullable"
+                    raise ValueError(msg.format(self.model_name))
+            elif not isinstance(value, self.typedef.python_type):
+                msg = "Tried to set {} with invalid type {} (expected {})"
+                raise TypeError(msg.format(
+                    self.model_name, type(value),
+                    self.typedef.python_type
+                ))
+            super().set(obj, value)
+
+Using this class, a type failure looks like:
+
+.. code-block:: python
+
+    >>> class Appointment(BaseModel):
+    ...     id = Column(UUID, hash_key=True, nullable=False)
+    ...     date = Column(DateTime)
+    ...     location = Column(String)
+    >>> engine.bind(Appointment)
+    >>> appt = Appointment(id=uuid.uuid4())
+
+    >>> appt.id = None
+    ValueError: Tried to set id to None but column is not nullable
+    >>> appt.location = 3
+    TypeError: Tried to set location with invalid type <class 'int'> (expected <class 'str'>)
+
+.. _marshmallow-pattern:
+
+==============================
+ Integrating with Marshmallow
+==============================
+
+Instead of adding your own validation layer to the Column class :ref:`as detailed above <custom-column>` you can easily
+leverage powerful libraries such as `marshmallow`__ and `flask-marshmallow`__.  Here's a self-contained example that
+uses flask and marshmallow to expose get and list operations for a User class:
+
+.. code-block:: python
+
+    from flask import Flask, jsonify
+    from flask_marshmallow import Marshmallow
+    from bloop import BaseModel, Column, Engine, Integer, String, DateTime
+    from datetime import datetime
+
+    app = Flask(__name__)
+    ma = Marshmallow(app)
+    engine = Engine()
+
+
+    class User(Model):
+        def __init__(self, **kwargs):
+            kwargs.setdefault("date_created", datetime.now())
+            super().__init__(**kwargs)
+
+        email = Column(String, hash_key=True)
+        password = Column(String)
+        date_created = Column(DateTime)
+
+    engine.bind(User)
+
+
+    class UserSchema(ma.Schema):
+        class Meta:
+            # Fields to expose
+            fields = ["_links"]
+            fields += [column.model_name for column in User.Meta.columns]
+        # Smart hyperlinking
+        _links = ma.Hyperlinks({
+            'self': ma.URLFor('author_detail', id='<id>'),
+            'collection': ma.URLFor('authors')
+        })
+
+    user_schema = UserSchema()
+    users_schema = UserSchema(many=True)
+
+
+    @app.route('/api/users/')
+    def users():
+        all_users = list(engine.scan(User))
+        result = users_schema.dump(all_users)
+        return jsonify(result.data)
+
+    @app.route('/api/users/<id>')
+    def user_detail(id):
+        user = User(id=id)
+        engine.load(user)
+        return user_schema.jsonify(user)
+
+
+__ https://marshmallow.readthedocs.io
+__ https://flask-marshmallow.readthedocs.io

@@ -333,9 +333,7 @@ def test_save_list_with_condition(engine, session, caplog):
         session.save_item.assert_any_call(expected)
     assert session.save_item.call_count == 3
 
-    assert caplog.record_tuples == [
-        ("bloop.engine", logging.INFO, "successfully saved 3 objects")
-    ]
+    assert caplog.record_tuples[-1] == ("bloop.engine", logging.INFO, "successfully saved 3 objects")
 
 
 def test_save_single_with_condition(engine, session):
@@ -451,9 +449,7 @@ def test_delete_multiple_condition(engine, session, caplog):
         session.delete_item.assert_any_call(expected)
     assert session.delete_item.call_count == 3
 
-    assert caplog.record_tuples == [
-        ("bloop.engine", logging.INFO, "successfully deleted 3 objects")
-    ]
+    assert caplog.record_tuples[-1] == ("bloop.engine", logging.INFO, "successfully deleted 3 objects")
 
 
 def test_delete_atomic(engine, session):
@@ -588,6 +584,7 @@ def test_bind_skip_abstract_models(engine, session, caplog):
     class AlsoConcrete(AlsoAbstract):
         id = Column(Integer, hash_key=True)
 
+    caplog.handler.records.clear()
     engine.bind(Abstract)
 
     session.create_table.assert_any_call(Concrete)

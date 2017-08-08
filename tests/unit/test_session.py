@@ -516,6 +516,7 @@ def test_validate_unspecified_throughput(session, dynamodb, caplog):
 
     assert MyModel.Meta.read_units is None
     assert MyModel.Meta.write_units is None
+    caplog.handler.records.clear()
     session.validate_table(MyModel)
     assert MyModel.Meta.read_units == 15
     assert MyModel.Meta.write_units == 20
@@ -551,6 +552,7 @@ def test_validate_unspecified_gsi_throughput(session, dynamodb, caplog):
 
     assert MyModel.by_other.read_units is None
     assert MyModel.by_other.write_units is None
+    caplog.handler.records.clear()
     session.validate_table(MyModel)
     assert MyModel.by_other.read_units == 15
     assert MyModel.by_other.write_units == 20
@@ -590,6 +592,7 @@ def test_validate_stream_exists(session, dynamodb, caplog):
         "TableName": "MyModel",
         "TableStatus": "ACTIVE"}
     dynamodb.describe_table.return_value = {"Table": full}
+    caplog.handler.records.clear()
     session.validate_table(MyModel)
     assert MyModel.Meta.stream["arn"] == "table/stream_both/stream/2016-08-29T03:30:15.582"
 

@@ -1,4 +1,5 @@
 import collections.abc
+import logging
 
 import declare
 
@@ -9,6 +10,7 @@ from .util import missing, unpack_from_dynamodb
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
+logger = logging.getLogger("bloop.models")
 
 
 def loaded_columns(obj):
@@ -90,6 +92,7 @@ class ModelMetaclass(declare.ModelMetaclass):
             # hash function has priority over the default.
             # If there aren't any bases with explicit hash functions,
             # just use object.__hash__
+            logger.info("searching for nearest __hash__ impl in {}.__mro__".format(name))
             for base in bases:
                 hash_fn = getattr(base, "__hash__")
                 if hash_fn:

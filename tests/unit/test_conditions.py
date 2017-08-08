@@ -1,3 +1,4 @@
+import logging
 import operator
 
 import pytest
@@ -514,7 +515,7 @@ def test_render_missing_object(engine):
     ("key", "KeyConditionExpression"),
     ("condition", "ConditionExpression"),
 ])
-def test_render_condition_only(kwarg_name, expression_key, engine):
+def test_render_condition_only(kwarg_name, expression_key, engine, caplog):
     """Only renders the given condition"""
     condition = (User.email == "@") & (User.name.is_(None))
     rendered = render(engine, **{kwarg_name: condition})
@@ -523,6 +524,11 @@ def test_render_condition_only(kwarg_name, expression_key, engine):
         "ExpressionAttributeValues": {":v1": {"S": "@"}},
         expression_key: "((#n0 = :v1) AND (attribute_not_exists(#n2)))"
     }
+
+    assert caplog.record_tuples == [
+        ("bloop.conditions", logging.DEBUG, "popping last usage of Reference(name=':v3', type='value', value=None)"),
+        ("bloop.conditions", logging.DEBUG, "rendering \"==\" as attribute_not_exists"),
+    ]
 
 
 def test_render_projection_only(engine):

@@ -1,4 +1,5 @@
 import datetime
+import logging
 import operator
 
 import pytest
@@ -378,7 +379,7 @@ def test_defined_hash():
     assert Model.__hash__ is hash_fn
 
 
-def test_parent_hash():
+def test_parent_hash(caplog):
     """Parent __hash__ function is used, not object __hash__"""
     class OtherBase:
         # Explicit __eq__ prevents OtherBase from having a __hash__
@@ -389,9 +390,13 @@ def test_parent_hash():
         def __hash__(self):
             return id(self)
 
-    class Model(OtherBase, BaseWithHash, BaseModel):
+    class MyModel(OtherBase, BaseWithHash, BaseModel):
         id = Column(Integer, hash_key=True)
-    assert Model.__hash__ is BaseWithHash.__hash__
+    assert MyModel.__hash__ is BaseWithHash.__hash__
+
+    assert caplog.record_tuples == [
+        ("bloop.models", logging.INFO, "searching for nearest __hash__ impl in MyModel.__mro__"),
+    ]
 
 
 # END BASE MODEL ======================================================================================= END BASE MODEL

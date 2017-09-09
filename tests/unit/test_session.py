@@ -27,8 +27,7 @@ from bloop.session import (
 from bloop.types import String
 from bloop.util import Sentinel, ordered
 
-from ..helpers.models import ComplexModel, ProjectedIndexes, SimpleModel, User
-
+from ..helpers.models import ComplexModel, ProjectedIndexes, SimpleModel, User, AbstractBaseClass
 
 missing = Sentinel("missing")
 
@@ -412,6 +411,34 @@ def test_create_subclass(session, dynamodb):
         'ProvisionedThroughput': {
             'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1},
         'TableName': 'SubModel'}
+
+    def handle(**table):
+        assert ordered(table) == ordered(expected)
+
+    dynamodb.create_table.side_effect = handle
+    session.create_table(SubModel)
+    assert dynamodb.create_table.call_count == 1
+
+
+def test_create_with_abstract_subclass(session, dynamodb):
+    base_model = AbstractBaseClass
+
+    # Shouldn't include base model's columns in create_table call
+    class SubModel(base_model):
+        sub_id = Column(String)
+
+    expected = {
+        'AttributeDefinitions': [
+            {'AttributeType': 'N', 'AttributeName': 'id'},
+            {'AttributeType': 'S', 'AttributeName': 'created'}
+        ],
+        'KeySchema': [
+            {'AttributeName': 'id', 'KeyType': 'HASH'},
+            {'AttributeName': 'created', 'KeyType': 'RANGE'}
+        ],
+        'ProvisionedThroughput': {'WriteCapacityUnits': 1, 'ReadCapacityUnits': 1},
+        'TableName': 'SubModel'
+    }
 
     def handle(**table):
         assert ordered(table) == ordered(expected)

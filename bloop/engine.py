@@ -24,6 +24,7 @@ from .signals import (
 )
 from .stream import Stream
 from .util import missing, unpack_from_dynamodb, walk_subclasses
+from .type_engine import TypeEngine
 
 
 __all__ = ["Engine"]
@@ -97,7 +98,7 @@ class Engine:
     def __init__(self, *, dynamodb=None, dynamodbstreams=None):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
-        self.type_engine = declare.TypeEngine.unique()
+        self.type_engine = TypeEngine.unique()
         self.session = SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
     def _dump(self, model, obj, context=None, **kwargs):

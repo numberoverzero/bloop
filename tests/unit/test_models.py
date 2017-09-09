@@ -2,6 +2,8 @@ import datetime
 import logging
 import operator
 
+import uuid
+
 import pytest
 
 from bloop.conditions import ConditionRenderer
@@ -15,10 +17,9 @@ from bloop.models import (
     model_created,
     object_modified,
 )
-from bloop.types import UUID, Boolean, DateTime, Integer, String
+from bloop.types import UUID, Boolean, DateTime, Integer, String, Set
 
-from ..helpers.models import User, VectorModel
-
+from ..helpers.models import User, VectorModel, AbstractBaseClass
 
 operations = [
     (operator.ne, "!="),
@@ -135,6 +136,15 @@ def test_meta_indexes_columns():
     """An index should not be considered a Column, even if it subclasses"""
     assert User.by_email not in set(User.Meta.columns)
     assert User.by_email in set(User.Meta.indexes)
+
+
+def test_subclass_meta_indexes_columns():
+    """An index should not be considered a Column, even if it subclasses"""
+    class MyUser(AbstractBaseClass):
+        my_id = Column(UUID)
+
+    assert MyUser.by_email not in set(MyUser.Meta.columns)
+    assert MyUser.by_email not in set(MyUser.Meta.indexes)
 
 
 def test_invalid_model_keys():
@@ -280,6 +290,74 @@ def test_abstract_not_inherited():
 
     assert BaseModel.Meta.abstract
     assert not Concrete.Meta.abstract
+
+
+def test_abstract_inherited_columns():
+    class MyBase(BaseModel):
+        class Meta:
+            abstract = True
+
+        id = Column(UUID, hash_key=True)
+        created = Column(DateTime, range_key=True)
+        modified = Column(DateTime)
+        active = Column(Boolean)
+
+    class MyUser(MyBase):
+        username = Column(String)
+        email = Column(String)
+
+    assert MyUser.Meta.abstract is False
+    assert MyBase.Meta.abstract is True
+    assert len(MyUser.Meta.fields) == 6
+    assert sorted(MyUser.Meta.fields_by_model_name.keys()) == sorted(
+        ['id', 'created', 'modified', 'active', 'username', 'email'])
+
+
+def test_multiple_abstract_inherited_columns():
+    class HasId(BaseModel):
+        class Meta:
+            abstract = True
+        id = Column(UUID, hash_key=True)
+
+    class HasManager(BaseModel):
+        class Meta:
+            abstract = True
+        manager_id = Column(UUID)
+
+    class HasReports(BaseModel):
+        class Meta:
+            abstract = True
+        reports = Column(Set(UUID))
+
+    class Employee(HasId, HasManager):
+        class Meta:
+            abstract = True
+        employer = Column(String)
+
+    class Manager(Employee, HasReports, HasManager):
+        class Meta:
+            table_name = "Employee"
+        pass
+
+    assert len(Manager.Meta.fields) == 4
+    assert len(Employee.Meta.fields) == 3
+    assert Manager.Meta.table_name == Employee.Meta.table_name
+
+    employee = Employee(
+        id=uuid.uuid4(),
+        employer="WidgetCo Temp"
+    )
+
+    manager = Manager(
+        id=uuid.uuid4(),
+        manager_id=None,
+        reports=employee.id,
+        employer=employee.employer
+    )
+
+    assert manager.reports == employee.id
+    assert manager.employer == employee.employer
+    assert manager.manager_id is None
 
 
 def test_model_str(engine):

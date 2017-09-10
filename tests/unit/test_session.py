@@ -947,6 +947,16 @@ def test_create_table_no_stream():
     assert "StreamSpecification" not in table
 
 
+def test_create_table_with_prefix():
+    """Ensure we can create a table with table prefix"""
+    class Model(BaseModel):
+        class Meta:
+            table_prefix = "development"
+        id = Column(String, hash_key=True)
+    table = create_table_request(Model)
+    assert table['TableName'] == "development-Model"
+
+
 @pytest.mark.parametrize("include, view_type", [
     (["keys"], "KEYS_ONLY"),
     (["new"], "NEW_IMAGE"),

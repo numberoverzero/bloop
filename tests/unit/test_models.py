@@ -129,6 +129,31 @@ def test_meta_read_write_units():
     assert Other.Meta.read_units == 2
 
 
+def test_meta_derived_read_write_units():
+    """If `read_units` or `write_units` is missing from a model's Meta, it defaults to 1"""
+    class MyBaseModel(BaseModel):
+        class Meta:
+            abstract = True
+            write_units = 12
+            read_units = 12
+        pass
+
+    class Model(MyBaseModel):
+        id = Column(UUID, hash_key=True)
+
+    assert Model.Meta.write_units == 12
+    assert Model.Meta.read_units == 12
+
+    class Other(MyBaseModel):
+        class Meta:
+            read_units = 2
+            write_units = 3
+        id = Column(UUID, hash_key=True)
+
+    assert Other.Meta.write_units == 3
+    assert Other.Meta.read_units == 2
+
+
 def test_meta_indexes_columns():
     """An index should not be considered a Column, even if it subclasses"""
     assert User.by_email not in set(User.Meta.columns)
@@ -258,6 +283,25 @@ def test_meta_table_name():
     assert Other.Meta.table_name == "table_name"
 
 
+def test_meta_prefix_table_name():
+    """If table_name is missing from a model's Meta, use the model's __name__"""
+    class Model(BaseModel):
+        class Meta:
+            table_prefix = "dev"
+        id = Column(UUID, hash_key=True)
+
+    assert Model.Meta.table_name == "dev-Model"
+
+    class Other(BaseModel):
+        class Meta:
+            table_prefix = "dev"
+            table_name = "table_name"
+            write_units = 3
+        id = Column(UUID, hash_key=True)
+
+    assert Other.Meta.table_name == "dev-table_name"
+
+
 def test_meta_default_stream():
     """By default, stream is None"""
     class Model(BaseModel):
@@ -270,6 +314,26 @@ def test_meta_default_stream():
 
         id = Column(UUID, hash_key=True)
     assert Other.Meta.stream is None
+
+
+def test_meta_derived_default_stream():
+    """By default, stream is None"""
+    class MyBaseModel(BaseModel):
+        class Meta:
+            abstract = True
+            stream = None
+        pass
+
+    class Model(MyBaseModel):
+        id = Column(UUID, hash_key=True)
+    assert Model.Meta.stream is None
+
+    class Other(MyBaseModel):
+        class Meta:
+            stream = {"include": ["new", "old"]}
+        id = Column(UUID, hash_key=True)
+    assert Other.Meta.stream["include"] is not None
+    assert Other.Meta.stream == {'include': {'new', 'old'}, 'arn': None}
 
 
 def test_abstract_not_inherited():

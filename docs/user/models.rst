@@ -126,8 +126,8 @@ Table configuration defaults are:
         class Meta:
             abstract = False
             table_name = __name__  # model class name
-            read_units = 1
-            write_units = 1
+            read_units = None  # uses DynamoDB value, or 1 for new tables
+            write_units = None  # uses DynamoDB value, or 1 for new tables
             stream = None
 
 If ``abstract`` is true, no backing table will be created in DynamoDB.  Instances of abstract models can't be saved
@@ -136,7 +136,7 @@ may be usable as mixins.
 
 __ https://github.com/numberoverzero/bloop/issues/72
 
-The default ``table_name`` is simply the model's ``__name__``.  This is useful for mapping a model
+The default ``table_name`` is simply the model's ``__name__``.  This property is useful for mapping a model
 to an existing table, or mapping multiple models to the same table:
 
 .. code-block:: python
@@ -147,9 +147,16 @@ to an existing table, or mapping multiple models to the same table:
         ...
 
 
-Default ``read_units`` and ``write_units`` are 1.  These do not include provisioned throughput for any
-:class:`~bloop.models.GlobalSecondaryIndex`, which have their own
-:attr:`~bloop.models.GlobalSecondaryIndex.read_units`` and :attr:`~bloop.models.GlobalSecondaryIndex.write_units``.
+Default ``read_units`` and ``write_units`` are None.  These do not include provisioned throughput for any
+:class:`~bloop.models.GlobalSecondaryIndex`, which has its own read and write units.
+
+If you do not specify the read or write units of a table or GSI, the existing values in DynamoDB are used.  When
+the table or GSI does not exist, they fall back to 1.
+
+.. versionchanged:: 1.2.0
+
+    Previously, ``read_units`` and ``write_units`` defaulted to ``1``.  This was inconvenient when throughput
+    is controlled by an external script, and totally broken with the new auto-scaling features.
 
 Finally, ``stream`` can be used to enable DynamoDBStreams on the table.  By default streaming is not enabled, and this
 is ``None``.  To enable a stream with both new and old images, use:
@@ -322,7 +329,7 @@ names.  If you specify a list of columns, key columns will always be included.
         by_create_date = GlobalSecondaryIndex(
             ["email", "username"], hash_key="created_on")
 
-A GlobalSecondaryIndex must have a ``hash_key``, and can optionall have a ``range_key``.  This can either be the
+A GlobalSecondaryIndex must have a ``hash_key``, and can optionally have a ``range_key``.  This can either be the
 model_name of a column, or the column object itself:
 
 .. code-block:: python
@@ -337,7 +344,9 @@ model_name of a column, or the column object itself:
         by_version = GlobalSecondaryIndex("keys", hash_key="version")
 
 Unlike :class:`~bloop.models.LocalSecondaryIndex`, a GSI does not share its throughput with the table.  You can
-specify the ``read_units`` and ``write_units`` of the GSI.  Both default to 1:
+specify the ``read_units`` and ``write_units`` of the GSI.  If you don't specify the throughput and the GSI already
+exists, the values will be read from DynamoDB.  If the table doesn't exist, the GSI's read and write units will
+instead default to 1.
 
 .. code-block:: python
 

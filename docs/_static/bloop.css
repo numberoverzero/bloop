@@ -5,3 +5,7 @@
 .wy-menu-vertical p.caption {
     font-size: 90%;
 }
+
+.versionmodified {
+    font-style: italic
+}

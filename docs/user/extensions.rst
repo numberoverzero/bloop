@@ -1,7 +1,7 @@
 Bloop Extensions
 ^^^^^^^^^^^^^^^^
 
-Extensions' dependencies aren't installed with Bloop, because they may include a huge number of libraries that Bloop
+Extension dependencies aren't installed with Bloop, because they may include a huge number of libraries that Bloop
 does not depend on.  For example, two extensions could provide automatic mapping to Django or SQLAlchemy models.
 Many users would never need either of these, since Bloop does not depend on them for normal usage.
 

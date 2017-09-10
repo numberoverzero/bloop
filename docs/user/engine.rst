@@ -144,7 +144,7 @@ form a single ConditionExpression.
 ========
 
 :func:`Delete <bloop.engine.Engine.delete>` has the same signature as :func:`~bloop.engine.Engine.save`.  Both
-operations are mutations on an object that may or may not exist, and simply map to two different apis (Delete calls
+operations are mutations on an object that may or may not exist, and simply map to two different APIs (Delete calls
 `DeleteItem`_).  You can delete multiple objects at once, specify a ``condition``, and use the ``atomic=True``
 shorthand to only delete objects unchanged since you last loaded them from DynamoDB.
 

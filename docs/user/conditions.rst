@@ -233,9 +233,9 @@ The following condition is used:
         (Document.name == ".bashrc")
     )
 
-There's no way to know if the previous value for eg. ``folder`` had a value, since the scan told DynamoDB not to
-include that column when it performed the scan.  There's no save assumption for the state of that column in DynamoDB,
-so it's not part of the generated atomic condition.
+There's no way to know if the existing row in DynamoDB had a value for eg. ``folder``, since the scan told DynamoDB
+not to include that column when it performed the scan.  There's no save assumption for the state of that column
+in DynamoDB, so it's not part of the generated atomic condition.
 
 --------------------------------
  Example: Query on a Projection
@@ -274,8 +274,8 @@ The atomic condition used for this object will be:
         Document.size.is_(None)
     )
 
-If the value in DynamoDB has a value for ``size``, the operation will fail.  If the document's ``data`` column has
-changed since the query executed, this atomic condition won't care.
+If the existing row in DynamoDB has a value for ``size``, the operation will fail.  If the document's ``data``
+column has changed since the query executed, this atomic condition won't care.
 
 -------------------------
  Example: Save then Save

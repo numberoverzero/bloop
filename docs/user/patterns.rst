@@ -290,8 +290,8 @@ uses flask and marshmallow to expose get and list operations for a User class:
             fields += [column.model_name for column in User.Meta.columns]
         # Smart hyperlinking
         _links = ma.Hyperlinks({
-            'self': ma.URLFor('author_detail', id='<id>'),
-            'collection': ma.URLFor('authors')
+            'self': ma.URLFor('user_detail', id='<id>'),
+            'collection': ma.URLFor('users')
         })
 
     user_schema = UserSchema()

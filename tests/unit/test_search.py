@@ -2,6 +2,7 @@ import collections
 import functools
 
 import pytest
+
 from bloop.conditions import (
     AndCondition,
     BeginsWithCondition,
@@ -271,7 +272,9 @@ def simple_iter(engine, session):
             "session": session,
             "model": model,
             "index": index,
-            "request": {},
+            "request": {
+                "Select": "SPECIFIC_ATTRIBUTES"
+            },
             "projected": set()
         }
         if issubclass(cls, SearchModelIterator):
@@ -665,23 +668,31 @@ def test_iterator_returns_self(simple_iter):
     assert iterator is iter(iterator)
 
 
-def test_iterator_reset(simple_iter):
+def test_iterator_reset(simple_iter, session):
     """reset clears buffer, count, scanned, exhausted"""
     iterator = simple_iter()
+    iterator.request["Select"] = "COUNT"
+
+    def reset_state():
+        # This helper is necessary because the .count and .scanned properties will
+        # exhaust the search pagination during a Select=COUNT query,
+        # so we must reset the mock responses each time
+        session.search_items.side_effect = build_responses([0, 1, 1], items=["a", "b"])
+        iterator.reset()
 
     # Pretend we've stepped the iterator a few times
-    iterator.count = 9
-    iterator.scanned = 12
+    iterator._count = 9
+    iterator._scanned = 12
     iterator.buffer.append("obj")
     iterator._exhausted = True
 
-    iterator.reset()
-
     # Ready to go again, buffer empty and counters reset
-    assert iterator.count == 0
-    assert iterator.scanned == 0
+    reset_state()
+    assert iterator.count == 2
+    reset_state()
+    assert iterator.scanned == 6
     assert len(iterator.buffer) == 0
-    assert not iterator.exhausted
+    assert iterator.exhausted
 
 
 @pytest.mark.parametrize("buffer_size", [0, 1])
@@ -790,6 +801,8 @@ def test_one_failure(simple_iter, session, chain):
     # SearchIterator.one should advance exactly twice, every time
     expected_calls = calls_for_current_steps(chain, 2)
     assert session.search_items.call_count == expected_calls
+    assert iterator.count == sum(chain)
+    assert iterator.scanned == 3 * sum(chain)
 
 
 @pytest.mark.parametrize("cls", [ScanIterator, QueryIterator])

@@ -1,6 +1,7 @@
 # http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/ \
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import collections
+import logging
 
 from .exceptions import InvalidCondition
 from .signals import (
@@ -25,6 +26,7 @@ comparison_aliases = {
     ">=": ">=",
 }
 comparisons = list(comparison_aliases.keys())
+logger = logging.getLogger("bloop.conditions")
 
 
 # CONDITION TRACKING ============================================================================== CONDITION TRACKING
@@ -241,6 +243,7 @@ class ReferenceTracker:
                 self.counts[name] -= 1
             # Last reference
             else:
+                logger.debug("popping last usage of {}".format(ref))
                 self.counts[name] -= 1
                 if ref.type == "value":
                     del self.attr_values[name]
@@ -440,10 +443,10 @@ class BaseCondition:
             return other
         # (a & b) & (c & d) -> (a & b & c & d)
         elif self.operation == other.operation == "and":
-            return AndCondition(*(self.values + other.values))
+            return AndCondition(*self.values, *other.values)
         # (a & b) & (c > 2) -> (a & b & (c > 2))
         elif self.operation == "and":
-            return AndCondition(*(self.values + [other]))
+            return AndCondition(*self.values, other)
         # (a > 2) & (b & c) -> ((a > 2) & b & c)
         elif other.operation == "and":
             return AndCondition(self, *other.values)
@@ -484,10 +487,10 @@ class BaseCondition:
             return other
         # (a | b) | (c | d) -> (a | b | c | d)
         elif self.operation == other.operation == "or":
-            return OrCondition(*(self.values + other.values))
+            return OrCondition(*self.values, *other.values)
         # (a | b) | (c > 2) -> (a | b | (c > 2))
         elif self.operation == "or":
-            return OrCondition(*(self.values + [other]))
+            return OrCondition(*self.values, other)
         # (a > 2) | (b | c) -> ((a > 2) | b | c)
         elif other.operation == "or":
             return OrCondition(self, *other.values)
@@ -683,6 +686,7 @@ class ComparisonCondition(BaseCondition):
         if self.operation in ("==", "!="):
             renderer.refs.pop_refs(value_ref)
             function = "attribute_not_exists" if self.operation == "==" else "attribute_exists"
+            logger.debug("rendering \"{}\" as {}".format(self.operation, function))
             return "({}({}))".format(function, column_ref.name)
 
         # #n0 <= None
@@ -797,7 +801,6 @@ class InCondition(BaseCondition):
 
 
 def check_support(column, operation):
-    # TODO parametrize tests for (all condition types) X (all backing types)
     typedef = column.typedef
     for segment in path_of(column):
         typedef = typedef[segment]

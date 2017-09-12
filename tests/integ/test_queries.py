@@ -14,3 +14,16 @@ def test_query_with_projection(engine):
 
     result = query.one()
     assert not hasattr(result, "profile")
+
+
+def test_scan_count(engine):
+    engine.bind(User)
+    scan = engine.scan(User, projection="count")
+
+    for _ in range(7):
+        engine.save(valid_user())
+    assert scan.count == 7
+
+    scan.reset()
+    engine.save(valid_user())
+    assert scan.count == 8

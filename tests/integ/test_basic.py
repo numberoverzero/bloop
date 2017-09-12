@@ -1,5 +1,6 @@
 """Basic scenarios, symmetric tests"""
 import pytest
+
 from bloop import (
     BaseModel,
     Column,
@@ -106,3 +107,34 @@ def test_model_overlap(dynamodb, engine):
     engine.bind(FirstOverlap)
     engine.bind(SecondOverlap)
     assert True
+
+
+def test_unknown_throughput(dynamodb, engine):
+    """A model doesn't have to specify read_units or write_units but will take the existing value"""
+    class ExplicitValues(BaseModel):
+        class Meta:
+            read_units = 10
+            write_units = 1
+            table_name = "throughput-test"
+        id = Column(Integer, hash_key=True)
+        other = Column(Integer)
+        by_other = GlobalSecondaryIndex(
+            projection="keys", hash_key=other, read_units=11, write_units=1)
+
+    class ImplicitValues(BaseModel):
+        class Meta:
+            write_units = 1
+            table_name = "throughput-test"
+        id = Column(Integer, hash_key=True)
+        other = Column(Integer)
+        by_other = GlobalSecondaryIndex(
+            projection="keys", hash_key=other, write_units=1)
+
+    engine.bind(ExplicitValues)
+    assert ImplicitValues.Meta.read_units is None
+    assert ImplicitValues.by_other.read_units is None
+
+    # Now binding to the same table but not specifying read_units should have the same value
+    engine.bind(ImplicitValues)
+    assert ImplicitValues.Meta.read_units == 10
+    assert ImplicitValues.by_other.read_units == 11

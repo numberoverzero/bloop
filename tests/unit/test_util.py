@@ -2,6 +2,7 @@ import collections
 import gc
 
 import pytest
+
 from bloop.util import (
     Sentinel,
     WeakDefaultDictionary,

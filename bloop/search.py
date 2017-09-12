@@ -359,13 +359,25 @@ class SearchIterator:
 
         self.buffer = collections.deque()
 
-        self.count = 0
-        """Number of items that have been loaded from DynamoDB so far, including buffered items."""
-
-        self.scanned = 0
-        """Number of items that DynamoDB evaluated, before any filter was applied."""
-
+        self._count = 0
+        self._scanned = 0
         self._exhausted = False
+
+    @property
+    def count(self):
+        """Number of items that have been loaded from DynamoDB so far, including buffered items."""
+        if self.request["Select"] == "COUNT":
+            while not self.exhausted:
+                next(self, None)
+        return self._count
+
+    @property
+    def scanned(self):
+        """Number of items that DynamoDB evaluated, before any filter was applied."""
+        if self.request["Select"] == "COUNT":
+            while not self.exhausted:
+                next(self, None)
+        return self._scanned
 
     def first(self):
         """Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
@@ -395,9 +407,10 @@ class SearchIterator:
     def reset(self):
         """Reset to the initial state, clearing the buffer and zeroing count and scanned."""
         self.buffer.clear()
-        self.count = 0
-        self.scanned = 0
+        self._count = 0
+        self._scanned = 0
         self._exhausted = False
+        self.request.pop("ExclusiveStartKey", None)
 
     @property
     def exhausted(self):
@@ -416,11 +429,11 @@ class SearchIterator:
             continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
             self._exhausted = not continuation_token
 
-            self.count += response["Count"]
-            self.scanned += response["ScannedCount"]
+            self._count += response["Count"]
+            self._scanned += response["ScannedCount"]
 
             # Each item is a dict of attributes
-            self.buffer.extend(response["Items"])
+            self.buffer.extend(response.get("Items", []))
 
         if self.buffer:
             return self.buffer.popleft()

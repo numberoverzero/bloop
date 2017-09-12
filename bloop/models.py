@@ -1,4 +1,5 @@
 import collections.abc
+import logging
 
 import declare
 
@@ -9,6 +10,7 @@ from .util import missing, unpack_from_dynamodb
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
+logger = logging.getLogger("bloop.models")
 
 
 def loaded_columns(obj):
@@ -90,6 +92,7 @@ class ModelMetaclass(declare.ModelMetaclass):
             # hash function has priority over the default.
             # If there aren't any bases with explicit hash functions,
             # just use object.__hash__
+            logger.info("searching for nearest __hash__ impl in {}.__mro__".format(name))
             for base in bases:
                 hash_fn = getattr(base, "__hash__")
                 if hash_fn:
@@ -105,8 +108,8 @@ class ModelMetaclass(declare.ModelMetaclass):
         # new_class will set abstract to true, all other models are assumed
         # to be concrete unless specified
         setdefault(meta, "abstract", False)
-        setdefault(meta, "write_units", 1)
-        setdefault(meta, "read_units", 1)
+        setdefault(meta, "write_units", None)
+        setdefault(meta, "read_units", None)
 
         setup_columns(meta)
         setup_indexes(meta)
@@ -380,13 +383,21 @@ class GlobalSecondaryIndex(Index):
         Included columns will be projected into the index.  Key columns are always included.
     :param hash_key: The column that the index can be queried against.
     :param range_key: *(Optional)* The column that the index can be sorted on.  Default is None.
-    :param int read_units: *(Optional)* Provisioned read units for the index.  Default is 1.
-    :param int write_units:  *(Optional)* Provisioned write units for the index.  Default is 1.
+    :param int read_units: *(Optional)* Provisioned read units for the index.  Default is None.
+        When no value is provided and the index does not exist, it will be created with 1 read unit.  If the index
+        already exists, it will use the actual index's read units.
+    :param int write_units:  *(Optional)* Provisioned write units for the index.  Default is None.
+        When no value is provided and the index does not exist, it will be created with 1 write unit.  If the index
+        already exists, it will use the actual index's write units.
     :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
 
     .. _GlobalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
     """
-    def __init__(self, *, projection, hash_key, range_key=None, read_units=1, write_units=1, name=None, **kwargs):
+    def __init__(
+            self, *, projection,
+            hash_key, range_key=None,
+            read_units=None, write_units=None,
+            name=None, **kwargs):
         super().__init__(hash_key=hash_key, range_key=range_key, name=name, projection=projection, **kwargs)
         self.write_units = write_units
         self.read_units = read_units

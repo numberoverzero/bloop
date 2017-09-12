@@ -1,7 +1,9 @@
+import datetime
+import logging
 import operator
 
-import datetime
 import pytest
+
 from bloop.conditions import ConditionRenderer
 from bloop.exceptions import InvalidIndex, InvalidModel, InvalidStream
 from bloop.models import (
@@ -112,12 +114,12 @@ def test_load_dump_none(engine):
 
 
 def test_meta_read_write_units():
-    """If `read_units` or `write_units` is missing from a model's Meta, it defaults to 1"""
+    """If `read_units` or `write_units` is missing from a model's Meta, it defaults to None until bound"""
     class Model(BaseModel):
         id = Column(UUID, hash_key=True)
 
-    assert Model.Meta.write_units == 1
-    assert Model.Meta.read_units == 1
+    assert Model.Meta.write_units is None
+    assert Model.Meta.read_units is None
 
     class Other(BaseModel):
         class Meta:
@@ -377,7 +379,7 @@ def test_defined_hash():
     assert Model.__hash__ is hash_fn
 
 
-def test_parent_hash():
+def test_parent_hash(caplog):
     """Parent __hash__ function is used, not object __hash__"""
     class OtherBase:
         # Explicit __eq__ prevents OtherBase from having a __hash__
@@ -388,9 +390,13 @@ def test_parent_hash():
         def __hash__(self):
             return id(self)
 
-    class Model(OtherBase, BaseWithHash, BaseModel):
+    class MyModel(OtherBase, BaseWithHash, BaseModel):
         id = Column(Integer, hash_key=True)
-    assert Model.__hash__ is BaseWithHash.__hash__
+    assert MyModel.__hash__ is BaseWithHash.__hash__
+
+    assert caplog.record_tuples == [
+        ("bloop.models", logging.INFO, "searching for nearest __hash__ impl in MyModel.__mro__"),
+    ]
 
 
 # END BASE MODEL ======================================================================================= END BASE MODEL
@@ -638,6 +644,16 @@ def test_lsi_delegates_throughput():
     lsi.read_units = "lsi.read_units"
     assert lsi.write_units == meta.write_units
     assert lsi.read_units == meta.read_units
+
+
+def test_gsi_default_throughput():
+    """When not specified, GSI read_units and write_units are None"""
+    class Model(BaseModel):
+        name = Column(String, hash_key=True)
+        other = Column(String)
+        by_joined = GlobalSecondaryIndex(hash_key="other", projection="keys")
+    gsi = Model.by_joined
+    assert gsi.read_units is gsi.write_units is None
 
 
 @pytest.mark.parametrize("projection", ["all", "keys", ["foo"]])

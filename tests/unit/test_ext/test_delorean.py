@@ -1,10 +1,11 @@
-import pytest
-import delorean
-from bloop.types import FIXED_ISO8601_FORMAT
 from datetime import datetime
+
+import delorean
+import pytest
 import pytz
 
 from bloop.ext.delorean import DateTime
+from bloop.types import FIXED_ISO8601_FORMAT
 
 
 now = datetime.now(pytz.utc)

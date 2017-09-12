@@ -470,6 +470,7 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
     .. attribute:: count
 
         Number of items that have been loaded from DynamoDB so far, including buffered items.
+        When projection type is "count", accessing this will automatically exhaust the query.
 
     .. attribute:: exhausted
 
@@ -491,6 +492,7 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
     .. attribute:: scanned
 
         Number of items that DynamoDB evaluated, before any filter was applied.
+        When projection type is "count", accessing this will automatically exhaust the query.
 
 ======
  Scan
@@ -501,6 +503,7 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
     .. attribute:: count
 
         Number of items that have been loaded from DynamoDB so far, including buffered items.
+        When projection type is "count", accessing this will automatically exhaust the query.
 
     .. attribute:: exhausted
 
@@ -522,6 +525,7 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
     .. attribute:: scanned
 
         Number of items that DynamoDB evaluated, before any filter was applied.
+        When projection type is "count", accessing this will automatically exhaust the query.
 
 ========
  Stream

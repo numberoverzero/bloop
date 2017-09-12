@@ -1,4 +1,5 @@
 import pytest
+
 from bloop.stream.coordinator import Coordinator
 from bloop.stream.shard import Shard
 

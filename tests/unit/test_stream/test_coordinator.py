@@ -1,9 +1,11 @@
 import collections
 import datetime
 import functools
+import logging
 from unittest.mock import call
 
 import pytest
+
 from bloop.exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from bloop.stream.shard import CALLS_TO_REACH_HEAD, Shard, last_iterator
 from bloop.util import ordered
@@ -302,7 +304,7 @@ def test_remove_shard(is_active, is_root, has_buffered, coordinator):
         assert record_shard is not shard
 
 
-def test_move_to_old_token(coordinator, shard, session):
+def test_move_to_old_token(coordinator, shard, session, caplog):
     """Can't rebuild from a token with shards that have no connection to the current generation"""
     root = Shard(stream_arn=coordinator.stream_arn, shard_id="parent-shard")
     shard.parent = root
@@ -317,8 +319,13 @@ def test_move_to_old_token(coordinator, shard, session):
     with pytest.raises(InvalidStream):
         coordinator.move_to(token)
 
+    assert caplog.record_tuples == [
+        ("bloop.stream", logging.INFO, "Unknown or expired shard \"parent-shard\" - pruning from stream token"),
+        ("bloop.stream", logging.INFO, "Unknown or expired shard \"shard-id\" - pruning from stream token"),
+    ]
 
-def test_move_to_valid_token(coordinator, session):
+
+def test_move_to_valid_token(coordinator, session, caplog):
     """Moving to a token validates and clears unknown shards, and gets iterators for active shards"""
     # +--------------+
     # | <TOKEN>      |       # 0: token root no longer exists; was active
@@ -356,7 +363,7 @@ def test_move_to_valid_token(coordinator, session):
     )
 
 
-def test_move_to_token_with_old_sequence_number(coordinator, session):
+def test_move_to_token_with_old_sequence_number(coordinator, session, caplog):
     """If a token shard's sequence_number is past the trim_horizon, it moves to trim_horizon."""
     description = stream_description(1)
     stream_arn = coordinator.stream_arn
@@ -386,6 +393,11 @@ def test_move_to_token_with_old_sequence_number(coordinator, session):
         call(stream_arn=stream_arn, shard_id=shard_id,
              sequence_number=None, iterator_type="trim_horizon")
     ])
+
+    assert caplog.record_tuples == [
+        ("bloop.stream", logging.INFO,
+         "SequenceNumber \"beyond-trim-horizon\" in shard \"shard-id-0\" beyond trim horizon: jumping to trim_horizon")
+    ]
 
 
 def test_move_to_future_time(coordinator, session):

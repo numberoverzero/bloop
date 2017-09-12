@@ -1,3 +1,5 @@
+import logging
+
 import declare
 
 from .conditions import render
@@ -25,6 +27,7 @@ from .util import missing, unpack_from_dynamodb, walk_subclasses
 
 
 __all__ = ["Engine"]
+logger = logging.getLogger("bloop.engine")
 
 
 def value_of(column):
@@ -122,10 +125,16 @@ class Engine:
         validate_is_model(model)
 
         concrete = set(filter(lambda m: not m.Meta.abstract, walk_subclasses(model)))
+        logger.debug("binding non-abstract models {}".format(
+            sorted(c.__name__ for c in concrete)
+        ))
 
         # create_table doesn't block until ACTIVE or validate.
         # It also doesn't throw when the table already exists, making it safe
         # to call multiple times for the same unbound model.
+        if skip_table_setup:
+            logger.info("skip_table_setup is True; not trying to create tables or validate models during bind")
+
         for model in concrete:
             before_create_table.send(self, engine=self, model=model)
             if not skip_table_setup:
@@ -140,6 +149,8 @@ class Engine:
             self.type_engine.bind(context={"engine": self})
             model_bound.send(self, engine=self, model=model)
 
+        logger.info("successfully bound {} models to the engine".format(len(concrete)))
+
     def delete(self, *objs, condition=None, atomic=False):
         """Delete one or more objects.
 
@@ -151,13 +162,13 @@ class Engine:
         objs = set(objs)
         validate_not_abstract(*objs)
         for obj in objs:
-            item = {
+            self.session.delete_item({
                 "TableName": obj.Meta.table_name,
-                "Key": dump_key(self, obj)
-            }
-            item.update(render(self, obj=obj, atomic=atomic, condition=condition))
-            self.session.delete_item(item)
+                "Key": dump_key(self, obj),
+                **render(self, obj=obj, atomic=atomic, condition=condition)
+            })
             object_deleted.send(self, engine=self, obj=obj)
+        logger.info("successfully deleted {} objects".format(len(objs)))
 
     def load(self, *objs, consistent=False):
         """Populate objects from DynamoDB.
@@ -209,7 +220,9 @@ class Engine:
             for index in object_index.values():
                 for index_set in index.values():
                     not_loaded.update(index_set)
+            logger.warning("loaded {} of {} objects".format(len(objs) - len(not_loaded), len(objs)))
             raise MissingObjects("Failed to load some objects.", objects=not_loaded)
+        logger.info("successfully loaded {} objects".format(len(objs)))
 
     def query(self, model_or_index, key, filter=None, projection="all", consistent=False, forward=True):
         """Create a reusable :class:`~bloop.search.QueryIterator`.
@@ -251,13 +264,13 @@ class Engine:
         objs = set(objs)
         validate_not_abstract(*objs)
         for obj in objs:
-            item = {
+            self.session.save_item({
                 "TableName": obj.Meta.table_name,
                 "Key": dump_key(self, obj),
-            }
-            item.update(render(self, obj=obj, atomic=atomic, condition=condition, update=True))
-            self.session.save_item(item)
+                **render(self, obj=obj, atomic=atomic, condition=condition, update=True)
+            })
             object_saved.send(self, engine=self, obj=obj)
+        logger.info("successfully saved {} objects".format(len(objs)))
 
     def scan(self, model_or_index, filter=None, projection="all", consistent=False, parallel=None):
         """Create a reusable :class:`~bloop.search.ScanIterator`.

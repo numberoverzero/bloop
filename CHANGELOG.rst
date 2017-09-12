@@ -13,6 +13,40 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  [Unreleased]
 --------------
 
+Changed
+=======
+
+* When a Model's Meta does not explicitly set ``read_units`` and ``write_units``, it will only default to 1/1 if the
+  table does not exist and needs to be created.  If the table already exists, any throughput will be considered
+  valid.  This will still ensure new tables have 1/1 iops as a default, but won't fail if an existing table has more
+  than one of either.
+
+  There is no behavior change for explicit **integer** values of ``read_units`` and ``write_units``: if the table does
+  not exist it will be created with those values, and if it does exist then validation will fail if the actual values
+  differ from the modeled values.
+
+  An explicit ``None`` for either ``read_units`` or ``write_units`` is equivalent to omitting the value, but allows
+  for a more explicit declaration in the model.
+
+  Because this is a relaxing of a default only within the context of validation (creation has the same semantics) the
+  only users that should be impacted are those that do not declare ``read_units`` and ``write_units`` and rely on the
+  built-in validation **failing** to match on values != 1.  Users that rely on the validation to succeed on tables with
+  values of 1 will see no change in behavior.  This fits within the extended criteria of a minor release since there
+  is a viable and obvious workaround for the current behavior (declare 1/1 and ensure failure on other values).
+
+* When a Query or Scan has projection type "count", accessing the ``count`` or ``scanned`` properties will
+  immediately execute and exhaust the iterator to provide the count or scanned count.  This simplifies the previous
+  workaround of calling ``next(query, None)`` before using ``query.count``.
+
+Fixed
+=====
+
+* Fixed a bug where a Query or Scan with projection "count" would always raise KeyError (see `Issue #95`_)
+* Fixed a bug where resetting a Query or Scan would cause ``__next__``
+  to raise ``botocore.exceptions.ParamValidationError`` (see `Issue #95`_)
+
+.. _Issue #95: https://github.com/numberoverzero/bloop/issues/95
+
 --------------------
  1.1.0 - 2017-04-26
 --------------------

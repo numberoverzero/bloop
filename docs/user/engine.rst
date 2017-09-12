@@ -144,7 +144,7 @@ form a single ConditionExpression.
 ========
 
 :func:`Delete <bloop.engine.Engine.delete>` has the same signature as :func:`~bloop.engine.Engine.save`.  Both
-operations are mutations on an object that may or may not exist, and simply map to two different apis (Delete calls
+operations are mutations on an object that may or may not exist, and simply map to two different APIs (Delete calls
 `DeleteItem`_).  You can delete multiple objects at once, specify a ``condition``, and use the ``atomic=True``
 shorthand to only delete objects unchanged since you last loaded them from DynamoDB.
 
@@ -258,6 +258,34 @@ Similar to :func:`~bloop.search.QueryIterator.first`, you can get the unique res
         ...
     ConstraintViolation: Query found more than one result.
 
+-------
+ Count
+-------
+
+To get a count of items that match some query use the ``"count"`` projection.
+
+.. code-block:: pycon
+
+    >>> q = engine.query(
+    ...         Account.by_email,
+    ...         key=Account.email == "foo@bar.com",
+    ...         projection="count")
+    >>> q.count
+    256
+
+Both ``count`` and ``scanned`` are calculated only when the query is executed, so you must call
+:func:`QueryIterator.reset` to see changes take effect.
+
+.. code-block:: pycon
+
+    >>> new = Account(...)
+    >>> engine.save(new)
+    >>> q.count
+    256
+    >>> q.reset()
+    >>> q.count
+    257
+
 .. _user-query-key:
 
 ----------------
@@ -338,8 +366,7 @@ Here is the same LSI query as above, but now excluding accounts created in the l
 
 By default, queries return all columns projected into the index or model.  You can use the ``projection`` parameter
 to control which columns are returned for each object.  This must be "all" to include everything in the index or
-model's projection, or a list of columns or column model names to include.  Use "count" to get the number of results
-that match the query.
+model's projection, or a list of columns or column model names to include.
 
 .. code-block:: pycon
 

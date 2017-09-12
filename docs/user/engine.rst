@@ -258,6 +258,34 @@ Similar to :func:`~bloop.search.QueryIterator.first`, you can get the unique res
         ...
     ConstraintViolation: Query found more than one result.
 
+-------
+ Count
+-------
+
+To get a count of items that match some query use the ``"count"`` projection.
+
+.. code-block:: pycon
+
+    >>> q = engine.query(
+    ...         Account.by_email,
+    ...         key=Account.email == "foo@bar.com",
+    ...         projection="count")
+    >>> q.count
+    256
+
+Both ``count`` and ``scanned`` are calculated only when the query is executed, so you must call
+:func:`QueryIterator.reset` to see changes take effect.
+
+.. code-block:: pycon
+
+    >>> new = Account(...)
+    >>> engine.save(new)
+    >>> q.count
+    256
+    >>> q.reset()
+    >>> q.count
+    257
+
 .. _user-query-key:
 
 ----------------
@@ -338,8 +366,7 @@ Here is the same LSI query as above, but now excluding accounts created in the l
 
 By default, queries return all columns projected into the index or model.  You can use the ``projection`` parameter
 to control which columns are returned for each object.  This must be "all" to include everything in the index or
-model's projection, or a list of columns or column model names to include.  Use "count" to get the number of results
-that match the query.
+model's projection, or a list of columns or column model names to include.
 
 .. code-block:: pycon
 

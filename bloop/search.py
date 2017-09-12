@@ -420,7 +420,7 @@ class SearchIterator:
             self.scanned += response["ScannedCount"]
 
             # Each item is a dict of attributes
-            self.buffer.extend(response["Items"])
+            self.buffer.extend(response.get("Items", []))
 
         if self.buffer:
             return self.buffer.popleft()

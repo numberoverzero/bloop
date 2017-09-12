@@ -82,6 +82,29 @@ def validate_stream(stream):
     stream.setdefault("arn", None)
 
 
+def merge_meta_classes(meta, bases):
+    """
+    Merge all the 'Meta' classes in a class's hierarchy, oldes to newest.
+    Only the following keys are derived: read_units, write_units, and table_prefix
+
+    :param meta: The Meta class for this model
+    :param bases: The bases this model is derived from
+    :return:
+    """
+    values = {}
+    for base in reversed(bases):
+        if hasattr(base, 'Meta') and hasattr(base.Meta, 'abstract') and base.Meta.abstract is True:
+            # ignore abstact, and table name
+            for name in ["read_units", "write_units", "table_prefix"]:
+                if hasattr(base.Meta, name):
+                    values[name] = getattr(base.Meta, name)
+    for key, value in values.items():
+        if hasattr(meta, key) and getattr(meta, key) is not None:
+            continue
+        else:
+            setattr(meta, key, value)
+
+
 class ModelMetaclass(declare.ModelMetaclass):
     def __new__(mcs, name, bases, attrs):
         hash_fn = attrs.get("__hash__", missing)
@@ -104,6 +127,7 @@ class ModelMetaclass(declare.ModelMetaclass):
         model = super().__new__(mcs, name, bases, attrs)
 
         meta = model.Meta
+        merge_meta_classes(meta, bases)
         meta.model = model
         # new_class will set abstract to true, all other models are assumed
         # to be concrete unless specified
@@ -119,7 +143,14 @@ class ModelMetaclass(declare.ModelMetaclass):
         # Meta attr `init`, which must be a function taking no
         # arguments that returns an instance of the class
         setdefault(meta, "init", model)
+
+        # Include the table prefix for the table name if provided
+        setdefault(meta, "table_prefix", None)
         setdefault(meta, "table_name", model.__name__)
+
+        if meta.table_prefix is not None:
+            meta.table_name = '-'.join([meta.table_prefix, meta.table_name])
+
         setdefault(meta, "stream", None)
 
         validate_stream(meta.stream)

@@ -34,6 +34,19 @@ Changed
   values of 1 will see no change in behavior.  This fits within the extended criteria of a minor release since there
   is a viable and obvious workaround for the current behavior (declare 1/1 and ensure failure on other values).
 
+* When a Query or Scan has projection type "count", accessing the ``count`` or ``scanned`` properties will
+  immediately execute and exhaust the iterator to provide the count or scanned count.  This simplifies the previous
+  workaround of calling ``next(query, None)`` before using ``query.count``.
+
+Fixed
+=====
+
+* Fixed a bug where a Query or Scan with projection "count" would always raise KeyError (see `Issue #95`_)
+* Fixed a bug where resetting a Query or Scan would cause ``__next__``
+  to raise ``botocore.exceptions.ParamValidationError`` (see `Issue #95`_)
+
+.. _Issue #95: https://github.com/numberoverzero/bloop/issues/95
+
 --------------------
  1.1.0 - 2017-04-26
 --------------------

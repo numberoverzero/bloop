@@ -398,6 +398,7 @@ class SearchIterator:
         self.count = 0
         self.scanned = 0
         self._exhausted = False
+        self.request.pop("ExclusiveStartKey", None)
 
     @property
     def exhausted(self):

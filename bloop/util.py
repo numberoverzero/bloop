@@ -15,6 +15,46 @@ __signals = blinker.Namespace()
 signal = __signals.signal
 
 
+def index(objects, attr):
+    """
+    Generate a mapping of a list of objects indexed by the given attr.
+
+    Parameters
+    ----------
+    objects : :class:`list`, iterable
+    attr : string
+        The attribute to index the list of objects by
+
+    Returns
+    -------
+    dictionary : dict
+        keys are the value of each object's attr, and values are from objects
+
+    Example
+    -------
+
+    class Person(object):
+        def __init__(self, name, email, age):
+            self.name = name
+            self.email = email
+            self.age = age
+
+    people = [
+        Person('one', 'one@people.com', 1),
+        Person('two', 'two@people.com', 2),
+        Person('three', 'three@people.com', 3)
+    ]
+
+    by_email = index(people, 'email')
+    by_name = index(people, 'name')
+
+    assert by_name['one'] is people[0]
+    assert by_email['two@people.com'] is people[1]
+
+    """
+    return {getattr(obj, attr): obj for obj in objects}
+
+
 def ordered(obj):
     """
     Return sorted version of nested dicts/lists for comparing.
@@ -31,14 +71,6 @@ def ordered(obj):
         return sorted(ordered(x) for x in obj)
     else:
         return obj
-
-
-def printable_query(query_on):
-    # Model.Meta -> Model
-    if getattr(query_on, "__name__", "") == "Meta":
-        return query_on.model
-    # Index -> Index
-    return query_on
 
 
 def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, context=None, **kwargs):

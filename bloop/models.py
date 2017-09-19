@@ -3,15 +3,16 @@ import logging
 
 import declare
 
+from . import util
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel, InvalidStream
 from .signals import model_created, object_modified
 from .types import Type
-from .util import missing, unpack_from_dynamodb
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 logger = logging.getLogger("bloop.models")
+missing = util.missing
 
 
 def loaded_columns(obj):
@@ -227,7 +228,7 @@ class BaseModel(metaclass=ModelMetaclass):
     @classmethod
     def _load(cls, attrs, *, context, **kwargs):
         """ dict (dynamo name) -> obj """
-        return unpack_from_dynamodb(
+        return util.unpack_from_dynamodb(
             model=cls,
             attrs=attrs or {},
             expected=cls.Meta.columns,
@@ -311,7 +312,7 @@ class Index(declare.Field):
         self.model = model
 
         # Index by model_name so we can replace hash_key, range_key with the proper `bloop.Column` object
-        columns = declare.index(model.Meta.columns, "model_name")
+        columns = util.index(model.Meta.columns, "model_name")
         if isinstance(self.hash_key, str):
             self.hash_key = columns[self.hash_key]
         if not isinstance(self.hash_key, Column):

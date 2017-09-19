@@ -4,9 +4,6 @@ import datetime
 import decimal
 import uuid
 
-import declare
-
-
 ENCODING = "utf-8"
 STRING = "S"
 NUMBER = "N"
@@ -47,7 +44,7 @@ def supports_operation(operation, typedef):
     return typedef.backing_type in SUPPORTED_OPERATIONS[operation]
 
 
-class Type(declare.TypeDefinition):
+class Type:
     """Abstract base type."""
 
     python_type = None

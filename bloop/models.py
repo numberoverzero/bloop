@@ -6,6 +6,7 @@ import declare
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel, InvalidStream
 from .signals import model_created, object_modified
+from .types import Type
 from .util import missing, unpack_from_dynamodb
 
 
@@ -33,7 +34,7 @@ def validate_projection(projection):
     # Without this, the following will make "unknown" a list
     if isinstance(projection, str):
         if projection not in ("keys", "all"):
-            raise InvalidIndex("{!r} is not a valid Index projection.".format(projection))
+            raise InvalidIndex(f"{projection!r} is not a valid Index projection.")
         validated_projection["mode"] = projection
     elif isinstance(projection, collections.abc.Iterable):
         projection = list(projection)
@@ -48,11 +49,9 @@ def validate_projection(projection):
             validated_projection["mode"] = "include"
             validated_projection["included"] = projection
         else:
-            raise InvalidIndex(
-                "Index projection must be a list of strings or Columns to select specific Columns.")
+            raise InvalidIndex("Index projection must be a list of strings or Columns to select specific Columns.")
     else:
-        raise InvalidIndex(
-            "Index projection must be 'all', 'keys', or a list of Columns or Column names.")
+        raise InvalidIndex("Index projection must be 'all', 'keys', or a list of Columns or Column names.")
     return validated_projection
 
 
@@ -92,7 +91,7 @@ class ModelMetaclass(declare.ModelMetaclass):
             # hash function has priority over the default.
             # If there aren't any bases with explicit hash functions,
             # just use object.__hash__
-            logger.info("searching for nearest __hash__ impl in {}.__mro__".format(name))
+            logger.info(f"searching for nearest __hash__ impl in {name}.__mro__")
             for base in bases:
                 hash_fn = getattr(base, "__hash__")
                 if hash_fn:
@@ -128,7 +127,7 @@ class ModelMetaclass(declare.ModelMetaclass):
         return model
 
     def __repr__(cls):
-        return "<Model[{}]>".format(cls.__name__)
+        return f"<Model[{cls.__name__}]>"
 
 
 def setdefault(obj, field, default):
@@ -155,16 +154,16 @@ def setup_columns(meta):
         range_keys = [c for c in meta.columns if c.range_key]
 
         if len(hash_keys) == 0:
-            raise InvalidModel("{!r} has no hash key.".format(cls_name))
+            raise InvalidModel(f"{cls_name!r} has no hash key.")
         elif len(hash_keys) > 1:
-            raise InvalidModel("{!r} has more than one hash key.".format(cls_name))
+            raise InvalidModel(f"{cls_name!r} has more than one hash key.")
 
         if len(range_keys) > 1:
-            raise InvalidModel("{!r} has more than one range key.".format(cls_name))
+            raise InvalidModel(f"{cls_name!r} has more than one range key.")
 
         if range_keys:
             if hash_keys[0] is range_keys[0]:
-                raise InvalidModel("{!r} has the same hash and range key.".format(cls_name))
+                raise InvalidModel(f"{cls_name!r} has the same hash and range key.")
             meta.range_key = range_keys[0]
             meta.keys.add(meta.range_key)
         meta.hash_key = hash_keys[0]
@@ -250,7 +249,7 @@ class BaseModel(metaclass=ModelMetaclass):
 
     def __repr__(self):
         attrs = ", ".join("{}={!r}".format(*item) for item in loaded_columns(self))
-        return "{}({})".format(self.__class__.__name__, attrs)
+        return f"{self.__class__.__name__}({attrs})"
 
 
 class Index(declare.Field):
@@ -289,11 +288,7 @@ class Index(declare.Field):
         # <GSI[User.by_email=all]>
         # <GSI[User.by_email=keys]>
         # <LSI[User.by_email=include]>
-        return "<{}[{}.{}={}]>".format(
-            cls_name,
-            self.model.__name__, self.model_name,
-            self.projection["mode"]
-        )
+        return f"<{cls_name}[{self.model.__name__}.{self.model_name}={self.projection['mode']}]>"
 
     @property
     def dynamo_name(self):
@@ -356,19 +351,13 @@ class Index(declare.Field):
             self.projection["available"] = model.Meta.columns
 
     def set(self, obj, value):
-        raise AttributeError(
-            "{}.{} is a {}".format(
-                self.model.__name__, self.model_name, self.__class__.__name__))
+        raise AttributeError(f"{self.model.__name__}.{self.model_name} is a {self.__class__.__name__}")
 
     def delete(self, obj):
-        raise AttributeError(
-            "{}.{} is a {}".format(
-                self.model.__name__, self.model_name, self.__class__.__name__))
+        raise AttributeError(f"{self.model.__name__}.{self.model_name} is a {self.__class__.__name__}")
 
     def get(self, obj):
-        raise AttributeError(
-            "{}.{} is a {}".format(
-                self.model.__name__, self.model_name, self.__class__.__name__))
+        raise AttributeError(f"{self.model.__name__}.{self.model_name} is a {self.__class__.__name__}")
 
 
 class GlobalSecondaryIndex(Index):
@@ -447,6 +436,24 @@ class LocalSecondaryIndex(Index):
         self.model.Meta.write_units = value
 
 
+def subclassof(obj, classinfo):
+    """Wrap issubclass to only return True/False"""
+    try:
+        return issubclass(obj, classinfo)
+    except TypeError:
+        return False
+
+
+def instanceof(obj, classinfo):
+    """Wrap isinstance to only return True/False"""
+    try:
+        return isinstance(obj, classinfo)
+    except TypeError:  # pragma: no cover
+        # No coverage since we never call this without a class,
+        # type, or tuple of classes, types, or such typles.
+        return False
+
+
 class Column(declare.Field, ComparisonMixin):
     """Represents a single attribute in DynamoDB.
 
@@ -463,11 +470,27 @@ class Column(declare.Field, ComparisonMixin):
     def __init__(self, typedef, hash_key=False, range_key=False, name=None, **kwargs):
         self.hash_key = hash_key
         self.range_key = range_key
+        self._model_name = None
         self._dynamo_name = name
-        kwargs['typedef'] = typedef
-        super().__init__(**kwargs)
+        if subclassof(typedef, Type):
+            typedef = typedef()
+        if instanceof(typedef, Type):
+            self.typedef = typedef
+        else:
+            raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
 
     __hash__ = object.__hash__
+
+    def __set__(self, obj, value):
+        self.set(obj, value)
+
+    def __get__(self, obj, type=None):
+        if obj is None:
+            return self
+        return self.get(obj)
+
+    def __delete__(self, obj):
+        self.delete(obj)
 
     def __repr__(self):
         if self.hash_key:
@@ -480,11 +503,18 @@ class Column(declare.Field, ComparisonMixin):
         # <Column[Pin.url]>
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
-        return "<Column[{}.{}{}]>".format(
-            self.model.__name__,
-            self.model_name,
-            extra
-        )
+        return f"<Column[{self.model.__name__}.{self.model_name}{extra}]>"
+
+    @property
+    def model_name(self):
+        """Name of the model's attr that references self"""
+        return self._model_name
+
+    @model_name.setter
+    def model_name(self, value):
+        if self._model_name is not None:
+            raise AttributeError(f"{self.__class__.__name__} model_name already set to '{self._model_name}'")
+        self._model_name = value
 
     @property
     def dynamo_name(self):
@@ -493,13 +523,28 @@ class Column(declare.Field, ComparisonMixin):
         return self._dynamo_name
 
     def set(self, obj, value):
-        super().set(obj, value)
+        if self._model_name is None:
+            raise AttributeError("Can't set field without binding to model")
+        obj.__dict__[self._model_name] = value
         # Notify the tracking engine that this value was intentionally mutated
         object_modified.send(self, obj=obj, column=self, value=value)
 
+    def get(self, obj):
+        if self._model_name is None:
+            raise AttributeError("Can't get field without binding to model")
+        try:
+            return obj.__dict__[self._model_name]
+        except KeyError:
+            raise AttributeError(f"'{obj.__class__}' has no attribute '{self._model_name}'")
+
     def delete(self, obj):
         try:
-            super().delete(obj)
+            if self._model_name is None:
+                raise AttributeError("Can't delete field without binding to model")
+            try:
+                del obj.__dict__[self._model_name]
+            except KeyError:
+                raise AttributeError(f"'{obj.__class__}' has no attribute '{self._model_name}'")
         finally:
             # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
             # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.

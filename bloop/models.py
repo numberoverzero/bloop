@@ -293,8 +293,8 @@ class Index(declare.Field):
         self.model = None
         self.hash_key = hash_key
         self.range_key = range_key
+        self._model_name = None
         self._dynamo_name = name
-        super().__init__(**kwargs)
 
         self.projection = validate_projection(projection)
 
@@ -310,6 +310,18 @@ class Index(declare.Field):
         # <GSI[User.by_email=keys]>
         # <LSI[User.by_email=include]>
         return f"<{cls_name}[{self.model.__name__}.{self.model_name}={self.projection['mode']}]>"
+
+    @property
+    def model_name(self):
+        """Name of the model's attr that references self"""
+        return self._model_name
+
+    @model_name.setter
+    def model_name(self, value):
+        if self._model_name is not None:
+            raise AttributeError("{} model_name already set to '{}'".format(
+                self.__class__.__name__, self._model_name))
+        self._model_name = value
 
     @property
     def dynamo_name(self):
@@ -371,13 +383,15 @@ class Index(declare.Field):
         else:
             self.projection["available"] = model.Meta.columns
 
-    def set(self, obj, value):
+    def __set__(self, obj, value):
         raise AttributeError(f"{self.model.__name__}.{self.model_name} is a {self.__class__.__name__}")
 
-    def delete(self, obj):
+    def __get__(self, obj, type=None):
+        if obj is None:
+            return self
         raise AttributeError(f"{self.model.__name__}.{self.model_name} is a {self.__class__.__name__}")
 
-    def get(self, obj):
+    def __delete__(self, obj):
         raise AttributeError(f"{self.model.__name__}.{self.model_name} is a {self.__class__.__name__}")
 
 

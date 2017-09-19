@@ -633,15 +633,20 @@ def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):
     engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
     engine.session = Mock(spec=SessionWrapper)
 
-    engine.bind(User, skip_table_setup=True)
+    class MyUser(BaseModel):
+        id = Column(Integer, hash_key=True)
+
+    caplog.handler.records.clear()
+
+    engine.bind(MyUser, skip_table_setup=True)
     engine.session.create_table.assert_not_called()
     engine.session.validate_table.assert_not_called()
 
     assert caplog.record_tuples == [
-        ("bloop.engine", logging.DEBUG, "binding non-abstract models ['Admin', 'User']"),
+        ("bloop.engine", logging.DEBUG, "binding non-abstract models ['MyUser']"),
         ("bloop.engine", logging.INFO,
          "skip_table_setup is True; not trying to create tables or validate models during bind"),
-        ("bloop.engine", logging.INFO, "successfully bound 2 models to the engine"),
+        ("bloop.engine", logging.INFO, "successfully bound 1 models to the engine"),
     ]
 
 

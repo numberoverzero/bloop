@@ -3,6 +3,7 @@ import weakref
 
 import blinker
 
+
 __all__ = ["signal"]
 
 # De-dupe dict for Sentinel

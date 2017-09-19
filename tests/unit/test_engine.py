@@ -10,7 +10,7 @@ from bloop.exceptions import (
     InvalidStream,
     MissingKey,
     MissingObjects,
-    UnknownType
+    UnknownType,
 )
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper

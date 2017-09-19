@@ -1,5 +1,5 @@
-from ..signals import object_loaded
 from ..models import unpack_from_dynamodb
+from ..signals import object_loaded
 from .coordinator import Coordinator
 
 

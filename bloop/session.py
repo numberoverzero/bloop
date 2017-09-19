@@ -17,6 +17,7 @@ from .exceptions import (
 )
 from .util import Sentinel, ordered
 
+
 logger = logging.getLogger("bloop.session")
 missing = Sentinel("missing")
 ready = Sentinel("ready")

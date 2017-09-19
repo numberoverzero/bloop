@@ -4,6 +4,7 @@ import datetime
 import decimal
 import uuid
 
+
 ENCODING = "utf-8"
 STRING = "S"
 NUMBER = "N"

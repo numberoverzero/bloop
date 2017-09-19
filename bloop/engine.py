@@ -22,6 +22,7 @@ from .signals import (
 from .stream import Stream
 from .util import missing, walk_subclasses
 
+
 __all__ = ["Engine"]
 logger = logging.getLogger("bloop.engine")
 

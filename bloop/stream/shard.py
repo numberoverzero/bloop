@@ -4,6 +4,7 @@ import logging
 from ..exceptions import ShardIteratorExpired
 from ..util import Sentinel
 
+
 # Approximate number of calls to fully traverse an empty shard
 CALLS_TO_REACH_HEAD = 5
 

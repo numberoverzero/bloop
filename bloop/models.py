@@ -1,8 +1,6 @@
 import collections.abc
 import logging
 
-import declare
-
 from . import util
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel, InvalidStream
@@ -102,58 +100,54 @@ def validate_stream(stream):
     stream.setdefault("arn", None)
 
 
-class ModelMetaclass(declare.ModelMetaclass):
-    def __new__(mcs, name, bases, attrs):
-        hash_fn = attrs.get("__hash__", missing)
-        if hash_fn is None:
-            raise InvalidModel("Models must be hashable.")
-        elif hash_fn is missing:
-            # Any base class's explicit (not object.__hash__)
-            # hash function has priority over the default.
-            # If there aren't any bases with explicit hash functions,
-            # just use object.__hash__
-            logger.info(f"searching for nearest __hash__ impl in {name}.__mro__")
-            for base in bases:
-                hash_fn = getattr(base, "__hash__")
-                if hash_fn:
-                    break
-            else:
-                hash_fn = object.__hash__
-            attrs["__hash__"] = hash_fn
-
-        model = super().__new__(mcs, name, bases, attrs)
-
-        meta = model.Meta
-        meta.model = model
-        # new_class will set abstract to true, all other models are assumed
-        # to be concrete unless specified
-        setdefault(meta, "abstract", False)
-        setdefault(meta, "write_units", None)
-        setdefault(meta, "read_units", None)
-
-        setup_columns(meta)
-        setup_indexes(meta)
-
-        # Entry point for model population. By default this is the
-        # class's __init__ function. Custom models can specify the
-        # Meta attr `init`, which must be a function taking no
-        # arguments that returns an instance of the class
-        setdefault(meta, "init", model)
-        setdefault(meta, "table_name", model.__name__)
-        setdefault(meta, "stream", None)
-
-        validate_stream(meta.stream)
-
-        model_created.send(None, model=model)
-        return model
-
-    def __repr__(cls):
-        return f"<Model[{cls.__name__}]>"
-
-
 def setdefault(obj, field, default):
     """Set an object's field to default if it doesn't have a value"""
     setattr(obj, field, getattr(obj, field, default))
+
+
+def ensure_meta(cls):
+    meta = getattr(cls, "Meta", missing)
+    # not sufficient to have a Meta, it can't be
+    # an inherited Meta.  Otherwise we are potentially mutating
+    # a shared BaseModel.Meta's table_name, write_units, etc.
+    if meta is not missing:
+        for base in cls.__mro__:
+            # Should only be the first entry in __mro__ but
+            # people do crazy things..
+            if base is cls:
+                continue
+            parent_meta = getattr(base, "Meta", None)
+            # if we find a collision, this is an
+            # inherited Meta and we can't continue.
+            # clear the variable so we hit the check below
+            # and stop searching.
+            if meta is parent_meta:
+                meta = missing
+                break
+    if meta is missing:
+        class Meta:
+            pass
+        meta = cls.Meta = Meta
+    if not isinstance(meta, type):
+        raise TypeError("Expected `Meta` to be a class object")
+    return meta
+
+
+def ensure_hash(cls):
+    if getattr(cls, "__hash__", None) is not None:
+        return
+    # Any base class's explicit (not object.__hash__)
+    # hash function has priority over the default.
+    # If there aren't any bases with explicit hash functions,
+    # just use object.__hash__
+    logger.info(f"searching for nearest __hash__ impl in {cls.__name__}.__mro__")
+    for base in cls.__mro__:
+        hash_fn = getattr(base, "__hash__")
+        if hash_fn:
+            break
+    else:
+        hash_fn = object.__hash__
+    cls.__hash__ = hash_fn
 
 
 def setup_columns(meta):
@@ -162,7 +156,10 @@ def setup_columns(meta):
     # This is a set instead of a list, because set uses __hash__
     # while some list operations uses __eq__ which will break
     # with the ComparisonMixin
-    meta.columns = set(filter(lambda field: isinstance(field, Column), meta.fields))
+    meta.columns = set()
+    for attr in meta.model.__dict__.values():
+        if isinstance(attr, Column):
+            meta.columns.add(attr)
 
     meta.hash_key = None
     meta.range_key = None
@@ -190,9 +187,6 @@ def setup_columns(meta):
         meta.hash_key = hash_keys[0]
         meta.keys.add(meta.hash_key)
 
-    for column in meta.columns:
-        column.model = meta.model
-
     # API consistency with an Index, so (index or model.Meta) can be
     # used interchangeably to get the available columns from that
     # object.
@@ -207,19 +201,80 @@ def setup_columns(meta):
 def setup_indexes(meta):
     """Filter indexes from fields, compute projection for each index"""
     # Don't put these in the metadata until they bind successfully.
-    gsis = set(filter(lambda field: isinstance(field, GlobalSecondaryIndex), meta.fields))
-    lsis = set(filter(lambda field: isinstance(field, LocalSecondaryIndex), meta.fields))
-    indexes = set.union(gsis, lsis)
-
-    for index in indexes:
-        index._bind(meta.model)
-
+    gsis = set()
+    lsis = set()
+    for attr in meta.model.__dict__.values():
+        if isinstance(attr, GlobalSecondaryIndex):
+            gsis.add(attr)
+        if isinstance(attr, LocalSecondaryIndex):
+            lsis.add(attr)
     meta.gsis = gsis
     meta.lsis = lsis
-    meta.indexes = indexes
+    meta.indexes = set.union(gsis, lsis)
+
+    for index in meta.indexes:
+        bind_index(meta, index)
 
 
-class BaseModel(metaclass=ModelMetaclass):
+def bind_index(meta, index):
+    """Compute attributes and resolve column names.
+
+    * If hash and/or range keys are strings, resolve them to :class:`~bloop.models.Column` instances from
+      the model by ``model_name``.
+    * If projection is a list of strings, resolve each to a Column instance.
+    * Compute :data:`~Index.projection` dict from model Metadata and Index's temporary ``projection``
+      attribute.
+
+    :param meta: The Meta of the :class:`~bloop.models.BaseModel` this Index is attached to.
+    :param index: The :class:`~bloop.models.Index` to attach to the model.
+    :raises bloop.exceptions.InvalidIndex: If the hash or range keys are misconfigured.
+    """
+    # Index by model_name so we can replace hash_key, range_key with the proper `bloop.Column` object
+    columns = util.index(meta.columns, "model_name")
+    if isinstance(index, LocalSecondaryIndex):
+        if not meta.range_key:
+            raise InvalidIndex("An LSI requires the Model to have a range key.")
+        index.hash_key = meta.hash_key
+    if isinstance(index.hash_key, str):
+        index.hash_key = columns[index.hash_key]
+    if not isinstance(index.hash_key, Column):
+        raise InvalidIndex("Index hash key must be a Column or Column model name.")
+    if index.range_key:
+        if isinstance(index.range_key, str):
+            index.range_key = columns[index.range_key]
+        if not isinstance(index.range_key, Column):
+            raise InvalidIndex("Index range key (if provided) must be a Column or Column model name.")
+
+    index.keys = {index.hash_key}
+    if index.range_key:
+        index.keys.add(index.range_key)
+
+    # Compute and the projected columns
+    # All projections include model + index keys
+    projection_keys = set.union(meta.keys, index.keys)
+
+    if index.projection["mode"] == "keys":
+        index.projection["included"] = projection_keys
+    elif index.projection["mode"] == "all":
+        index.projection["included"] = meta.columns
+    elif index.projection["mode"] == "include":  # pragma: no branch
+        # model_name -> Column
+        if all(isinstance(p, str) for p in index.projection["included"]):
+            projection = set(columns[name] for name in index.projection["included"])
+        else:
+            projection = set(index.projection["included"])
+        projection.update(projection_keys)
+        index.projection["included"] = projection
+
+    # Strict has the same availability as the included columns,
+    # while non-strict has access to the full range of columns
+    if index.projection["strict"]:
+        index.projection["available"] = index.projection["included"]
+    else:
+        index.projection["available"] = meta.columns
+
+
+class BaseModel:
     """Abstract base that all models derive from.
 
     Provides a basic ``__init__`` method that takes \*\*kwargs whose
@@ -244,6 +299,29 @@ class BaseModel(metaclass=ModelMetaclass):
             value = attrs.get(column.model_name, missing)
             if value is not missing:
                 setattr(self, column.model_name, value)
+
+    def __init_subclass__(cls, **kwargs):
+        ensure_hash(cls)
+        meta = ensure_meta(cls)
+        meta.model = cls
+
+        # Entry point for model population. By default this is the
+        # class's __init__ function. Custom models can specify the
+        # Meta attr `init`, which must be a function taking no
+        # arguments that returns an instance of the class
+        setdefault(meta, "init", cls)
+
+        setdefault(meta, "abstract", False)
+        setdefault(meta, "table_name", cls.__name__)
+        setdefault(meta, "write_units", None)
+        setdefault(meta, "read_units", None)
+        setdefault(meta, "stream", None)
+
+        setup_columns(meta)
+        setup_indexes(meta)
+
+        validate_stream(meta.stream)
+        model_created.send(None, model=cls)
 
     @classmethod
     def _load(cls, attrs, *, context, **kwargs):
@@ -273,11 +351,11 @@ class BaseModel(metaclass=ModelMetaclass):
         return f"{self.__class__.__name__}({attrs})"
 
 
-class Index(declare.Field):
+class Index:
     """Abstract base class for GSIs and LSIs.
 
-    An index needs to be bound to a model by calling :func:`Index._bind(model) <bloop.models.Index._bind>`, which
-    lets the index compute projected columns, validate hash and range keys, etc.
+    An index must be bound to a model by calling :func:`bind_index(meta, model) <bloop.models.bind_index>`,
+    which lets the index compute projected columns, validate hash and range keys, etc.
 
     .. seealso::
 
@@ -298,6 +376,10 @@ class Index(declare.Field):
 
         self.projection = validate_projection(projection)
 
+    def __set_name__(self, owner, name):
+        self.model = owner
+        self._model_name = name
+
     def __repr__(self):
         if isinstance(self, LocalSecondaryIndex):
             cls_name = "LSI"
@@ -316,72 +398,11 @@ class Index(declare.Field):
         """Name of the model's attr that references self"""
         return self._model_name
 
-    @model_name.setter
-    def model_name(self, value):
-        if self._model_name is not None:
-            raise AttributeError("{} model_name already set to '{}'".format(
-                self.__class__.__name__, self._model_name))
-        self._model_name = value
-
     @property
     def dynamo_name(self):
         if self._dynamo_name is None:
             return self.model_name
         return self._dynamo_name
-
-    def _bind(self, model):
-        """Compute attributes and resolve column names.
-
-        * If hash and/or range keys are strings, resolve them to :class:`~bloop.models.Column` instances from
-          the model by ``model_name``.
-        * If projection is a list of strings, resolve each to a Column instance.
-        * Compute :data:`~Index.projection` dict from model Metadata and Index's temporary ``projection``
-          attribute.
-
-        :param model: The :class:`~bloop.models.BaseModel` this Index is attached to.
-        :raises bloop.exceptions.InvalidIndex: If the hash or range keys are misconfigured.
-        """
-        self.model = model
-
-        # Index by model_name so we can replace hash_key, range_key with the proper `bloop.Column` object
-        columns = util.index(model.Meta.columns, "model_name")
-        if isinstance(self.hash_key, str):
-            self.hash_key = columns[self.hash_key]
-        if not isinstance(self.hash_key, Column):
-            raise InvalidIndex("Index hash key must be a Column or Column model name.")
-        if self.range_key:
-            if isinstance(self.range_key, str):
-                self.range_key = columns[self.range_key]
-            if not isinstance(self.range_key, Column):
-                raise InvalidIndex("Index range key (if provided) must be a Column or Column model name.")
-
-        self.keys = {self.hash_key}
-        if self.range_key:
-            self.keys.add(self.range_key)
-
-        # Compute and the projected columns
-        # All projections include model + index keys
-        projection_keys = set.union(model.Meta.keys, self.keys)
-
-        if self.projection["mode"] == "keys":
-            self.projection["included"] = projection_keys
-        elif self.projection["mode"] == "all":
-            self.projection["included"] = model.Meta.columns
-        elif self.projection["mode"] == "include":  # pragma: no branch
-            # model_name -> Column
-            if all(isinstance(p, str) for p in self.projection["included"]):
-                projection = set(columns[name] for name in self.projection["included"])
-            else:
-                projection = set(self.projection["included"])
-            projection.update(projection_keys)
-            self.projection["included"] = projection
-
-        # Strict has the same availability as the included columns,
-        # while non-strict has access to the full range of columns
-        if self.projection["strict"]:
-            self.projection["available"] = self.projection["included"]
-        else:
-            self.projection["available"] = model.Meta.columns
 
     def __set__(self, obj, value):
         raise AttributeError(f"{self.model.__name__}.{self.model_name} is a {self.__class__.__name__}")
@@ -447,13 +468,6 @@ class LocalSecondaryIndex(Index):
         super().__init__(range_key=range_key, name=name, projection=projection, **kwargs)
         self.projection["strict"] = strict
 
-    def _bind(self, model):
-        if not model.Meta.range_key:
-            raise InvalidIndex("An LSI requires the Model to have a range key.")
-        # this is model_name (string) because super()._bind will do the string -> Column lookup
-        self.hash_key = model.Meta.hash_key.model_name
-        super()._bind(model)
-
     @property
     def read_units(self):
         return self.model.Meta.read_units
@@ -489,7 +503,7 @@ def instanceof(obj, classinfo):
         return False
 
 
-class Column(declare.Field, ComparisonMixin):
+class Column(ComparisonMixin):
     """Represents a single attribute in DynamoDB.
 
     :param typedef: The type of this attribute.  Can be either a :class:`~bloop.types.Type` or
@@ -515,6 +529,10 @@ class Column(declare.Field, ComparisonMixin):
             raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
 
     __hash__ = object.__hash__
+
+    def __set_name__(self, owner, name):
+        self.model = owner
+        self._model_name = name
 
     def __set__(self, obj, value):
         self.set(obj, value)
@@ -544,12 +562,6 @@ class Column(declare.Field, ComparisonMixin):
     def model_name(self):
         """Name of the model's attr that references self"""
         return self._model_name
-
-    @model_name.setter
-    def model_name(self, value):
-        if self._model_name is not None:
-            raise AttributeError(f"{self.__class__.__name__} model_name already set to '{self._model_name}'")
-        self._model_name = value
 
     @property
     def dynamo_name(self):

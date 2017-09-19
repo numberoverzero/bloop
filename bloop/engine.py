@@ -8,7 +8,7 @@ from .exceptions import (
     MissingObjects,
     UnknownType,
 )
-from .models import Index, ModelMetaclass, unpack_from_dynamodb
+from .models import BaseModel, Index, subclassof, unpack_from_dynamodb
 from .search import Search
 from .session import SessionWrapper
 from .signals import (
@@ -69,7 +69,7 @@ def validate_not_abstract(*objs):
 
 
 def validate_is_model(model):
-    if not isinstance(model, ModelMetaclass):
+    if not subclassof(model, BaseModel):
         cls = model if isinstance(model, type) else model.__class__
         raise InvalidModel("{!r} does not subclass BaseModel.".format(cls.__name__))
 

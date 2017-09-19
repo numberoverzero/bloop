@@ -2,7 +2,6 @@ arrow
 blinker
 boto3
 coverage
-declare
 delorean
 flake8
 pendulum

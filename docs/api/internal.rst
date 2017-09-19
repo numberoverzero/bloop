@@ -18,23 +18,11 @@ SessionWrapper
 Modeling
 ========
 
---------------
-ModelMetaclass
---------------
-
-.. autoclass:: bloop.models.ModelMetaclass
-    :members:
-
-    The metaclass for :class:`~bloop.models.BaseModel`.  Binds ``model_name`` to each :class:`~bloop.models.Column`;
-    validates key configuration; binds the model to each :class:`~bloop.models.Index`; populates model's ``Meta``
-    with modeling metadata (``columns``, ``keys``, ``indexes``, etc).
-
 -----
 Index
 -----
 
 .. autoclass:: bloop.models.Index
-    :members: _bind
 
     .. attribute:: dynamo_name
 
@@ -51,11 +39,13 @@ Index
 
     .. attribute:: model_name
 
-        The name of this index in the model.  Set during :func:`~bloop.models.Index._bind`.
+        The name of this index in the model.  Set by :func:`~bloop.models.bind_index`
+        during :func:`~bloop.models.BaseModel.__init_subclass__`.
 
     .. attribute:: projection
 
-        Computed during :func:`~bloop.models.Index._bind`.
+        Computed during :func:`~bloop.models.bind_index`
+        during :func:`~bloop.models.BaseModel.__init_subclass__`.
 
         .. code-block:: python
 
@@ -240,18 +230,20 @@ Classes are unhashable in two cases:
 #. The class declares ``__hash__ = None``.
 #. The class implements ``__eq__`` but not ``__hash__``
 
-In the first case, Bloop will simply raise ``InvalidModel``.  In the second case, Bloop's
-:class:`~bloop.models.ModelMetaclass` manually locates a ``__hash__`` method in the model's base classes:
+In either case, during :func:`~bloop.models.BaseModel.__init_subclass__`, the :func:`~bloop.models.ensure_hash`
+function will manually locate the closest ``__hash__`` method in the model's base classes:
 
 .. code-block:: python
 
-    for base in bases:
+    if getattr(cls, "__hash__", None) is not None:
+        return
+    for base in cls.__mro__:
         hash_fn = getattr(base, "__hash__")
         if hash_fn:
             break
     else:
         hash_fn = object.__hash__
-    attrs["__hash__"] = hash_fn
+    cls.__hash__ = hash_fn
 
 This is required because python doesn't provide a default hash method when ``__eq__`` is implemented,
 and won't fall back to a parent class's definition:

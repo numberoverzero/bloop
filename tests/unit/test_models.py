@@ -12,6 +12,7 @@ from bloop.models import (
     GlobalSecondaryIndex,
     Index,
     LocalSecondaryIndex,
+    bind_index,
     model_created,
     object_modified,
     unpack_from_dynamodb,
@@ -360,11 +361,11 @@ def test_valid_stream(valid_stream):
 
 
 def test_require_hash():
-    """Models must be hashable."""
-    with pytest.raises(InvalidModel):
-        class Model(BaseModel):
-            id = Column(Integer, hash_key=True)
-            __hash__ = None
+    """Models must be hashable"""
+    class Model(BaseModel):
+        id = Column(Integer, hash_key=True)
+        __hash__ = None
+    assert Model.__hash__ is object.__hash__
 
 
 def test_custom_eq():
@@ -421,18 +422,18 @@ def test_column_dynamo_name():
     """ Returns model name unless dynamo name is specified """
     column = Column(Integer)
     # Normally set when a class is defined
-    column.model_name = "foo"
+    column._model_name = "foo"
     assert column.dynamo_name == "foo"
 
     column = Column(Integer, name="foo")
-    column.model_name = "bar"
+    column._model_name = "bar"
     assert column.dynamo_name == "foo"
 
 
 def test_column_repr():
     column = Column(Integer, name="f")
     column.model = User
-    column.model_name = "foo"
+    column._model_name = "foo"
     assert repr(column) == "<Column[User.foo]>"
 
     column.hash_key = True
@@ -446,7 +447,7 @@ def test_column_repr():
 def test_column_repr_path():
     column = Column(Integer, name="f")
     column.model = User
-    column.model_name = "foo"
+    column._model_name = "foo"
 
     assert repr(column[3]["foo"]["bar"][2][1]) == "<Proxy[User.foo[3].foo.bar[2][1]]>"
 
@@ -538,11 +539,11 @@ def test_index_dynamo_name():
     """returns model name unless dynamo name is specified"""
     index = Index(projection="keys")
     # Normally set when a class is defined
-    index.model_name = "foo"
+    index._model_name = "foo"
     assert index.dynamo_name == "foo"
 
     index = Index(name="foo", projection="keys")
-    index.model_name = "bar"
+    index._model_name = "bar"
     assert index.dynamo_name == "foo"
 
 
@@ -560,10 +561,10 @@ def test_index_binds_model_names():
     # hash key must be a string or column
     bad_index = Index(projection="all", hash_key=object())
     with pytest.raises(InvalidIndex):
-        bad_index._bind(Model)
+        bind_index(Model.Meta, bad_index)
     bad_index = Index(projection="all", hash_key="foo", range_key=object())
     with pytest.raises(InvalidIndex):
-        bad_index._bind(Model)
+        bind_index(Model.Meta, bad_index)
 
 
 def test_index_projection_validation():
@@ -672,7 +673,7 @@ def test_gsi_default_throughput():
 def test_index_repr(projection):
     index = Index(projection=projection, name="f")
     index.model = User
-    index.model_name = "by_foo"
+    index._model_name = "by_foo"
     if isinstance(projection, list):
         projection = "include"
     assert repr(index) == "<Index[User.by_foo={}]>".format(projection)
@@ -681,14 +682,14 @@ def test_index_repr(projection):
 def test_lsi_repr():
     index = LocalSecondaryIndex(projection="all", range_key="key", name="f")
     index.model = User
-    index.model_name = "by_foo"
+    index._model_name = "by_foo"
     assert repr(index) == "<LSI[User.by_foo=all]>"
 
 
 def test_gsi_repr():
     index = GlobalSecondaryIndex(projection="all", hash_key="key", name="f")
     index.model = User
-    index.model_name = "by_foo"
+    index._model_name = "by_foo"
     assert repr(index) == "<GSI[User.by_foo=all]>"
 
 

@@ -8,22 +8,8 @@ from bloop.util import (
     WeakDefaultDictionary,
     index,
     ordered,
-    unpack_from_dynamodb,
     walk_subclasses,
 )
-
-from ..helpers.models import User
-
-
-@pytest.fixture
-def unpack_kwargs(engine):
-    return {
-        "attrs": {"name": {"S": "numberoverzero"}},
-        "expected": {User.name, User.joined},
-        "model": User,
-        "engine": engine,
-        "context": {"engine": engine, "extra": "foo"},
-    }
 
 
 def test_index():
@@ -84,40 +70,6 @@ def test_ordered_mapping(mapping):
 def test_ordered_recursion(obj, expected):
     """Mappings and iterables inside each other are sorted and flattened"""
     assert ordered(obj) == expected
-
-
-def test_unpack_no_engine(unpack_kwargs):
-    del unpack_kwargs["engine"]
-    del unpack_kwargs["context"]["engine"]
-
-    with pytest.raises(ValueError):
-        unpack_from_dynamodb(**unpack_kwargs)
-
-
-def test_unpack_no_obj_or_model(unpack_kwargs):
-    del unpack_kwargs["model"]
-    with pytest.raises(ValueError):
-        unpack_from_dynamodb(**unpack_kwargs)
-
-
-def test_unpack_obj_and_model(unpack_kwargs):
-    unpack_kwargs["obj"] = User()
-    with pytest.raises(ValueError):
-        unpack_from_dynamodb(**unpack_kwargs)
-
-
-def test_unpack_model(unpack_kwargs):
-    result = unpack_from_dynamodb(**unpack_kwargs)
-    assert result.name == "numberoverzero"
-    assert result.joined is None
-
-
-def test_unpack_obj(unpack_kwargs):
-    del unpack_kwargs["model"]
-    unpack_kwargs["obj"] = User()
-    result = unpack_from_dynamodb(**unpack_kwargs)
-    assert result.name == "numberoverzero"
-    assert result.joined is None
 
 
 def test_walk_subclasses():

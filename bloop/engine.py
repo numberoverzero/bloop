@@ -8,7 +8,7 @@ from .exceptions import (
     MissingObjects,
     UnknownType,
 )
-from .models import Index, ModelMetaclass
+from .models import Index, ModelMetaclass, unpack_from_dynamodb
 from .search import Search
 from .session import SessionWrapper
 from .signals import (
@@ -20,8 +20,7 @@ from .signals import (
     object_saved,
 )
 from .stream import Stream
-from .util import missing, unpack_from_dynamodb, walk_subclasses
-
+from .util import missing, walk_subclasses
 
 __all__ = ["Engine"]
 logger = logging.getLogger("bloop.engine")

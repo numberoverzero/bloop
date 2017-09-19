@@ -9,7 +9,7 @@ from .exceptions import (
     InvalidProjection,
     InvalidSearchMode,
 )
-from .models import Column, GlobalSecondaryIndex
+from .models import Column, GlobalSecondaryIndex, unpack_from_dynamodb
 from .signals import object_loaded
 
 
@@ -469,7 +469,7 @@ class SearchModelIterator(SearchIterator):
 
     def __next__(self):
         attrs = super().__next__()
-        obj = util.unpack_from_dynamodb(
+        obj = unpack_from_dynamodb(
             attrs=attrs,
             expected=self.projected,
             model=self.model,

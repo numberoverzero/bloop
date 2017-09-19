@@ -14,6 +14,7 @@ from bloop.models import (
     LocalSecondaryIndex,
     model_created,
     object_modified,
+    unpack_from_dynamodb,
 )
 from bloop.types import UUID, Boolean, DateTime, Integer, String
 
@@ -28,6 +29,17 @@ operations = [
     (operator.gt, ">"),
     (operator.ge, ">=")
 ]
+
+
+@pytest.fixture
+def unpack_kwargs(engine):
+    return {
+        "attrs": {"name": {"S": "numberoverzero"}},
+        "expected": {User.name, User.joined},
+        "model": User,
+        "engine": engine,
+        "context": {"engine": engine, "extra": "foo"},
+    }
 
 
 # BASE MODEL =============================================================================================== BASE MODEL
@@ -681,3 +693,37 @@ def test_gsi_repr():
 
 
 # END INDEX ================================================================================================= END INDEX
+
+
+def test_unpack_no_engine(unpack_kwargs):
+    del unpack_kwargs["engine"]
+    del unpack_kwargs["context"]["engine"]
+
+    with pytest.raises(ValueError):
+        unpack_from_dynamodb(**unpack_kwargs)
+
+
+def test_unpack_no_obj_or_model(unpack_kwargs):
+    del unpack_kwargs["model"]
+    with pytest.raises(ValueError):
+        unpack_from_dynamodb(**unpack_kwargs)
+
+
+def test_unpack_obj_and_model(unpack_kwargs):
+    unpack_kwargs["obj"] = User()
+    with pytest.raises(ValueError):
+        unpack_from_dynamodb(**unpack_kwargs)
+
+
+def test_unpack_model(unpack_kwargs):
+    result = unpack_from_dynamodb(**unpack_kwargs)
+    assert result.name == "numberoverzero"
+    assert result.joined is None
+
+
+def test_unpack_obj(unpack_kwargs):
+    del unpack_kwargs["model"]
+    unpack_kwargs["obj"] = User()
+    result = unpack_from_dynamodb(**unpack_kwargs)
+    assert result.name == "numberoverzero"
+    assert result.joined is None

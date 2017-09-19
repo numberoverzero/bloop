@@ -1,14 +1,11 @@
 import logging
 
-import declare
-
 from .conditions import render
 from .exceptions import (
     InvalidModel,
     InvalidStream,
     MissingKey,
     MissingObjects,
-    UnboundModel,
     UnknownType,
 )
 from .models import Index, ModelMetaclass
@@ -77,15 +74,11 @@ def validate_is_model(model):
         raise InvalidModel("{!r} does not subclass BaseModel.".format(cls.__name__))
 
 
-def fail_unknown(model, from_declare):
+def fail_unknown(model, ctx):
     # Best-effort check for a more helpful message
-    if isinstance(model, ModelMetaclass):
-        msg = "{!r} is not bound.  Did you forget to call engine.bind?"
-        raise UnboundModel(msg.format(model.__name__)) from from_declare
-    else:
-        msg = "{!r} is not a registered Type."
-        obj = model.__name__ if hasattr(model, "__name__") else model
-        raise UnknownType(msg.format(obj)) from from_declare
+    msg = "{!r} is not a registered Type."
+    obj = getattr(model, "__name__", model)
+    raise UnknownType(msg.format(obj)) from ctx
 
 
 class Engine:
@@ -97,22 +90,25 @@ class Engine:
     def __init__(self, *, dynamodb=None, dynamodbstreams=None):
         # Unique namespace so the type engine for multiple bloop Engines
         # won't have the same TypeDefinitions
-        self.type_engine = declare.TypeEngine.unique()
         self.session = SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
     def _dump(self, model, obj, context=None, **kwargs):
         context = context or {"engine": self}
         try:
-            return context["engine"].type_engine.dump(model, obj, context=context, **kwargs)
-        except declare.DeclareException as from_declare:
-            fail_unknown(model, from_declare)
+            dump = model._dump
+        except AttributeError as e:
+            fail_unknown(model, e)
+        else:
+            return dump(obj, context=context, **kwargs)
 
     def _load(self, model, value, context=None, **kwargs):
         context = context or {"engine": self}
         try:
-            return context["engine"].type_engine.load(model, value, context=context, **kwargs)
-        except declare.DeclareException as from_declare:
-            fail_unknown(model, from_declare)
+            load = model._load
+        except AttributeError as e:
+            fail_unknown(model, e)
+        else:
+            return load(value, context=context, **kwargs)
 
     def bind(self, model, *, skip_table_setup=False):
         """Create backing tables for a model and its non-abstract subclasses.
@@ -145,8 +141,6 @@ class Engine:
                 self.session.validate_table(model)
             model_validated.send(self, engine=self, model=model)
 
-            self.type_engine.register(model)
-            self.type_engine.bind(context={"engine": self})
             model_bound.send(self, engine=self, model=model)
 
         logger.info("successfully bound {} models to the engine".format(len(concrete)))

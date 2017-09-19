@@ -10,8 +10,7 @@ from bloop.exceptions import (
     InvalidStream,
     MissingKey,
     MissingObjects,
-    UnboundModel,
-    UnknownType,
+    UnknownType
 )
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper
@@ -240,11 +239,11 @@ def test_load_dump_unbound(engine):
     obj = Model(id=5)
     value = {"id": {"N": "5"}}
 
-    with pytest.raises(UnboundModel):
-        engine._load(Model, value)
+    loaded = engine._load(Model, value)
+    assert loaded.id == 5
 
-    with pytest.raises(UnboundModel):
-        engine._dump(Model, obj)
+    dumped = engine._dump(Model, obj)
+    assert dumped == {"id": {"N": "5"}}
 
 
 def test_load_dump_subclass(engine):
@@ -627,11 +626,6 @@ def test_bind_different_engines(dynamodb, dynamodbstreams):
     first_engine.session.validate_table.assert_called_once_with(Concrete)
     second_engine.session.create_table.assert_called_once_with(Concrete)
     second_engine.session.validate_table.assert_called_once_with(Concrete)
-
-    # The model (and its columns) are bound to each engine's TypeEngine,
-    # regardless of how many times the model has been bound already
-    assert Concrete in first_engine.type_engine.bound_types
-    assert Concrete in second_engine.type_engine.bound_types
 
 
 def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):

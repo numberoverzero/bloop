@@ -146,6 +146,12 @@ to an existing table, or mapping multiple models to the same table:
             table_name = "employees-uk"
         ...
 
+.. versionchanged:: 2.0.0
+
+    Engines can customize table names using ``table_name_template``.  This does not change the value of
+    ``Meta.table_name``.  For example, the template "dev-{table_name}" would cause the ``Employee`` model
+    above to use the table "dev-employees-uk"
+
 
 Default ``read_units`` and ``write_units`` are None.  These do not include provisioned throughput for any
 :class:`~bloop.models.GlobalSecondaryIndex`, which has its own read and write units.

@@ -13,6 +13,27 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  [Unreleased]
 --------------
 
+TODO document all changes for the refactor-type-engine branch.  TODO migration notes for 2.0
+
+Added
+=====
+
+* ``Engine`` takes an optional keyword-only arg "table_name_template" which takes either a string used to format each
+  name, or a function which will be called with the model to get the table name of.  This removes the need to connect
+  to the ``before_create_table`` signal, which also could not handle multiple table names for the same model.  With
+  this change ``BaseModel.Meta.table_name`` will no longer be authoritative, and the engine must be consulted to find
+  a given model's table name.  An internal function ``Engine._compute_table_name`` is available, and the per-engine
+  table names may be added to the model.Meta in the future.  (see `Issue #96`_)
+* A new exception ``InvalidTemplate`` is raised when an Engine's table_name_template is a string but does
+  not contain the required "{table_name}" formatting key.
+
+Removed
+=======
+
+* The exception ``UnboundModel`` is no longer raised during ``Engine.bind`` and has been removed.
+
+.. _Issue #96: https://github.com/numberoverzero/bloop/issues/96
+
 --------------------
  1.2.0 - 2017-09-11
 --------------------
@@ -436,7 +457,7 @@ You'll now create a base without any relation to an engine, and then bind it to 
 * A new function ``engine_for_profile`` takes a profile name for the config file and creates an appropriate session.
   This is a temporary utility, since ``Engine`` will eventually take instances of dynamodb and dynamodbstreams
   clients.  **This will be going away in 1.0.0**.
-* A new base exception ``BloopException`` which can be used to catch anything thrown by Bloop.
+* A new base exception ``BloopException`` which can be used to catch anything raised by Bloop.
 * A new function ``new_base()`` creates an abstract base for models.  This replaces ``Engine.model`` now that multiple
   engines can bind the same model.  **This will be going away in 1.0.0** which will provide a ``BaseModel`` class.
 

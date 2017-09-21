@@ -111,18 +111,15 @@ class Engine:
 
     .. code-block:: pycon
 
-        >>> def compute_table_name(model):
-        ...     if model is MySpecificModel:
-        ...         return model.Meta.custom_config["table_name"]
-        ...     else:
-        ...         return model.Meta.table_name
-        >>> engine = Engine(table_name_template=compute_table_name)
+        >>> def reverse_name(model):
+        ...     return model.Meta.table_name[::-1]
+        >>> engine = Engine(table_name_template=reverse_name)
 
     :param dynamodb: DynamoDB client.  Defaults to ``boto3.client("dynamodb")``.
     :param dynamodbstreams: DynamoDBStreams client.  Defaults to ``boto3.client("dynamodbstreams")``.
-    :param table_name_template: Used to customize the table name of a model when talking to DynamoDB.  If a string
+    :param table_name_template: Customize the table name of each model bound to the engine.  If a string
         is provided, string.format(table_name=model.Meta.table_name) will be called.  If a function is provided, the
-        function will be called with the model as its only argument.  Defaults to "{table_name}".
+        function will be called with the model as its sole argument.  Defaults to "{table_name}".
     """
     def __init__(
             self, *,

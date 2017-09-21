@@ -1,3 +1,4 @@
+requests
 arrow==0.10.0
 blinker==1.4
 boto3==1.4.4

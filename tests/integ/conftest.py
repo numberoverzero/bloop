@@ -1,20 +1,37 @@
-import itertools
+import contextlib
+import os
 import random
+import shutil
+import socket
 import string
+import subprocess
+import zipfile
 
 import blinker
 import boto3
 import pytest
+import requests
 
 from bloop import Engine
+from bloop.session import SessionWrapper
 from bloop.signals import model_created
+from tests.helpers.utils import get_tables
 
-from .models import User
-
+resource_options = {
+    'region_name': 'us-east-1',
+    'port': 8000,
+    'aws_access_key_id': 'access',
+    'aws_secret_access_key': 'secret',
+}
 
 fixed_session = boto3.Session(region_name="us-west-2")
-fixed_ddb_client = fixed_session.client("dynamodb")
-fixed_streams_client = fixed_session.client("dynamodbstreams")
+
+
+@pytest.fixture(scope='session')
+def do_provide_aws():
+    proc = start_dynamodb_local()
+    yield
+    proc.terminate()
 
 
 def pytest_addoption(parser):
@@ -43,9 +60,7 @@ def pytest_unconfigure(config):
         print("Skipping cleanup")
         return
     dynamodb_client = fixed_session.client("dynamodb")
-    it = dynamodb_client.get_paginator("list_tables").paginate()
-    tables = [response["TableNames"] for response in it]
-    tables = itertools.chain(*tables)
+    tables = get_tables(dynamodb_client)
     nonce = config.getoption("--nonce")
     print("Cleaning up tables with nonce '{}'".format(nonce))
     for table in tables:
@@ -53,6 +68,7 @@ def pytest_unconfigure(config):
             continue
         # noinspection PyBroadException
         try:
+            print("Removing table: {}".format(table))
             dynamodb_client.delete_table(TableName=table)
         except Exception:
             print("Failed to clean up table '{}'".format(table))
@@ -63,26 +79,71 @@ def nonce(request):
     return request.config.getoption("--nonce")
 
 
-@pytest.yield_fixture(autouse=True)
-def cleanup_objects(engine):
-    yield
-
-    # TODO track bound models w/model_bound signal (TODO), then use boto3 to scan/delete by Meta.table_name
-    # Running tests individually may break if the User table isn't bound as part of that test
-    users = list(engine.scan(User))
-    engine.delete(*users)
+@pytest.fixture(scope="session")
+def dynamodb(do_provide_aws):
+    return fixed_session.client("dynamodb", endpoint_url=resource_options['endpoint_url'])
 
 
 @pytest.fixture(scope="session")
-def dynamodb():
-    return fixed_ddb_client
-
-
-@pytest.fixture(scope="session")
-def dynamodbstreams():
-    return fixed_streams_client
+def dynamodbstreams(do_provide_aws):
+    return fixed_session.client("dynamodbstreams", endpoint_url=resource_options['endpoint_url'])
 
 
 @pytest.fixture
 def engine(dynamodb, dynamodbstreams):
-    return Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    yield Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+
+
+def get_open_port():
+    with contextlib.closing(
+            socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+        s.bind(("", 0))
+        s.listen(1)
+        port = s.getsockname()[1]
+        return port
+
+
+def get_ddb_local():
+    localdir = pytest.config.rootdir.join('.dynamodb-local').strpath
+    if not os.path.exists(localdir):
+        tempdir = localdir + '.tmp'
+        if os.path.exists(tempdir):
+            shutil.rmtree(tempdir)
+        os.mkdir(tempdir)
+        r = requests.get(
+            'https://s3-us-west-2.amazonaws.com/' +
+            'dynamodb-local/dynamodb_local_latest.zip',
+            stream=True)
+        dist = os.path.join(tempdir, 'dist.zip')
+        with open(dist, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=1024):
+                if chunk:
+                    f.write(chunk)
+        zip_ref = zipfile.ZipFile(dist, 'r')
+        zip_ref.extractall(tempdir)
+        zip_ref.close()
+        os.rename(tempdir, localdir)
+    return localdir
+
+
+def start_dynamodb_local():
+    cwd = get_ddb_local()
+    port = get_open_port()
+    proc = subprocess.Popen(['java', '-Djava.library.path=./DynamoDBLocal_lib',
+                             '-jar', 'DynamoDBLocal.jar', '-inMemory',
+                             '-port', str(port)], cwd=cwd)
+    resource_options['endpoint_url'] = 'http://localhost:{}'.format(port)
+    return proc
+
+
+# Use class-scoped fixtures for dynamodb access Use a
+# separate test class for each group of tests that cumulatively update
+# dynamodb.
+@pytest.fixture(scope='class')
+def dynamodb_resource_options():
+    return resource_options
+
+
+@pytest.fixture
+def session(dynamodb, dynamodbstreams):
+    return SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)

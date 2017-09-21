@@ -17,10 +17,6 @@ class TableMismatch(BloopException):
     """The expected and actual tables for this Model do not match."""
 
 
-class UnboundModel(BloopException, ValueError):
-    """This Model has not been bound to the Engine."""
-
-
 class UnknownType(BloopException, ValueError):
     """This Type has not been registered with the type engine."""
 
@@ -43,6 +39,10 @@ class ShardIteratorExpired(BloopException):
 
 class InvalidModel(BloopException, ValueError):
     """This is not a valid Model."""
+
+
+class InvalidTemplate(BloopException, ValueError):
+    """This is not a valid template string."""
 
 
 class InvalidIndex(BloopException, ValueError):

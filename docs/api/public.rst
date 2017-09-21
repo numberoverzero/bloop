@@ -679,9 +679,9 @@ or trying to use an unknown projection type.
 
 .. autoclass:: bloop.exceptions.InvalidStream
 
-.. autoclass:: bloop.exceptions.MissingKey
+.. autoclass:: bloop.exceptions.InvalidTemplate
 
-.. autoclass:: bloop.exceptions.UnboundModel
+.. autoclass:: bloop.exceptions.MissingKey
 
 .. autoclass:: bloop.exceptions.UnknownType
 

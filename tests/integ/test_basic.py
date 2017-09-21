@@ -99,7 +99,7 @@ def test_model_overlap(dynamodb, engine):
         ],
         # Can't use the fixed value above since it'll be modified by
         # the test framework to allow parallel runs
-        "TableName": FirstOverlap.Meta.table_name
+        "TableName": engine._compute_table_name(FirstOverlap)
     }
     dynamodb.create_table(**combined_table)
 

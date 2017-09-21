@@ -8,6 +8,7 @@ from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
     InvalidModel,
     InvalidStream,
+    InvalidTemplate,
     MissingKey,
     MissingObjects,
     UnknownType,
@@ -19,6 +20,74 @@ from bloop.types import DateTime, Integer, String
 from bloop.util import ordered
 
 from ..helpers.models import ComplexModel, User, VectorModel
+
+
+def test_default_table_name_template(dynamodb, dynamodbstreams, session):
+    """When no table_name_template is provided, the default of '{table_name}' is used"""
+    class LocalModel(BaseModel):
+        class Meta:
+            table_name = "my-table-name"
+        id = Column(Integer, hash_key=True)
+
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    # Replace mock clients immediately
+    engine.session = session
+
+    engine.bind(LocalModel)
+    session.create_table.assert_called_once_with("my-table-name", LocalModel)
+    session.validate_table.assert_called_once_with("my-table-name", LocalModel)
+
+
+def test_str_table_name_template(dynamodb, dynamodbstreams, session):
+    """When a string is provided for table_name_template, .format is called on it with the key table_name"""
+    class LocalModel(BaseModel):
+        class Meta:
+            table_name = "my-table-name"
+        id = Column(Integer, hash_key=True)
+
+    template = "prefix-{table_name}"
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams, table_name_template=template)
+    # Replace mock clients immediately
+    engine.session = session
+
+    engine.bind(LocalModel)
+    session.create_table.assert_called_once_with("prefix-my-table-name", LocalModel)
+    session.validate_table.assert_called_once_with("prefix-my-table-name", LocalModel)
+
+
+def test_malformed_table_name_template(dynamodb, dynamodbstreams):
+    """When a string is provided that doesn't have the correct format key {table_name}, InvalidTemplate is raised"""
+    template = "prefix-{wrong_key}"
+    with pytest.raises(InvalidTemplate):
+        Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams, table_name_template=template)
+
+
+def test_wrong_type_table_name_template(dynamodb, dynamodbstreams):
+    """When the template is neither a string nor a function is provided, ValueError is raised."""
+    template = object()
+    with pytest.raises(ValueError):
+        # noinspection PyTypeChecker
+        Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams, table_name_template=template)
+
+
+def test_func_table_name_template(dynamodb, dynamodbstreams, session):
+    """When a function is provided for table_name_template, it is called with the model as its sole argument."""
+    class LocalModel(BaseModel):
+        class Meta:
+            table_name = "my-table-name"
+        id = Column(Integer, hash_key=True)
+
+    def template(model):
+        assert issubclass(model, BaseModel)
+        return "reverse-" + model.Meta.table_name[::-1]
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams, table_name_template=template)
+    # Replace mock clients immediately
+    engine.session = session
+
+    engine.bind(LocalModel)
+    expected = "reverse-eman-elbat-ym"
+    session.create_table.assert_called_once_with(expected, LocalModel)
+    session.validate_table.assert_called_once_with(expected, LocalModel)
 
 
 def test_missing_objects(engine, session, caplog):

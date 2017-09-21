@@ -2,12 +2,10 @@ import itertools
 import random
 import string
 
-import blinker
 import boto3
 import pytest
 
 from bloop import Engine
-from bloop.signals import model_created
 
 from .models import User
 
@@ -25,16 +23,6 @@ def pytest_addoption(parser):
     parser.addoption(
         "--skip-cleanup", action="store_true", default=False,
         help="don't clean up tables after tests run")
-
-
-def pytest_configure(config):
-    nonce = config.getoption("--nonce")
-
-    @model_created.connect_via(sender=blinker.ANY, weak=False)
-    def nonce_table_name(_, *, model, **kwargs):
-        table_name = model.Meta.table_name
-        if nonce not in table_name:
-            model.Meta.table_name += nonce
 
 
 def pytest_unconfigure(config):
@@ -84,5 +72,8 @@ def dynamodbstreams():
 
 
 @pytest.fixture
-def engine(dynamodb, dynamodbstreams):
-    return Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+def engine(dynamodb, dynamodbstreams, nonce):
+    return Engine(
+        dynamodb=dynamodb, dynamodbstreams=dynamodbstreams,
+        table_name_template="{table_name}" + nonce
+    )

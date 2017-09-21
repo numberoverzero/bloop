@@ -307,7 +307,7 @@ class PreparedSearch:
 
     def prepare_request(self):
         request = self._request = {}
-        request["TableName"] = self.model.Meta.table_name
+        request["TableName"] = self.engine._compute_table_name(self.model)
         request["ConsistentRead"] = self.consistent
 
         if self.mode == "scan":

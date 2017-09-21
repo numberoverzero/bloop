@@ -586,10 +586,10 @@ def test_bind_skip_abstract_models(engine, session, caplog):
     caplog.handler.records.clear()
     engine.bind(Abstract)
 
-    session.create_table.assert_any_call(Concrete)
-    session.validate_table.assert_any_call(Concrete)
-    session.create_table.assert_any_call(AlsoConcrete)
-    session.validate_table.assert_any_call(AlsoConcrete)
+    session.create_table.assert_any_call("Concrete", Concrete)
+    session.validate_table.assert_any_call("Concrete", Concrete)
+    session.create_table.assert_any_call("AlsoConcrete", AlsoConcrete)
+    session.validate_table.assert_any_call("AlsoConcrete", AlsoConcrete)
 
     assert caplog.record_tuples == [
         ("bloop.engine", logging.DEBUG, "binding non-abstract models ['AlsoConcrete', 'Concrete']"),
@@ -604,8 +604,8 @@ def test_bind_concrete_base(engine, session):
     class Concrete(BaseModel):
         id = Column(Integer, hash_key=True)
     engine.bind(Concrete)
-    session.create_table.assert_called_once_with(Concrete)
-    session.validate_table.assert_called_once_with(Concrete)
+    session.create_table.assert_called_once_with("Concrete", Concrete)
+    session.validate_table.assert_called_once_with("Concrete", Concrete)
 
 
 def test_bind_different_engines(dynamodb, dynamodbstreams):
@@ -622,10 +622,10 @@ def test_bind_different_engines(dynamodb, dynamodbstreams):
     second_engine.bind(Concrete)
 
     # Create/Validate are only called once per bind
-    first_engine.session.create_table.assert_called_once_with(Concrete)
-    first_engine.session.validate_table.assert_called_once_with(Concrete)
-    second_engine.session.create_table.assert_called_once_with(Concrete)
-    second_engine.session.validate_table.assert_called_once_with(Concrete)
+    first_engine.session.create_table.assert_called_once_with("Concrete", Concrete)
+    first_engine.session.validate_table.assert_called_once_with("Concrete", Concrete)
+    second_engine.session.create_table.assert_called_once_with("Concrete", Concrete)
+    second_engine.session.validate_table.assert_called_once_with("Concrete", Concrete)
 
 
 def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):

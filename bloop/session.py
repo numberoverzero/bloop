@@ -109,7 +109,6 @@ class SessionWrapper:
 
         Response always includes "Count" and "ScannedCount"
 
-        :param str mode: "query" or "scan"
         :param request: Unpacked into :func:`boto3.DynamoDB.Client.scan`
         """
         return self.search_items("scan", request)
@@ -131,31 +130,32 @@ class SessionWrapper:
         standardize_query_response(response)
         return response
 
-    def create_table(self, model):
+    def create_table(self, table_name, model):
         """Create the model's table.
 
         Does not wait for the table to create, and does not validate an existing table.
         Will not raise "ResourceInUseException" if the table exists or is being created.
 
+        :param str table_name: The name of the table to create for the model.
         :param model: The :class:`~bloop.models.BaseModel` to create the table for.
         """
-        table = create_table_request(model)
+        table = create_table_request(table_name, model)
         try:
             self.dynamodb_client.create_table(**table)
         except botocore.exceptions.ClientError as error:
             handle_table_exists(error, model)
 
-    def validate_table(self, model):
+    def validate_table(self, table_name, model):
         """Polls until a creating table is ready, then verifies the description against the model's requirements.
 
         The model may have a subset of all GSIs and LSIs on the table, but the key structure must be exactly
         the same.  The table must have a stream if the model expects one, but not the other way around.  When read or
         write units are not specified for the model or any GSI, the existing values will always pass validation.
 
+        :param str table_name: The name of the table to validate the model against.
         :param model: The :class:`~bloop.models.BaseModel` to validate the table of.
         :raises bloop.exceptions.TableMismatch: When the table does not meet the constraints of the model.
         """
-        table_name = model.Meta.table_name
         status, actual = None, {}
         calls = 0
         while status is not ready:
@@ -166,7 +166,7 @@ class SessionWrapper:
                 raise BloopException("Unexpected error while describing table.") from error
             status = simple_table_status(actual)
         logger.debug("validate_table: table \"{}\" was in ACTIVE state after {} calls".format(table_name, calls))
-        expected = expected_table_description(model)
+        expected = expected_table_description(table_name, model)
         if not compare_tables(model, actual, expected):
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
         if model.Meta.stream:
@@ -521,7 +521,7 @@ def local_secondary_index(index):
     }
 
 
-def create_table_request(model):
+def create_table_request(table_name, model):
     table = {
         "AttributeDefinitions": attribute_definitions(model),
         "KeySchema": key_schema(model=model),
@@ -530,7 +530,7 @@ def create_table_request(model):
             "WriteCapacityUnits": model.Meta.write_units or 1,
             "ReadCapacityUnits": model.Meta.read_units or 1,
         },
-        "TableName": model.Meta.table_name,
+        "TableName": table_name,
     }
     if model.Meta.gsis:
         table["GlobalSecondaryIndexes"] = [
@@ -554,11 +554,11 @@ def create_table_request(model):
     return table
 
 
-def expected_table_description(model):
+def expected_table_description(table_name, model):
     # Right now, we expect the exact same thing as create_table_request
     # This doesn't include statuses (table, indexes) since that's
     # pulled out by the polling mechanism
-    table = create_table_request(model)
+    table = create_table_request(table_name, model)
     return table
 
 

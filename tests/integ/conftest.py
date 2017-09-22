@@ -1,4 +1,6 @@
 import contextlib
+
+import hashlib
 import os
 import random
 import shutil
@@ -16,19 +18,22 @@ from bloop import Engine
 from bloop.session import SessionWrapper
 from bloop.signals import model_created
 from tests.helpers.utils import get_tables
+from tests.integ.models import User
 
 resource_options = {
-    'region_name': 'us-east-1',
-    'port': 8000,
-    'aws_access_key_id': 'access',
-    'aws_secret_access_key': 'secret',
+    'endpoint_url': None
 }
 
+LATEST_DYNAMODB_LOCAL_SHA = '70d9a92529782ac93713258fe69feb4ff6e007ae2c3319c7ffae7da38b698a61'
 fixed_session = boto3.Session(region_name="us-west-2")
 
 
 @pytest.fixture(scope='session')
 def do_provide_aws():
+    """
+    Ensures that the dynamodb-local service is running, and shuts it down when all tests are done.
+    :return:
+    """
     proc = start_dynamodb_local()
     yield
     proc.terminate()
@@ -95,8 +100,14 @@ def engine(dynamodb, dynamodbstreams):
 
 
 def get_open_port():
-    with contextlib.closing(
-            socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+    """
+    By using a socket and binding to "" (localhost), with a port of 0 (socket picks first non-privileged port
+    that is not in use, we can ensure that the port is available.
+    See:  https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
+    and   https://stackoverflow.com/a/45690594
+    :return: The port to use
+    """
+    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
         s.bind(("", 0))
         s.listen(1)
         port = s.getsockname()[1]
@@ -104,29 +115,48 @@ def get_open_port():
 
 
 def get_ddb_local():
+    """
+    Ensure that dynamodb-local is downloaded and available.  It must match the sha256 in this file.
+    :return: The directory where it's installed.
+    """
     localdir = pytest.config.rootdir.join('.dynamodb-local').strpath
     if not os.path.exists(localdir):
+
+        # need a temp directory to download it in...
         tempdir = localdir + '.tmp'
         if os.path.exists(tempdir):
             shutil.rmtree(tempdir)
         os.mkdir(tempdir)
-        r = requests.get(
-            'https://s3-us-west-2.amazonaws.com/' +
-            'dynamodb-local/dynamodb_local_latest.zip',
-            stream=True)
+
+        r = requests.get('https://s3-us-west-2.amazonaws.com/dynamodb-local/dynamodb_local_latest.zip', stream=True)
         dist = os.path.join(tempdir, 'dist.zip')
+
+        # download in chucks, checking it's sha256 hash along the way
+        sha = hashlib.sha256()
         with open(dist, 'wb') as f:
             for chunk in r.iter_content(chunk_size=1024):
                 if chunk:
                     f.write(chunk)
+                    sha.update(chunk)
+
+        # Is this the file we're looking for?
+        if sha.hexdigest() != LATEST_DYNAMODB_LOCAL_SHA:
+            raise RuntimeError("Invalid hash of dynamodb_local_latest.zip")
+
         zip_ref = zipfile.ZipFile(dist, 'r')
         zip_ref.extractall(tempdir)
         zip_ref.close()
+
+        # clean up
         os.rename(tempdir, localdir)
     return localdir
 
 
 def start_dynamodb_local():
+    """
+    Starts dynamodb-local.
+    :return: The dynamodb-local process
+    """
     cwd = get_ddb_local()
     port = get_open_port()
     proc = subprocess.Popen(['java', '-Djava.library.path=./DynamoDBLocal_lib',
@@ -136,12 +166,13 @@ def start_dynamodb_local():
     return proc
 
 
-# Use class-scoped fixtures for dynamodb access Use a
-# separate test class for each group of tests that cumulatively update
-# dynamodb.
-@pytest.fixture(scope='class')
-def dynamodb_resource_options():
-    return resource_options
+@pytest.yield_fixture(autouse=True)
+def cleanup_objects(engine):
+    yield
+    # TODO track bound models w/model_bound signal (TODO), then use boto3 to scan/delete by Meta.table_name
+    # Running tests individually may break if the User table isn't bound as part of that test
+    users = list(engine.scan(User))
+    engine.delete(*users)
 
 
 @pytest.fixture

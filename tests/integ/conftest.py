@@ -29,7 +29,7 @@ fixed_session = boto3.Session(region_name="us-west-2")
 
 
 @pytest.fixture(scope='session')
-def do_provide_aws():
+def use_dynamodb_local():
     """
     Ensures that the dynamodb-local service is running, and shuts it down when all tests are done.
     :return:
@@ -85,12 +85,12 @@ def nonce(request):
 
 
 @pytest.fixture(scope="session")
-def dynamodb(do_provide_aws):
+def dynamodb(use_dynamodb_local):
     return fixed_session.client("dynamodb", endpoint_url=resource_options['endpoint_url'])
 
 
 @pytest.fixture(scope="session")
-def dynamodbstreams(do_provide_aws):
+def dynamodbstreams(use_dynamodb_local):
     return fixed_session.client("dynamodbstreams", endpoint_url=resource_options['endpoint_url'])
 
 
@@ -122,6 +122,12 @@ def get_ddb_local():
     localdir = pytest.config.rootdir.join('.dynamodb-local').strpath
     if not os.path.exists(localdir):
 
+        print("\n".join((
+            "*" * 79,
+            "DynamoDBLocal doesn't exist, installing at {}".format(localdir),
+            "*" * 79
+        )))
+
         # need a temp directory to download it in...
         tempdir = localdir + '.tmp'
         if os.path.exists(tempdir):
@@ -129,7 +135,7 @@ def get_ddb_local():
         os.mkdir(tempdir)
 
         r = requests.get('https://s3-us-west-2.amazonaws.com/dynamodb-local/dynamodb_local_latest.zip', stream=True)
-        dist = os.path.join(tempdir, 'dist.zip')
+        dist = os.path.join(tempdir, 'dynamodb_local_latest.zip')
 
         # download in chucks, checking it's sha256 hash along the way
         sha = hashlib.sha256()
@@ -141,7 +147,8 @@ def get_ddb_local():
 
         # Is this the file we're looking for?
         if sha.hexdigest() != LATEST_DYNAMODB_LOCAL_SHA:
-            raise RuntimeError("Invalid hash of dynamodb_local_latest.zip")
+            msg = "Invalid hash of {}/dynamodb_local_latest.zip -- expected {} but was {}"
+            raise RuntimeError(msg.format(tempdir, LATEST_DYNAMODB_LOCAL_SHA, sha.hexdigest()))
 
         zip_ref = zipfile.ZipFile(dist, 'r')
         zip_ref.extractall(tempdir)
@@ -171,8 +178,7 @@ def cleanup_objects(engine):
     yield
     # TODO track bound models w/model_bound signal (TODO), then use boto3 to scan/delete by Meta.table_name
     # Running tests individually may break if the User table isn't bound as part of that test
-    users = list(engine.scan(User))
-    engine.delete(*users)
+    engine.delete(*engine.scan(User))
 
 
 @pytest.fixture

@@ -17,7 +17,7 @@ from bloop.models import (
     object_modified,
     unpack_from_dynamodb,
 )
-from bloop.types import UUID, Boolean, DateTime, Integer, String
+from bloop.types import UUID, Boolean, DateTime, Integer, String, Type
 
 from ..helpers.models import User, VectorModel
 
@@ -273,6 +273,21 @@ def test_meta_table_name():
     assert Other.Meta.table_name == "table_name"
 
 
+def test_meta_not_class():
+    """A model's Meta can be anything, not necessarily an inline class"""
+    class MetaClass:
+        pass
+    meta = MetaClass()
+    meta.read_units = 3
+
+    class Model(BaseModel):
+        Meta = meta
+        id = Column(UUID, hash_key=True)
+
+    assert Model.Meta.read_units == 3
+    assert not Model.Meta.indexes
+
+
 def test_meta_default_stream():
     """By default, stream is None"""
     class Model(BaseModel):
@@ -288,11 +303,20 @@ def test_meta_default_stream():
 
 
 def test_abstract_not_inherited():
+    """Meta.abstract isn't inherited, and by default subclasses are not abstract"""
     class Concrete(BaseModel):
         id = Column(UUID, hash_key=True)
 
     assert BaseModel.Meta.abstract
     assert not Concrete.Meta.abstract
+
+
+def test_abstract_subclass():
+    """Explicit abstract subclasses are fine, and don't require hash/range keys"""
+    class Abstract(BaseModel):
+        class Meta:
+            abstract = True
+    assert not Abstract.Meta.keys
 
 
 def test_model_str(engine):
@@ -416,6 +440,47 @@ def test_parent_hash(caplog):
 
 
 # COLUMN ======================================================================================================= COLUMN
+
+
+def test_column_invalid_typedef():
+    """Column typedef must be an instance or subclass of bloop.Type"""
+    with pytest.raises(TypeError):
+        Column(object())
+
+
+def test_column_type_instantiation():
+    """If a bloop.Type subclass is provided, Column calls __init__ with no args"""
+    # noinspection PyAbstractClass
+    class MyType(Type):
+        def __init__(self, *args, **kwargs):
+            assert not args
+            assert not kwargs
+            super().__init__()
+
+    column = Column(MyType)
+    assert isinstance(column.typedef, MyType)
+
+
+def test_unbound_column_model_name():
+    """A column created outside a subclass of BaseModel won't have a model_name, and can't get/set/del"""
+    column = Column(Integer)
+
+    class MyModel(BaseModel):
+        class Meta:
+            abstract = True
+    MyModel.name = column
+
+    obj = MyModel()
+
+    with pytest.raises(AttributeError) as excinfo:
+        obj.name = "foo"
+    assert "without binding to model" in str(excinfo.value)
+    with pytest.raises(AttributeError) as excinfo:
+        getattr(obj, "name")
+    assert "without binding to model" in str(excinfo.value)
+    with pytest.raises(AttributeError) as excinfo:
+        del obj.name
+    assert "without binding to model" in str(excinfo.value)
 
 
 def test_column_dynamo_name():

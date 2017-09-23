@@ -107,29 +107,23 @@ def setdefault(obj, field, default):
 
 def ensure_meta(cls):
     meta = getattr(cls, "Meta", missing)
-    # not sufficient to have a Meta, it can't be
-    # an inherited Meta.  Otherwise we are potentially mutating
+    # Meta can't be inherited, otherwise we are mutating
     # a shared BaseModel.Meta's table_name, write_units, etc.
-    if meta is not missing:
-        for base in cls.__mro__:
-            # Should only be the first entry in __mro__ but
-            # people do crazy things..
-            if base is cls:
-                continue
-            parent_meta = getattr(base, "Meta", None)
-            # if we find a collision, this is an
-            # inherited Meta and we can't continue.
-            # clear the variable so we hit the check below
-            # and stop searching.
-            if meta is parent_meta:
-                meta = missing
-                break
+    for base in cls.__mro__:
+        # Should only be the first entry in __mro__
+        if base is cls:
+            continue
+        parent_meta = getattr(base, "Meta", None)
+        # We will always collide with BaseModel.Meta;
+        # stop searching on the first collision and
+        # clear meta so we create a new class below.
+        if meta is parent_meta:
+            meta = missing
+            break
     if meta is missing:
         class Meta:
             pass
         meta = cls.Meta = Meta
-    if not isinstance(meta, type):
-        raise TypeError("Expected `Meta` to be a class object")
     return meta
 
 
@@ -141,12 +135,11 @@ def ensure_hash(cls):
     # If there aren't any bases with explicit hash functions,
     # just use object.__hash__
     logger.info(f"searching for nearest __hash__ impl in {cls.__name__}.__mro__")
-    for base in cls.__mro__:
+    hash_fn = object.__hash__
+    for base in cls.__mro__:  # pragma: no branch (because __mro__ will never be an empty list)
         hash_fn = getattr(base, "__hash__")
         if hash_fn:
             break
-    else:
-        hash_fn = object.__hash__
     cls.__hash__ = hash_fn
 
 

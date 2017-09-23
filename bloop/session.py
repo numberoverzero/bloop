@@ -197,13 +197,13 @@ class SessionWrapper:
                 index.read_units = read_units
                 logger.debug(
                     "{}.{} does not specify read_units, set to {} from DescribeTable response".format(
-                        model.__name__, index.model_name, read_units)
+                        model.__name__, index.name, read_units)
                 )
             if index.write_units is None:
                 index.write_units = write_units
                 logger.debug(
                     "{}.{} does not specify write_units, set to {} from DescribeTable response".format(
-                        model.__name__, index.model_name, write_units)
+                        model.__name__, index.name, write_units)
                 )
 
     def describe_stream(self, stream_arn, first_shard=None):
@@ -375,7 +375,7 @@ def compare_tables(model, actual, expected):
             actual_index = actual_indexes.get(index.dynamo_name, None)
             expected_index = expected_indexes[index.dynamo_name]
             if not actual_index:
-                logger.debug("compare_tables: table is missing expected index \"{}\"".format(index.model_name))
+                logger.debug("compare_tables: table is missing expected index \"{}\"".format(index.name))
                 return False
             index_type = actual_index["Projection"]["ProjectionType"]
             # "ALL" will always include the model's projection
@@ -396,11 +396,11 @@ def compare_tables(model, actual, expected):
             if missing:
                 logger.debug(
                     "compare_tables: actual projection for index \"{}\" is missing expected columns {}".format(
-                        index.model_name, missing))
+                        index.name, missing))
                 return False
             if ordered(expected_index["KeySchema"]) != ordered(actual_index["KeySchema"]):
                 logger.debug("compare_tables: key schema mismatch for \"{}\": {} != {}".format(
-                    index.model_name,
+                    index.name,
                     json.dumps(ordered(actual_index["KeySchema"]), sort_keys=True),
                     json.dumps(ordered(expected_index["KeySchema"]), sort_keys=True),
                 ))

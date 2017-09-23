@@ -13,7 +13,9 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  [Unreleased]
 --------------
 
-TODO document all changes for the refactor-type-engine branch.  TODO migration notes for 2.0
+* TODO document all changes for the refactor-type-engine branch.
+* TODO explain ``model_name -> name``, ``name -> dynamo_name`` changes
+* TODO migration notes for 2.0
 
 Added
 =====
@@ -26,6 +28,12 @@ Added
   table names may be added to the model.Meta in the future.  (see `Issue #96`_)
 * A new exception ``InvalidTemplate`` is raised when an Engine's table_name_template is a string but does
   not contain the required "{table_name}" formatting key.
+
+Changed
+=======
+
+* ``Column.model_name`` is now ``Column.name``, and ``Index.model_name`` is now ``Index.name``.
+* ``Column(name=)`` is now ``Column(dynamo_name=)`` and ``Index(name=)`` is now ``Index(dynamo_name=)``
 
 Removed
 =======

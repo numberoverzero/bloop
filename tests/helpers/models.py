@@ -43,7 +43,7 @@ class User(BaseModel):
     age = Column(Integer)
     name = Column(String)
     email = Column(String)
-    joined = Column(DateTime, name="j")
+    joined = Column(DateTime, dynamo_name="j")
     by_email = GlobalSecondaryIndex(hash_key="email", projection="all")
 
 

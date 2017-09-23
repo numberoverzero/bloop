@@ -52,7 +52,7 @@ See :ref:`defining models <define-models>` in the User Guide.
     .. attribute:: dynamo_name
 
         The name of this column in DynamoDB.  Defaults to the column's
-        :data:`~Column.model_name`.
+        :data:`~Column.name`.
 
     .. attribute:: hash_key
 
@@ -62,7 +62,7 @@ See :ref:`defining models <define-models>` in the User Guide.
 
         The model this column is attached to.
 
-    .. attribute:: model_name
+    .. attribute:: name
 
         The name of this column in the model.  Not settable.
 
@@ -72,7 +72,7 @@ See :ref:`defining models <define-models>` in the User Guide.
             ...     ...
             ...     cheat_codes = Column(Set(String), name="cc")
             ...
-            >>> Document.cheat_codes.model_name
+            >>> Document.cheat_codes.name
             cheat_codes
             >>> Document.cheat_codes.dynamo_name
             cc
@@ -90,7 +90,7 @@ See :ref:`defining models <define-models>` in the User Guide.
     .. attribute:: dynamo_name
 
         The name of this index in DynamoDB.  Defaults to the index's
-        :data:`~GlobalSecondaryIndex.model_name`.
+        :data:`~GlobalSecondaryIndex.name`.
 
     .. attribute:: hash_key
 
@@ -100,7 +100,7 @@ See :ref:`defining models <define-models>` in the User Guide.
 
         The model this index is attached to.
 
-    .. attribute:: model_name
+    .. attribute:: name
 
         The name of this index in the model.  Not settable.
 
@@ -111,7 +111,7 @@ See :ref:`defining models <define-models>` in the User Guide.
             ...     by_email = GlobalSecondaryIndex(
             ...         projection="keys", name="ind_e", hash_key="email")
             ...
-            >>> Document.by_email.model_name
+            >>> Document.by_email.name
             by_email
             >>> Document.by_email.dynamo_name
             ind_e
@@ -150,7 +150,7 @@ See :ref:`defining models <define-models>` in the User Guide.
     .. attribute:: dynamo_name
 
         The name of this index in DynamoDB.  Defaults to the index's
-        :data:`~LocalSecondaryIndex.model_name`.
+        :data:`~LocalSecondaryIndex.name`.
 
     .. attribute:: hash_key
 
@@ -160,7 +160,7 @@ See :ref:`defining models <define-models>` in the User Guide.
 
         The model this index is attached to.
 
-    .. attribute:: model_name
+    .. attribute:: name
 
         The name of this index in the model.  Not settable.
 
@@ -171,7 +171,7 @@ See :ref:`defining models <define-models>` in the User Guide.
             ...     by_date = LocalSecondaryIndex(
             ...         projection="keys", name="ind_co", range_key="created_on")
             ...
-            >>> Document.by_date.model_name
+            >>> Document.by_date.name
             by_date
             >>> Document.by_date.dynamo_name
             ind_co

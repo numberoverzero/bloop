@@ -239,7 +239,7 @@ def test_load_shared_table(engine, session, caplog):
         id = Column(String, hash_key=True)
         range = Column(String, range_key=True)
         first = Column(String)
-        as_date = Column(DateTime, name="shared")
+        as_date = Column(DateTime, dynamo_name="shared")
 
     class SecondModel(BaseModel):
         class Meta:
@@ -248,7 +248,7 @@ def test_load_shared_table(engine, session, caplog):
         id = Column(String, hash_key=True)
         range = Column(String, range_key=True)
         second = Column(String)
-        as_string = Column(String, name="shared")
+        as_string = Column(String, dynamo_name="shared")
     engine.bind(BaseModel)
 
     id = "foo"
@@ -274,9 +274,9 @@ def test_load_shared_table(engine, session, caplog):
     expected_second = SecondModel(id=id, range=range, second="second", as_string=now_str)
 
     missing = object()
-    for attr in (c.model_name for c in FirstModel.Meta.columns):
+    for attr in (c.name for c in FirstModel.Meta.columns):
         assert getattr(first, attr, missing) == getattr(expected_first, attr, missing)
-    for attr in (c.model_name for c in SecondModel.Meta.columns):
+    for attr in (c.name for c in SecondModel.Meta.columns):
         assert getattr(second, attr, missing) == getattr(expected_second, attr, missing)
     assert not hasattr(first, "second")
     assert not hasattr(second, "first")

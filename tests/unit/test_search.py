@@ -646,7 +646,7 @@ def test_printable_query(query_on, expected):
 def test_search_repr():
     cls = type("Class", tuple(), {})
     model = type("Model", tuple(), {})
-    index = type("Index", tuple(), {"model_name": "by_gsi"})()
+    index = type("Index", tuple(), {"name": "by_gsi"})()
 
     for has_model, has_index, expected in [
         (None, None, "<Class[None]>"),

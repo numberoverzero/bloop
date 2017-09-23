@@ -279,7 +279,7 @@ a column can't be both, there can't be more than one of each, and there must be 
         referrer = Column(String, hash_key=True)
         version = Column(Integer, range_key=True)
 
-By default values will be stored in DynamoDB under the name of the column in the model definition (its ``model_name``).
+By default values will be stored in DynamoDB under the name of the column in the model definition (its ``name``).
 If you want to conserve read and write units, you can use shorter names for attributes in DynamoDB (attribute names
 are counted against your provisioned throughput).  Like the ``table_name`` in Meta, the optional ``name`` parameter
 lets you use descriptive model names without binding you to those names in DynamoDB.  This is also convenient when
@@ -336,7 +336,7 @@ names.  If you specify a list of columns, key columns will always be included.
             ["email", "username"], hash_key="created_on")
 
 A GlobalSecondaryIndex must have a ``hash_key``, and can optionally have a ``range_key``.  This can either be the
-model_name of a column, or the column object itself:
+name of a column, or the column object itself:
 
 .. code-block:: python
 

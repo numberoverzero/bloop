@@ -27,7 +27,7 @@ object_loaded.__doc__ = """Sent by ``engine`` after an object is loaded from Dyn
 
     def key(obj):
         meta = obj.Meta
-        return (getattr(obj, k.model_name) for k in meta.keys)
+        return (getattr(obj, k.name) for k in meta.keys)
 
     @object_loaded.connect
     def on_loaded(_, obj, **__):
@@ -47,7 +47,7 @@ object_saved.__doc__ = """Sent by ``engine`` after an object is saved to DynamoD
 
     def key(obj):
         meta = obj.Meta
-        return (getattr(obj, k.model_name) for k in meta.keys)
+        return (getattr(obj, k.name) for k in meta.keys)
 
     @object_saved.connect
     def on_saved(_, obj, **__):
@@ -67,7 +67,7 @@ object_deleted.__doc__ = """Sent by ``engine`` after an object is deleted from D
 
     def key(obj):
         meta = obj.Meta
-        return (getattr(obj, k.model_name) for k in meta.keys)
+        return (getattr(obj, k.name) for k in meta.keys)
 
     @object_deleted.connect
     def on_deleted(_, obj, **__):
@@ -91,7 +91,7 @@ and on ``__del__`` regardless of exceptions.
     def enforce_positive_balance(_, obj, column, value, **__):
         if column is Account.balance and value < 0:
             # Danger: careful around infinite loops!
-            setattr(obj, column.model_name, 0)
+            setattr(obj, column.name, 0)
 
 :param column: The :class:`~bloop.models.Column` that corresponds to the modified attribute.
 :param obj: The :class:`~bloop.models.BaseModel` that was modified.

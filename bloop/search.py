@@ -27,12 +27,12 @@ def printable_query(query_on):
 def search_repr(cls, model, index):
     if model is not None:
         if index is not None:
-            return "<{}[{}.{}]>".format(cls.__name__, model.__name__, index.model_name)
+            return "<{}[{}.{}]>".format(cls.__name__, model.__name__, index.name)
         else:
             return "<{}[{}]>".format(cls.__name__, model.__name__)
     else:
         if index is not None:
-            return "<{}[None.{}]>".format(cls.__name__, index.model_name)
+            return "<{}[None.{}]>".format(cls.__name__, index.name)
         else:
             return "<{}[None]>".format(cls.__name__)
 
@@ -92,16 +92,16 @@ def validate_search_projection(model, index, projection):
     # Keep original around for error messages
     original_projection = projection
 
-    # model_name -> Column
+    # name -> Column
     if all(isinstance(p, str) for p in projection):
-        by_model_name = util.index(model.Meta.columns, "model_name")
+        by_name = util.index(model.Meta.columns, "name")
         # This could be a list comprehension, but then the
         # user gets a KeyError when they passed a list.  So,
         # do each individually and throw a useful exception.
         converted_projection = []
         for p in projection:
             try:
-                converted_projection.append(by_model_name[p])
+                converted_projection.append(by_name[p])
             except KeyError:
                 raise InvalidProjection("{!r} is not a column of {!r}.".format(p, model))
         projection = converted_projection
@@ -156,7 +156,7 @@ def check_range_key(query_on, key):
 def fail_bad_hash(query_on):
     msg = "The key condition for a Query on {!r} must be `{}.{} == value`."
     raise InvalidKeyCondition(msg.format(
-        printable_query(query_on), query_on.model.__name__, query_on.hash_key.model_name))
+        printable_query(query_on), query_on.model.__name__, query_on.hash_key.name))
 
 
 def fail_bad_range(query_on):

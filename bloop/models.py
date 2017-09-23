@@ -1,7 +1,10 @@
 import collections.abc
 import logging
 
+import types
+
 import declare
+import inspect
 
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel, InvalidStream
@@ -105,14 +108,17 @@ class ModelMetaclass(declare.ModelMetaclass):
 
         meta = model.Meta
         meta.model = model
+
         # new_class will set abstract to true, all other models are assumed
         # to be concrete unless specified
         setdefault(meta, "abstract", False)
         setdefault(meta, "write_units", None)
         setdefault(meta, "read_units", None)
 
+        setup_bases(meta, bases)
         setup_columns(meta)
-        setup_indexes(meta)
+        if meta.abstract is False:
+            setup_indexes(meta)
 
         # Entry point for model population. By default this is the
         # class's __init__ function. Custom models can specify the
@@ -129,6 +135,24 @@ class ModelMetaclass(declare.ModelMetaclass):
 
     def __repr__(cls):
         return "<Model[{}]>".format(cls.__name__)
+
+
+def setup_bases(meta, bases):
+    for base in bases:
+        pos = 0
+        for name, member in inspect.getmembers(base, lambda x: isinstance(x, declare.Field)):
+            if isinstance(member, Index):
+                # patch it so you can't call it form the derived instance
+                def invalid_model_for_index(*args, **kwargs):
+                    raise InvalidIndex("Can not use an base class's index in a derived class!")
+                invalid_model_for_index.__name__ = name
+                setattr(meta.model, name, types.MethodType(invalid_model_for_index, meta.model.__class__))
+                continue
+
+            if member._model_name not in [field._model_name for field in meta.fields]:
+                meta.fields.insert(pos, member)
+                pos += 1
+    meta.fields_by_model_name = declare.index(meta.fields, 'model_name')
 
 
 def setdefault(obj, field, default):
@@ -148,12 +172,11 @@ def setup_columns(meta):
     meta.range_key = None
     meta.keys = set()
 
+    cls_name = meta.model.__name__
+    hash_keys = [c for c in meta.columns if c.hash_key]
+    range_keys = [c for c in meta.columns if c.range_key]
+
     if not meta.abstract:
-        cls_name = meta.model.__name__
-
-        hash_keys = [c for c in meta.columns if c.hash_key]
-        range_keys = [c for c in meta.columns if c.range_key]
-
         if len(hash_keys) == 0:
             raise InvalidModel("{!r} has no hash key.".format(cls_name))
         elif len(hash_keys) > 1:
@@ -162,16 +185,18 @@ def setup_columns(meta):
         if len(range_keys) > 1:
             raise InvalidModel("{!r} has more than one range key.".format(cls_name))
 
-        if range_keys:
-            if hash_keys[0] is range_keys[0]:
-                raise InvalidModel("{!r} has the same hash and range key.".format(cls_name))
-            meta.range_key = range_keys[0]
-            meta.keys.add(meta.range_key)
+    if range_keys:
+        if hash_keys and hash_keys[0] is range_keys[0]:
+            raise InvalidModel("{!r} has the same hash and range key.".format(cls_name))
+        meta.range_key = range_keys[0]
+        meta.keys.add(meta.range_key)
+    if hash_keys:
         meta.hash_key = hash_keys[0]
         meta.keys.add(meta.hash_key)
 
     for column in meta.columns:
-        column.model = meta.model
+        if not hasattr(column, 'model') or column.model is None:
+            column.model = meta.model
 
     # API consistency with an Index, so (index or model.Meta) can be
     # used interchangeably to get the available columns from that

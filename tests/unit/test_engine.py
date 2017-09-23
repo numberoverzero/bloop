@@ -19,7 +19,7 @@ from bloop.signals import object_saved
 from bloop.types import DateTime, Integer, String
 from bloop.util import ordered
 
-from ..helpers.models import ComplexModel, User, VectorModel
+from ..helpers.models import ComplexModel, User, VectorModel, AbstractBaseClass
 
 
 def test_missing_objects(engine, session, caplog):
@@ -251,23 +251,47 @@ def test_load_dump_subclass(engine):
     """Only the immediate Columns of a model should be dumped"""
 
     class Admin(User):
-        admin_id = Column(Integer, hash_key=True)
+        admin_id = Column(Integer, range_key=True)
         other = Column(Integer)
-    engine.bind(User)
+    engine.bind(Admin)
 
     admin = Admin(admin_id=3)
-    # Set an attribute that would be a column on the parent class, but should
-    # have no meaning for the subclass
+    # Set an attribute that would be a column on the parent class
     admin.email = "admin@domain.com"
 
-    dumped_admin = {"admin_id": {"N": "3"}}
+    dumped_admin = {"admin_id": {"N": "3"}, 'email': {'S': 'admin@domain.com'}}
     assert engine._dump(Admin, admin) == dumped_admin
 
-    # Inject a value that would have meaning for a column on the parent class,
-    # but should not be loaded for the subclass
+    # Inject a value that would have meaning for a column on the parent class
     dumped_admin["email"] = {"S": "support@foo.com"}
     same_admin = engine._load(Admin, dumped_admin)
-    assert not hasattr(same_admin, "email")
+    assert hasattr(same_admin, "email")
+
+
+def test_load_dump_abstract_subclass(engine):
+    """Only the immediate Columns of a model should be dumped"""
+
+    class AbstractAdmin(AbstractBaseClass):
+        admin_id = Column(Integer)
+        other = Column(Integer)
+    engine.bind(AbstractAdmin)
+
+    admin = AbstractAdmin(id=3, admin_id=4)
+    # Set an attribute that would be a column on the parent class and *will*
+    # have meaning for the subclass
+    admin.email = "admin@domain.com"
+
+    # We'll also set an attribute that should be ignored
+    admin.bob = "bob"
+
+    dumped_admin = {"id": {"N": "3"}, "admin_id": {"N": "4"}, "email": {"S": "admin@domain.com"}}
+    assert engine._dump(AbstractAdmin, admin) == dumped_admin
+
+    # Inject a value that *will* have meaning for a column on the parent class,
+    # because it will be loaded from the subclass
+    dumped_admin["email"] = {"S": "support@foo.com"}
+    same_admin = engine._load(AbstractAdmin, dumped_admin)
+    assert hasattr(same_admin, "email")
 
 
 def test_load_dump_unknown(engine):
@@ -517,6 +541,10 @@ def test_delete_atomic_condition(engine, session):
 
 def test_query(engine):
     """Engine.query supports model and index-based queries"""
+    # clear out all bound models
+    engine.type_engine.clear()
+    engine.bind(User)
+
     index_query = engine.query(
         User.by_email,
         key=User.by_email.hash_key == "placeholder",
@@ -532,6 +560,9 @@ def test_query(engine):
 
 def test_scan(engine):
     """Engine.scan supports model and index-based queries"""
+    engine.type_engine.clear()
+    engine.bind(User)
+
     index_scan = engine.scan(User.by_email, parallel=(1, 5))
     assert index_scan.model is User
     assert index_scan.index is User.by_email
@@ -630,8 +661,8 @@ def test_bind_different_engines(dynamodb, dynamodbstreams):
 
     # The model (and its columns) are bound to each engine's TypeEngine,
     # regardless of how many times the model has been bound already
-    assert Concrete in first_engine.type_engine.bound_types
-    assert Concrete in second_engine.type_engine.bound_types
+    assert Concrete.__name__ in first_engine.type_engine.bound_types
+    assert Concrete.__name__ in second_engine.type_engine.bound_types
 
 
 def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):

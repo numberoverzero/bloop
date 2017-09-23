@@ -2,7 +2,6 @@ import datetime
 import decimal
 import uuid
 
-import declare
 import pytest
 
 from bloop.types import (
@@ -20,6 +19,7 @@ from bloop.types import (
 )
 
 from ..helpers.models import DocumentType
+from bloop.type_engine import TypeEngine
 
 
 def symmetric_test(typedef, *pairs):
@@ -221,16 +221,16 @@ def test_set_illegal_backing_type():
 
 def test_set_registered():
     """set registers its typedef so loading/dumping happens properly"""
-    type_engine = declare.TypeEngine.unique()
+    type_engine = TypeEngine.unique()
     string_type = String()
     string_set_type = Set(string_type)
 
     type_engine.bind()
-    assert string_type not in type_engine.bound_types
+    assert 'String' not in type_engine.bound_types
 
     type_engine.register(string_set_type)
     type_engine.bind()
-    assert string_type in type_engine.bound_types
+    assert 'String' in type_engine.bound_types
 
 
 @pytest.mark.parametrize("value", [1, True, object(), bool, "str", False, 0, set(), ""], ids=repr)

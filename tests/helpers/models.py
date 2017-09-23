@@ -12,6 +12,7 @@ from bloop import (
     Number,
     Set,
     String,
+    Boolean
 )
 
 
@@ -26,6 +27,18 @@ DocumentType = Map(**{
     'Id': UUID,
     'Updated': DateTime
 })
+
+
+class AbstractBaseClass(BaseModel):
+    class Meta:
+        abstract = True
+
+    id = Column(Integer, hash_key=True)
+    created = Column(DateTime, range_key=True)
+    modified = Column(DateTime)
+    active = Column(Boolean)
+    email = Column(String)
+    by_email = GlobalSecondaryIndex(hash_key="email", projection="all")
 
 
 class Document(BaseModel):

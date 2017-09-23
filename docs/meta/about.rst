@@ -7,7 +7,7 @@ Contributing
 
 Thanks for contributing!  Feel free to `open an issue`_ for any bugs, typos, unhelpful docs, or general unhappiness
 which you may encounter while using Bloop.  If you want to `create a pull request`_, even more awesome!  Please
-make sure all the non-integ tox environments pass.
+make sure all the tox environments pass.
 
 To start developing Bloop first `create a fork`_, then clone and run the tests::
 
@@ -15,6 +15,15 @@ To start developing Bloop first `create a fork`_, then clone and run the tests::
     cd bloop
     pip install tox -e .
     tox -e unit, docs
+
+.. note::
+
+    The integration tests use `DynamoDBLocal`_ which requires JRE >= 6.x.  The tests automatically download and unpack
+    the software into ``.dynamodb_local`` and start the process as follows, where the port is selected at runtime::
+
+        java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -inMemory -port {PORT}
+
+.. _DynamoDBLocal: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html
 
 .. _meta-versioning:
 

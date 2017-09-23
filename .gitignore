@@ -61,3 +61,5 @@ target/
 .python-version
 .idea/
 .venv/
+.dynamodb-local
+.dynamodb-local.tmp

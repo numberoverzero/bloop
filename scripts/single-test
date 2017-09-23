@@ -14,8 +14,7 @@ TEST_ROOT = PROJECT_ROOT / "tests" / "unit"
 def run(cmd: str, suppress=False) -> None:
     stdout = subprocess.PIPE if suppress else None
     stderr = subprocess.PIPE if suppress else None
-    subprocess.run(cmd, shell=True, universal_newlines=True,
-                   stdout=stdout, stderr=stderr)
+    subprocess.run(cmd, shell=True, universal_newlines=True, stdout=stdout, stderr=stderr)
 
 
 def clear_coverage() -> None:
@@ -63,10 +62,12 @@ def run_test(name: str, verbose=False, suppress=False, append=False) -> None:
     except ValueError:
         pass
 
-    cmd = template.format(append="--append" if append else "", verbose="-v" if verbose else "",
-                          src=src, test=test)
+    cmd = template.format(
+        append="--append" if append else "", verbose="-v" if verbose else "",
+        src=src, test=test)
     print(cmd)
     run(cmd, suppress=suppress)
+
 
 if __name__ == "__main__":
     if len(sys.argv) > 2:

@@ -20,23 +20,112 @@ from bloop.signals import model_created
 from tests.helpers.utils import get_tables
 from tests.integ.models import User
 
-resource_options = {
-    'endpoint_url': None
-}
-
-LATEST_DYNAMODB_LOCAL_SHA = '70d9a92529782ac93713258fe69feb4ff6e007ae2c3319c7ffae7da38b698a61'
-fixed_session = boto3.Session(region_name="us-west-2")
+LATEST_DYNAMODB_LOCAL_SHA = "70d9a92529782ac93713258fe69feb4ff6e007ae2c3319c7ffae7da38b698a61"
+DYNAMODB_LOCAL_SINGLETON = None
 
 
-@pytest.fixture(scope='session')
-def use_dynamodb_local():
-    """
-    Ensures that the dynamodb-local service is running, and shuts it down when all tests are done.
-    :return:
-    """
-    proc = start_dynamodb_local()
-    yield
-    proc.terminate()
+class DynamoDBLocal:
+    def __init__(self, localdir: str) -> None:
+        self.localdir = localdir
+        self.process = None  # type: subprocess.Popen
+        self.port = None
+
+    @property
+    def running(self) -> bool:
+        return self.process is not None
+
+    @property
+    def session(self) -> boto3.Session:
+        assert self.running
+        return boto3.Session(
+            region_name="us-west-2",
+            aws_access_key_id="NO_ACCESS_KEY",
+            aws_secret_access_key="NO_SECRET_KEY",
+        )
+
+    @property
+    def endpoint(self) -> str:
+        assert self.running
+        return "http://localhost:" + str(self.port)
+
+    @property
+    def clients(self) -> tuple:
+        session = self.session
+        endpoint = self.endpoint
+        return (
+            session.client("dynamodb", endpoint_url=endpoint),
+            session.client("dynamodbstreams", endpoint_url=endpoint)
+        )
+
+    def start(self) -> None:
+        assert not self.running
+        self._download()
+        self._reserve_port()
+        self.process = self._run()
+
+    def stop(self) -> None:
+        assert self.running
+        self.process.terminate()
+
+    def _download(self) -> None:
+        if os.path.exists(self.localdir):
+            return
+        print("\n".join((
+            "*" * 79,
+            "DynamoDBLocal doesn't exist, installing at {}".format(self.localdir),
+            "*" * 79
+        )))
+
+        # need a temp directory to download it in...
+        tempdir = self.localdir + ".tmp"
+        if os.path.exists(tempdir):
+            shutil.rmtree(tempdir)
+        os.mkdir(tempdir)
+
+        r = requests.get("https://s3-us-west-2.amazonaws.com/dynamodb-local/dynamodb_local_latest.zip",
+                         stream=True)
+        dist = os.path.join(tempdir, "dynamodb_local_latest.zip")
+
+        # download in chucks, checking its sha256 hash along the way
+        sha = hashlib.sha256()
+        with open(dist, "wb") as f:
+            for chunk in r.iter_content(chunk_size=1024):
+                if chunk:
+                    f.write(chunk)
+                    sha.update(chunk)
+
+        # Is this the file we're looking for?
+        if sha.hexdigest() != LATEST_DYNAMODB_LOCAL_SHA:
+            msg = "Invalid hash of {}/dynamodb_local_latest.zip -- expected {} but was {}"
+            raise RuntimeError(msg.format(tempdir, LATEST_DYNAMODB_LOCAL_SHA, sha.hexdigest()))
+
+        zip_ref = zipfile.ZipFile(dist, "r")
+        zip_ref.extractall(tempdir)
+        zip_ref.close()
+
+        # clean up
+        os.rename(tempdir, self.localdir)
+
+    def _reserve_port(self) -> None:
+        """
+        By using a socket and binding to "" (localhost), with a port of 0 (socket picks first non-privileged port
+        that is not in use, we can ensure that the port is available.
+        See:  https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
+        and   https://stackoverflow.com/a/45690594
+        :return: The port to use
+        """
+        with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
+            s.bind(("", 0))
+            s.listen(1)
+            self.port = s.getsockname()[1]
+
+    def _run(self) -> subprocess.Popen:
+        return subprocess.Popen([
+            "java", "-Djava.library.path=./DynamoDBLocal_lib",
+            "-jar", "DynamoDBLocal.jar", "-inMemory",
+            "-port", str(self.port)],
+            cwd=self.localdir
+        )
 
 
 def pytest_addoption(parser):
@@ -47,6 +136,12 @@ def pytest_addoption(parser):
     parser.addoption(
         "--skip-cleanup", action="store_true", default=False,
         help="don't clean up tables after tests run")
+
+    default_localdir = ".dynamodb-local"
+    parser.addoption(
+        "--dynamodb-local-dir", action="store", default=default_localdir,
+        help="directory that contains DynamoDBLocal jar"
+    )
 
 
 def pytest_configure(config):
@@ -59,125 +154,53 @@ def pytest_configure(config):
             model.Meta.table_name += nonce
 
 
-def pytest_unconfigure(config):
-    skip_cleanup = config.getoption("--skip-cleanup")
-    if skip_cleanup:
-        print("Skipping cleanup")
-        return
-    dynamodb_client = fixed_session.client("dynamodb")
-    tables = get_tables(dynamodb_client)
-    nonce = config.getoption("--nonce")
-    print("Cleaning up tables with nonce '{}'".format(nonce))
-    for table in tables:
-        if nonce not in table:
-            continue
-        # noinspection PyBroadException
-        try:
-            print("Removing table: {}".format(table))
-            dynamodb_client.delete_table(TableName=table)
-        except Exception:
-            print("Failed to clean up table '{}'".format(table))
-
-
 @pytest.fixture(scope="session")
-def nonce(request):
-    return request.config.getoption("--nonce")
+def dynamodb_local(request):
+    nonce = request.config.getoption("--nonce")
+    localdir = request.config.getoption("--dynamodb-local-dir")
+    skip_cleanup = request.config.getoption("--skip-cleanup")
+
+    dynamodb_local = DynamoDBLocal(localdir)
+    dynamodb_local.start()
+
+    yield dynamodb_local
+
+    try:
+        if skip_cleanup:
+            print("Skipping cleanup")
+        else:
+            print("Cleaning up tables with nonce '{}'".format(nonce))
+            dynamodb, _ = dynamodb_local.clients
+            tables = get_tables(dynamodb)
+            for table in tables:
+                if nonce not in table:
+                    continue
+                # noinspection PyBroadException
+                try:
+                    print("Removing table: {}".format(table))
+                    dynamodb.delete_table(TableName=table)
+                except Exception:
+                    print("Failed to clean up table '{}'".format(table))
+    finally:
+        dynamodb_local.stop()
 
 
-@pytest.fixture(scope="session")
-def dynamodb(use_dynamodb_local):
-    return fixed_session.client("dynamodb", endpoint_url=resource_options['endpoint_url'])
+@pytest.fixture
+def dynamodb(dynamodb_local):
+    dynamodb, _ = dynamodb_local.clients
+    return dynamodb
 
 
-@pytest.fixture(scope="session")
-def dynamodbstreams(use_dynamodb_local):
-    return fixed_session.client("dynamodbstreams", endpoint_url=resource_options['endpoint_url'])
+@pytest.fixture
+def dynamodbstreams(dynamodb_local):
+    _, dynamodbstreams = dynamodb_local.clients
+    return dynamodbstreams
 
 
 @pytest.fixture
 def engine(dynamodb, dynamodbstreams):
-    yield Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
-
-
-def get_open_port():
-    """
-    By using a socket and binding to "" (localhost), with a port of 0 (socket picks first non-privileged port
-    that is not in use, we can ensure that the port is available.
-    See:  https://stackoverflow.com/questions/2838244/get-open-tcp-port-in-python/2838309#2838309
-    and   https://stackoverflow.com/a/45690594
-    :return: The port to use
-    """
-    with contextlib.closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
-        s.bind(("", 0))
-        s.listen(1)
-        port = s.getsockname()[1]
-        return port
-
-
-def get_ddb_local():
-    """
-    Ensure that dynamodb-local is downloaded and available.  It must match the sha256 in this file.
-    :return: The directory where it's installed.
-    """
-    localdir = pytest.config.rootdir.join('.dynamodb-local').strpath
-    if not os.path.exists(localdir):
-
-        print("\n".join((
-            "*" * 79,
-            "DynamoDBLocal doesn't exist, installing at {}".format(localdir),
-            "*" * 79
-        )))
-
-        # need a temp directory to download it in...
-        tempdir = localdir + '.tmp'
-        if os.path.exists(tempdir):
-            shutil.rmtree(tempdir)
-        os.mkdir(tempdir)
-
-        r = requests.get('https://s3-us-west-2.amazonaws.com/dynamodb-local/dynamodb_local_latest.zip', stream=True)
-        dist = os.path.join(tempdir, 'dynamodb_local_latest.zip')
-
-        # download in chucks, checking it's sha256 hash along the way
-        sha = hashlib.sha256()
-        with open(dist, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=1024):
-                if chunk:
-                    f.write(chunk)
-                    sha.update(chunk)
-
-        # Is this the file we're looking for?
-        if sha.hexdigest() != LATEST_DYNAMODB_LOCAL_SHA:
-            msg = "Invalid hash of {}/dynamodb_local_latest.zip -- expected {} but was {}"
-            raise RuntimeError(msg.format(tempdir, LATEST_DYNAMODB_LOCAL_SHA, sha.hexdigest()))
-
-        zip_ref = zipfile.ZipFile(dist, 'r')
-        zip_ref.extractall(tempdir)
-        zip_ref.close()
-
-        # clean up
-        os.rename(tempdir, localdir)
-    return localdir
-
-
-def start_dynamodb_local():
-    """
-    Starts dynamodb-local.
-    :return: The dynamodb-local process
-    """
-    cwd = get_ddb_local()
-    port = get_open_port()
-    proc = subprocess.Popen(['java', '-Djava.library.path=./DynamoDBLocal_lib',
-                             '-jar', 'DynamoDBLocal.jar', '-inMemory',
-                             '-port', str(port)], cwd=cwd)
-    resource_options['endpoint_url'] = 'http://localhost:{}'.format(port)
-    return proc
-
-
-@pytest.yield_fixture(autouse=True)
-def cleanup_objects(engine):
-    yield
-    # TODO track bound models w/model_bound signal (TODO), then use boto3 to scan/delete by Meta.table_name
-    # Running tests individually may break if the User table isn't bound as part of that test
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    yield engine
     engine.delete(*engine.scan(User))
 
 

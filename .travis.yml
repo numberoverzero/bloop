@@ -2,17 +2,12 @@ language: python
 python: 3.5
 cache: pip
 env:
-  global:
-  # AWS_ACCESS_KEY_ID bloop-integ-travis-001
-  - secure: fw6+R5mHzcpaex9kmLwWo8DsxlsWGpGBlyKfsPDf7qSqgkLjli65zDiMKKTLKyRzXWo4N3e2VerKY1kZScejPjl2c6i/aGOONsADooH3qQi9/ic1gBwmNOiZwNRgtBgicV3FlL0VukriPtnhO+D7YZGn700JkXxFxu6BCzafBdM=
-  # AWS_SECRET_ACCESS_KEY bloop-integ-travis-001
-  - secure: HiDY8j0bQoPD0dQ5dVn5jaXxQlp/prb1B80Yz9Ji0Ea7KaU+BOA9EoIrVL3lhB7sS9P2R2Mz5nH4z8Yhur76oRfrkHzkn+9AfXmv/KTVSl0tLFZ2kXCGPMa+LYIwt6JlsKNtgkyufs/mGWYZc84sQolA/9G/b0lusAsp/WU67ts=
   matrix:
   - TOXENV=unit
   - TOXENV=integ
   - TOXENV=docs
 install: pip install tox codecov
-script: scripts/travis_script.sh
+script: tox -e $TOXENV
 after_success:
 - test $TOXENV = "unit" && codecov
 - test $TOXENV = "integ" && codecov

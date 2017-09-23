@@ -7,6 +7,7 @@ from bloop import (
     GlobalSecondaryIndex,
     Integer,
     MissingObjects,
+    String,
 )
 
 from .models import User
@@ -55,6 +56,31 @@ def test_stream_creation(engine):
         hash = Column(Integer, hash_key=True)
     engine.bind(StreamCreation)
     assert "arn" in StreamCreation.Meta.stream
+
+
+def test_stream_read(engine):
+    class MyModel(BaseModel):
+        class Meta:
+            stream = {
+                "include": ["new", "old"]
+            }
+        id = Column(Integer, hash_key=True)
+        data = Column(String)
+    engine.bind(MyModel)
+
+    stream = engine.stream(MyModel, "trim_horizon")
+    assert next(stream) is None
+
+    obj = MyModel(id=3, data="hello, world")
+    another = MyModel(id=5, data="foobar")
+    # Two calls to ensure ordering
+    engine.save(obj)
+    engine.save(another)
+    for expected in obj, another:
+        record = next(stream)
+        assert record["new"].id == expected.id
+        assert record["new"].data == expected.data
+        assert record["old"] is None
 
 
 def test_model_overlap(dynamodb, engine):

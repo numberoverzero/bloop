@@ -1,7 +1,6 @@
 import collections
 
-import declare
-
+from . import util
 from .conditions import BaseCondition, iter_columns, render
 from .exceptions import (
     ConstraintViolation,
@@ -10,12 +9,19 @@ from .exceptions import (
     InvalidProjection,
     InvalidSearchMode,
 )
-from .models import Column, GlobalSecondaryIndex
+from .models import Column, GlobalSecondaryIndex, unpack_from_dynamodb
 from .signals import object_loaded
-from .util import printable_query, unpack_from_dynamodb
 
 
 __all__ = ["ScanIterator", "QueryIterator"]
+
+
+def printable_query(query_on):
+    # Model.Meta -> Model
+    if getattr(query_on, "__name__", "") == "Meta":
+        return query_on.model
+    # Index -> Index
+    return query_on
 
 
 def search_repr(cls, model, index):
@@ -88,7 +94,7 @@ def validate_search_projection(model, index, projection):
 
     # model_name -> Column
     if all(isinstance(p, str) for p in projection):
-        by_model_name = declare.index(model.Meta.columns, "model_name")
+        by_model_name = util.index(model.Meta.columns, "model_name")
         # This could be a list comprehension, but then the
         # user gets a KeyError when they passed a list.  So,
         # do each individually and throw a useful exception.

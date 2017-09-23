@@ -10,7 +10,6 @@ from bloop.exceptions import (
     InvalidStream,
     MissingKey,
     MissingObjects,
-    UnboundModel,
     UnknownType,
 )
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
@@ -240,11 +239,11 @@ def test_load_dump_unbound(engine):
     obj = Model(id=5)
     value = {"id": {"N": "5"}}
 
-    with pytest.raises(UnboundModel):
-        engine._load(Model, value)
+    loaded = engine._load(Model, value)
+    assert loaded.id == 5
 
-    with pytest.raises(UnboundModel):
-        engine._dump(Model, obj)
+    dumped = engine._dump(Model, obj)
+    assert dumped == {"id": {"N": "5"}}
 
 
 def test_load_dump_subclass(engine):
@@ -628,26 +627,26 @@ def test_bind_different_engines(dynamodb, dynamodbstreams):
     second_engine.session.create_table.assert_called_once_with(Concrete)
     second_engine.session.validate_table.assert_called_once_with(Concrete)
 
-    # The model (and its columns) are bound to each engine's TypeEngine,
-    # regardless of how many times the model has been bound already
-    assert Concrete in first_engine.type_engine.bound_types
-    assert Concrete in second_engine.type_engine.bound_types
-
 
 def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):
     # Required so engine doesn't pass boto3 to the wrapper
     engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
     engine.session = Mock(spec=SessionWrapper)
 
-    engine.bind(User, skip_table_setup=True)
+    class MyUser(BaseModel):
+        id = Column(Integer, hash_key=True)
+
+    caplog.handler.records.clear()
+
+    engine.bind(MyUser, skip_table_setup=True)
     engine.session.create_table.assert_not_called()
     engine.session.validate_table.assert_not_called()
 
     assert caplog.record_tuples == [
-        ("bloop.engine", logging.DEBUG, "binding non-abstract models ['Admin', 'User']"),
+        ("bloop.engine", logging.DEBUG, "binding non-abstract models ['MyUser']"),
         ("bloop.engine", logging.INFO,
          "skip_table_setup is True; not trying to create tables or validate models during bind"),
-        ("bloop.engine", logging.INFO, "successfully bound 2 models to the engine"),
+        ("bloop.engine", logging.INFO, "successfully bound 1 models to the engine"),
     ]
 
 

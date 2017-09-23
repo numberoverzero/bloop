@@ -6,23 +6,23 @@ import pytest
 from bloop.util import (
     Sentinel,
     WeakDefaultDictionary,
+    index,
     ordered,
-    printable_query,
-    unpack_from_dynamodb,
     walk_subclasses,
 )
 
-from ..helpers.models import User
 
+def test_index():
+    """Index by each object's value for an attribute"""
+    class Person:
+        def __init__(self, name):
+            self.name = name
 
-@pytest.fixture
-def unpack_kwargs(engine):
-    return {
-        "attrs": {"name": {"S": "numberoverzero"}},
-        "expected": {User.name, User.joined},
-        "model": User,
-        "engine": engine,
-        "context": {"engine": engine, "extra": "foo"},
+    p1, p2, p3 = Person("foo"), Person("bar"), Person("baz")
+    assert index([p1, p2, p3], "name") == {
+        "foo": p1,
+        "bar": p2,
+        "baz": p3
     }
 
 
@@ -70,49 +70,6 @@ def test_ordered_mapping(mapping):
 def test_ordered_recursion(obj, expected):
     """Mappings and iterables inside each other are sorted and flattened"""
     assert ordered(obj) == expected
-
-
-@pytest.mark.parametrize("query_on, expected", [
-    (User.Meta, User),
-    (User.by_email, User.by_email)
-])
-def test_printable_query(query_on, expected):
-    """Unpacks Model.Meta into Model, Index into Index for consistent attribute lookup"""
-    assert printable_query(query_on) is expected
-
-
-def test_unpack_no_engine(unpack_kwargs):
-    del unpack_kwargs["engine"]
-    del unpack_kwargs["context"]["engine"]
-
-    with pytest.raises(ValueError):
-        unpack_from_dynamodb(**unpack_kwargs)
-
-
-def test_unpack_no_obj_or_model(unpack_kwargs):
-    del unpack_kwargs["model"]
-    with pytest.raises(ValueError):
-        unpack_from_dynamodb(**unpack_kwargs)
-
-
-def test_unpack_obj_and_model(unpack_kwargs):
-    unpack_kwargs["obj"] = User()
-    with pytest.raises(ValueError):
-        unpack_from_dynamodb(**unpack_kwargs)
-
-
-def test_unpack_model(unpack_kwargs):
-    result = unpack_from_dynamodb(**unpack_kwargs)
-    assert result.name == "numberoverzero"
-    assert result.joined is None
-
-
-def test_unpack_obj(unpack_kwargs):
-    del unpack_kwargs["model"]
-    unpack_kwargs["obj"] = User()
-    result = unpack_from_dynamodb(**unpack_kwargs)
-    assert result.name == "numberoverzero"
-    assert result.joined is None
 
 
 def test_walk_subclasses():

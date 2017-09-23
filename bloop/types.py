@@ -4,8 +4,6 @@ import datetime
 import decimal
 import uuid
 
-import declare
-
 
 ENCODING = "utf-8"
 STRING = "S"
@@ -47,7 +45,7 @@ def supports_operation(operation, typedef):
     return typedef.backing_type in SUPPORTED_OPERATIONS[operation]
 
 
-class Type(declare.TypeDefinition):
+class Type:
     """Abstract base type."""
 
     python_type = None
@@ -123,22 +121,6 @@ class Type(declare.TypeDefinition):
         if value is not None:
             value = next(iter(value.values()))
         return self.dynamo_load(value, **kwargs)
-
-    def _register(self, engine):
-        """Called when the type is registered.
-
-        Register any types this type depends on.  For example, a container might use:
-
-        .. code-block:: python
-
-            class Container(Type):
-                def __init__(self, container_type):
-                    self._type = container_type
-
-                def _register(self, engine):
-                    engine.register(self._type)
-        """
-        super()._register(engine)
 
     def __repr__(self):
         # Render class python types by name
@@ -356,10 +338,6 @@ class Set(Type):
             raise TypeError("{!r} is not a valid set type.".format(self.backing_type))
         super().__init__()
 
-    def _register(self, engine):
-        """Register the set's type"""
-        engine.register(self.inner_typedef)
-
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return set()
@@ -409,9 +387,6 @@ class List(Type):
     def __getitem__(self, key):
         return self.inner_typedef
 
-    def _register(self, engine):
-        engine.register(self.inner_typedef)
-
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return list()
@@ -460,11 +435,6 @@ class Map(Type):
     def __getitem__(self, key):
         """Overload allows easy nested access to types"""
         return self.types[key]
-
-    def _register(self, engine):
-        """Register all types for the map"""
-        for typedef in self.types.values():
-            engine.register(typedef)
 
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:

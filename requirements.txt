@@ -1,9 +1,8 @@
 requests==2.18.4
 arrow==0.10.0
 blinker==1.4
-boto3==1.4.4
+boto3==1.4.7
 coverage==4.3.4
-declare==0.9.11
 delorean==0.6.0
 flake8==3.3.0
 pendulum==1.2.0

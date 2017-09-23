@@ -35,6 +35,7 @@ from bloop.search import (
     Search,
     SearchIterator,
     SearchModelIterator,
+    printable_query,
     search_repr,
     validate_filter_condition,
     validate_key_condition,
@@ -631,6 +632,15 @@ def test_prepare_request_parallel(valid_search, mode, parallel):
 
 
 # END PREPARE TESTS ================================================================================= END PREPARE TESTS
+
+
+@pytest.mark.parametrize("query_on, expected", [
+    (User.Meta, User),
+    (User.by_email, User.by_email)
+])
+def test_printable_query(query_on, expected):
+    """Unpacks Model.Meta into Model, Index into Index for consistent attribute lookup"""
+    assert printable_query(query_on) is expected
 
 
 def test_search_repr():

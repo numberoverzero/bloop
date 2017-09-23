@@ -230,15 +230,14 @@ The column will create an instance of the type by calling the constructor withou
     class SomeModel(BaseModel):
         custom_hash_key = Column(ReversedString, hash_key=True)
 
-In rare cases, complex types may need to implement :func:`~bloop.types.Type._dump`,
-:func:`~bloop.types.Type._load`, or :func:`~bloop.types.Type._register`.
+In rare cases, complex types may need to implement :func:`~bloop.types.Type._dump` or :func:`~bloop.types.Type._load`.
 
 ------
  Type
 ------
 
 .. autoclass:: bloop.types.Type
-    :members: dynamo_dump, dynamo_load, _dump, _load, _register
+    :members: dynamo_dump, dynamo_load, _dump, _load
     :member-order: bysource
 
     .. attribute:: python_type

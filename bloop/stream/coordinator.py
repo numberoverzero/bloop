@@ -6,6 +6,8 @@ import logging
 from ..exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from .buffer import RecordBuffer
 from .shard import unpack_shards
+
+
 logger = logging.getLogger("bloop.stream")
 
 

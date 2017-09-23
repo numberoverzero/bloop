@@ -1,5 +1,4 @@
 import contextlib
-
 import hashlib
 import os
 import random
@@ -13,12 +12,13 @@ import blinker
 import boto3
 import pytest
 import requests
+from tests.helpers.utils import get_tables
+from tests.integ.models import User
 
 from bloop import Engine
 from bloop.session import SessionWrapper
 from bloop.signals import model_created
-from tests.helpers.utils import get_tables
-from tests.integ.models import User
+
 
 LATEST_DYNAMODB_LOCAL_SHA = "70d9a92529782ac93713258fe69feb4ff6e007ae2c3319c7ffae7da38b698a61"
 DYNAMODB_LOCAL_SINGLETON = None

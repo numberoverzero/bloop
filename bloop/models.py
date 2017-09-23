@@ -221,7 +221,12 @@ class BaseModel(metaclass=ModelMetaclass):
         # Only set values from **attrs if there's a
         # corresponding `model_name` for a column in the model
         for column in self.Meta.columns:
-            value = attrs.get(column.model_name, missing)
+            try:
+                value = attrs[column.model_name]
+            except KeyError:
+                value = column.default
+                if callable(value):
+                    value = value()
             if value is not missing:
                 setattr(self, column.model_name, value)
 
@@ -465,10 +470,11 @@ class Column(declare.Field, ComparisonMixin):
         ``range_key=True``.  Default is False.
     :param str name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
     """
-    def __init__(self, typedef, hash_key=False, range_key=False, name=None, **kwargs):
+    def __init__(self, typedef, hash_key=False, range_key=False, name=None, default=missing, **kwargs):
         self.hash_key = hash_key
         self.range_key = range_key
         self._dynamo_name = name
+        self.default = default
         kwargs['typedef'] = typedef
         super().__init__(**kwargs)
 

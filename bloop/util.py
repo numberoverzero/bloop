@@ -79,7 +79,7 @@ def walk_subclasses(cls):
     while classes:
         cls = classes.pop()
         # Testing this branch would require checking walk_subclass(object)
-        if cls is not type:  # pragma: no branch
+        if cls is not type and cls not in visited:
             classes.update(cls.__subclasses__())
             visited.add(cls)
             yield cls

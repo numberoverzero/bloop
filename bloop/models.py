@@ -574,7 +574,7 @@ def initialize_meta(cls):
     return meta
 
 
-def bind_column(meta, name, column):
+def bind_column(meta, name, column, bind_subclasses=True):
     column._name = name
     safe_repr = unbound_repr(column)
 
@@ -637,8 +637,12 @@ def bind_column(meta, name, column):
     for idx in meta.indexes:
         recalculate_projection(meta, idx)
 
+    if bind_subclasses:
+        for subclass in util.walk_subclasses(meta.model):
+            subclass.Meta.bind_column(name, proxy(column), bind_subclasses=False)
 
-def bind_index(meta, name, index):
+
+def bind_index(meta, name, index, bind_subclasses=True):
     index._name = name
     safe_repr = unbound_repr(index)
 
@@ -698,6 +702,10 @@ def bind_index(meta, name, index):
     meta.indexes.add(index)
 
     recalculate_projection(meta, index)
+
+    if bind_subclasses:
+        for subclass in util.walk_subclasses(meta.model):
+            subclass.Meta.bind_index(name, proxy(index), bind_subclasses=False)
 
 
 def recalculate_projection(meta, index):

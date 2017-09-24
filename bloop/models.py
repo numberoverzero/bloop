@@ -551,7 +551,7 @@ class Column(ComparisonMixin):
         # <Column[Pin.url]>
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
-        return f"<Column[{self.model.__name__}.{self.name}{extra}]>"
+        return f"<{self.__class__.__name__}[{self.model.__name__}.{self.name}{extra}]>"
 
     @property
     def name(self):

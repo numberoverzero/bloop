@@ -214,7 +214,7 @@ class GlobalSecondaryIndex(Index):
 
 
 class LocalSecondaryIndex(Index):
-    """See `LocalSecondaryIndex`_ in the DynamoDB Developer GUide for details.
+    """See `LocalSecondaryIndex`_ in the DynamoDB Developer Guide for details.
 
     Unlike :class:`~bloop.models.GlobalSecondaryIndex`\, LSIs share their throughput with the table,
     and their hash key is always the table hash key.
@@ -429,7 +429,7 @@ def instanceof(obj, classinfo):
         return isinstance(obj, classinfo)
     except TypeError:  # pragma: no cover
         # No coverage since we never call this without a class,
-        # type, or tuple of classes, types, or such typles.
+        # type, or tuple of classes, types, or such tuples.
         return False
 
 

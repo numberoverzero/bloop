@@ -8,6 +8,7 @@ flake8==3.4.1
 pendulum==1.2.5
 pytest==3.2.2
 pytest-catchlog==1.2.2
+pytz==2017.2
 requests==2.18.4
 sphinx==1.6.3
 sphinx-rtd-theme==0.2.4

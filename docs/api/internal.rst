@@ -220,7 +220,7 @@ By default python makes all user classes are hashable:
 
 .. code-block:: pycon
 
-    >>> class Dict(): pass
+    >>> class Dict: pass
     >>> hash(Dict())
     8771845190811
 
@@ -250,7 +250,7 @@ and won't fall back to a parent class's definition:
 
 .. code-block:: pycon
 
-    >>> class Base():
+    >>> class Base:
     ...     def __hash__(self):
     ...         print("Base.__hash__")
     ...         return 0

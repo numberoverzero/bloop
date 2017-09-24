@@ -39,17 +39,17 @@ _obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None
 
 
 @object_deleted.connect
-def on_object_deleted(_, *, obj, **kwargs):
+def on_object_deleted(_, *, obj, **__):
     _obj_tracking[obj].pop("snapshot", None)
 
 
 @object_loaded.connect
-def on_object_loaded(_, *, engine, obj, **kwargs):
+def on_object_loaded(_, *, engine, obj, **__):
     sync(obj, engine)
 
 
 @object_modified.connect
-def on_object_modified(_, *, obj, column, **kwargs):
+def on_object_modified(_, *, obj, column, **__):
     # Mark a column for a given object as being modified in any way.
     # Any marked columns will be pushed (possibly as DELETES) in
     # future UpdateItem calls that include the object.
@@ -57,7 +57,7 @@ def on_object_modified(_, *, obj, column, **kwargs):
 
 
 @object_saved.connect
-def on_object_saved(_, *, engine, obj, **kwargs):
+def on_object_saved(_, *, engine, obj, **__):
     sync(obj, engine)
 
 

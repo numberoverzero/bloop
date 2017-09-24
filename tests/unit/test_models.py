@@ -626,10 +626,10 @@ def test_index_binds_names():
     # hash key must be a string or column
     bad_index = Index(projection="all", hash_key=object())
     with pytest.raises(InvalidIndex):
-        bind_index(Model.Meta, bad_index)
+        bind_index(Model.Meta, "another_index", bad_index)
     bad_index = Index(projection="all", hash_key="foo", range_key=object())
     with pytest.raises(InvalidIndex):
-        bind_index(Model.Meta, bad_index)
+        bind_index(Model.Meta, "another_index", bad_index)
 
 
 def test_index_projection_validation():

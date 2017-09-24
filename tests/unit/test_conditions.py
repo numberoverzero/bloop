@@ -1133,7 +1133,7 @@ def test_ior_basic():
     # in
     (InCondition(column=c, values=[]), "(M.c in [])"),
     (InCondition(column=c, values=[2, 3]), "(M.c in [2, 3])"),
-    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [<Column[M.d]>, 3])"),
+    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [<MockColumn[M.d]>, 3])"),
 
     # empty
     (Condition(), "()")

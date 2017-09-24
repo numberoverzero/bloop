@@ -1,4 +1,5 @@
 import collections.abc
+import functools
 import logging
 
 from . import util
@@ -11,6 +12,7 @@ from .types import Type
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 logger = logging.getLogger("bloop.models")
 missing = util.missing
+non_proxied_attrs = {"model", "_name", "_proxied_obj"}
 
 
 def loaded_columns(obj):
@@ -100,40 +102,28 @@ def validate_stream(stream):
     stream.setdefault("arn", None)
 
 
+def unbound_repr(obj):
+    class UNBOUND:
+        pass
+
+    original_model = getattr(obj, "model", missing)
+    obj.model = UNBOUND
+    r = repr(obj)
+    if original_model is missing:
+        delattr(obj, "model")
+    else:
+        setattr(obj, "model", original_model)
+    return r
+
+
 def setdefault(obj, field, default):
     """Set an object's field to default if it doesn't have a value"""
     setattr(obj, field, getattr(obj, field, default))
 
 
-def ensure_meta(cls):
-    meta = getattr(cls, "Meta", missing)
-    # Meta can't be inherited, otherwise we are mutating
-    # a shared BaseModel.Meta's table_name, write_units, etc.
-    for base in cls.__mro__:
-        # Should only be the first entry in __mro__
-        if base is cls:
-            continue
-        parent_meta = getattr(base, "Meta", None)
-        # We will always collide with BaseModel.Meta;
-        # stop searching on the first collision and
-        # clear meta so we create a new class below.
-        if meta is parent_meta:
-            meta = missing
-            break
-    if meta is missing:
-        class Meta:
-            pass
-        meta = cls.Meta = Meta
-    return meta
-
-
 def ensure_hash(cls):
     if getattr(cls, "__hash__", None) is not None:
         return
-    # Any base class's explicit (not object.__hash__)
-    # hash function has priority over the default.
-    # If there aren't any bases with explicit hash functions,
-    # just use object.__hash__
     logger.info(f"searching for nearest __hash__ impl in {cls.__name__}.__mro__")
     hash_fn = object.__hash__
     for base in cls.__mro__:  # pragma: no branch (because __mro__ will never be an empty list)
@@ -143,98 +133,154 @@ def ensure_hash(cls):
     cls.__hash__ = hash_fn
 
 
-def setup_columns(meta):
-    """Filter columns from fields, identify hash and range keys"""
+def initialize_meta(cls):
+    meta = getattr(cls, "Meta", missing)
+    for base in cls.__mro__:
+        if base is cls:
+            continue
+        parent_meta = getattr(base, "Meta", None)
+        if meta is parent_meta:
+            meta = missing
+            break
+    if meta is missing:
+        class Meta:
+            pass
 
-    # This is a set instead of a list, because set uses __hash__
-    # while some list operations uses __eq__ which will break
-    # with the ComparisonMixin
-    meta.columns = set()
-    for attr in meta.model.__dict__.values():
-        if isinstance(attr, Column):
-            meta.columns.add(attr)
+        meta = cls.Meta = Meta
 
-    meta.hash_key = None
-    meta.range_key = None
-    meta.keys = set()
+    meta.model = cls
 
-    if not meta.abstract:
-        cls_name = meta.model.__name__
+    setdefault(meta, "init", cls)
+    setdefault(meta, "abstract", False)
 
-        hash_keys = [c for c in meta.columns if c.hash_key]
-        range_keys = [c for c in meta.columns if c.range_key]
+    setdefault(meta, "table_name", cls.__name__)
+    setdefault(meta, "write_units", None)
+    setdefault(meta, "read_units", None)
+    setdefault(meta, "stream", None)
 
-        if len(hash_keys) == 0:
-            raise InvalidModel(f"{cls_name!r} has no hash key.")
-        elif len(hash_keys) > 1:
-            raise InvalidModel(f"{cls_name!r} has more than one hash key.")
+    setdefault(meta, "hash_key", None)
+    setdefault(meta, "range_key", None)
+    setdefault(meta, "keys", set())
 
-        if len(range_keys) > 1:
-            raise InvalidModel(f"{cls_name!r} has more than one range key.")
-
-        if range_keys:
-            if hash_keys[0] is range_keys[0]:
-                raise InvalidModel(f"{cls_name!r} has the same hash and range key.")
-            meta.range_key = range_keys[0]
-            meta.keys.add(meta.range_key)
-        meta.hash_key = hash_keys[0]
-        meta.keys.add(meta.hash_key)
+    setdefault(meta, "columns", set())
+    setdefault(meta, "indexes", set())
+    setdefault(meta, "gsis", set())
+    setdefault(meta, "lsis", set())
 
     # API consistency with an Index, so (index or model.Meta) can be
     # used interchangeably to get the available columns from that
     # object.
-    meta.projection = {
+    setdefault(meta, "projection", {
         "mode": "all",
         "included": meta.columns,
         "available": meta.columns,
         "strict": True
-    }
+    })
+
+    setdefault(meta, "bind_column", functools.partial(bind_column, meta))
+    setdefault(meta, "bind_index", functools.partial(bind_index, meta))
+
+    validate_stream(meta.stream)
+    return meta
 
 
-def setup_indexes(meta):
-    """Filter indexes from fields, compute projection for each index"""
-    # Don't put these in the metadata until they bind successfully.
-    gsis = set()
-    lsis = set()
-    for attr in meta.model.__dict__.values():
-        if isinstance(attr, GlobalSecondaryIndex):
-            gsis.add(attr)
-        if isinstance(attr, LocalSecondaryIndex):
-            lsis.add(attr)
-    meta.gsis = gsis
-    meta.lsis = lsis
-    meta.indexes = set.union(gsis, lsis)
+def bind_column(meta, name, column):
+    column._name = name
+    safe_repr = unbound_repr(column)
 
-    for index in meta.indexes:
-        bind_index(meta, index)
+    # Guard against dynamo_name collisions in columns *and* indexes
+    same = (
+        util.index(meta.columns, "dynamo_name").get(column.dynamo_name) or
+        util.index(meta.indexes, "dynamo_name").get(column.dynamo_name)
+    )
+    if same and same.name != name:
+        raise InvalidModel(
+            f"The column {safe_repr} has the same dynamo_name as an "
+            f"existing column or index {same} but has a different name.")
+
+    if meta.hash_key:
+        # Trying to add a second hash_key
+        if column.hash_key and column.name != meta.hash_key.name:
+            raise InvalidModel(
+                f"Tried to bind {safe_repr} but {meta.model} "
+                f"already has a different hash_key: {meta.hash_key}")
+        # Trying to replace same name with non-hash_key
+        elif not column.hash_key and column.name == meta.hash_key.name:
+            raise InvalidModel(
+                f"Tried to bind {safe_repr} to {meta.model} but it would "
+                f"replace hash_key column {meta.hash_key} with non-hash_key column")
+    if meta.range_key:
+        # Trying to add a second range_key
+        if column.range_key and column.name != meta.range_key.name:
+            raise InvalidModel(
+                f"Tried to bind {safe_repr} but {meta.model} "
+                f"already has a different range_key: {meta.range_key}")
+        # Trying to replace same name with non-range_key
+        elif not column.range_key and column.name == meta.range_key.name:
+            raise InvalidModel(
+                f"Tried to bind {safe_repr} to {meta.model} but it would "
+                f"replace range_key column {meta.range_key} with non-range_key column")
+    if column.hash_key and column.range_key:
+        raise InvalidModel(f"Tried to bind {safe_repr} as both a hash and range key.")
+
+    # success!
+    # --------------------------------
+    column.model = meta.model
+    setattr(meta.model, name, column)
+
+    # if another column has this name, overwrite it
+    same = util.index(meta.columns, "name").get(name)
+    if same:
+        meta.columns.remove(same)
+    meta.columns.add(column)
+
+    if column.hash_key:
+        if meta.hash_key:
+            meta.keys.remove(meta.hash_key)
+        meta.hash_key = column
+        meta.keys.add(column)
+    if column.range_key:
+        if meta.range_key:
+            meta.keys.remove(meta.range_key)
+        meta.range_key = column
+        meta.keys.add(column)
+    for idx in meta.indexes:
+        recalculate_projection(meta, idx)
 
 
-def bind_index(meta, index):
-    """Compute attributes and resolve column names.
+def bind_index(meta, name, index):
+    index._name = name
+    safe_repr = unbound_repr(index)
 
-    * If hash and/or range keys are strings, resolve them to :class:`~bloop.models.Column` instances from
-      the model by ``name``.
-    * If projection is a list of strings, resolve each to a Column instance.
-    * Compute :data:`~Index.projection` dict from model Metadata and Index's temporary ``projection``
-      attribute.
+    # Guard against dynamo_name collisions in columns *and* indexes
+    same = (
+        util.index(meta.indexes, "dynamo_name").get(index.dynamo_name) or
+        util.index(meta.columns, "dynamo_name").get(index.dynamo_name)
+    )
+    if same and same.name != name:
+        raise InvalidModel(
+            f"The index {safe_repr} has the same dynamo_name as an "
+            f"existing column or index {same} but has a different name.")
 
-    :param meta: The Meta of the :class:`~bloop.models.BaseModel` this Index is attached to.
-    :param index: The :class:`~bloop.models.Index` to attach to the model.
-    :raises bloop.exceptions.InvalidIndex: If the hash or range keys are misconfigured.
-    """
-    # Index by name so we can replace hash_key, range_key with the proper `bloop.Column` object
-    columns = util.index(meta.columns, "name")
+    # We have to roundtrip through the name to handle any `ProxyColumn`s
+    by_name = util.index(meta.columns, "name")
+
     if isinstance(index, LocalSecondaryIndex):
         if not meta.range_key:
             raise InvalidIndex("An LSI requires the Model to have a range key.")
-        index.hash_key = meta.hash_key
+        index.hash_key = meta.hash_key.name
     if isinstance(index.hash_key, str):
-        index.hash_key = columns[index.hash_key]
+        index.hash_key = by_name[index.hash_key]
+    elif isinstance(index.hash_key, Column):
+        index.hash_key = by_name[index.hash_key.name]
     if not isinstance(index.hash_key, Column):
         raise InvalidIndex("Index hash key must be a Column or Column model name.")
+
     if index.range_key:
         if isinstance(index.range_key, str):
-            index.range_key = columns[index.range_key]
+            index.range_key = by_name[index.range_key]
+        elif isinstance(index.range_key, Column):
+            index.range_key = by_name[index.range_key.name]
         if not isinstance(index.range_key, Column):
             raise InvalidIndex("Index range key (if provided) must be a Column or Column model name.")
 
@@ -242,29 +288,54 @@ def bind_index(meta, index):
     if index.range_key:
         index.keys.add(index.range_key)
 
-    # Compute and the projected columns
+    # success!
+    # --------------------------------
+    index.model = meta.model
+    setattr(meta.model, name, index)
+
+    # if another index has this name, overwrite it
+    same = util.index(meta.indexes, "name").get(name)
+    if isinstance(index, LocalSecondaryIndex):
+        if same:
+            meta.lsis.remove(same)
+        meta.lsis.add(index)
+    elif isinstance(index, GlobalSecondaryIndex):
+        if same:
+            meta.gsis.remove(same)
+        meta.gsis.add(index)
+    if same:
+        meta.indexes.remove(same)
+    meta.indexes.add(index)
+
+    recalculate_projection(meta, index)
+
+
+def recalculate_projection(meta, index):
     # All projections include model + index keys
     projection_keys = set.union(meta.keys, index.keys)
 
-    if index.projection["mode"] == "keys":
-        index.projection["included"] = projection_keys
-    elif index.projection["mode"] == "all":
-        index.projection["included"] = meta.columns
-    elif index.projection["mode"] == "include":  # pragma: no branch
-        # name -> Column
-        if all(isinstance(p, str) for p in index.projection["included"]):
-            projection = set(columns[name] for name in index.projection["included"])
-        else:
-            projection = set(index.projection["included"])
-        projection.update(projection_keys)
-        index.projection["included"] = projection
+    proj = index.projection
+    mode = proj["mode"]
+    strict = proj["strict"]
 
-    # Strict has the same availability as the included columns,
-    # while non-strict has access to the full range of columns
-    if index.projection["strict"]:
-        index.projection["available"] = index.projection["included"]
+    if mode == "keys":
+        proj["included"] = projection_keys
+    elif mode == "all":
+        proj["included"] = meta.columns
+    elif mode == "include":  # pragma: no branch
+        by_name = util.index(meta.columns, "name")
+        if all(isinstance(p, str) for p in proj["included"]):
+            projection = set(by_name[n] for n in proj["included"])
+        else:
+            # This roundtrips by_name to handle any `ProxyColumn`s
+            projection = set(by_name[c.name] for c in proj["included"])
+        projection.update(projection_keys)
+        proj["included"] = projection
+
+    if strict:
+        proj["available"] = proj["included"]
     else:
-        index.projection["available"] = meta.columns
+        proj["available"] = meta.columns
 
 
 class BaseModel:
@@ -295,25 +366,31 @@ class BaseModel:
 
     def __init_subclass__(cls, **kwargs):
         ensure_hash(cls)
-        meta = ensure_meta(cls)
-        meta.model = cls
+        meta = initialize_meta(cls)
 
-        # Entry point for model population. By default this is the
-        # class's __init__ function. Custom models can specify the
-        # Meta attr `init`, which must be a function taking no
-        # arguments that returns an instance of the class
-        setdefault(meta, "init", cls)
+        # list of items because bind_column and bind_index call setattr() on the model
+        for name, attr in list(cls.__dict__.items()):
+            if isinstance(attr, Column):
+                meta.bind_column(name, attr)
+        for name, attr in cls.__dict__.items():
+            if isinstance(attr, Index):
+                meta.bind_index(name, attr)
 
-        setdefault(meta, "abstract", False)
-        setdefault(meta, "table_name", cls.__name__)
-        setdefault(meta, "write_units", None)
-        setdefault(meta, "read_units", None)
-        setdefault(meta, "stream", None)
+        for base in cls.__mro__:
+            if base is cls or base is BaseModel or not issubclass(base, BaseModel):
+                continue
+            for column in base.Meta.columns:
+                name = column.name
+                if name not in cls.__dict__:
+                    meta.bind_column(name, proxy(column))
+            for index in base.Meta.indexes:
+                name = index.name
+                if name not in cls.__dict__:
+                    meta.bind_index(name, proxy(index))
 
-        setup_columns(meta)
-        setup_indexes(meta)
+        if not meta.abstract and not meta.hash_key:
+            raise InvalidModel(f"{meta.model.__name__!r} has no hash key.")
 
-        validate_stream(meta.stream)
         model_created.send(None, model=cls)
 
     @classmethod
@@ -368,10 +445,6 @@ class Index:
         self._dynamo_name = dynamo_name
 
         self.projection = validate_projection(projection)
-
-    def __set_name__(self, owner, name):
-        self.model = owner
-        self._name = name
 
     def __repr__(self):
         if isinstance(self, LocalSecondaryIndex):
@@ -525,10 +598,6 @@ class Column(ComparisonMixin):
 
     __hash__ = object.__hash__
 
-    def __set_name__(self, owner, name):
-        self.model = owner
-        self._name = name
-
     def __set__(self, obj, value):
         self.set(obj, value)
 
@@ -591,3 +660,74 @@ class Column(ComparisonMixin):
             # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
             # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
             object_modified.send(self, obj=obj, column=self, value=None)
+
+
+class ProxyColumn(Column):
+    def __init__(self, base_column):
+        self._proxied_obj = base_column
+
+    def __getattr__(self, name):
+        return getattr(self._proxied_obj, name)
+
+    def __setattr__(self, name, value):
+        if name in non_proxied_attrs:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._proxied_obj, name, value)
+
+    def __delattr__(self, name):
+        if name in non_proxied_attrs:
+            try:
+                object.__delattr__(self, name)
+                return
+            except AttributeError:
+                pass
+        delattr(self._proxied_obj, name)
+
+    def __repr__(self):
+        return repr(self._proxied_obj)
+
+
+class ProxyIndex(Index):
+    def __init__(self, base_index):
+        self._proxied_obj = base_index
+
+    def __getattr__(self, name):
+        return getattr(self._proxied_obj, name)
+
+    def __setattr__(self, name, value):
+        if name in non_proxied_attrs:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self._proxied_obj, name, value)
+
+    def __delattr__(self, name):
+        if name in non_proxied_attrs:
+            try:
+                object.__delattr__(self, name)
+                return
+            except AttributeError:
+                pass
+        delattr(self._proxied_obj, name)
+
+    def __repr__(self):
+        return repr(self._proxied_obj)
+
+
+class ProxyLSI(ProxyIndex, LocalSecondaryIndex):
+    pass
+
+
+class ProxyGSI(ProxyIndex, GlobalSecondaryIndex):
+    pass
+
+
+def proxy(obj):
+    if isinstance(obj, Column):
+        return ProxyColumn(obj)
+    elif isinstance(obj, LocalSecondaryIndex):
+        return ProxyLSI(obj)
+    elif isinstance(obj, GlobalSecondaryIndex):
+        return ProxyGSI(obj)
+    else:
+        raise ValueError(f"Can't proxy unknown type {type(obj)}")

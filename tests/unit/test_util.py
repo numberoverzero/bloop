@@ -85,7 +85,10 @@ def test_walk_subclasses():
     class D(B, C, A):
         pass
 
-    assert set(walk_subclasses(A)) == {C, D}
+    class E(D, B, A):
+        pass
+
+    assert set(walk_subclasses(A)) == {C, D, E}
 
 
 def test_sentinel_uniqueness():

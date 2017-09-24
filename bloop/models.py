@@ -684,9 +684,6 @@ class ProxyColumn(Column):
                 pass
         delattr(self._proxied_obj, name)
 
-    def __repr__(self):
-        return repr(self._proxied_obj)
-
 
 class ProxyIndex(Index):
     def __init__(self, base_index):
@@ -709,9 +706,6 @@ class ProxyIndex(Index):
             except AttributeError:
                 pass
         delattr(self._proxied_obj, name)
-
-    def __repr__(self):
-        return repr(self._proxied_obj)
 
 
 class ProxyLSI(ProxyIndex, LocalSecondaryIndex):

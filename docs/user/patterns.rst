@@ -224,11 +224,11 @@ a nullable constraint on columns.  Instead, these can be trivially added to the 
             if value is None:
                 if not self.nullable:
                     msg = "Tried to set {} to None but column is not nullable"
-                    raise ValueError(msg.format(self.model_name))
+                    raise ValueError(msg.format(self.name))
             elif not isinstance(value, self.typedef.python_type):
                 msg = "Tried to set {} with invalid type {} (expected {})"
                 raise TypeError(msg.format(
-                    self.model_name, type(value),
+                    self.name, type(value),
                     self.typedef.python_type
                 ))
             super().set(obj, value)
@@ -287,7 +287,7 @@ uses flask and marshmallow to expose get and list operations for a User class:
         class Meta:
             # Fields to expose
             fields = ["_links"]
-            fields += [column.model_name for column in User.Meta.columns]
+            fields += [column.name for column in User.Meta.columns]
         # Smart hyperlinking
         _links = ma.Hyperlinks({
             'self': ma.URLFor('user_detail', id='<id>'),

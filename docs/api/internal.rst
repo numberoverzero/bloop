@@ -26,7 +26,7 @@ Index
 
     .. attribute:: dynamo_name
 
-        The name of this index in DynamoDB.  Defaults to the index's :data:`~Index.model_name`.
+        The name of this index in DynamoDB.  Defaults to the index's :data:`~Index.name`.
 
     .. attribute:: hash_key
 
@@ -37,7 +37,7 @@ Index
 
         The model this index is attached to.
 
-    .. attribute:: model_name
+    .. attribute:: name
 
         The name of this index in the model.  Set by :func:`~bloop.models.bind_index`
         during :func:`~bloop.models.BaseModel.__init_subclass__`.

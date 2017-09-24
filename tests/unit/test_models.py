@@ -19,8 +19,7 @@ from bloop.models import (
 )
 from bloop.types import UUID, Boolean, DateTime, Integer, String, Type
 
-from ..helpers.models import User, VectorModel
-
+from ..helpers.models import User, VectorModel, ComplexModel
 
 operations = [
     (operator.ne, "!="),
@@ -756,6 +755,75 @@ def test_gsi_repr():
     index.model = User
     index._name = "by_foo"
     assert repr(index) == "<GSI[User.by_foo=all]>"
+
+
+def test_index_bind():
+    index = GlobalSecondaryIndex(projection="all", hash_key="key", dynamo_name="f")
+
+    class BoundUser(BaseModel):
+        id = Column(String, hash_key=True)
+        age = Column(Integer)
+
+    index.bind(BoundUser, "by_age")
+
+    assert hasattr(BoundUser, "by_age")
+    assert BoundUser.by_age.model is BoundUser
+    assert BoundUser.by_age._name == "by_age"
+
+    index = LocalSecondaryIndex(projection="all", range_key="key", dynamo_name="f")
+    index.bind(BoundUser, "by_local")
+
+    assert hasattr(BoundUser, "by_local")
+    assert BoundUser.by_local.model is BoundUser
+    assert BoundUser.by_local._name == "by_local"
+
+
+def test_index_clone():
+    index = ComplexModel.by_email.clone()
+    assert index.model is None
+    assert index._name is None
+    assert index.projection['mode'] == 'all'
+    assert index.hash_key == 'email'
+
+    index = ComplexModel.by_joined.clone()
+    assert index.model is None
+    assert index._name is None
+    assert index.projection['mode'] == 'include'
+    assert index.projection['included'] == [
+        ComplexModel.name, ComplexModel.date, ComplexModel.joined, ComplexModel.email
+    ]
+    assert index.range_key is 'joined'
+    assert index.hash_key is None
+
+
+def test_bind_cloned_index():
+    # define our models here so we don't modify the models in other tests
+
+    class BoundUser(BaseModel):
+        id = Column(String, hash_key=True)
+        age = Column(Integer)
+        name = Column(String)
+        email = Column(String)
+        joined = Column(DateTime, dynamo_name="j")
+        by_email = GlobalSecondaryIndex(hash_key="email", projection="all")
+
+    class OtherModel(BaseModel):
+        email = Column(String, hash_key=True)
+        by_email = GlobalSecondaryIndex(hash_key="email", read_units=4, projection="all", write_units=5)
+
+    index = OtherModel.by_email.clone()
+    index.bind(BoundUser, "by_clone")
+    bind_index(BoundUser, index)
+
+    assert index.model is BoundUser
+    assert index._name == 'by_clone'
+    assert index.projection['mode'] == 'all'
+    assert index.hash_key is BoundUser.email
+    assert index.range_key is None
+    assert index.read_units == 4
+    assert index.write_units == 5
+    assert index.projection['included'] == {
+        BoundUser.joined, BoundUser.email, BoundUser.id, BoundUser.name, BoundUser.age}
 
 
 # END INDEX ================================================================================================= END INDEX

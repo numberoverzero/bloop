@@ -401,17 +401,27 @@ def test_create_table(session, dynamodb):
 def test_create_subclass(session, dynamodb):
     base_model = User
 
-    # Shouldn't include base model's columns in create_table call
+    # Should include the base model's columns in create_table call
     class SubModel(base_model):
         id = Column(String, hash_key=True)
 
     expected = {
         'AttributeDefinitions': [
-            {'AttributeName': 'id', 'AttributeType': 'S'}],
+            {'AttributeName': 'email', 'AttributeType': 'S'},
+            {'AttributeName': 'id', 'AttributeType': 'S'}
+        ],
         'KeySchema': [{'AttributeName': 'id', 'KeyType': 'HASH'}],
         'ProvisionedThroughput': {
             'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1},
-        'TableName': 'LocalTableName'}
+        'TableName': 'LocalTableName',
+        'GlobalSecondaryIndexes': [
+            {
+                'IndexName': 'by_email', 'KeySchema': [{'AttributeName': 'email', 'KeyType': 'HASH'}],
+                'Projection': {'ProjectionType': 'ALL'},
+                'ProvisionedThroughput': {'WriteCapacityUnits': 1, 'ReadCapacityUnits': 1}
+            }
+        ]
+    }
 
     def handle(**table):
         assert ordered(table) == ordered(expected)

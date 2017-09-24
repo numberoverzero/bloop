@@ -73,8 +73,9 @@ def ordered(obj):
         return obj
 
 
-def walk_subclasses(cls):
-    classes = {cls}
+def walk_subclasses(root):
+    """Does not yield the input class"""
+    classes = {root}
     visited = set()
     while classes:
         cls = classes.pop()
@@ -82,7 +83,8 @@ def walk_subclasses(cls):
         if cls is not type and cls not in visited:
             classes.update(cls.__subclasses__())
             visited.add(cls)
-            yield cls
+            if cls is not root:
+                yield cls
 
 
 class Sentinel:

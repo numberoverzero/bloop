@@ -1,6 +1,7 @@
 arrow==0.10.0
 blinker==1.4
 boto3==1.4.7
+botocore==1.7.16
 coverage==4.4.1
 delorean==0.6.0
 flake8==3.4.1

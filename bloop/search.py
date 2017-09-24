@@ -478,6 +478,7 @@ class SearchModelIterator(SearchIterator):
         return obj
 
 
+# noinspection PyUnresolvedReferences
 class ScanIterator(SearchModelIterator):
     """Reusable scan iterator that unpacks result dicts into model instances.
 
@@ -492,6 +493,7 @@ class ScanIterator(SearchModelIterator):
     mode = "scan"
 
 
+# noinspection PyUnresolvedReferences
 class QueryIterator(SearchModelIterator):
     """Reusable query iterator that unpacks result dicts into model instances.
 

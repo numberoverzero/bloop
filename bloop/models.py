@@ -1,3 +1,4 @@
+from typing import Set, Optional, Dict, Callable
 import collections.abc
 import functools
 import logging
@@ -15,6 +16,27 @@ missing = util.missing
 non_proxied_attrs = {"model", "_name", "_proxied_obj"}
 
 
+class IMeta:
+    """This class exists solely to help autocomplete with variables set on a model's Meta object"""
+    abstract: bool
+    table_name: str
+    read_units: Optional[int]
+    write_units: Optional[int]
+    stream: Optional[Dict]
+
+    hash_key: Optional["Column"]
+    range_key: Optional["Column"]
+    keys: Set["Column"]
+
+    columns: Set["Column"]
+    indexes: Set["Index"]
+    gsis: Set["GlobalSecondaryIndex"]
+    lsis: Set["LocalSecondaryIndex"]
+
+    init: Callable[[], "BaseModel"]
+    projection: Dict
+
+
 class BaseModel:
     """Abstract base that all models derive from.
 
@@ -30,7 +52,7 @@ class BaseModel:
 
         url = URL(id=uuid.uuid4(), name="google")
     """
-    class Meta:
+    class Meta(IMeta):
         abstract = True
 
     def __init__(self, **attrs):
@@ -41,7 +63,7 @@ class BaseModel:
             if value is not missing:
                 setattr(self, column.name, value)
 
-    def __init_subclass__(cls, **kwargs):
+    def __init_subclass__(cls: type, **kwargs):
         ensure_hash(cls)
         meta = initialize_meta(cls)
 
@@ -234,6 +256,7 @@ class LocalSecondaryIndex(Index):
 
 
 class Column(ComparisonMixin):
+    model: BaseModel
     """Represents a single attribute in DynamoDB.
 
     :param typedef: The type of this attribute.  Can be either a :class:`~bloop.types.Type` or
@@ -257,6 +280,7 @@ class Column(ComparisonMixin):
             self.typedef = typedef
         else:
             raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
+        super().__init__(**kwargs)
 
     __hash__ = object.__hash__
 
@@ -325,6 +349,7 @@ class Column(ComparisonMixin):
 
 
 class ProxyColumn(Column):
+    # noinspection PyMissingConstructor
     def __init__(self, base_column):
         self._proxied_obj = base_column
 
@@ -348,6 +373,7 @@ class ProxyColumn(Column):
 
 
 class ProxyIndex(Index):
+    # noinspection PyMissingConstructor
     def __init__(self, base_index):
         self._proxied_obj = base_index
 
@@ -407,7 +433,7 @@ def instanceof(obj, classinfo):
         return False
 
 
-def loaded_columns(obj):
+def loaded_columns(obj: BaseModel):
     """Yields each (name, value) tuple for all columns in an object that aren't missing"""
     for column in sorted(obj.Meta.columns, key=lambda c: c.name):
         value = getattr(obj, column.name, missing)
@@ -513,7 +539,7 @@ def setdefault(obj, field, default):
     setattr(obj, field, getattr(obj, field, default))
 
 
-def ensure_hash(cls):
+def ensure_hash(cls) -> None:
     if getattr(cls, "__hash__", None) is not None:
         return
     logger.info(f"searching for nearest __hash__ impl in {cls.__name__}.__mro__")
@@ -525,7 +551,7 @@ def ensure_hash(cls):
     cls.__hash__ = hash_fn
 
 
-def initialize_meta(cls):
+def initialize_meta(cls: type):
     meta = getattr(cls, "Meta", missing)
     for base in cls.__mro__:
         if base is cls:

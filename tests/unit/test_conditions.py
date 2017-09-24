@@ -1409,7 +1409,7 @@ def test_unsupported_mixin_function_conditions(op, typedefs, args):
     class Model(BaseModel):
         id = Column(Integer, hash_key=True)
     for typedef in typedefs:
-        column = Column(typedef, name="d")
+        column = Column(typedef, dynamo_name="d")
         column.model = Model
         column._name = "c"
         with pytest.raises(InvalidCondition):

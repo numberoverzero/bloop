@@ -800,21 +800,8 @@ class InCondition(BaseCondition):
 # END CONDITIONS ====================================================================================== END CONDITIONS
 
 
-def check_support(column, operation):
-    typedef = column.typedef
-    for segment in path_of(column):
-        typedef = typedef[segment]
-    if not supports_operation(operation, typedef):
-        tpl = "Backing type {!r} for {}.{} does not support condition {!r}."
-        raise InvalidCondition(tpl.format(
-            column.typedef.backing_type,
-            column.model.__name__,
-            printable_name(column),
-            operation
-        ))
-
-
 class ComparisonMixin:
+    # noinspection PyArgumentList
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -867,6 +854,20 @@ class ComparisonMixin:
     is_ = __eq__
 
     is_not = __ne__
+
+
+def check_support(column: ComparisonMixin, operation):
+    typedef = column.typedef
+    for segment in path_of(column):
+        typedef = typedef[segment]
+    if not supports_operation(operation, typedef):
+        tpl = "Backing type {!r} for {}.{} does not support condition {!r}."
+        raise InvalidCondition(tpl.format(
+            column.typedef.backing_type,
+            column.model.__name__,
+            printable_name(column),
+            operation
+        ))
 
 
 class Proxy(ComparisonMixin):

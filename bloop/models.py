@@ -59,6 +59,8 @@ class BaseModel:
                 continue
             for column in base.Meta.columns:
                 name = column.name
+                if (column.hash_key and meta.hash_key) or (column.range_key and meta.range_key):
+                    continue
                 if name not in cls.__dict__:
                     meta.bind_column(name, proxy(column))
             for index in base.Meta.indexes:
@@ -574,7 +576,7 @@ def initialize_meta(cls):
     return meta
 
 
-def bind_column(meta, name, column, bind_subclasses=True):
+def bind_column(meta, name, column, bind_subclasses=True, replace_keys=False):
     column._name = name
     safe_repr = unbound_repr(column)
 
@@ -588,28 +590,29 @@ def bind_column(meta, name, column, bind_subclasses=True):
             f"The column {safe_repr} has the same dynamo_name as an "
             f"existing column or index {same} but has a different name.")
 
-    if meta.hash_key:
-        # Trying to add a second hash_key
-        if column.hash_key and column.name != meta.hash_key.name:
-            raise InvalidModel(
-                f"Tried to bind {safe_repr} but {meta.model} "
-                f"already has a different hash_key: {meta.hash_key}")
-        # Trying to replace same name with non-hash_key
-        elif not column.hash_key and column.name == meta.hash_key.name:
-            raise InvalidModel(
-                f"Tried to bind {safe_repr} to {meta.model} but it would "
-                f"replace hash_key column {meta.hash_key} with non-hash_key column")
-    if meta.range_key:
-        # Trying to add a second range_key
-        if column.range_key and column.name != meta.range_key.name:
-            raise InvalidModel(
-                f"Tried to bind {safe_repr} but {meta.model} "
-                f"already has a different range_key: {meta.range_key}")
-        # Trying to replace same name with non-range_key
-        elif not column.range_key and column.name == meta.range_key.name:
-            raise InvalidModel(
-                f"Tried to bind {safe_repr} to {meta.model} but it would "
-                f"replace range_key column {meta.range_key} with non-range_key column")
+    if not replace_keys:
+        if meta.hash_key:
+            # Trying to add a second hash_key
+            if column.hash_key and column.name != meta.hash_key.name:
+                raise InvalidModel(
+                    f"Tried to bind {safe_repr} but {meta.model} "
+                    f"already has a different hash_key: {meta.hash_key}")
+            # Trying to replace same name with non-hash_key
+            elif not column.hash_key and column.name == meta.hash_key.name:
+                raise InvalidModel(
+                    f"Tried to bind {safe_repr} to {meta.model} but it would "
+                    f"replace hash_key column {meta.hash_key} with non-hash_key column")
+        if meta.range_key:
+            # Trying to add a second range_key
+            if column.range_key and column.name != meta.range_key.name:
+                raise InvalidModel(
+                    f"Tried to bind {safe_repr} but {meta.model} "
+                    f"already has a different range_key: {meta.range_key}")
+            # Trying to replace same name with non-range_key
+            elif not column.range_key and column.name == meta.range_key.name:
+                raise InvalidModel(
+                    f"Tried to bind {safe_repr} to {meta.model} but it would "
+                    f"replace range_key column {meta.range_key} with non-range_key column")
     if column.hash_key and column.range_key:
         raise InvalidModel(f"Tried to bind {safe_repr} as both a hash and range key.")
 
@@ -627,11 +630,13 @@ def bind_column(meta, name, column, bind_subclasses=True):
     if column.hash_key:
         if meta.hash_key:
             meta.keys.remove(meta.hash_key)
+            meta.columns.remove(meta.hash_key)
         meta.hash_key = column
         meta.keys.add(column)
     if column.range_key:
         if meta.range_key:
             meta.keys.remove(meta.range_key)
+            meta.columns.remove(meta.range_key)
         meta.range_key = column
         meta.keys.add(column)
     for idx in meta.indexes:

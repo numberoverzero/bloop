@@ -316,26 +316,25 @@ def test_load_dump_unbound(engine):
 
 
 def test_load_dump_subclass(engine):
-    """Only the immediate Columns of a model should be dumped"""
+    """Should handle subclasses"""
 
     class Admin(User):
-        admin_id = Column(Integer, hash_key=True)
+        admin_id = Column(Integer)
         other = Column(Integer)
-    engine.bind(User)
+    engine.bind(Admin)
 
     admin = Admin(admin_id=3)
-    # Set an attribute that would be a column on the parent class, but should
-    # have no meaning for the subclass
+    # Set an attribute that would be a column on the parent class, and *should*
+    # have meaning for the subclass
     admin.email = "admin@domain.com"
 
-    dumped_admin = {"admin_id": {"N": "3"}}
+    dumped_admin = {'admin_id': {'N': '3'}, 'email': {'S': 'admin@domain.com'}}
     assert engine._dump(Admin, admin) == dumped_admin
 
-    # Inject a value that would have meaning for a column on the parent class,
-    # but should not be loaded for the subclass
+    # Inject a value that would have meaning for a column on the parent class, and ensure it exists after load.
     dumped_admin["email"] = {"S": "support@foo.com"}
     same_admin = engine._load(Admin, dumped_admin)
-    assert not hasattr(same_admin, "email")
+    assert hasattr(same_admin, "email")
 
 
 def test_load_dump_unknown(engine):
@@ -595,6 +594,24 @@ def test_query(engine):
 
     model_query = engine.query(User, key=User.Meta.hash_key == "other")
     assert model_query.model is User
+    assert model_query.index is None
+
+
+def test_query_subclass(engine):
+    """Engine.query supports model and index-based queries"""
+    class Admin(User):
+        pass
+
+    index_query = engine.query(
+        Admin.by_email,
+        key=Admin.by_email.hash_key == "placeholder",
+        forward=False
+    )
+    assert index_query.model is Admin
+    assert index_query.index is Admin.by_email
+
+    model_query = engine.query(Admin, key=Admin.Meta.hash_key == "other")
+    assert model_query.model is Admin
     assert model_query.index is None
 
 

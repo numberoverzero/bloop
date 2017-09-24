@@ -1,22 +1,21 @@
 import contextlib
-import hashlib
-import os
-import random
-import shutil
 import socket
 import string
 import subprocess
 import zipfile
 
 import boto3
+import hashlib
+import os
 import pytest
+import random
 import requests
-from tests.helpers.utils import get_tables
-from tests.integ.models import User
+import shutil
 
-from bloop import Engine
+from bloop import BaseModel, Engine
 from bloop.session import SessionWrapper
-
+from bloop.util import walk_subclasses
+from tests.helpers.utils import get_tables
 
 LATEST_DYNAMODB_LOCAL_SHA = "70d9a92529782ac93713258fe69feb4ff6e007ae2c3319c7ffae7da38b698a61"
 DYNAMODB_LOCAL_SINGLETON = None
@@ -192,7 +191,19 @@ def engine(dynamodb, dynamodbstreams, request):
         table_name_template="{table_name}" + request.config.getoption("--nonce")
     )
     yield engine
-    engine.delete(*engine.scan(User))
+
+    # This collects all subclasses of BaseModel and are not abstract.  We are trying to delete any data in
+    # dynamodb-local between unit tests so we don't step on each other's toes.
+    concrete = set(filter(lambda m: not m.Meta.abstract, walk_subclasses(BaseModel)))
+    for model in concrete:
+        # we can run into a situation where the class was created, but not bound in the engine (or table created), so
+        # we only try.  As the dynamodb-local process is only running in memory this isn't too much of a problem.
+        try:
+            objs = list(engine.scan(model))
+            if objs:
+                engine.delete(*objs)
+        except:  # ignore any exceptions
+            pass
 
 
 @pytest.fixture

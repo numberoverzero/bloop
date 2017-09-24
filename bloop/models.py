@@ -1,12 +1,13 @@
-import collections.abc
+import inspect
 import logging
+
+import collections.abc
 
 from . import util
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel, InvalidStream
 from .signals import model_created, object_modified
 from .types import Type
-
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 logger = logging.getLogger("bloop.models")
@@ -149,10 +150,11 @@ def setup_columns(meta):
     # This is a set instead of a list, because set uses __hash__
     # while some list operations uses __eq__ which will break
     # with the ComparisonMixin
-    meta.columns = set()
-    for attr in meta.model.__dict__.values():
-        if isinstance(attr, Column):
-            meta.columns.add(attr)
+    columns = {}
+    for name, member in inspect.getmembers(meta.model, lambda x: isinstance(x, Column)):
+        columns[name] = member
+
+    meta.columns = set(columns.values())
 
     meta.hash_key = None
     meta.range_key = None
@@ -180,6 +182,12 @@ def setup_columns(meta):
         meta.hash_key = hash_keys[0]
         meta.keys.add(meta.hash_key)
 
+        # can't have two columns with the same dynamo_name...
+        names = [column.dynamo_name for column in meta.columns]
+        dups = [item for item, count in collections.Counter(names).items() if count > 1]
+        if dups:
+            raise InvalidModel(f"'{cls_name}' has duplicate dynamo_names: {dups}.")
+
     # API consistency with an Index, so (index or model.Meta) can be
     # used interchangeably to get the available columns from that
     # object.
@@ -196,11 +204,16 @@ def setup_indexes(meta):
     # Don't put these in the metadata until they bind successfully.
     gsis = set()
     lsis = set()
-    for attr in meta.model.__dict__.values():
-        if isinstance(attr, GlobalSecondaryIndex):
-            gsis.add(attr)
-        if isinstance(attr, LocalSecondaryIndex):
-            lsis.add(attr)
+
+    for name, index in inspect.getmembers(meta.model, lambda x: isinstance(x, GlobalSecondaryIndex)):
+        if index.model is not meta.model:
+            index = index.clone().bind(meta.model, name)
+        gsis.add(index)
+    for name, index in inspect.getmembers(meta.model, lambda x: isinstance(x, LocalSecondaryIndex)):
+        if index.model is not meta.model:
+            index = index.clone().bind(meta.model, name)
+        lsis.add(index)
+
     meta.gsis = gsis
     meta.lsis = lsis
     meta.indexes = set.union(gsis, lsis)
@@ -208,8 +221,14 @@ def setup_indexes(meta):
     for index in meta.indexes:
         bind_index(meta, index)
 
+    # can't have two indexes with the same dynamo_name...
+    names = [index.dynamo_name for index in meta.indexes]
+    dups = [item for item, count in collections.Counter(names).items() if count > 1]
+    if dups:
+        raise InvalidIndex(f"Index names are not unique: {dups}.")
 
-def bind_index(meta, index):
+
+def bind_index(model_or_meta, index):
     """Compute attributes and resolve column names.
 
     * If hash and/or range keys are strings, resolve them to :class:`~bloop.models.Column` instances from
@@ -218,10 +237,20 @@ def bind_index(meta, index):
     * Compute :data:`~Index.projection` dict from model Metadata and Index's temporary ``projection``
       attribute.
 
-    :param meta: The Meta of the :class:`~bloop.models.BaseModel` this Index is attached to.
+    :param model_or_meta: The Meta of the :class:`~bloop.models.BaseModel` or the :class:`~bloop.models.BaseModel`
+     this Index is attached to.
     :param index: The :class:`~bloop.models.Index` to attach to the model.
     :raises bloop.exceptions.InvalidIndex: If the hash or range keys are misconfigured.
+    :raises bloop.exceptions.InvalidModel: if ``model_or_meta`` is not a subclass of :class:`~bloop.models.BaseModel`
+     or :class:`~bloop.models.BaseModel`.
     """
+    if issubclass(model_or_meta, BaseModel):
+        meta = model_or_meta.Meta
+    else:
+        if not hasattr(model_or_meta, 'model'):
+            raise InvalidModel(f"'bind_index' requires a subclass of BaseModel or a Meta class; got {model_or_meta}")
+        meta = model_or_meta
+
     # Index by name so we can replace hash_key, range_key with the proper `bloop.Column` object
     columns = util.index(meta.columns, "name")
     if isinstance(index, LocalSecondaryIndex):
@@ -311,7 +340,8 @@ class BaseModel:
         setdefault(meta, "stream", None)
 
         setup_columns(meta)
-        setup_indexes(meta)
+        if meta.abstract is False:
+            setup_indexes(meta)
 
         validate_stream(meta.stream)
         model_created.send(None, model=cls)
@@ -370,8 +400,7 @@ class Index:
         self.projection = validate_projection(projection)
 
     def __set_name__(self, owner, name):
-        self.model = owner
-        self._name = name
+        self.bind(owner, name)
 
     def __repr__(self):
         if isinstance(self, LocalSecondaryIndex):
@@ -396,6 +425,23 @@ class Index:
         if self._dynamo_name is None:
             return self.name
         return self._dynamo_name
+
+    def bind(self, model, name):
+        """
+        Bind this index to the given `model` using the givin attribute name.  After it is bound, it can be refered to
+        as `model.name`.  For example, `index.bind(model, 'by_email')` will set the attribute `by_email` on model and
+        be accessible as `model.by_email`.
+        :param model: The model to be bound too.
+        :param name: The attribute name on the model to bind too.
+        :return: self
+        """
+        self.model = model
+        self._name = name
+
+        # in the case of late binding
+        if not hasattr(self.model, name) or getattr(self.model, name) != self:
+            setattr(self.model, self._name, self)
+        return self
 
     def __set__(self, obj, value):
         raise AttributeError(f"{self.model.__name__}.{self.name} is a {self.__class__.__name__}")
@@ -436,6 +482,35 @@ class GlobalSecondaryIndex(Index):
             dynamo_name=dynamo_name, projection=projection, **kwargs)
         self.write_units = write_units
         self.read_units = read_units
+
+    def clone(self):
+        """
+        Factory method to clone this index.  It will then need to be bound
+        :func:`bind_index(meta, model) <bloop.models.bind_index>`
+        """
+        if self.projection['mode'] == 'include':
+            projection = [x._name for x in self.projection['included']]
+        else:
+            projection = self.projection['mode']
+
+        if isinstance(self.hash_key, Column) and self.hash_key._name:
+            hash_key = self.hash_key._name
+        else:
+            hash_key = self.hash_key
+
+        if isinstance(self.range_key, Column) and self.range_key._name:
+            range_key = self.range_key._name
+        else:
+            range_key = self.range_key
+
+        return GlobalSecondaryIndex(
+            projection=projection,
+            hash_key=hash_key,
+            range_key=range_key,
+            read_units=self.read_units,
+            write_units=self.write_units,
+            dynamo_name=self._dynamo_name
+        )
 
 
 class LocalSecondaryIndex(Index):
@@ -478,6 +553,27 @@ class LocalSecondaryIndex(Index):
     @write_units.setter
     def write_units(self, value):
         self.model.Meta.write_units = value
+
+    def clone(self):
+        """
+        Factory method to clone this index.  It will then need to be bound :func:`bloop.models.Index.bind(model, name)`
+        """
+        if self.projection['mode'] == 'include':
+            projection = [x._name for x in self.projection['included']]
+        else:
+            projection = self.projection['mode']
+
+        if isinstance(self.range_key, Column) and self.range_key._name:
+            range_key = self.range_key._name
+        else:
+            range_key = self.range_key
+
+        return LocalSecondaryIndex(
+            projection=projection,
+            range_key=range_key,
+            dynamo_name=self._dynamo_name,
+            strict=self.projection['strict']
+        )
 
 
 def subclassof(obj, classinfo):

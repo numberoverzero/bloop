@@ -512,6 +512,63 @@ def test_mixins_range_key_conflict():
     assert str(excinfo.value) == expected
 
 
+def test_mixins_same_column_name():
+    """If two mixins define columns with the same name, mro determines which the class uses"""
+    class FooMixin(BaseModel):
+        class Meta:
+            abstract = True
+        same = Column(String, dynamo_name="foo")
+
+    class BarMixin(BaseModel):
+        class Meta:
+            abstract = True
+        same = Column(String, dynamo_name="bar")
+
+    class FooFirst(FooMixin, BarMixin):
+        class Meta:
+            abstract = True
+
+    class BarFirst(BarMixin, FooMixin):
+        class Meta:
+            abstract = True
+
+    assert FooFirst.same.dynamo_name == "foo"
+    assert BarFirst.same.dynamo_name == "bar"
+
+
+def test_mixins_same_index_name():
+    """If two mixins define indexes with the same name, mro determines which the class uses"""
+    class HasKeys(BaseModel):
+        class Meta:
+            abstract = True
+        mixin_hash = Column(String, hash_key=True)
+        mixin_range = Column(String, range_key=True)
+
+    class FooMixin(HasKeys):
+        class Meta:
+            abstract = True
+        data = Column(String, dynamo_name="foo-data")
+        by_data = GlobalSecondaryIndex(projection="keys", hash_key=data, dynamo_name="index:foo")
+
+    class BarMixin(HasKeys):
+        class Meta:
+            abstract = True
+
+        data = Column(String, dynamo_name="bar-data")
+        by_data = GlobalSecondaryIndex(projection="keys", hash_key=data, dynamo_name="index:bar")
+
+    class FooFirst(FooMixin, BarMixin):
+        class Meta:
+            abstract = True
+
+    class BarFirst(BarMixin, FooMixin):
+        class Meta:
+            abstract = True
+
+    assert FooFirst.by_data.dynamo_name == "index:foo"
+    assert BarFirst.by_data.dynamo_name == "index:bar"
+
+
 # END BASE MODEL ======================================================================================= END BASE MODEL
 
 

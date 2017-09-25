@@ -171,8 +171,19 @@ def test_invalid_model_keys():
             both = Column(UUID, hash_key=True, range_key=True)
 
 
+def test_invalid_model_duplicate_dynamo_name():
+    """Two columns have the same dynamo_name, which is ambiguous"""
+    with pytest.raises(InvalidModel):
+        class SharedDynamoName(BaseModel):
+            class Meta:
+                abstract = True
+            id = Column(UUID, hash_key=True)
+            first = Column(String, dynamo_name="shared")
+            second = Column(Integer, dynamo_name="shared")
+
+
 def test_invalid_local_index():
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         class InvalidLSI(BaseModel):
             id = Column(UUID, hash_key=True)
             index = LocalSecondaryIndex(range_key="id", projection="keys")
@@ -198,7 +209,7 @@ def test_index_keys():
 
 def test_local_index_no_range_key():
     """A table range_key is required to specify a LocalSecondaryIndex"""
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         class Model(BaseModel):
             id = Column(UUID, hash_key=True)
             another = Column(UUID)
@@ -436,6 +447,71 @@ def test_parent_hash(caplog):
     ]
 
 
+def test_mixins_dynamo_name_conflict():
+    """A class derives from two mixins that alias the same dynamo_name"""
+    class FooMixin(BaseModel):
+        class Meta:
+            abstract = True
+        foo = Column(String, dynamo_name="shared")
+
+    class BarMixin(BaseModel):
+        class Meta:
+            abstract = True
+        bar = Column(String, dynamo_name="shared")
+
+    with pytest.raises(InvalidModel) as excinfo:
+        class SharedMixin(FooMixin, BarMixin):
+            class Meta:
+                abstract = True
+    assert "conflicting column or index" in str(excinfo.value)
+
+
+def test_mixins_hash_key_conflict():
+    """A class derives from two mixins that define a hash_key using different names"""
+    class FooHashMixin(BaseModel):
+        class Meta:
+            abstract = True
+        foo_hash = Column(String, hash_key=True, dynamo_name="foo")
+
+    class BarHashMixin(BaseModel):
+        class Meta:
+            abstract = True
+        bar_hash = Column(String, hash_key=True, dynamo_name="bar")
+
+    with pytest.raises(InvalidModel) as excinfo:
+        class SharedMixin(FooHashMixin, BarHashMixin):
+            class Meta:
+                abstract = True
+    expected = (
+        "The model SharedMixin subclasses one or more models that declare multiple "
+        "columns as the hash key: ['bar_hash', 'foo_hash']"
+    )
+    assert str(excinfo.value) == expected
+
+
+def test_mixins_range_key_conflict():
+    """A class derives from two mixins that define a range_key using different names"""
+    class FooRangeMixin(BaseModel):
+        class Meta:
+            abstract = True
+        foo_range = Column(String, range_key=True, dynamo_name="foo")
+
+    class BarRangeMixin(BaseModel):
+        class Meta:
+            abstract = True
+        bar_range = Column(String, range_key=True, dynamo_name="bar")
+
+    with pytest.raises(InvalidModel) as excinfo:
+        class SharedMixin(FooRangeMixin, BarRangeMixin):
+            class Meta:
+                abstract = True
+    expected = (
+        "The model SharedMixin subclasses one or more models that declare multiple "
+        "columns as the range key: ['bar_range', 'foo_range']"
+    )
+    assert str(excinfo.value) == expected
+
+
 # END BASE MODEL ======================================================================================= END BASE MODEL
 
 
@@ -625,10 +701,10 @@ def test_index_binds_names():
 
     # hash key must be a string or column
     bad_index = Index(projection="all", hash_key=object())
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         bind_index(Model.Meta, "another_index", bad_index)
     bad_index = Index(projection="all", hash_key="foo", range_key=object())
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         bind_index(Model.Meta, "another_index", bad_index)
 
 

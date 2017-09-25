@@ -1,6 +1,8 @@
 from typing import Set, Optional, Dict, Callable
+import collections
 import collections.abc
 import functools
+import inspect
 import logging
 
 from . import util
@@ -67,32 +69,99 @@ class BaseModel:
         ensure_hash(cls)
         meta = initialize_meta(cls)
 
-        # list of items because bind_column and bind_index call setattr() on the model
-        for name, attr in list(cls.__dict__.items()):
+        # before we start binding, we should ensure that no combination of parent classes
+        # will cause conflicts.  For example:
+        #   class C(A, B) where
+        #       A has a column named "foo" and dynamo_name "ddb"
+        #       B has a column named "bar" and dynamo_name "ddb"
+        # both A and B are valid mixins, but C must fail because there isn't a 1:1 binding to the "ddb" column.
+        #
+        # TODO | for now, we'll assume that the class being defined is special, and can replace columns with the
+        # TODO | same dynamo_name.  In the example above, that would mean C has a column named "baz" and dynamo_name
+        # TODO | "ddb" which would prevent the parent columns "foo" and "bar" from binding to the child class.
+
+        modeled_attrs = set((attr for (_, attr) in inspect.getmembers(cls, lambda x: isinstance(x, (Column, Index)))))
+        local_attrs = {
+            name: value
+            for name, value in cls.__dict__.items()
+            if isinstance(value, (Column, Index))
+        }
+        derived_attrs = modeled_attrs - set(local_attrs.values())
+
+        # 0.0 Sanity check that local attributes don't have names yet, then assign names
+        #     from their entry in cls.__dict__ so we can use dynamo_name throughout
+        for name, attr in local_attrs.items():
+            assert attr.name is None
+            attr._name = name
+
+        # 0.1 Pre-validation for collisions in derived columns/indexes
+        dynamo_names = [x.dynamo_name for x in derived_attrs]
+        collisions = [name for name, count in collections.Counter(dynamo_names).items() if count > 1]
+        if collisions:
+            collisions.sort()
+            raise InvalidModel(
+                f"The model {cls.__name__} subclasses one or more models with conflicting "
+                f"column or index definitions for the following values of dynamo_name: {collisions}")
+        derived_hash_keys = set((x.name for x in derived_attrs if isinstance(x, Column) and x.hash_key))
+        if len(derived_hash_keys) > 1:
+            derived_hash_keys = sorted(derived_hash_keys)
+            raise InvalidModel(
+                f"The model {cls.__name__} subclasses one or more models that declare multiple "
+                f"columns as the hash key: {derived_hash_keys}")
+        derived_range_keys = set((x.name for x in derived_attrs if isinstance(x, Column) and x.range_key))
+        if len(derived_range_keys) > 1:
+            derived_range_keys = sorted(derived_range_keys)
+            raise InvalidModel(
+                f"The model {cls.__name__} subclasses one or more models that declare multiple "
+                f"columns as the range key: {derived_range_keys}")
+
+        # 0.2 Pre-validation for collisions in local columns/indexes
+        dynamo_names = [x.dynamo_name for x in local_attrs.values()]
+        collisions = [name for name, count in collections.Counter(dynamo_names).items() if count > 1]
+        if collisions:
+            collisions.sort()
+            raise InvalidModel(
+                f"The model {cls.__name__} contains conflicting column or index definitions for the "
+                f"following values of dynamo_name: {collisions}")
+        local_hash_keys = [x.name for x in local_attrs.values() if isinstance(x, Column) and x.hash_key]
+        if len(local_hash_keys) > 1:
+            local_hash_keys = sorted(local_hash_keys)
+            raise InvalidModel(
+                f"The model {cls.__name__} defines multiple columns as hash columns: {local_hash_keys}")
+        local_range_keys = [x.name for x in local_attrs.values() if isinstance(x, Column) and x.range_key]
+        if len(local_range_keys) > 1:
+            local_range_keys = sorted(local_range_keys)
+            raise InvalidModel(
+                f"The model {cls.__name__} defines multiple columns as range columns: {local_range_keys}")
+
+        # 1.0 Bind derived columns so they can be referenced by derived indexes
+        for attr in derived_attrs:
             if isinstance(attr, Column):
-                meta.bind_column(name, attr)
-        for name, attr in cls.__dict__.items():
+                column = proxy(attr)
+                meta.bind_column(column.name, column)
+
+        # 1.1 Bind derived indexes
+        for attr in derived_attrs:
             if isinstance(attr, Index):
-                meta.bind_index(name, attr)
+                index = proxy(attr)
+                meta.bind_index(index.name, index)
 
-        for base in cls.__mro__:
-            # cls was handled above, BaseModel.meta has no columns/indexes attributes
-            if base is cls or not issubclass(base, BaseModel):
-                continue
-            for column in base.Meta.columns:
-                name = column.name
-                if (column.hash_key and meta.hash_key) or (column.range_key and meta.range_key):
-                    continue
-                if name not in cls.__dict__:
-                    meta.bind_column(name, proxy(column))
-            for index in base.Meta.indexes:
-                name = index.name
-                if name not in cls.__dict__:
-                    meta.bind_index(name, proxy(index))
+        # 1.2 Bind local columns, allowing them to overwrite existing columns
+        for name, attr in local_attrs.items():
+            if isinstance(attr, Column):
+                meta.bind_column(name, attr, force=True)
 
+        # 1.3 Bind local indexes, allowing them to overwrite existing indexes
+        for name, attr in local_attrs.items():
+            if isinstance(attr, Index):
+                meta.bind_index(name, attr, force=True)
+
+        # 2.0 Ensure concrete models are valid
+        # Currently, this just checks that a hash key is defined
         if not meta.abstract and not meta.hash_key:
             raise InvalidModel(f"{meta.model.__name__!r} has no hash key.")
 
+        # 3.0 Fire model_created for customizing the class after creation
         model_created.send(None, model=cls)
 
     @classmethod
@@ -606,65 +675,55 @@ def bind_column(meta, name, column, force=False, recursive=False):
     column._name = name
     safe_repr = unbound_repr(column)
 
-    # Guard against dynamo_name collisions in columns *and* indexes
-    same = (
+    # Guard against name, dynamo_name collisions; if force=True, unbind any matches
+    same_dynamo_name = (
         util.index(meta.columns, "dynamo_name").get(column.dynamo_name) or
         util.index(meta.indexes, "dynamo_name").get(column.dynamo_name)
     )
-    if same and same.name != name:
-        raise InvalidModel(
-            f"The column {safe_repr} has the same dynamo_name as an "
-            f"existing column or index {same} but has a different name.")
+    same_name = (
+        util.index(meta.columns, "name").get(column.name) or
+        util.index(meta.indexes, "name").get(column.name)
+    )
 
-    if not force:
-        if meta.hash_key:
-            # Trying to add a second hash_key
-            if column.hash_key and column.name != meta.hash_key.name:
-                raise InvalidModel(
-                    f"Tried to bind {safe_repr} but {meta.model} "
-                    f"already has a different hash_key: {meta.hash_key}")
-            # Trying to replace same name with non-hash_key
-            elif not column.hash_key and column.name == meta.hash_key.name:
-                raise InvalidModel(
-                    f"Tried to bind {safe_repr} to {meta.model} but it would "
-                    f"replace hash_key column {meta.hash_key} with non-hash_key column")
-        if meta.range_key:
-            # Trying to add a second range_key
-            if column.range_key and column.name != meta.range_key.name:
-                raise InvalidModel(
-                    f"Tried to bind {safe_repr} but {meta.model} "
-                    f"already has a different range_key: {meta.range_key}")
-            # Trying to replace same name with non-range_key
-            elif not column.range_key and column.name == meta.range_key.name:
-                raise InvalidModel(
-                    f"Tried to bind {safe_repr} to {meta.model} but it would "
-                    f"replace range_key column {meta.range_key} with non-range_key column")
     if column.hash_key and column.range_key:
         raise InvalidModel(f"Tried to bind {safe_repr} as both a hash and range key.")
+
+    if force:
+        if same_name:
+            unbind(meta, name=column.name)
+        if same_dynamo_name:
+            unbind(meta, dynamo_name=column.dynamo_name)
+    else:
+        if same_name:
+            raise InvalidModel(
+                f"The column {safe_repr} has the same name as an existing column "
+                f"or index {same_name}.  Did you mean to bind with force=True?")
+        if same_dynamo_name:
+            raise InvalidModel(
+                f"The column {safe_repr} has the same dynamo_name as an existing "
+                f"column or index {same_name}.  Did you mean to bind with force=True?")
+        if column.hash_key and meta.hash_key:
+            raise InvalidModel(
+                f"Tried to bind {safe_repr} but {meta.model} "
+                f"already has a different hash_key: {meta.hash_key}")
+        if column.range_key and meta.range_key:
+            raise InvalidModel(
+                f"Tried to bind {safe_repr} but {meta.model} "
+                f"already has a different range_key: {meta.range_key}")
 
     # success!
     # --------------------------------
     column.model = meta.model
+    meta.columns.add(column)
     setattr(meta.model, name, column)
 
-    # if another column has this name, overwrite it
-    same = util.index(meta.columns, "name").get(name)
-    if same:
-        meta.columns.remove(same)
-    meta.columns.add(column)
-
     if column.hash_key:
-        if meta.hash_key:
-            meta.keys.remove(meta.hash_key)
-            meta.columns.remove(meta.hash_key)
         meta.hash_key = column
         meta.keys.add(column)
     if column.range_key:
-        if meta.range_key:
-            meta.keys.remove(meta.range_key)
-            meta.columns.remove(meta.range_key)
         meta.range_key = column
         meta.keys.add(column)
+
     for idx in meta.indexes:
         recalculate_projection(meta, idx)
 
@@ -672,7 +731,7 @@ def bind_column(meta, name, column, force=False, recursive=False):
         for subclass in util.walk_subclasses(meta.model):
             try:
                 subclass.Meta.bind_column(name, proxy(column), force=False, recursive=False)
-            except (InvalidIndex, InvalidModel):
+            except InvalidModel:
                 pass
 
 
@@ -680,29 +739,45 @@ def bind_index(meta, name, index, force=False, recursive=True):
     index._name = name
     safe_repr = unbound_repr(index)
 
-    # Guard against dynamo_name collisions in columns *and* indexes
-    same = (
-        util.index(meta.indexes, "dynamo_name").get(index.dynamo_name) or
-        util.index(meta.columns, "dynamo_name").get(index.dynamo_name)
+    # Guard against name, dynamo_name collisions; if force=True, unbind any matches
+    same_dynamo_name = (
+        util.index(meta.columns, "dynamo_name").get(index.dynamo_name) or
+        util.index(meta.indexes, "dynamo_name").get(index.dynamo_name)
     )
-    if same and same.name != name:
-        raise InvalidModel(
-            f"The index {safe_repr} has the same dynamo_name as an "
-            f"existing column or index {same} but has a different name.")
+    same_name = (
+        util.index(meta.columns, "name").get(index.name) or
+        util.index(meta.indexes, "name").get(index.name)
+    )
+
+    if isinstance(index, LocalSecondaryIndex) and not meta.range_key:
+            raise InvalidModel("An LSI requires the Model to have a range key.")
+
+    if force:
+        if same_name:
+            unbind(meta, name=index.name)
+        if same_dynamo_name:
+            unbind(meta, dynamo_name=index.dynamo_name)
+    else:
+        if same_name:
+            raise InvalidModel(
+                f"The index {safe_repr} has the same name as an existing index "
+                f"or column {same_name}.  Did you mean to bind with force=True?")
+        if same_dynamo_name:
+            raise InvalidModel(
+                f"The index {safe_repr} has the same dynamo_name as an existing "
+                f"index or column {same_name}.  Did you mean to bind with force=True?")
 
     # We have to roundtrip through the name to handle any `ProxyColumn`s
     by_name = util.index(meta.columns, "name")
 
     if isinstance(index, LocalSecondaryIndex):
-        if not meta.range_key:
-            raise InvalidIndex("An LSI requires the Model to have a range key.")
-        index.hash_key = meta.hash_key.name
-    if isinstance(index.hash_key, str):
+        index.hash_key = by_name[meta.hash_key.name]
+    elif isinstance(index.hash_key, str):
         index.hash_key = by_name[index.hash_key]
     elif isinstance(index.hash_key, Column):
         index.hash_key = by_name[index.hash_key.name]
     if not isinstance(index.hash_key, Column):
-        raise InvalidIndex("Index hash key must be a Column or Column model name.")
+        raise InvalidModel("Index hash key must be a Column or Column model name.")
 
     if index.range_key:
         if isinstance(index.range_key, str):
@@ -710,7 +785,7 @@ def bind_index(meta, name, index, force=False, recursive=True):
         elif isinstance(index.range_key, Column):
             index.range_key = by_name[index.range_key.name]
         if not isinstance(index.range_key, Column):
-            raise InvalidIndex("Index range key (if provided) must be a Column or Column model name.")
+            raise InvalidModel("Index range key (if provided) must be a Column or Column model name.")
 
     index.keys = {index.hash_key}
     if index.range_key:
@@ -719,21 +794,13 @@ def bind_index(meta, name, index, force=False, recursive=True):
     # success!
     # --------------------------------
     index.model = meta.model
+    meta.indexes.add(index)
     setattr(meta.model, name, index)
 
-    # if another index has this name, overwrite it
-    same = util.index(meta.indexes, "name").get(name)
     if isinstance(index, LocalSecondaryIndex):
-        if same:
-            meta.lsis.remove(same)
         meta.lsis.add(index)
-    elif isinstance(index, GlobalSecondaryIndex):
-        if same:
-            meta.gsis.remove(same)
+    if isinstance(index, GlobalSecondaryIndex):
         meta.gsis.add(index)
-    if same:
-        meta.indexes.remove(same)
-    meta.indexes.add(index)
 
     recalculate_projection(meta, index)
 
@@ -771,6 +838,38 @@ def recalculate_projection(meta, index):
         proj["available"] = proj["included"]
     else:
         proj["available"] = meta.columns
+
+
+def unbind(meta, name=None, dynamo_name=None):
+    if name is not None:
+        columns = {x for x in meta.columns if x.name == name}
+        indexes = {x for x in meta.indexes if x.name == name}
+    elif dynamo_name is not None:
+        columns = {x for x in meta.columns if x.dynamo_name == dynamo_name}
+        indexes = {x for x in meta.indexes if x.dynamo_name == dynamo_name}
+    else:
+        raise RuntimeError("Must provide name= or dynamo_name= to unbind from meta")
+
+    assert len(columns) <= 1
+    assert len(indexes) <= 1
+    assert not (columns and indexes)
+
+    if columns:
+        [column] = columns
+        meta.columns.remove(column)
+        if column in meta.keys:
+            meta.keys.remove(column)
+        if meta.hash_key is column:
+            meta.hash_key = None
+        if meta.range_key is column:
+            meta.range_key = None
+    if indexes:
+        [index] = indexes
+        meta.indexes.remove(index)
+        if index in meta.gsis:
+            meta.gsis.remove(index)
+        if index in meta.lsis:
+            meta.lsis.remove(index)
 
 
 # required to bootstrap BaseModel.__init_subclass__

@@ -419,8 +419,8 @@ class Column(ComparisonMixin):
 
 class Proxy:
     # noinspection PyMissingConstructor
-    def __init__(self, base_column):
-        self._proxied_obj = base_column
+    def __init__(self, obj):
+        self._proxied_obj = obj
 
     def __getattr__(self, name):
         return getattr(self._proxied_obj, name)

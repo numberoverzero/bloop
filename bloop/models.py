@@ -602,7 +602,7 @@ def initialize_meta(cls: type):
     return meta
 
 
-def bind_column(meta, name, column, bind_subclasses=True, replace_keys=False):
+def bind_column(meta, name, column, force=False, recursive=False):
     column._name = name
     safe_repr = unbound_repr(column)
 
@@ -616,7 +616,7 @@ def bind_column(meta, name, column, bind_subclasses=True, replace_keys=False):
             f"The column {safe_repr} has the same dynamo_name as an "
             f"existing column or index {same} but has a different name.")
 
-    if not replace_keys:
+    if not force:
         if meta.hash_key:
             # Trying to add a second hash_key
             if column.hash_key and column.name != meta.hash_key.name:
@@ -668,12 +668,15 @@ def bind_column(meta, name, column, bind_subclasses=True, replace_keys=False):
     for idx in meta.indexes:
         recalculate_projection(meta, idx)
 
-    if bind_subclasses:
+    if recursive:
         for subclass in util.walk_subclasses(meta.model):
-            subclass.Meta.bind_column(name, proxy(column), bind_subclasses=False)
+            try:
+                subclass.Meta.bind_column(name, proxy(column), force=False, recursive=False)
+            except (InvalidIndex, InvalidModel):
+                pass
 
 
-def bind_index(meta, name, index, bind_subclasses=True):
+def bind_index(meta, name, index, force=False, recursive=True):
     index._name = name
     safe_repr = unbound_repr(index)
 
@@ -734,9 +737,12 @@ def bind_index(meta, name, index, bind_subclasses=True):
 
     recalculate_projection(meta, index)
 
-    if bind_subclasses:
+    if recursive:
         for subclass in util.walk_subclasses(meta.model):
-            subclass.Meta.bind_index(name, proxy(index), bind_subclasses=False)
+            try:
+                subclass.Meta.bind_index(name, proxy(index), force=False, recursive=False)
+            except (InvalidIndex, InvalidModel):
+                pass
 
 
 def recalculate_projection(meta, index):

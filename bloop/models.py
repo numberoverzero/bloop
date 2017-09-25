@@ -137,13 +137,13 @@ class BaseModel:
         # 1.0 Bind derived columns so they can be referenced by derived indexes
         for attr in derived_attrs:
             if isinstance(attr, Column):
-                column = proxy(attr)
+                column = Proxy.of(attr)
                 meta.bind_column(column.name, column)
 
         # 1.1 Bind derived indexes
         for attr in derived_attrs:
             if isinstance(attr, Index):
-                index = proxy(attr)
+                index = Proxy.of(attr)
                 meta.bind_index(index.name, index)
 
         # 1.2 Bind local columns, allowing them to overwrite existing columns
@@ -417,7 +417,7 @@ class Column(ComparisonMixin):
             object_modified.send(self, obj=obj, column=self, value=None)
 
 
-class ProxyColumn(Column):
+class Proxy:
     # noinspection PyMissingConstructor
     def __init__(self, base_column):
         self._proxied_obj = base_column
@@ -440,48 +440,36 @@ class ProxyColumn(Column):
                 pass
         delattr(self._proxied_obj, name)
 
-
-class ProxyIndex(Index):
-    # noinspection PyMissingConstructor
-    def __init__(self, base_index):
-        self._proxied_obj = base_index
-
-    def __getattr__(self, name):
-        return getattr(self._proxied_obj, name)
-
-    def __setattr__(self, name, value):
-        if name in non_proxied_attrs:
-            object.__setattr__(self, name, value)
+    @classmethod
+    def of(cls, obj, unwrap=False) -> "Proxy":
+        if unwrap:
+            obj = Proxy.unwrap(obj)
+        if isinstance(obj, Column):
+            return ProxyColumn(obj)
+        elif isinstance(obj, LocalSecondaryIndex):
+            return ProxyLSI(obj)
+        elif isinstance(obj, GlobalSecondaryIndex):
+            return ProxyGSI(obj)
         else:
-            setattr(self._proxied_obj, name, value)
+            raise ValueError(f"Can't proxy {obj} with unknown type {type(obj)}")
 
-    def __delattr__(self, name):
-        if name in non_proxied_attrs:
-            try:
-                object.__delattr__(self, name)
-                return
-            except AttributeError:
-                pass
-        delattr(self._proxied_obj, name)
+    @classmethod
+    def unwrap(cls, obj):
+        while isinstance(obj, Proxy):
+            obj = obj._proxied_obj
+        return obj
 
 
-class ProxyLSI(ProxyIndex, LocalSecondaryIndex):
+class ProxyColumn(Proxy, Column):
     pass
 
 
-class ProxyGSI(ProxyIndex, GlobalSecondaryIndex):
+class ProxyLSI(Proxy, LocalSecondaryIndex):
     pass
 
 
-def proxy(obj):
-    if isinstance(obj, Column):
-        return ProxyColumn(obj)
-    elif isinstance(obj, LocalSecondaryIndex):
-        return ProxyLSI(obj)
-    elif isinstance(obj, GlobalSecondaryIndex):
-        return ProxyGSI(obj)
-    else:
-        raise ValueError(f"Can't proxy unknown type {type(obj)}")
+class ProxyGSI(Proxy, GlobalSecondaryIndex):
+    pass
 
 
 def subclassof(obj, classinfo):
@@ -730,7 +718,7 @@ def bind_column(meta, name, column, force=False, recursive=False):
     if recursive:
         for subclass in util.walk_subclasses(meta.model):
             try:
-                subclass.Meta.bind_column(name, proxy(column), force=False, recursive=False)
+                subclass.Meta.bind_column(name, Proxy.of(column), force=False, recursive=False)
             except InvalidModel:
                 pass
 
@@ -807,7 +795,7 @@ def bind_index(meta, name, index, force=False, recursive=True):
     if recursive:
         for subclass in util.walk_subclasses(meta.model):
             try:
-                subclass.Meta.bind_index(name, proxy(index), force=False, recursive=False)
+                subclass.Meta.bind_index(name, Proxy.of(index), force=False, recursive=False)
             except (InvalidIndex, InvalidModel):
                 pass
 

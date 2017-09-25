@@ -88,13 +88,7 @@ class BaseModel:
         }
         derived_attrs = modeled_attrs - set(local_attrs.values())
 
-        # 0.0 Sanity check that local attributes don't have names yet, then assign names
-        #     from their entry in cls.__dict__ so we can use dynamo_name throughout
-        for name, attr in local_attrs.items():
-            assert attr.name is None
-            attr._name = name
-
-        # 0.1 Pre-validation for collisions in derived columns/indexes
+        # 0.0 Pre-validation for collisions in derived columns/indexes
         dynamo_names = [x.dynamo_name for x in derived_attrs]
         collisions = [name for name, count in collections.Counter(dynamo_names).items() if count > 1]
         if collisions:
@@ -115,7 +109,7 @@ class BaseModel:
                 f"The model {cls.__name__} subclasses one or more models that declare multiple "
                 f"columns as the range key: {derived_range_keys}")
 
-        # 0.2 Pre-validation for collisions in local columns/indexes
+        # 0.1 Pre-validation for collisions in local columns/indexes
         dynamo_names = [x.dynamo_name for x in local_attrs.values()]
         collisions = [name for name, count in collections.Counter(dynamo_names).items() if count > 1]
         if collisions:
@@ -216,6 +210,9 @@ class Index:
         self._dynamo_name = dynamo_name
 
         self.projection = validate_projection(projection)
+
+    def __set_name__(self, owner, name):
+        self._name = name
 
     def __repr__(self):
         if isinstance(self, LocalSecondaryIndex):
@@ -350,6 +347,9 @@ class Column(ComparisonMixin):
         else:
             raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
         super().__init__(**kwargs)
+
+    def __set_name__(self, owner, name):
+        self._name = name
 
     __hash__ = object.__hash__
 

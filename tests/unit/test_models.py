@@ -557,7 +557,7 @@ def test_mixins_same_index_name():
         data = Column(String, dynamo_name="bar-data")
         by_data = GlobalSecondaryIndex(projection="keys", hash_key=data, dynamo_name="index:bar")
 
-    class FooFirst(FooMixin, BarMixin):
+    class FooFirst(FooMixin, BarMixin, BaseModel):
         class Meta:
             abstract = True
 
@@ -567,6 +567,49 @@ def test_mixins_same_index_name():
 
     assert FooFirst.by_data.dynamo_name == "index:foo"
     assert BarFirst.by_data.dynamo_name == "index:bar"
+
+
+def test_mixins_no_base_model():
+    """Mixins don't need to subclass BaseModel to be inherited"""
+    class HasKeys:
+        id = Column(String, hash_key=True)
+        range = Column(String, range_key=True)
+        other_id = Column(String)
+
+        by_other = GlobalSecondaryIndex(projection="keys", hash_key=other_id)
+        sort_by_other = LocalSecondaryIndex(projection="all", range_key=other_id)
+
+    class ParentData:
+        data = Column(String, dynamo_name="parent-data")
+        parent = Column(Integer)
+
+    class ChildData(ParentData):
+        data = Column(String, dynamo_name="child-data")
+        child = Column(Integer)
+
+    class BaseModelFirst(BaseModel, HasKeys, ChildData):
+        pass
+
+    assert BaseModelFirst.id
+    assert BaseModelFirst.range
+    assert BaseModelFirst.other_id
+    assert BaseModelFirst.by_other
+    assert BaseModelFirst.sort_by_other
+    assert BaseModelFirst.parent
+    assert BaseModelFirst.child
+    assert BaseModelFirst.data.dynamo_name == "child-data"
+
+    class BaseModelLast(HasKeys, ChildData, BaseModel):
+        pass
+
+    assert BaseModelLast.id
+    assert BaseModelLast.range
+    assert BaseModelLast.other_id
+    assert BaseModelLast.by_other
+    assert BaseModelLast.sort_by_other
+    assert BaseModelLast.parent
+    assert BaseModelLast.child
+    assert BaseModelLast.data.dynamo_name == "child-data"
 
 
 # END BASE MODEL ======================================================================================= END BASE MODEL

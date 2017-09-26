@@ -1,4 +1,4 @@
-from typing import Set, Optional, Dict, Callable
+from typing import Set, Optional, Dict, Callable, Union
 import collections
 import collections.abc
 import functools
@@ -16,6 +16,7 @@ __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 logger = logging.getLogger("bloop.models")
 missing = util.missing
 non_proxied_attrs = {"model", "_name", "_proxied_obj"}
+proxy_classes = {}
 
 
 class IMeta:
@@ -131,14 +132,12 @@ class BaseModel:
         # 1.0 Bind derived columns so they can be referenced by derived indexes
         for attr in derived_attrs:
             if isinstance(attr, Column):
-                column = Proxy.of(attr)
-                meta.bind_column(column.name, column)
+                meta.bind_column(attr.name, attr, proxy=True)
 
         # 1.1 Bind derived indexes
         for attr in derived_attrs:
             if isinstance(attr, Index):
-                index = Proxy.of(attr)
-                meta.bind_index(index.name, index)
+                meta.bind_index(attr.name, attr, proxy=True)
 
         # 1.2 Bind local columns, allowing them to overwrite existing columns
         for name, attr in local_attrs.items():
@@ -418,9 +417,15 @@ class Column(ComparisonMixin):
 
 
 class Proxy:
-    # noinspection PyMissingConstructor
     def __init__(self, obj):
         self._proxied_obj = obj
+
+    def __init_subclass__(cls, **kwargs):
+        for base in cls.__bases__:
+            if base in (cls, Proxy, object):
+                continue
+            assert base not in proxy_classes
+            proxy_classes[base] = cls
 
     def __getattr__(self, name):
         return getattr(self._proxied_obj, name)
@@ -433,28 +438,22 @@ class Proxy:
 
     def __delattr__(self, name):
         if name in non_proxied_attrs:
-            try:
-                object.__delattr__(self, name)
-                return
-            except AttributeError:
-                pass
-        delattr(self._proxied_obj, name)
+            object.__delattr__(self, name)
+        else:
+            delattr(self._proxied_obj, name)
 
-    @classmethod
-    def of(cls, obj, unwrap=False) -> "Proxy":
+    @staticmethod
+    def of(obj, unwrap: bool=False) -> Union[Column, LocalSecondaryIndex, GlobalSecondaryIndex]:
         if unwrap:
             obj = Proxy.unwrap(obj)
-        if isinstance(obj, Column):
-            return ProxyColumn(obj)
-        elif isinstance(obj, LocalSecondaryIndex):
-            return ProxyLSI(obj)
-        elif isinstance(obj, GlobalSecondaryIndex):
-            return ProxyGSI(obj)
-        else:
-            raise ValueError(f"Can't proxy {obj} with unknown type {type(obj)}")
+        for base in obj.__class__.__mro__:
+            if base in proxy_classes:
+                proxy_cls = proxy_classes[base]
+                return proxy_cls(obj)
+        raise ValueError(f"Can't proxy {obj} with unknown type {type(obj)}")
 
-    @classmethod
-    def unwrap(cls, obj):
+    @staticmethod
+    def unwrap(obj):
         while isinstance(obj, Proxy):
             obj = obj._proxied_obj
         return obj
@@ -659,7 +658,9 @@ def initialize_meta(cls: type):
     return meta
 
 
-def bind_column(meta, name, column, force=False, recursive=False):
+def bind_column(meta, name, column, force=False, recursive=False, proxy=False) -> Column:
+    if proxy:
+        column = Proxy.of(column, unwrap=True)
     column._name = name
     safe_repr = unbound_repr(column)
 
@@ -722,8 +723,12 @@ def bind_column(meta, name, column, force=False, recursive=False):
             except InvalidModel:
                 pass
 
+    return column
 
-def bind_index(meta, name, index, force=False, recursive=True):
+
+def bind_index(meta, name, index, force=False, recursive=True, proxy=False) -> Index:
+    if proxy:
+        index = Proxy.of(index, unwrap=True)
     index._name = name
     safe_repr = unbound_repr(index)
 
@@ -798,6 +803,8 @@ def bind_index(meta, name, index, force=False, recursive=True):
                 subclass.Meta.bind_index(name, Proxy.of(index), force=False, recursive=False)
             except (InvalidIndex, InvalidModel):
                 pass
+
+    return index
 
 
 def recalculate_projection(meta, index):

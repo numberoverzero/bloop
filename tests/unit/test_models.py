@@ -1187,13 +1187,26 @@ def test_bind_index_name_conflict_fails():
 def test_bind_index_name_conflict_force():
     """When a name conflicts and force=True, the original index is overwritten"""
     model = new_abstract_model(indexes=True)
-    other = GlobalSecondaryIndex(projection="all", hash_key="data")
+    other = LocalSecondaryIndex(projection="all", range_key="data")
+    another = GlobalSecondaryIndex(projection="all", hash_key="data")
 
     bound = model.Meta.bind_index("by_data", other, force=True)
     # not proxied
     assert bound is other
     assert len(model.Meta.indexes) == 2
     assert model.by_data is other
+    assert bound in model.Meta.indexes
+    assert bound in model.Meta.lsis
+
+    new_bound = model.Meta.bind_index("by_data", another, force=True)
+    assert new_bound is another
+    assert len(model.Meta.indexes) == 2
+    assert model.by_data is another
+    assert bound not in model.Meta.indexes
+    assert bound not in model.Meta.lsis
+
+    assert new_bound in model.Meta.indexes
+    assert new_bound in model.Meta.gsis
 
 
 def test_bind_index_dynamo_name_conflict_fails():
@@ -1250,69 +1263,74 @@ def test_bind_index_recalculates_index_projection():
     assert bound_index.hash_key is not old_data_column
 
 
-# def test_bind_column_parent_class():
-#     """
-#     Binding to a parent class can optionally recurse through children, adding a
-#     proxy of the column when there are no conflicts
-#     """
-#
-#     class Parent(BaseModel):
-#         class Meta(IMeta):
-#             abstract = True
-#
-#     class Child(Parent):
-#         id = Column(String, hash_key=True)
-#         NAME_CONFLICT = Column(String)
-#
-#     class AnotherChild(Parent):
-#         id = Column(String, hash_key=True)
-#         another = Column(String, dynamo_name="DYNAMO-NAME-CONFLICT")
-#
-#     class Grandchild(Child):
-#         pass
-#
-#     no_conflict = Column(Integer)
-#     no_conflict_recursive = Column(Integer)
-#     name_conflict = Column(Integer, dynamo_name="DYNAMO-NAME-OK")
-#     dynamo_name_conflict = Column(Integer, dynamo_name="DYNAMO-NAME-CONFLICT")
-#
-#     # 0. Non-recursive binds don't modify children
-#     parent_bind = Parent.Meta.bind_column("parent_only", no_conflict)
-#     assert Parent.Meta.columns == {parent_bind}
-#     assert len(Child.Meta.columns) == 2
-#     assert len(AnotherChild.Meta.columns) == 2
-#     assert len(Grandchild.Meta.columns) == 2
-#
-#     # 1. Recursive binds with no conflicts are applied to all descendants
-#     recursive_bind = Parent.Meta.bind_column("all_children", no_conflict_recursive, recursive=True)
-#     assert Parent.Meta.columns == {parent_bind, recursive_bind}
-#     assert len(Child.Meta.columns) == 3
-#     assert len(AnotherChild.Meta.columns) == 3
-#     assert len(Grandchild.Meta.columns) == 3
-#
-#     # 2. Recursive bind with name conflict isn't added to
-#     #    Child or Grandchild, but is added to AnotherChild
-#     first_conflict = Parent.Meta.bind_column("NAME_CONFLICT", name_conflict, recursive=True)
-#     assert Parent.Meta.columns == {parent_bind, recursive_bind, first_conflict}
-#     assert len(Child.Meta.columns) == 3
-#     assert len(AnotherChild.Meta.columns) == 4
-#     assert len(Grandchild.Meta.columns) == 3
-#
-#     # 3. Recursive bind with dynamo_name conflict isn't added to AnotherChild,
-#     #    but is added to Child and Grandchild
-#     second_conflict = Parent.Meta.bind_column("NAME_OK", dynamo_name_conflict, recursive=True)
-#     assert Parent.Meta.columns == {parent_bind, recursive_bind, first_conflict, second_conflict}
-#     assert len(Child.Meta.columns) == 4
-#     assert len(AnotherChild.Meta.columns) == 4
-#     assert len(Grandchild.Meta.columns) == 4
-#
-#     assert Child.NAME_CONFLICT is not first_conflict  # name conflict
-#     assert AnotherChild.another is not second_conflict  # dynamo_name conflict
-#     assert Grandchild.NAME_CONFLICT is not first_conflict
-#
-#
+def test_bind_index_parent_class():
+    """
+    Binding to a parent class can optionally recurse through children, adding a
+    copy of the index when there are no conflicts
+    """
+
+    class Parent(BaseModel):
+        class Meta(IMeta):
+            abstract = True
+        id = Column(String, hash_key=True)
+        range = Column(String, range_key=True)
+
+    class Child(Parent):
+        NAME_CONFLICT = GlobalSecondaryIndex(projection="all", hash_key="id")
+
+    class AnotherChild(Parent):
+        another = GlobalSecondaryIndex(
+            projection="all", hash_key="id",
+            dynamo_name="DYNAMO-NAME-CONFLICT")
+
+    class Grandchild(Child):
+        pass
+
+    no_conflict = GlobalSecondaryIndex(projection="all", hash_key="id")
+    no_conflict_recursive = LocalSecondaryIndex(
+        projection="all", range_key="id")
+    name_conflict = GlobalSecondaryIndex(
+        projection="all", hash_key="id", dynamo_name="DYNAMO-NAME-OK")
+    dynamo_name_conflict = LocalSecondaryIndex(
+        projection="all", range_key="id", dynamo_name="DYNAMO-NAME-CONFLICT")
+
+    # 0. Non-recursive binds don't modify children
+    parent_bind = Parent.Meta.bind_index("parent_only", no_conflict)
+    assert Parent.Meta.indexes == {parent_bind}
+    assert len(Child.Meta.indexes) == 2
+    assert len(AnotherChild.Meta.indexes) == 2
+    assert len(Grandchild.Meta.indexes) == 2
+
+    # 1. Recursive binds with no conflicts are applied to all descendants
+    recursive_bind = Parent.Meta.bind_index("all_children", no_conflict_recursive, recursive=True)
+    assert Parent.Meta.indexes == {parent_bind, recursive_bind}
+    assert len(Child.Meta.indexes) == 3
+    assert len(AnotherChild.Meta.indexes) == 3
+    assert len(Grandchild.Meta.indexes) == 3
+
+    # 2. Recursive bind with name conflict isn't added to
+    #    Child or Grandchild, but is added to AnotherChild
+    first_conflict = Parent.Meta.bind_index("NAME_CONFLICT", name_conflict, recursive=True)
+    assert Parent.Meta.indexes == {parent_bind, recursive_bind, first_conflict}
+    assert len(Child.Meta.indexes) == 3
+    assert len(AnotherChild.Meta.indexes) == 4
+    assert len(Grandchild.Meta.indexes) == 3
+
+    # 3. Recursive bind with dynamo_name conflict isn't added to AnotherChild,
+    #    but is added to Child and Grandchild
+    second_conflict = Parent.Meta.bind_index("NAME_OK", dynamo_name_conflict, recursive=True)
+    assert Parent.Meta.indexes == {parent_bind, recursive_bind, first_conflict, second_conflict}
+    assert len(Child.Meta.indexes) == 4
+    assert len(AnotherChild.Meta.indexes) == 4
+    assert len(Grandchild.Meta.indexes) == 4
+
+    assert Child.NAME_CONFLICT is not first_conflict  # name conflict
+    assert AnotherChild.another is not second_conflict  # dynamo_name conflict
+    assert Grandchild.NAME_CONFLICT is not first_conflict
+
+
 def test_bind_index_copy():
-    """When proxy=True, the given column isn't bound directly but a shallow copy is inserted"""
+    """When copy=True, the given column isn't bound directly but a shallow copy is inserted"""
     model = new_abstract_model(indexes=True)
     other_model = new_abstract_model()
     assert model is not other_model  # guard against refactor to return the same model

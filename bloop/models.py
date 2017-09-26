@@ -371,10 +371,15 @@ class Column(ComparisonMixin):
         else:
             extra = ""
 
+        if isinstance(self, Proxy):
+            cls_name = Proxy.unwrap(self).__class__.__name__
+        else:
+            cls_name = self.__class__.__name__
+
         # <Column[Pin.url]>
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
-        return f"<{self.__class__.__name__}[{self.model.__name__}.{self.name}{extra}]>"
+        return f"<{cls_name}[{self.model.__name__}.{self.name}{extra}]>"
 
     @property
     def name(self):

@@ -82,13 +82,18 @@ def test_walk_subclasses():
     class C(A):
         pass
 
-    class D(B, C, A):
+    class D(A):
         pass
 
-    class E(D, B, A):
+    class E(C, A):  # would be visited twice without dedupe
         pass
 
-    assert set(walk_subclasses(A)) == {C, D, E}
+    class F(D, A):  # would be visited twice without dedupe
+        pass
+
+    # list instead of set ensures we don't false succeed on duplicates
+    subclasses = sorted(walk_subclasses(A), key=lambda c: c.__name__)
+    assert subclasses == [C, D, E, F]
 
 
 def test_sentinel_uniqueness():

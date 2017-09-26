@@ -79,12 +79,12 @@ def walk_subclasses(root):
     visited = set()
     while classes:
         cls = classes.pop()
-        # Testing this branch would require checking walk_subclass(object)
-        if cls is not type and cls not in visited:
-            classes.update(cls.__subclasses__())
-            visited.add(cls)
-            if cls is not root:
-                yield cls
+        if cls is type or cls in visited:
+            continue
+        classes.update(cls.__subclasses__())
+        visited.add(cls)
+        if cls is not root:
+            yield cls
 
 
 class Sentinel:

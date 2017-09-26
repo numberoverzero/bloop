@@ -13,10 +13,10 @@ from bloop.models import (
     IMeta,
     Index,
     LocalSecondaryIndex,
-    Proxy,
     bind_index,
     model_created,
     object_modified,
+    unbind,
     unpack_from_dynamodb,
 )
 from bloop.types import UUID, Boolean, DateTime, Integer, String, Type
@@ -939,177 +939,6 @@ def test_gsi_repr():
 # END INDEX ================================================================================================= END INDEX
 
 
-# PROXY ========================================================================================================= PROXY
-
-def test_proxy_registration():
-    """Subclasses of Proxies are automatically hooked up to Proxy.of for their __bases__"""
-    class Original:
-        pass
-
-    Proxy.register(Original)
-
-    obj = Original()
-    proxy_obj = Proxy.of(obj)
-
-    assert isinstance(proxy_obj, Proxy)
-    assert proxy_obj._proxied_obj is obj
-
-
-def test_proxy_unknown_class():
-    """Proxy.of only proxies registered classes"""
-    class Original:
-        pass
-
-    obj = Original()
-    with pytest.raises(ValueError):
-        Proxy.of(obj)
-
-
-def test_proxy_nesting():
-    """By default Proxy.of doesn't unwrap; proxying a proxy creates a nested proxy"""
-    class Original:
-        pass
-
-    Proxy.register(Original)
-
-    data = [3, 4, 5]
-    obj = Original()
-    obj.some_attr = data
-    first_proxy = Proxy.of(obj)
-    second_proxy = Proxy.of(first_proxy)
-    assert isinstance(second_proxy, Proxy)
-    assert second_proxy._proxied_obj is first_proxy
-    assert second_proxy.some_attr is data
-
-
-def test_proxy_unwrapping():
-    """Proxy.of can unwrap proxied objects to prevent nesting"""
-    class Original:
-        pass
-
-    Proxy.register(Original)
-
-    obj = Original()
-    first_proxy = Proxy.of(obj)
-    second_proxy = Proxy.of(first_proxy, unwrap=True)
-
-    assert isinstance(second_proxy, Proxy)
-    assert second_proxy._proxied_obj is obj
-
-
-def test_proxy_attr_intercept():
-    """Proxy only intercepts whitelisted attributes, otherwise defers to the proxied object"""
-
-    class Original:
-        class_attr = [3, 4, 5]
-
-        def __init__(self):
-            self._name = "original"
-            self._data = "blah"
-
-        @property
-        def read_only(self):
-            return "read-only"
-
-        @property
-        def data(self):
-            return self._data
-
-        @data.setter
-        def data(self, value):
-            self._data = value
-
-        def method(self, x, y):
-            return str(x + y) in self.data
-
-        def say_name(self):
-            return f"I am {self._name}"
-
-    Proxy.register(Original)
-
-    obj = Original()
-    proxy = Proxy.of(obj)
-
-    # getattr on property
-    assert proxy.data == "blah"
-    obj.data = "foo"
-    assert proxy.data == "foo"
-
-    # setattr on property
-    proxy.data = "hello, world"
-    assert obj.data == "hello, world"
-
-    # class attributes
-    assert proxy.class_attr is Original.class_attr
-
-    # method call
-    assert not proxy.method(3, 4)
-    proxy.data = "7"
-    assert proxy.method(3, 4)
-
-    # method call with reference to proxy attribute
-    assert proxy.say_name() == "I am original"
-
-    # setattr whitelisted attribute
-    proxy._name = "proxy"
-    assert proxy.say_name() == "I am proxy"
-    assert obj.say_name() == "I am original"
-
-    # delattr passes through
-    del proxy._data
-    assert not hasattr(obj, "_data")
-
-    # delattr on whitelist attribute
-    del proxy._name
-    assert obj._name == "original"
-
-
-def test_proxy_register_twice():
-    """Multiple register calls is a no-op"""
-    class Original:
-        pass
-
-    proxy_cls = Proxy.register(Original)
-    same_proxy_cls = Proxy.register(Original)
-    assert proxy_cls is same_proxy_cls
-
-
-def test_proxy_register_name():
-    """Proxy.register can provide a custom name for __repr__/__str__ purposes"""
-    class Original:
-        pass
-
-    name = "MyProxyClassHere"
-    proxy_cls = Proxy.register(Original, name=name)
-    assert proxy_cls.__name__ == name
-
-
-def test_proxy_register_custom_cls():
-    """Proxy.register can provide an existing proxy class"""
-    class Original:
-        pass
-
-    class MyCustomProxy:
-        def __init__(self, my_obj):
-            # Note that this doesn't follow the whitelist rules from
-            # Proxy, since it's a custom class
-            self.my_obj = my_obj
-
-    proxy_cls = Proxy.register(Original, proxy_cls=MyCustomProxy)
-    obj = Original()
-    assert not hasattr(obj, "my_obj")
-    proxy = Proxy.of(obj)
-
-    assert proxy.my_obj is obj
-    assert not hasattr(obj, "my_obj")
-
-    assert not isinstance(proxy, Proxy)
-    assert proxy_cls is MyCustomProxy
-
-
-# END PROXY ================================================================================================= END PROXY
-
-
 # BINDING ===================================================================================================== BINDING
 
 
@@ -1189,6 +1018,14 @@ def test_bind_column_force_keys():
     assert model.Meta.range_key is range_key
     assert model.Meta.keys == {range_key}
 
+    # force rebind over a hash or range key
+    new_hash_key = Column(Integer, hash_key=True)
+    bound_nhk = model.Meta.bind_column("data", new_hash_key, force=True, copy=True)
+    assert model.Meta.hash_key is bound_nhk
+    new_range_key = Column(Integer, range_key=True)
+    bound_nrk = model.Meta.bind_column("data", new_range_key, force=True, copy=True)
+    assert model.Meta.range_key is bound_nrk
+
 
 def test_bind_column_extra_hash_key():
     """When a column is bound without force and would replace a hash or range key, it fails"""
@@ -1236,7 +1073,7 @@ def test_bind_column_recalculates_index_projection():
 def test_bind_column_parent_class():
     """
     Binding to a parent class can optionally recurse through children, adding a
-    proxy of the column when there are no conflicts
+    copy of the column when there are no conflicts
     """
 
     class Parent(BaseModel):
@@ -1294,25 +1131,47 @@ def test_bind_column_parent_class():
     assert Grandchild.NAME_CONFLICT is not first_conflict
 
 
-def test_bind_column_proxy():
-    """When proxy=True, the given column isn't bound directly but a proxy layer is inserted"""
+def test_bind_column_copy():
+    """When copy=True, the given column isn't bound directly but a shallow copy is inserted"""
     model = new_abstract_model()
     other_model = new_abstract_model()
     assert model is not other_model  # guard against refactor to return the same model
 
     column = Column(String, dynamo_name="dynamo-name")
 
-    bound = model.Meta.bind_column("to_model", column, proxy=True)
-    assert isinstance(bound, Proxy)
+    bound = model.Meta.bind_column("to_model", column, copy=True)
     assert bound is not column
     assert model.to_model is bound
 
-    other_bound = other_model.Meta.bind_column("to_other_model", column, proxy=True)
-    assert isinstance(other_bound, Proxy)
+    other_bound = other_model.Meta.bind_column("to_other_model", column, copy=True)
     assert other_bound is not column
     assert other_model.to_other_model is other_bound
 
     assert bound is not other_bound
+
+    # mutating the original does not change either copy
+    column._dynamo_name = "new-dynamo-name"
+    bound._dynamo_name = "bound-dynamo-name"
+    assert column.dynamo_name == "new-dynamo-name"
+    assert bound.dynamo_name == "bound-dynamo-name"
+    assert other_bound.dynamo_name == "dynamo-name"
+
+    # name is set correctly even though __copy__ clears it
+    assert bound.name == "to_model"
+    assert other_bound.name == "to_other_model"
+
+    # bound to the correct model
+    assert bound.model is model
+    assert other_bound.model is other_model
+
+
+def test_bind_column_no_copy():
+    """Binding a column with copy=False mutates the original column"""
+    model = new_abstract_model()
+    column = Column(String, dynamo_name="dynamo-name")
+
+    bound_column = model.Meta.bind_column("another-name", column, copy=False)
+    assert column is bound_column
 
 
 def test_bind_index_name_conflict_fails():
@@ -1362,18 +1221,33 @@ def test_bind_index_dynamo_name_conflict_force():
 def test_bind_index_recalculates_index_projection():
     """An existing index recalculates its projection when bound"""
     model = new_abstract_model()
+    old_data_column = model.data
+
+    # bind the hash key with force since the model already has a column named "data"
     hash_key = Column(String, hash_key=True)
-    index = GlobalSecondaryIndex(projection="all", hash_key="data")
+    bound_hash_key = model.Meta.bind_column("data", hash_key, copy=True, force=True)
 
-    model.Meta.bind_column("id", hash_key)
-    model.Meta.bind_index("by_data", index)
+    # index points to an outdated column, but its name will be
+    # used to resolve the current hash_key
+    index = GlobalSecondaryIndex(projection="all", hash_key=old_data_column)
+    bound_index = model.Meta.bind_index("by_data", index, copy=True)
 
-    assert index.projection["included"] == {model.Meta.hash_key, model.data}
+    assert bound_index.projection["included"] == {bound_hash_key}
 
     # bind a new column, which will now be part of the projection
     new_column = Column(String)
     model.Meta.bind_column("something", new_column)
-    assert index.projection["included"] == {model.Meta.hash_key, model.data, model.something}
+    assert bound_index.projection["included"] == {bound_hash_key, model.something}
+
+    # because we used a copy, the original index should be unchanged
+    assert index.projection == {
+        "mode": "all",
+        "included": None,
+        "available": None,
+        "strict": True
+    }
+    assert index.hash_key is old_data_column
+    assert bound_index.hash_key is not old_data_column
 
 
 # def test_bind_column_parent_class():
@@ -1437,25 +1311,45 @@ def test_bind_index_recalculates_index_projection():
 #     assert Grandchild.NAME_CONFLICT is not first_conflict
 #
 #
-# def test_bind_column_proxy():
-#     """When proxy=True, the given column isn't bound directly but a proxy layer is inserted"""
-#     model = new_abstract_model()
-#     other_model = new_abstract_model()
-#     assert model is not other_model  # guard against refactor to return the same model
-#
-#     column = Column(String, dynamo_name="dynamo-name")
-#
-#     bound = model.Meta.bind_column("to_model", column, proxy=True)
-#     assert isinstance(bound, Proxy)
-#     assert bound is not column
-#     assert model.to_model is bound
-#
-#     other_bound = other_model.Meta.bind_column("to_other_model", column, proxy=True)
-#     assert isinstance(other_bound, Proxy)
-#     assert other_bound is not column
-#     assert other_model.to_other_model is other_bound
-#
-#     assert bound is not other_bound
+def test_bind_index_copy():
+    """When proxy=True, the given column isn't bound directly but a shallow copy is inserted"""
+    model = new_abstract_model(indexes=True)
+    other_model = new_abstract_model()
+    assert model is not other_model  # guard against refactor to return the same model
+
+    index = GlobalSecondaryIndex(projection="all", hash_key="data", dynamo_name="dynamo-name")
+    bound = model.Meta.bind_index("by_data_copy", index, copy=True)
+
+    assert bound is not index
+    assert model.by_data_copy is bound
+
+    other_bound = other_model.Meta.bind_index("by_data_other", index, copy=True)
+    assert other_bound is not index
+    assert other_model.by_data_other is other_bound
+
+    assert bound is not other_bound
+
+    # mutating the original does not change either copy
+    index._dynamo_name = "new-dynamo-name"
+    bound._dynamo_name = "bound-dynamo-name"
+    assert index.dynamo_name == "new-dynamo-name"
+    assert bound.dynamo_name == "bound-dynamo-name"
+    assert other_bound.dynamo_name == "dynamo-name"
+
+    # name is set correctly even though __copy__ clears it
+    assert bound.name == "by_data_copy"
+    assert other_bound.name == "by_data_other"
+
+    # bound to the correct model
+    assert bound.model is model
+    assert other_bound.model is other_model
+
+
+def test_unbind_bad_call():
+    """unbind must be called with either name= or dynamo_name="""
+    model = new_abstract_model()
+    with pytest.raises(RuntimeError):
+        unbind(model.Meta)
 
 
 # END BINDING ============================================================================================= END BINDING

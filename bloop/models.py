@@ -1,4 +1,5 @@
-from typing import Set, Optional, Dict, Callable, Any
+from copy import copy as copyfn
+from typing import Set, Optional, Dict, Callable
 import collections
 import collections.abc
 import functools
@@ -13,11 +14,9 @@ from .types import Type
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
+
 logger = logging.getLogger("bloop.models")
 missing = util.missing
-
-non_proxied_attrs = {"model", "_name", "_proxied_obj"}
-proxy_classes = {}
 
 
 class IMeta:
@@ -136,12 +135,12 @@ class BaseModel:
         # 1.0 Bind derived columns so they can be referenced by derived indexes
         for attr in derived_attrs:
             if isinstance(attr, Column):
-                meta.bind_column(attr.name, attr, proxy=True)
+                meta.bind_column(attr.name, attr, copy=True)
 
         # 1.1 Bind derived indexes
         for attr in derived_attrs:
             if isinstance(attr, Index):
-                meta.bind_index(attr.name, attr, proxy=True)
+                meta.bind_index(attr.name, attr, copy=True)
 
         # 1.2 Bind local columns, allowing them to overwrite existing columns
         for name, attr in local_attrs.items():
@@ -213,6 +212,28 @@ class Index:
         self._dynamo_name = dynamo_name
 
         self.projection = validate_projection(projection)
+
+    def __copy__(self):
+        cls = self.__class__
+        obj = cls.__new__(cls)
+        obj.__dict__.update(self.__dict__)
+        obj.model = None
+        obj._name = None
+        if isinstance(self.hash_key, Column):
+            obj.hash_key = self.hash_key.name
+        else:
+            obj.hash_key = self.hash_key
+        if isinstance(self.range_key, Column):
+            obj.range_key = self.range_key.name
+        else:
+            obj.range_key = self.range_key
+        obj.projection = {
+            "mode": self.projection["mode"],
+            "included": None,
+            "available": None,
+            "strict": self.projection["strict"]
+        }
+        return obj
 
     def __set_name__(self, owner, name):
         self._name = name
@@ -339,10 +360,10 @@ class Column(ComparisonMixin):
     :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
     """
     def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, **kwargs):
-        self.hash_key = hash_key
-        self.range_key = range_key
-        self._name = None
-        self._dynamo_name = dynamo_name
+        self.hash_key: bool = hash_key
+        self.range_key: bool = range_key
+        self._name: str = None
+        self._dynamo_name: str = dynamo_name
         if subclassof(typedef, Type):
             typedef = typedef()
         if instanceof(typedef, Type):
@@ -350,6 +371,14 @@ class Column(ComparisonMixin):
         else:
             raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
         super().__init__(**kwargs)
+
+    def __copy__(self):
+        cls = self.__class__
+        obj = cls.__new__(cls)
+        obj.__dict__.update(self.__dict__)
+        obj.model = None
+        obj._name = None
+        return obj
 
     def __set_name__(self, owner, name):
         self._name = name
@@ -375,15 +404,10 @@ class Column(ComparisonMixin):
         else:
             extra = ""
 
-        if isinstance(self, Proxy):
-            cls_name = Proxy.unwrap(self).__class__.__name__
-        else:
-            cls_name = self.__class__.__name__
-
         # <Column[Pin.url]>
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
-        return f"<{cls_name}[{self.model.__name__}.{self.name}{extra}]>"
+        return f"<{self.__class__.__name__}[{self.model.__name__}.{self.name}{extra}]>"
 
     @property
     def name(self):
@@ -423,53 +447,6 @@ class Column(ComparisonMixin):
             # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
             # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
             object_modified.send(self, obj=obj, column=self, value=None)
-
-
-class Proxy:
-    def __init__(self, obj):
-        self._proxied_obj = obj
-
-    def __getattr__(self, name):
-        return getattr(self._proxied_obj, name)
-
-    def __setattr__(self, name, value):
-        if name in non_proxied_attrs:
-            object.__setattr__(self, name, value)
-        else:
-            setattr(self._proxied_obj, name, value)
-
-    def __delattr__(self, name):
-        if name in non_proxied_attrs:
-            object.__delattr__(self, name)
-        else:
-            delattr(self._proxied_obj, name)
-
-    @staticmethod
-    def of(obj, unwrap: bool=False) -> Any:
-        if unwrap:
-            obj = Proxy.unwrap(obj)
-        for base in obj.__class__.__mro__:
-            if base in proxy_classes:
-                proxy_cls = proxy_classes[base]
-                return proxy_cls(obj)
-        raise ValueError(f"Can't proxy {obj} with unknown type {type(obj)}")
-
-    @staticmethod
-    def unwrap(obj):
-        while isinstance(obj, Proxy):
-            obj = obj._proxied_obj
-        return obj
-
-    @staticmethod
-    def register(cls_to_proxy, proxy_cls=None, name=None):
-        assert cls_to_proxy not in (Proxy, object)
-        if cls_to_proxy not in proxy_classes:
-            if proxy_cls is None:
-                if name is None:
-                    name = "Proxy" + cls_to_proxy.__name__
-                proxy_cls = type(name, (Proxy, cls_to_proxy), {})
-            proxy_classes[cls_to_proxy] = proxy_cls
-        return proxy_classes[cls_to_proxy]
 
 
 def subclassof(obj, classinfo):
@@ -659,9 +636,9 @@ def initialize_meta(cls: type):
     return meta
 
 
-def bind_column(meta, name, column, force=False, recursive=False, proxy=False) -> Column:
-    if proxy:
-        column = Proxy.of(column, unwrap=True)
+def bind_column(meta, name, column, force=False, recursive=False, copy=False) -> Column:
+    if copy:
+        column = copyfn(column)
     # TODO elif column.model is not None: logger.warning(f"Trying to rebind column bound to {column.model}")
     column._name = name
     safe_repr = unbound_repr(column)
@@ -721,16 +698,16 @@ def bind_column(meta, name, column, force=False, recursive=False, proxy=False) -
     if recursive:
         for subclass in util.walk_subclasses(meta.model):
             try:
-                subclass.Meta.bind_column(name, Proxy.of(column), force=False, recursive=False)
+                subclass.Meta.bind_column(name, column, force=False, recursive=False, copy=True)
             except InvalidModel:
                 pass
 
     return column
 
 
-def bind_index(meta, name, index, force=False, recursive=True, proxy=False) -> Index:
-    if proxy:
-        index = Proxy.of(index, unwrap=True)
+def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> Index:
+    if copy:
+        index = copyfn(index)
     # TODO elif index.model is not None: logger.warning(f"Trying to rebind index bound to {index.model}")
     index._name = name
     safe_repr = unbound_repr(index)
@@ -763,24 +740,18 @@ def bind_index(meta, name, index, force=False, recursive=True, proxy=False) -> I
                 f"The index {safe_repr} has the same dynamo_name as an existing "
                 f"index or column {same_name}.  Did you mean to bind with force=True?")
 
-    # We have to roundtrip through the name to handle any `ProxyColumn`s
     by_name = util.index(meta.columns, "name")
-
     if isinstance(index, LocalSecondaryIndex):
-        index.hash_key = by_name[meta.hash_key.name]
+        index.hash_key = meta.hash_key
     elif isinstance(index.hash_key, str):
         index.hash_key = by_name[index.hash_key]
-    elif isinstance(index.hash_key, Column):
-        index.hash_key = by_name[index.hash_key.name]
-    if not isinstance(index.hash_key, Column):
+    elif not isinstance(index.hash_key, Column):
         raise InvalidModel("Index hash key must be a Column or Column model name.")
 
     if index.range_key:
         if isinstance(index.range_key, str):
             index.range_key = by_name[index.range_key]
-        elif isinstance(index.range_key, Column):
-            index.range_key = by_name[index.range_key.name]
-        if not isinstance(index.range_key, Column):
+        elif not isinstance(index.range_key, Column):
             raise InvalidModel("Index range key (if provided) must be a Column or Column model name.")
 
     index.keys = {index.hash_key}
@@ -803,7 +774,7 @@ def bind_index(meta, name, index, force=False, recursive=True, proxy=False) -> I
     if recursive:
         for subclass in util.walk_subclasses(meta.model):
             try:
-                subclass.Meta.bind_index(name, Proxy.of(index), force=False, recursive=False)
+                subclass.Meta.bind_index(name, index, force=False, recursive=False, copy=True)
             except (InvalidIndex, InvalidModel):
                 pass
 
@@ -827,8 +798,7 @@ def recalculate_projection(meta, index):
         if all(isinstance(p, str) for p in proj["included"]):
             projection = set(by_name[n] for n in proj["included"])
         else:
-            # This roundtrips by_name to handle any `ProxyColumn`s
-            projection = set(by_name[c.name] for c in proj["included"])
+            projection = set(proj["included"])
         projection.update(projection_keys)
         proj["included"] = projection
 
@@ -872,7 +842,3 @@ def unbind(meta, name=None, dynamo_name=None):
 
 # required to bootstrap BaseModel.__init_subclass__
 initialize_meta(BaseModel)
-# required to bootstrap bind_column, bind_index
-Proxy.register(Column)
-Proxy.register(LocalSecondaryIndex)
-Proxy.register(GlobalSecondaryIndex)

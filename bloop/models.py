@@ -662,6 +662,7 @@ def initialize_meta(cls: type):
 def bind_column(meta, name, column, force=False, recursive=False, proxy=False) -> Column:
     if proxy:
         column = Proxy.of(column, unwrap=True)
+    # TODO elif column.model is not None: logger.warning(f"Trying to rebind column bound to {column.model}")
     column._name = name
     safe_repr = unbound_repr(column)
 
@@ -730,6 +731,7 @@ def bind_column(meta, name, column, force=False, recursive=False, proxy=False) -
 def bind_index(meta, name, index, force=False, recursive=True, proxy=False) -> Index:
     if proxy:
         index = Proxy.of(index, unwrap=True)
+    # TODO elif index.model is not None: logger.warning(f"Trying to rebind index bound to {index.model}")
     index._name = name
     safe_repr = unbound_repr(index)
 

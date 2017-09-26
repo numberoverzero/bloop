@@ -1113,11 +1113,17 @@ def test_proxy_register_custom_cls():
 # BINDING ===================================================================================================== BINDING
 
 
-def new_abstract_model():
+def new_abstract_model(indexes=False):
     class MyModel(BaseModel):
         class Meta(IMeta):
             abstract = True
         data = Column(String, dynamo_name="dynamo-data")
+        if indexes:
+            my_index_hash = Column(Integer, hash_key=True)
+            by_data = GlobalSecondaryIndex(
+                projection="all", hash_key="data", dynamo_name="dynamo-by-data")
+            email = Column(String, range_key=True)
+            by_email = LocalSecondaryIndex(projection="all", range_key=data)
     return MyModel
 
 
@@ -1307,6 +1313,149 @@ def test_bind_column_proxy():
     assert other_model.to_other_model is other_bound
 
     assert bound is not other_bound
+
+
+def test_bind_index_name_conflict_fails():
+    """When a name conflicts and force=False, bind fails"""
+    model = new_abstract_model(indexes=True)
+    other = GlobalSecondaryIndex(projection="all", hash_key="data")
+
+    with pytest.raises(InvalidModel) as excinfo:
+        model.Meta.bind_index("by_data", other)
+    assert "has the same name" in str(excinfo.value)
+
+
+def test_bind_index_name_conflict_force():
+    """When a name conflicts and force=True, the original index is overwritten"""
+    model = new_abstract_model(indexes=True)
+    other = GlobalSecondaryIndex(projection="all", hash_key="data")
+
+    bound = model.Meta.bind_index("by_data", other, force=True)
+    # not proxied
+    assert bound is other
+    assert len(model.Meta.indexes) == 2
+    assert model.by_data is other
+
+
+def test_bind_index_dynamo_name_conflict_fails():
+    """When a dynamo_name conflicts and force=False, bind fails"""
+    model = new_abstract_model(indexes=True)
+    other = GlobalSecondaryIndex(projection="all", hash_key="data", dynamo_name="dynamo-by-data")
+
+    with pytest.raises(InvalidModel) as excinfo:
+        model.Meta.bind_index("other", other)
+    assert "has the same dynamo_name" in str(excinfo.value)
+
+
+def test_bind_index_dynamo_name_conflict_force():
+    """When a dynamo_name conflicts and force=True, the original index is overwritten"""
+    model = new_abstract_model(indexes=True)
+    other = GlobalSecondaryIndex(projection="all", hash_key="data", dynamo_name="dynamo-by-data")
+
+    bound = model.Meta.bind_index("other", other, force=True)
+    # not proxied
+    assert bound is other
+    assert len(model.Meta.indexes) == 2
+    assert model.other is other
+
+
+def test_bind_index_recalculates_index_projection():
+    """An existing index recalculates its projection when bound"""
+    model = new_abstract_model()
+    hash_key = Column(String, hash_key=True)
+    index = GlobalSecondaryIndex(projection="all", hash_key="data")
+
+    model.Meta.bind_column("id", hash_key)
+    model.Meta.bind_index("by_data", index)
+
+    assert index.projection["included"] == {model.Meta.hash_key, model.data}
+
+    # bind a new column, which will now be part of the projection
+    new_column = Column(String)
+    model.Meta.bind_column("something", new_column)
+    assert index.projection["included"] == {model.Meta.hash_key, model.data, model.something}
+
+
+# def test_bind_column_parent_class():
+#     """
+#     Binding to a parent class can optionally recurse through children, adding a
+#     proxy of the column when there are no conflicts
+#     """
+#
+#     class Parent(BaseModel):
+#         class Meta(IMeta):
+#             abstract = True
+#
+#     class Child(Parent):
+#         id = Column(String, hash_key=True)
+#         NAME_CONFLICT = Column(String)
+#
+#     class AnotherChild(Parent):
+#         id = Column(String, hash_key=True)
+#         another = Column(String, dynamo_name="DYNAMO-NAME-CONFLICT")
+#
+#     class Grandchild(Child):
+#         pass
+#
+#     no_conflict = Column(Integer)
+#     no_conflict_recursive = Column(Integer)
+#     name_conflict = Column(Integer, dynamo_name="DYNAMO-NAME-OK")
+#     dynamo_name_conflict = Column(Integer, dynamo_name="DYNAMO-NAME-CONFLICT")
+#
+#     # 0. Non-recursive binds don't modify children
+#     parent_bind = Parent.Meta.bind_column("parent_only", no_conflict)
+#     assert Parent.Meta.columns == {parent_bind}
+#     assert len(Child.Meta.columns) == 2
+#     assert len(AnotherChild.Meta.columns) == 2
+#     assert len(Grandchild.Meta.columns) == 2
+#
+#     # 1. Recursive binds with no conflicts are applied to all descendants
+#     recursive_bind = Parent.Meta.bind_column("all_children", no_conflict_recursive, recursive=True)
+#     assert Parent.Meta.columns == {parent_bind, recursive_bind}
+#     assert len(Child.Meta.columns) == 3
+#     assert len(AnotherChild.Meta.columns) == 3
+#     assert len(Grandchild.Meta.columns) == 3
+#
+#     # 2. Recursive bind with name conflict isn't added to
+#     #    Child or Grandchild, but is added to AnotherChild
+#     first_conflict = Parent.Meta.bind_column("NAME_CONFLICT", name_conflict, recursive=True)
+#     assert Parent.Meta.columns == {parent_bind, recursive_bind, first_conflict}
+#     assert len(Child.Meta.columns) == 3
+#     assert len(AnotherChild.Meta.columns) == 4
+#     assert len(Grandchild.Meta.columns) == 3
+#
+#     # 3. Recursive bind with dynamo_name conflict isn't added to AnotherChild,
+#     #    but is added to Child and Grandchild
+#     second_conflict = Parent.Meta.bind_column("NAME_OK", dynamo_name_conflict, recursive=True)
+#     assert Parent.Meta.columns == {parent_bind, recursive_bind, first_conflict, second_conflict}
+#     assert len(Child.Meta.columns) == 4
+#     assert len(AnotherChild.Meta.columns) == 4
+#     assert len(Grandchild.Meta.columns) == 4
+#
+#     assert Child.NAME_CONFLICT is not first_conflict  # name conflict
+#     assert AnotherChild.another is not second_conflict  # dynamo_name conflict
+#     assert Grandchild.NAME_CONFLICT is not first_conflict
+#
+#
+# def test_bind_column_proxy():
+#     """When proxy=True, the given column isn't bound directly but a proxy layer is inserted"""
+#     model = new_abstract_model()
+#     other_model = new_abstract_model()
+#     assert model is not other_model  # guard against refactor to return the same model
+#
+#     column = Column(String, dynamo_name="dynamo-name")
+#
+#     bound = model.Meta.bind_column("to_model", column, proxy=True)
+#     assert isinstance(bound, Proxy)
+#     assert bound is not column
+#     assert model.to_model is bound
+#
+#     other_bound = other_model.Meta.bind_column("to_other_model", column, proxy=True)
+#     assert isinstance(other_bound, Proxy)
+#     assert other_bound is not column
+#     assert other_model.to_other_model is other_bound
+#
+#     assert bound is not other_bound
 
 
 # END BINDING ============================================================================================= END BINDING

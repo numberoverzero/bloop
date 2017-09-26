@@ -15,6 +15,7 @@ from .types import Type
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 logger = logging.getLogger("bloop.models")
 missing = util.missing
+
 non_proxied_attrs = {"model", "_name", "_proxied_obj"}
 proxy_classes = {}
 
@@ -425,13 +426,6 @@ class Proxy:
     def __init__(self, obj):
         self._proxied_obj = obj
 
-    def __init_subclass__(cls, **kwargs):
-        for base in cls.__bases__:
-            if base in (cls, Proxy, object):
-                continue
-            assert base not in proxy_classes
-            proxy_classes[base] = cls
-
     def __getattr__(self, name):
         return getattr(self._proxied_obj, name)
 
@@ -463,17 +457,16 @@ class Proxy:
             obj = obj._proxied_obj
         return obj
 
-
-class ProxyColumn(Proxy, Column):
-    pass
-
-
-class ProxyLSI(Proxy, LocalSecondaryIndex):
-    pass
-
-
-class ProxyGSI(Proxy, GlobalSecondaryIndex):
-    pass
+    @staticmethod
+    def register(cls_to_proxy, proxy_cls=None, name=None):
+        assert cls_to_proxy not in (Proxy, object)
+        if cls_to_proxy not in proxy_classes:
+            if proxy_cls is None:
+                if name is None:
+                    name = "Proxy" + cls_to_proxy.__name__
+                proxy_cls = type(name, (Proxy, cls_to_proxy), {})
+            proxy_classes[cls_to_proxy] = proxy_cls
+        return proxy_classes[cls_to_proxy]
 
 
 def subclassof(obj, classinfo):
@@ -874,3 +867,7 @@ def unbind(meta, name=None, dynamo_name=None):
 
 # required to bootstrap BaseModel.__init_subclass__
 initialize_meta(BaseModel)
+# required to bootstrap bind_column, bind_index
+Proxy.register(Column)
+Proxy.register(LocalSecondaryIndex)
+Proxy.register(GlobalSecondaryIndex)

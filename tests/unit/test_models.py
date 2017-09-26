@@ -12,6 +12,7 @@ from bloop.models import (
     GlobalSecondaryIndex,
     Index,
     LocalSecondaryIndex,
+    Proxy,
     bind_index,
     model_created,
     object_modified,
@@ -935,6 +936,177 @@ def test_gsi_repr():
 
 
 # END INDEX ================================================================================================= END INDEX
+
+
+# PROXY ========================================================================================================= PROXY
+
+def test_proxy_registration():
+    """Subclasses of Proxies are automatically hooked up to Proxy.of for their __bases__"""
+    class Original:
+        pass
+
+    Proxy.register(Original)
+
+    obj = Original()
+    proxy_obj = Proxy.of(obj)
+
+    assert isinstance(proxy_obj, Proxy)
+    assert proxy_obj._proxied_obj is obj
+
+
+def test_proxy_unknown_class():
+    """Proxy.of only proxies registered classes"""
+    class Original:
+        pass
+
+    obj = Original()
+    with pytest.raises(ValueError):
+        Proxy.of(obj)
+
+
+def test_proxy_nesting():
+    """By default Proxy.of doesn't unwrap; proxying a proxy creates a nested proxy"""
+    class Original:
+        pass
+
+    Proxy.register(Original)
+
+    data = [3, 4, 5]
+    obj = Original()
+    obj.some_attr = data
+    first_proxy = Proxy.of(obj)
+    second_proxy = Proxy.of(first_proxy)
+    assert isinstance(second_proxy, Proxy)
+    assert second_proxy._proxied_obj is first_proxy
+    assert second_proxy.some_attr is data
+
+
+def test_proxy_unwrapping():
+    """Proxy.of can unwrap proxied objects to prevent nesting"""
+    class Original:
+        pass
+
+    Proxy.register(Original)
+
+    obj = Original()
+    first_proxy = Proxy.of(obj)
+    second_proxy = Proxy.of(first_proxy, unwrap=True)
+
+    assert isinstance(second_proxy, Proxy)
+    assert second_proxy._proxied_obj is obj
+
+
+def test_proxy_attr_intercept():
+    """Proxy only intercepts whitelisted attributes, otherwise defers to the proxied object"""
+
+    class Original:
+        class_attr = [3, 4, 5]
+
+        def __init__(self):
+            self._name = "original"
+            self._data = "blah"
+
+        @property
+        def read_only(self):
+            return "read-only"
+
+        @property
+        def data(self):
+            return self._data
+
+        @data.setter
+        def data(self, value):
+            self._data = value
+
+        def method(self, x, y):
+            return str(x + y) in self.data
+
+        def say_name(self):
+            return f"I am {self._name}"
+
+    Proxy.register(Original)
+
+    obj = Original()
+    proxy = Proxy.of(obj)
+
+    # getattr on property
+    assert proxy.data == "blah"
+    obj.data = "foo"
+    assert proxy.data == "foo"
+
+    # setattr on property
+    proxy.data = "hello, world"
+    assert obj.data == "hello, world"
+
+    # class attributes
+    assert proxy.class_attr is Original.class_attr
+
+    # method call
+    assert not proxy.method(3, 4)
+    proxy.data = "7"
+    assert proxy.method(3, 4)
+
+    # method call with reference to proxy attribute
+    assert proxy.say_name() == "I am original"
+
+    # setattr whitelisted attribute
+    proxy._name = "proxy"
+    assert proxy.say_name() == "I am proxy"
+    assert obj.say_name() == "I am original"
+
+    # delattr passes through
+    del proxy._data
+    assert not hasattr(obj, "_data")
+
+    # delattr on whitelist attribute
+    del proxy._name
+    assert obj._name == "original"
+
+
+def test_proxy_register_twice():
+    """Multiple register calls is a no-op"""
+    class Original:
+        pass
+
+    proxy_cls = Proxy.register(Original)
+    same_proxy_cls = Proxy.register(Original)
+    assert proxy_cls is same_proxy_cls
+
+
+def test_proxy_register_name():
+    """Proxy.register can provide a custom name for __repr__/__str__ purposes"""
+    class Original:
+        pass
+
+    name = "MyProxyClassHere"
+    proxy_cls = Proxy.register(Original, name=name)
+    assert proxy_cls.__name__ == name
+
+
+def test_proxy_register_custom_cls():
+    """Proxy.register can provide an existing proxy class"""
+    class Original:
+        pass
+
+    class MyCustomProxy:
+        def __init__(self, my_obj):
+            # Note that this doesn't follow the whitelist rules from
+            # Proxy, since it's a custom class
+            self.my_obj = my_obj
+
+    proxy_cls = Proxy.register(Original, proxy_cls=MyCustomProxy)
+    obj = Original()
+    assert not hasattr(obj, "my_obj")
+    proxy = Proxy.of(obj)
+
+    assert proxy.my_obj is obj
+    assert not hasattr(obj, "my_obj")
+
+    assert not isinstance(proxy, Proxy)
+    assert proxy_cls is MyCustomProxy
+
+
+# END PROXY ================================================================================================= END PROXY
 
 
 def test_unpack_no_engine(unpack_kwargs):

@@ -27,6 +27,8 @@ class IMeta:
     write_units: Optional[int]
     stream: Optional[Dict]
 
+    model: "BaseModel"
+
     hash_key: Optional["Column"]
     range_key: Optional["Column"]
     keys: Set["Column"]
@@ -595,7 +597,7 @@ def initialize_meta(cls: type):
             meta = missing
             break
     if meta is missing:
-        class Meta:
+        class Meta(IMeta):
             pass
 
         meta = cls.Meta = Meta

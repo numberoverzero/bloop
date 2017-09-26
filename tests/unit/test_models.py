@@ -13,7 +13,6 @@ from bloop.models import (
     IMeta,
     Index,
     LocalSecondaryIndex,
-    bind_index,
     model_created,
     object_modified,
     unbind,
@@ -804,10 +803,10 @@ def test_index_binds_names():
     # hash key must be a string or column
     bad_index = Index(projection="all", hash_key=object())
     with pytest.raises(InvalidModel):
-        bind_index(Model.Meta, "another_index", bad_index)
+        Model.Meta.bind_index("another_index", bad_index)
     bad_index = Index(projection="all", hash_key="foo", range_key=object())
     with pytest.raises(InvalidModel):
-        bind_index(Model.Meta, "another_index", bad_index)
+        Model.Meta.bind_index("another_index", bad_index)
 
 
 def test_index_projection_validation():

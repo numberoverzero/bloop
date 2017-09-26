@@ -1,4 +1,4 @@
-from typing import Set, Optional, Dict, Callable, Union
+from typing import Set, Optional, Dict, Callable, Any
 import collections
 import collections.abc
 import functools
@@ -39,6 +39,9 @@ class IMeta:
 
     init: Callable[[], "BaseModel"]
     projection: Dict
+
+    bind_column: Callable[..., "Column"]
+    bind_index: Callable[..., "Index"]
 
 
 class BaseModel:
@@ -442,7 +445,7 @@ class Proxy:
             delattr(self._proxied_obj, name)
 
     @staticmethod
-    def of(obj, unwrap: bool=False) -> Union[Column, LocalSecondaryIndex, GlobalSecondaryIndex]:
+    def of(obj, unwrap: bool=False) -> Any:
         if unwrap:
             obj = Proxy.unwrap(obj)
         for base in obj.__class__.__mro__:

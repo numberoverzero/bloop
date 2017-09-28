@@ -695,7 +695,7 @@ def bind_column(meta, name, column, force=False, recursive=False, copy=False) ->
         meta.keys.add(column)
 
     for idx in meta.indexes:
-        recalculate_projection(meta, idx)
+        refresh_index(meta, idx)
 
     if recursive:
         for subclass in util.walk_subclasses(meta.model):
@@ -771,7 +771,7 @@ def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> In
     if isinstance(index, GlobalSecondaryIndex):
         meta.gsis.add(index)
 
-    recalculate_projection(meta, index)
+    refresh_index(meta, index)
 
     if recursive:
         for subclass in util.walk_subclasses(meta.model):
@@ -783,7 +783,14 @@ def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> In
     return index
 
 
-def recalculate_projection(meta, index):
+def refresh_index(meta, index):
+    by_name = util.index(meta.columns, "name")
+
+    # Refresh hash_key, range_key in case a column was just bound that replaces them
+    index.hash_key = by_name[index.hash_key.name]
+    if index.range_key:
+        index.range_key = by_name[index.range_key.name]
+
     # All projections include model + index keys
     projection_keys = set.union(meta.keys, index.keys)
 
@@ -796,7 +803,6 @@ def recalculate_projection(meta, index):
     elif mode == "all":
         proj["included"] = meta.columns
     elif mode == "include":  # pragma: no branch
-        by_name = util.index(meta.columns, "name")
         if all(isinstance(p, str) for p in proj["included"]):
             projection = set(by_name[n] for n in proj["included"])
         else:

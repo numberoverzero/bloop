@@ -1,10 +1,10 @@
-from copy import copy as copyfn
-from typing import Set, Optional, Dict, Callable
 import collections
 import collections.abc
 import functools
 import inspect
 import logging
+from copy import copy as copyfn
+from typing import Callable, Dict, Optional, Set
 
 from . import util
 from .conditions import ComparisonMixin
@@ -34,6 +34,7 @@ class IMeta:
     keys: Set["Column"]
 
     columns: Set["Column"]
+    columns_by_name: Dict[str, "Column"]
     indexes: Set["Index"]
     gsis: Set["GlobalSecondaryIndex"]
     lsis: Set["LocalSecondaryIndex"]
@@ -208,8 +209,12 @@ class Index:
     """
     def __init__(self, *, projection, hash_key=None, range_key=None, dynamo_name=None, **kwargs):
         self.model = None
-        self.hash_key = hash_key
-        self.range_key = range_key
+        if not isinstance(hash_key, (str, Column, type(None))):
+            raise InvalidIndex(f"hash_key must be a str or Column, but was {type(hash_key)!r}")
+        if not isinstance(range_key, (str, Column, type(None))):
+            raise InvalidIndex(f"range_key must be a str or Column, but was {type(range_key)!r}")
+        self._hash_key = hash_key
+        self._range_key = range_key
         self._name = None
         self._dynamo_name = dynamo_name
 
@@ -221,14 +226,6 @@ class Index:
         obj.__dict__.update(self.__dict__)
         obj.model = None
         obj._name = None
-        if isinstance(self.hash_key, Column):
-            obj.hash_key = self.hash_key.name
-        else:
-            obj.hash_key = self.hash_key
-        if isinstance(self.range_key, Column):
-            obj.range_key = self.range_key.name
-        else:
-            obj.range_key = self.range_key
         obj.projection = {
             "mode": self.projection["mode"],
             "included": None,
@@ -263,6 +260,31 @@ class Index:
         if self._dynamo_name is None:
             return self.name
         return self._dynamo_name
+
+    @property
+    def hash_key(self):
+        if isinstance(self._hash_key, Column):
+            # replacement is late-binding to handle direct references in models
+            # before BaseModel.__init_subclass__ can name each column
+            self._hash_key = self._hash_key.name
+        return self.model.Meta.columns_by_name[self._hash_key]
+
+    @property
+    def range_key(self):
+        if self._range_key is None:
+            return None
+        if isinstance(self._range_key, Column):
+            # replacement is late-binding to handle direct references in models
+            # before BaseModel.__init_subclass__ can name each column
+            self._range_key = self._range_key.name
+        return self.model.Meta.columns_by_name[self._range_key]
+
+    @property
+    def keys(self):
+        keys = {self.hash_key}
+        if self.range_key:
+            keys.add(self.range_key)
+        return keys
 
     def __set__(self, obj, value):
         raise AttributeError(f"{self.model.__name__}.{self.name} is a {self.__class__.__name__}")
@@ -329,6 +351,10 @@ class LocalSecondaryIndex(Index):
             raise InvalidIndex("An LSI shares its provisioned throughput with the Model.")
         super().__init__(range_key=range_key, dynamo_name=dynamo_name, projection=projection, **kwargs)
         self.projection["strict"] = strict
+
+    @property
+    def hash_key(self):
+        return self.model.Meta.hash_key
 
     @property
     def read_units(self):
@@ -617,6 +643,7 @@ def initialize_meta(cls: type):
     setdefault(meta, "keys", set())
 
     setdefault(meta, "columns", set())
+    setdefault(meta, "columns_by_name", dict())
     setdefault(meta, "indexes", set())
     setdefault(meta, "gsis", set())
     setdefault(meta, "lsis", set())
@@ -651,7 +678,7 @@ def bind_column(meta, name, column, force=False, recursive=False, copy=False) ->
         util.index(meta.indexes, "dynamo_name").get(column.dynamo_name)
     )
     same_name = (
-        util.index(meta.columns, "name").get(column.name) or
+        meta.columns_by_name.get(column.name) or
         util.index(meta.indexes, "name").get(column.name)
     )
 
@@ -685,6 +712,7 @@ def bind_column(meta, name, column, force=False, recursive=False, copy=False) ->
     # --------------------------------
     column.model = meta.model
     meta.columns.add(column)
+    meta.columns_by_name[name] = column
     setattr(meta.model, name, column)
 
     if column.hash_key:
@@ -694,8 +722,12 @@ def bind_column(meta, name, column, force=False, recursive=False, copy=False) ->
         meta.range_key = column
         meta.keys.add(column)
 
-    for idx in meta.indexes:
-        refresh_index(meta, idx)
+    try:
+        for index in meta.indexes:
+            refresh_index(meta, index)
+    except KeyError as e:
+        raise InvalidModel(
+            f"Binding column {column} removed a required column for index {unbound_repr(index)}") from e
 
     if recursive:
         for subclass in util.walk_subclasses(meta.model):
@@ -720,7 +752,7 @@ def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> In
         util.index(meta.indexes, "dynamo_name").get(index.dynamo_name)
     )
     same_name = (
-        util.index(meta.columns, "name").get(index.name) or
+        meta.columns_by_name.get(index.name) or
         util.index(meta.indexes, "name").get(index.name)
     )
 
@@ -742,24 +774,6 @@ def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> In
                 f"The index {safe_repr} has the same dynamo_name as an existing "
                 f"index or column {same_name}.  Did you mean to bind with force=True?")
 
-    by_name = util.index(meta.columns, "name")
-    if isinstance(index, LocalSecondaryIndex):
-        index.hash_key = meta.hash_key
-    elif isinstance(index.hash_key, str):
-        index.hash_key = by_name[index.hash_key]
-    elif not isinstance(index.hash_key, Column):
-        raise InvalidModel("Index hash key must be a Column or Column model name.")
-
-    if index.range_key:
-        if isinstance(index.range_key, str):
-            index.range_key = by_name[index.range_key]
-        elif not isinstance(index.range_key, Column):
-            raise InvalidModel("Index range key (if provided) must be a Column or Column model name.")
-
-    index.keys = {index.hash_key}
-    if index.range_key:
-        index.keys.add(index.range_key)
-
     # success!
     # --------------------------------
     index.model = meta.model
@@ -771,7 +785,10 @@ def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> In
     if isinstance(index, GlobalSecondaryIndex):
         meta.gsis.add(index)
 
-    refresh_index(meta, index)
+    try:
+        refresh_index(meta, index)
+    except KeyError as e:
+        raise InvalidModel("Index expected a hash or range key that does not exist") from e
 
     if recursive:
         for subclass in util.walk_subclasses(meta.model):
@@ -784,13 +801,6 @@ def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> In
 
 
 def refresh_index(meta, index):
-    by_name = util.index(meta.columns, "name")
-
-    # Refresh hash_key, range_key in case a column was just bound that replaces them
-    index.hash_key = by_name[index.hash_key.name]
-    if index.range_key:
-        index.range_key = by_name[index.range_key.name]
-
     # All projections include model + index keys
     projection_keys = set.union(meta.keys, index.keys)
 
@@ -804,7 +814,7 @@ def refresh_index(meta, index):
         proj["included"] = meta.columns
     elif mode == "include":  # pragma: no branch
         if all(isinstance(p, str) for p in proj["included"]):
-            projection = set(by_name[n] for n in proj["included"])
+            projection = set(meta.columns_by_name[n] for n in proj["included"])
         else:
             projection = set(proj["included"])
         projection.update(projection_keys)
@@ -833,6 +843,13 @@ def unbind(meta, name=None, dynamo_name=None):
     if columns:
         [column] = columns
         meta.columns.remove(column)
+
+        # If these don't line up, there's likely a bug in bloop
+        # or the user manually hacked up columns_by_name
+        expect_same = meta.columns_by_name[column.name]
+        assert expect_same is column
+        meta.columns_by_name.pop(column.name)
+
         if column in meta.keys:
             meta.keys.remove(column)
         if meta.hash_key is column:

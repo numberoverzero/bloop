@@ -776,6 +776,26 @@ def test_contains_container_types(container_column, engine):
 
 # INDEX ========================================================================================================= INDEX
 
+@pytest.mark.parametrize("key_type", ["hash_key", "range_key"])
+@pytest.mark.parametrize("value, valid", [
+    (3, False), (object(), False), (type, False),
+    ("some_name", True), (Column(Integer), True)
+])
+def test_index_bad_key(key_type, value, valid):
+    """__init__ raises when passing the wrong type"""
+    kwargs = {
+        "projection": "all",
+        "hash_key": "valid",
+        "range_key": "valid",
+        key_type: value
+    }
+    run = lambda: Index(**kwargs)
+    if valid:
+        run()
+    else:
+        with pytest.raises(InvalidIndex):
+            run()
+
 
 def test_index_dynamo_name():
     """returns model name unless dynamo name is specified"""
@@ -801,10 +821,10 @@ def test_index_binds_names():
         by_bar = GlobalSecondaryIndex(projection=[foo], hash_key="bar", range_key=baz)
 
     # hash key must be a string or column
-    bad_index = Index(projection="all", hash_key=object())
+    bad_index = Index(projection="all", hash_key="this_name_is_missing")
     with pytest.raises(InvalidModel):
         Model.Meta.bind_index("another_index", bad_index)
-    bad_index = Index(projection="all", hash_key="foo", range_key=object())
+    bad_index = Index(projection="all", hash_key="foo", range_key="this_name_is_missing")
     with pytest.raises(InvalidModel):
         Model.Meta.bind_index("another_index", bad_index)
 
@@ -1069,6 +1089,18 @@ def test_bind_column_recalculates_index_projection():
     assert index.projection["included"] == {model.Meta.hash_key, model.data, model.something}
 
 
+def test_bind_column_breaks_index_key():
+    """An existing Index has a hash or range key which is removed when a new column is bound"""
+    model = new_abstract_model(indexes=True)
+    index_hash_key_dynamo_name = "dynamo-data"
+    new_column = Column(String, dynamo_name=index_hash_key_dynamo_name)
+
+    # Note that since this puts the model in an inconsistent state, even force=True
+    # won't prevent the exception
+    with pytest.raises(InvalidModel):
+        model.Meta.bind_column("different_name", new_column, force=True)
+
+
 def test_bind_column_parent_class():
     """
     Binding to a parent class can optionally recurse through children, adding a
@@ -1258,7 +1290,6 @@ def test_bind_index_recalculates_index_projection():
         "available": None,
         "strict": True
     }
-    assert index.hash_key is old_data_column
     assert bound_index.hash_key is not old_data_column
 
 

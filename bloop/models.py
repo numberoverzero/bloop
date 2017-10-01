@@ -836,6 +836,9 @@ def unbind(meta, name=None, dynamo_name=None):
     else:
         raise RuntimeError("Must provide name= or dynamo_name= to unbind from meta")
 
+    # Nothing in bloop should allow name or dynamo_name
+    # collisions to exist, so this is either a bug or
+    # the user manually hacked up meta.
     assert len(columns) <= 1
     assert len(indexes) <= 1
     assert not (columns and indexes)

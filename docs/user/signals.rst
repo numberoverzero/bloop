@@ -8,7 +8,7 @@ model creation, validation, and as objects are loaded and saved.
 
     >>> from bloop import model_created
     >>> @model_created.connect
-    ... def on_new_model(_, *, model, **kwargs):
+    ... def on_new_model(_, *, model, **__):
     ...     models.append(model)
     ...
     >>> models = []
@@ -59,7 +59,7 @@ If you set up a receiver that names its first positional arg "engine", this caus
 .. code-block:: pycon
 
     >>> @model_bound.connect
-    ... def wrong_receiver(engine, model, **kwargs):
+    ... def wrong_receiver(engine, model, **__):
     ...     pass
     ...
     >>> model_bound.send("engine", model="model", engine="engine")
@@ -71,7 +71,7 @@ Here's the correct version, which also filters on sender:
 .. code-block:: pycon
 
     >>> @model_bound.connect(sender="engine")
-    ... def correct_receiver(_, model, engine, **kwargs):
+    ... def correct_receiver(_, model, engine, **__):
     ...     print("Called!")
     ...
     >>> model_bound.send("engine", model="model", engine="engine")

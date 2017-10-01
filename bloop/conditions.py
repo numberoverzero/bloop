@@ -39,17 +39,17 @@ _obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None
 
 
 @object_deleted.connect
-def on_object_deleted(_, *, obj, **kwargs):
+def on_object_deleted(_, *, obj, **__):
     _obj_tracking[obj].pop("snapshot", None)
 
 
 @object_loaded.connect
-def on_object_loaded(_, *, engine, obj, **kwargs):
+def on_object_loaded(_, *, engine, obj, **__):
     sync(obj, engine)
 
 
 @object_modified.connect
-def on_object_modified(_, *, obj, column, **kwargs):
+def on_object_modified(_, *, obj, column, **__):
     # Mark a column for a given object as being modified in any way.
     # Any marked columns will be pushed (possibly as DELETES) in
     # future UpdateItem calls that include the object.
@@ -57,7 +57,7 @@ def on_object_modified(_, *, obj, column, **kwargs):
 
 
 @object_saved.connect
-def on_object_saved(_, *, engine, obj, **kwargs):
+def on_object_saved(_, *, engine, obj, **__):
     sync(obj, engine)
 
 
@@ -800,21 +800,8 @@ class InCondition(BaseCondition):
 # END CONDITIONS ====================================================================================== END CONDITIONS
 
 
-def check_support(column, operation):
-    typedef = column.typedef
-    for segment in path_of(column):
-        typedef = typedef[segment]
-    if not supports_operation(operation, typedef):
-        tpl = "Backing type {!r} for {}.{} does not support condition {!r}."
-        raise InvalidCondition(tpl.format(
-            column.typedef.backing_type,
-            column.model.__name__,
-            printable_name(column),
-            operation
-        ))
-
-
 class ComparisonMixin:
+    # noinspection PyArgumentList
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -867,6 +854,20 @@ class ComparisonMixin:
     is_ = __eq__
 
     is_not = __ne__
+
+
+def check_support(column: ComparisonMixin, operation):
+    typedef = column.typedef
+    for segment in path_of(column):
+        typedef = typedef[segment]
+    if not supports_operation(operation, typedef):
+        tpl = "Backing type {!r} for {}.{} does not support condition {!r}."
+        raise InvalidCondition(tpl.format(
+            column.typedef.backing_type,
+            column.model.__name__,
+            printable_name(column),
+            operation
+        ))
 
 
 class Proxy(ComparisonMixin):

@@ -1,5 +1,10 @@
+import collections
 import collections.abc
+import functools
+import inspect
 import logging
+from copy import copy as copyfn
+from typing import Callable, Dict, Optional, Set
 
 from . import util
 from .conditions import ComparisonMixin
@@ -9,11 +14,488 @@ from .types import Type
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
+
 logger = logging.getLogger("bloop.models")
 missing = util.missing
 
 
-def loaded_columns(obj):
+class IMeta:
+    """This class exists solely to help autocomplete with variables set on a model's Meta object"""
+    abstract: bool
+    table_name: str
+    read_units: Optional[int]
+    write_units: Optional[int]
+    stream: Optional[Dict]
+
+    model: "BaseModel"
+
+    hash_key: Optional["Column"]
+    range_key: Optional["Column"]
+    keys: Set["Column"]
+
+    columns: Set["Column"]
+    columns_by_name: Dict[str, "Column"]
+    indexes: Set["Index"]
+    gsis: Set["GlobalSecondaryIndex"]
+    lsis: Set["LocalSecondaryIndex"]
+
+    init: Callable[[], "BaseModel"]
+    projection: Dict
+
+    bind_column: Callable[..., "Column"]
+    bind_index: Callable[..., "Index"]
+
+
+class BaseModel:
+    """Abstract base that all models derive from.
+
+    Provides a basic ``__init__`` method that takes \*\*kwargs whose
+    keys are columns names:
+
+    .. code-block:: python
+
+        class URL(BaseModel):
+            id = Column(UUID, hash_key=True)
+            ip = Column(IPv6)
+            name = Column(String)
+
+        url = URL(id=uuid.uuid4(), name="google")
+    """
+    class Meta(IMeta):
+        abstract = True
+
+    def __init__(self, **attrs):
+        # Only set values from **attrs if there's a
+        # corresponding `name` for a column in the model
+        for column in self.Meta.columns:
+            value = attrs.get(column.name, missing)
+            if value is not missing:
+                setattr(self, column.name, value)
+
+    def __init_subclass__(cls: type, **kwargs):
+        ensure_hash(cls)
+        meta = initialize_meta(cls)
+
+        # before we start binding, we should ensure that no combination of parent classes
+        # will cause conflicts.  For example:
+        #   class C(A, B) where
+        #       A has a column named "foo" and dynamo_name "ddb"
+        #       B has a column named "bar" and dynamo_name "ddb"
+        # both A and B are valid mixins, but C must fail because there isn't a 1:1 binding to the "ddb" column.
+        #
+        # TODO | for now, we'll assume that the class being defined is special, and can replace columns with the
+        # TODO | same dynamo_name.  In the example above, that would mean C has a column named "baz" and dynamo_name
+        # TODO | "ddb" which would prevent the parent columns "foo" and "bar" from binding to the child class.
+
+        modeled_attrs = set((attr for (_, attr) in inspect.getmembers(cls, lambda x: isinstance(x, (Column, Index)))))
+        local_attrs = {
+            name: value
+            for name, value in cls.__dict__.items()
+            if isinstance(value, (Column, Index))
+        }
+        derived_attrs = modeled_attrs - set(local_attrs.values())
+
+        # 0.0 Pre-validation for collisions in derived columns/indexes
+        dynamo_names = [x.dynamo_name for x in derived_attrs]
+        collisions = [name for name, count in collections.Counter(dynamo_names).items() if count > 1]
+        if collisions:
+            collisions.sort()
+            raise InvalidModel(
+                f"The model {cls.__name__} subclasses one or more models with conflicting "
+                f"column or index definitions for the following values of dynamo_name: {collisions}")
+        derived_hash_keys = set((x.name for x in derived_attrs if isinstance(x, Column) and x.hash_key))
+        if len(derived_hash_keys) > 1:
+            derived_hash_keys = sorted(derived_hash_keys)
+            raise InvalidModel(
+                f"The model {cls.__name__} subclasses one or more models that declare multiple "
+                f"columns as the hash key: {derived_hash_keys}")
+        derived_range_keys = set((x.name for x in derived_attrs if isinstance(x, Column) and x.range_key))
+        if len(derived_range_keys) > 1:
+            derived_range_keys = sorted(derived_range_keys)
+            raise InvalidModel(
+                f"The model {cls.__name__} subclasses one or more models that declare multiple "
+                f"columns as the range key: {derived_range_keys}")
+
+        # 0.1 Pre-validation for collisions in local columns/indexes
+        dynamo_names = [x.dynamo_name for x in local_attrs.values()]
+        collisions = [name for name, count in collections.Counter(dynamo_names).items() if count > 1]
+        if collisions:
+            collisions.sort()
+            raise InvalidModel(
+                f"The model {cls.__name__} contains conflicting column or index definitions for the "
+                f"following values of dynamo_name: {collisions}")
+        local_hash_keys = [x.name for x in local_attrs.values() if isinstance(x, Column) and x.hash_key]
+        if len(local_hash_keys) > 1:
+            local_hash_keys = sorted(local_hash_keys)
+            raise InvalidModel(
+                f"The model {cls.__name__} defines multiple columns as hash columns: {local_hash_keys}")
+        local_range_keys = [x.name for x in local_attrs.values() if isinstance(x, Column) and x.range_key]
+        if len(local_range_keys) > 1:
+            local_range_keys = sorted(local_range_keys)
+            raise InvalidModel(
+                f"The model {cls.__name__} defines multiple columns as range columns: {local_range_keys}")
+
+        # 1.0 Bind derived columns so they can be referenced by derived indexes
+        for attr in derived_attrs:
+            if isinstance(attr, Column):
+                meta.bind_column(attr.name, attr, copy=True)
+
+        # 1.1 Bind derived indexes
+        for attr in derived_attrs:
+            if isinstance(attr, Index):
+                meta.bind_index(attr.name, attr, copy=True)
+
+        # 1.2 Bind local columns, allowing them to overwrite existing columns
+        for name, attr in local_attrs.items():
+            if isinstance(attr, Column):
+                meta.bind_column(name, attr, force=True)
+
+        # 1.3 Bind local indexes, allowing them to overwrite existing indexes
+        for name, attr in local_attrs.items():
+            if isinstance(attr, Index):
+                meta.bind_index(name, attr, force=True)
+
+        # 2.0 Ensure concrete models are valid
+        # Currently, this just checks that a hash key is defined
+        if not meta.abstract and not meta.hash_key:
+            raise InvalidModel(f"{meta.model.__name__!r} has no hash key.")
+
+        # 3.0 Fire model_created for customizing the class after creation
+        model_created.send(None, model=cls)
+
+    @classmethod
+    def _load(cls, attrs, *, context, **kwargs):
+        """ dict (dynamo name) -> obj """
+        return unpack_from_dynamodb(
+            model=cls,
+            attrs=attrs or {},
+            expected=cls.Meta.columns,
+            context=context, **kwargs)
+
+    @classmethod
+    def _dump(cls, obj, *, context, **kwargs):
+        """ obj -> dict """
+        if obj is None:
+            return None
+        dump = context["engine"]._dump
+        filtered = filter(
+            lambda item: item[1] is not None,
+            ((
+                column.dynamo_name,
+                dump(column.typedef, getattr(obj, column.name, None), context=context, **kwargs)
+            ) for column in cls.Meta.columns))
+        return dict(filtered) or None
+
+    def __repr__(self):
+        attrs = ", ".join("{}={!r}".format(*item) for item in loaded_columns(self))
+        return f"{self.__class__.__name__}({attrs})"
+
+
+class Index:
+    """Abstract base class for GSIs and LSIs.
+
+    An index must be bound to a model by calling :func:`bind_index(meta, model) <bloop.models.bind_index>`,
+    which lets the index compute projected columns, validate hash and range keys, etc.
+
+    .. seealso::
+
+        :class:`~bloop.models.GlobalSecondaryIndex` and :class:`~bloop.models.LocalSecondaryIndex`
+
+    :param projection: Either "keys", "all", or a list of column name or objects.
+        Included columns will be projected into the index.  Key columns are always included.
+    :param hash_key: The column that the index can be queried against.  Always the table hash_key for LSIs.
+    :param range_key: The column that the index can be sorted on.  Always required for an LSI.  Default is None.
+    :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    """
+    def __init__(self, *, projection, hash_key=None, range_key=None, dynamo_name=None, **kwargs):
+        self.model = None
+        if not isinstance(hash_key, (str, Column, type(None))):
+            raise InvalidIndex(f"hash_key must be a str or Column, but was {type(hash_key)!r}")
+        if not isinstance(range_key, (str, Column, type(None))):
+            raise InvalidIndex(f"range_key must be a str or Column, but was {type(range_key)!r}")
+        self._hash_key = hash_key
+        self._range_key = range_key
+        self._name = None
+        self._dynamo_name = dynamo_name
+
+        self.projection = validate_projection(projection)
+
+    def __copy__(self):
+        cls = self.__class__
+        obj = cls.__new__(cls)
+        obj.__dict__.update(self.__dict__)
+        obj.model = None
+        obj._name = None
+        obj.projection = {
+            "mode": self.projection["mode"],
+            "included": None,
+            "available": None,
+            "strict": self.projection["strict"]
+        }
+        return obj
+
+    def __set_name__(self, owner, name):
+        self._name = name
+
+    def __repr__(self):
+        if isinstance(self, LocalSecondaryIndex):
+            cls_name = "LSI"
+        elif isinstance(self, GlobalSecondaryIndex):
+            cls_name = "GSI"
+        else:
+            cls_name = self.__class__.__name__
+
+        # <GSI[User.by_email=all]>
+        # <GSI[User.by_email=keys]>
+        # <LSI[User.by_email=include]>
+        return f"<{cls_name}[{self.model.__name__}.{self.name}={self.projection['mode']}]>"
+
+    @property
+    def name(self):
+        """Name of the model's attr that references self"""
+        return self._name
+
+    @property
+    def dynamo_name(self):
+        if self._dynamo_name is None:
+            return self.name
+        return self._dynamo_name
+
+    @property
+    def hash_key(self):
+        if isinstance(self._hash_key, Column):
+            # replacement is late-binding to handle direct references in models
+            # before BaseModel.__init_subclass__ can name each column
+            self._hash_key = self._hash_key.name
+        return self.model.Meta.columns_by_name[self._hash_key]
+
+    @property
+    def range_key(self):
+        if self._range_key is None:
+            return None
+        if isinstance(self._range_key, Column):
+            # replacement is late-binding to handle direct references in models
+            # before BaseModel.__init_subclass__ can name each column
+            self._range_key = self._range_key.name
+        return self.model.Meta.columns_by_name[self._range_key]
+
+    @property
+    def keys(self):
+        keys = {self.hash_key}
+        if self.range_key:
+            keys.add(self.range_key)
+        return keys
+
+    def __set__(self, obj, value):
+        raise AttributeError(f"{self.model.__name__}.{self.name} is a {self.__class__.__name__}")
+
+    def __get__(self, obj, type=None):
+        if obj is None:
+            return self
+        raise AttributeError(f"{self.model.__name__}.{self.name} is a {self.__class__.__name__}")
+
+    def __delete__(self, obj):
+        raise AttributeError(f"{self.model.__name__}.{self.name} is a {self.__class__.__name__}")
+
+
+class GlobalSecondaryIndex(Index):
+    """See `GlobalSecondaryIndex`_ in the DynamoDB Developer Guide for details.
+
+    :param projection: Either "keys", "all", or a list of column name or objects.
+        Included columns will be projected into the index.  Key columns are always included.
+    :param hash_key: The column that the index can be queried against.
+    :param range_key: *(Optional)* The column that the index can be sorted on.  Default is None.
+    :param int read_units: *(Optional)* Provisioned read units for the index.  Default is None.
+        When no value is provided and the index does not exist, it will be created with 1 read unit.  If the index
+        already exists, it will use the actual index's read units.
+    :param int write_units:  *(Optional)* Provisioned write units for the index.  Default is None.
+        When no value is provided and the index does not exist, it will be created with 1 write unit.  If the index
+        already exists, it will use the actual index's write units.
+    :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+
+    .. _GlobalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
+    """
+    def __init__(
+            self, *, projection,
+            hash_key, range_key=None,
+            read_units=None, write_units=None,
+            dynamo_name=None, **kwargs):
+        super().__init__(
+            hash_key=hash_key, range_key=range_key,
+            dynamo_name=dynamo_name, projection=projection, **kwargs)
+        self.write_units = write_units
+        self.read_units = read_units
+
+
+class LocalSecondaryIndex(Index):
+    """See `LocalSecondaryIndex`_ in the DynamoDB Developer Guide for details.
+
+    Unlike :class:`~bloop.models.GlobalSecondaryIndex`\, LSIs share their throughput with the table,
+    and their hash key is always the table hash key.
+
+    :param projection: Either "keys", "all", or a list of column name or objects.
+        Included columns will be projected into the index.  Key columns are always included.
+    :param range_key: The column that the index can be sorted against.
+    :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    :param bool strict: *(Optional)* Restricts queries and scans on the LSI to columns in the projection.
+        When False, DynamoDB may silently incur additional reads to load results.  You should not disable this
+        unless you have an explicit need.  Default is True.
+
+    .. _LocalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
+    """
+    def __init__(self, *, projection, range_key, dynamo_name=None, strict=True, **kwargs):
+        # Hash key MUST be the table hash; do not specify
+        if "hash_key" in kwargs:
+            raise InvalidIndex("An LSI shares its hash key with the Model.")
+        if ("write_units" in kwargs) or ("read_units" in kwargs):
+            raise InvalidIndex("An LSI shares its provisioned throughput with the Model.")
+        super().__init__(range_key=range_key, dynamo_name=dynamo_name, projection=projection, **kwargs)
+        self.projection["strict"] = strict
+
+    @property
+    def hash_key(self):
+        return self.model.Meta.hash_key
+
+    @property
+    def read_units(self):
+        return self.model.Meta.read_units
+
+    @read_units.setter
+    def read_units(self, value):
+        self.model.Meta.read_units = value
+
+    @property
+    def write_units(self):
+        return self.model.Meta.write_units
+
+    @write_units.setter
+    def write_units(self, value):
+        self.model.Meta.write_units = value
+
+
+class Column(ComparisonMixin):
+    model: BaseModel
+    """Represents a single attribute in DynamoDB.
+
+    :param typedef: The type of this attribute.  Can be either a :class:`~bloop.types.Type` or
+        an instance thereof.  If a type class is provided, the column will call the constructor without arguments
+        to create an instance.  For example, ``Column(Integer)`` and ``Column(Integer())`` are equivalent.
+    :param bool hash_key: *(Optional)* True if this is the model's hash key.
+        A model must have exactly one Column with ``hash_key=True``.  Default is False.
+    :param bool range_key:  *(Optional)* True if this is the model's range key.
+        A model can have at most one Column with
+        ``range_key=True``.  Default is False.
+    :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    """
+    def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, **kwargs):
+        self.hash_key: bool = hash_key
+        self.range_key: bool = range_key
+        self._name: str = None
+        self._dynamo_name: str = dynamo_name
+        if subclassof(typedef, Type):
+            typedef = typedef()
+        if instanceof(typedef, Type):
+            self.typedef = typedef
+        else:
+            raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
+        super().__init__(**kwargs)
+
+    def __copy__(self):
+        cls = self.__class__
+        obj = cls.__new__(cls)
+        obj.__dict__.update(self.__dict__)
+        obj.model = None
+        obj._name = None
+        return obj
+
+    def __set_name__(self, owner, name):
+        self._name = name
+
+    __hash__ = object.__hash__
+
+    def __set__(self, obj, value):
+        self.set(obj, value)
+
+    def __get__(self, obj, type=None):
+        if obj is None:
+            return self
+        return self.get(obj)
+
+    def __delete__(self, obj):
+        self.delete(obj)
+
+    def __repr__(self):
+        if self.hash_key:
+            extra = "=hash"
+        elif self.range_key:
+            extra = "=range"
+        else:
+            extra = ""
+
+        # <Column[Pin.url]>
+        # <Column[User.id=hash]>
+        # <Column[File.fragment=range]>
+        return f"<{self.__class__.__name__}[{self.model.__name__}.{self.name}{extra}]>"
+
+    @property
+    def name(self):
+        """Name of the model's attr that references self"""
+        return self._name
+
+    @property
+    def dynamo_name(self):
+        if self._dynamo_name is None:
+            return self.name
+        return self._dynamo_name
+
+    def set(self, obj, value):
+        if self._name is None:
+            raise AttributeError("Can't set field without binding to model")
+        obj.__dict__[self._name] = value
+        # Notify the tracking engine that this value was intentionally mutated
+        object_modified.send(self, obj=obj, column=self, value=value)
+
+    def get(self, obj):
+        if self._name is None:
+            raise AttributeError("Can't get field without binding to model")
+        try:
+            return obj.__dict__[self._name]
+        except KeyError:
+            raise AttributeError(f"'{obj.__class__}' has no attribute '{self._name}'")
+
+    def delete(self, obj):
+        try:
+            if self._name is None:
+                raise AttributeError("Can't delete field without binding to model")
+            try:
+                del obj.__dict__[self._name]
+            except KeyError:
+                raise AttributeError(f"'{obj.__class__}' has no attribute '{self._name}'")
+        finally:
+            # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
+            # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
+            object_modified.send(self, obj=obj, column=self, value=None)
+
+
+def subclassof(obj, classinfo):
+    """Wrap issubclass to only return True/False"""
+    try:
+        return issubclass(obj, classinfo)
+    except TypeError:
+        return False
+
+
+def instanceof(obj, classinfo):
+    """Wrap isinstance to only return True/False"""
+    try:
+        return isinstance(obj, classinfo)
+    except TypeError:  # pragma: no cover
+        # No coverage since we never call this without a class,
+        # type, or tuple of classes, types, or such tuples.
+        return False
+
+
+def loaded_columns(obj: BaseModel):
     """Yields each (name, value) tuple for all columns in an object that aren't missing"""
     for column in sorted(obj.Meta.columns, key=lambda c: c.name):
         value = getattr(obj, column.name, missing)
@@ -100,40 +582,28 @@ def validate_stream(stream):
     stream.setdefault("arn", None)
 
 
+def unbound_repr(obj):
+    class UNBOUND:
+        pass
+
+    original_model = getattr(obj, "model", missing)
+    obj.model = UNBOUND
+    r = repr(obj)
+    if original_model is missing:
+        delattr(obj, "model")
+    else:
+        setattr(obj, "model", original_model)
+    return r
+
+
 def setdefault(obj, field, default):
     """Set an object's field to default if it doesn't have a value"""
     setattr(obj, field, getattr(obj, field, default))
 
 
-def ensure_meta(cls):
-    meta = getattr(cls, "Meta", missing)
-    # Meta can't be inherited, otherwise we are mutating
-    # a shared BaseModel.Meta's table_name, write_units, etc.
-    for base in cls.__mro__:
-        # Should only be the first entry in __mro__
-        if base is cls:
-            continue
-        parent_meta = getattr(base, "Meta", None)
-        # We will always collide with BaseModel.Meta;
-        # stop searching on the first collision and
-        # clear meta so we create a new class below.
-        if meta is parent_meta:
-            meta = missing
-            break
-    if meta is missing:
-        class Meta:
-            pass
-        meta = cls.Meta = Meta
-    return meta
-
-
-def ensure_hash(cls):
+def ensure_hash(cls) -> None:
     if getattr(cls, "__hash__", None) is not None:
         return
-    # Any base class's explicit (not object.__hash__)
-    # hash function has priority over the default.
-    # If there aren't any bases with explicit hash functions,
-    # just use object.__hash__
     logger.info(f"searching for nearest __hash__ impl in {cls.__name__}.__mro__")
     hash_fn = object.__hash__
     for base in cls.__mro__:  # pragma: no branch (because __mro__ will never be an empty list)
@@ -143,451 +613,260 @@ def ensure_hash(cls):
     cls.__hash__ = hash_fn
 
 
-def setup_columns(meta):
-    """Filter columns from fields, identify hash and range keys"""
+def initialize_meta(cls: type):
+    meta = getattr(cls, "Meta", missing)
+    for base in cls.__mro__:
+        if base is cls:
+            continue
+        parent_meta = getattr(base, "Meta", None)
+        if meta is parent_meta:
+            meta = missing
+            break
+    if meta is missing:
+        class Meta(IMeta):
+            pass
 
-    # This is a set instead of a list, because set uses __hash__
-    # while some list operations uses __eq__ which will break
-    # with the ComparisonMixin
-    meta.columns = set()
-    for attr in meta.model.__dict__.values():
-        if isinstance(attr, Column):
-            meta.columns.add(attr)
+        meta = cls.Meta = Meta
 
-    meta.hash_key = None
-    meta.range_key = None
-    meta.keys = set()
+    meta.model = cls
 
-    if not meta.abstract:
-        cls_name = meta.model.__name__
+    setdefault(meta, "init", cls)
+    setdefault(meta, "abstract", False)
 
-        hash_keys = [c for c in meta.columns if c.hash_key]
-        range_keys = [c for c in meta.columns if c.range_key]
+    setdefault(meta, "table_name", cls.__name__)
+    setdefault(meta, "write_units", None)
+    setdefault(meta, "read_units", None)
+    setdefault(meta, "stream", None)
 
-        if len(hash_keys) == 0:
-            raise InvalidModel(f"{cls_name!r} has no hash key.")
-        elif len(hash_keys) > 1:
-            raise InvalidModel(f"{cls_name!r} has more than one hash key.")
+    setdefault(meta, "hash_key", None)
+    setdefault(meta, "range_key", None)
+    setdefault(meta, "keys", set())
 
-        if len(range_keys) > 1:
-            raise InvalidModel(f"{cls_name!r} has more than one range key.")
-
-        if range_keys:
-            if hash_keys[0] is range_keys[0]:
-                raise InvalidModel(f"{cls_name!r} has the same hash and range key.")
-            meta.range_key = range_keys[0]
-            meta.keys.add(meta.range_key)
-        meta.hash_key = hash_keys[0]
-        meta.keys.add(meta.hash_key)
+    setdefault(meta, "columns", set())
+    setdefault(meta, "columns_by_name", dict())
+    setdefault(meta, "indexes", set())
+    setdefault(meta, "gsis", set())
+    setdefault(meta, "lsis", set())
 
     # API consistency with an Index, so (index or model.Meta) can be
     # used interchangeably to get the available columns from that
     # object.
-    meta.projection = {
+    setdefault(meta, "projection", {
         "mode": "all",
         "included": meta.columns,
         "available": meta.columns,
         "strict": True
-    }
+    })
+
+    setdefault(meta, "bind_column", functools.partial(bind_column, meta))
+    setdefault(meta, "bind_index", functools.partial(bind_index, meta))
+
+    validate_stream(meta.stream)
+    return meta
 
 
-def setup_indexes(meta):
-    """Filter indexes from fields, compute projection for each index"""
-    # Don't put these in the metadata until they bind successfully.
-    gsis = set()
-    lsis = set()
-    for attr in meta.model.__dict__.values():
-        if isinstance(attr, GlobalSecondaryIndex):
-            gsis.add(attr)
-        if isinstance(attr, LocalSecondaryIndex):
-            lsis.add(attr)
-    meta.gsis = gsis
-    meta.lsis = lsis
-    meta.indexes = set.union(gsis, lsis)
+def bind_column(meta, name, column, force=False, recursive=False, copy=False) -> Column:
+    if copy:
+        column = copyfn(column)
+    # TODO elif column.model is not None: logger.warning(f"Trying to rebind column bound to {column.model}")
+    column._name = name
+    safe_repr = unbound_repr(column)
 
-    for index in meta.indexes:
-        bind_index(meta, index)
+    # Guard against name, dynamo_name collisions; if force=True, unbind any matches
+    same_dynamo_name = (
+        util.index(meta.columns, "dynamo_name").get(column.dynamo_name) or
+        util.index(meta.indexes, "dynamo_name").get(column.dynamo_name)
+    )
+    same_name = (
+        meta.columns_by_name.get(column.name) or
+        util.index(meta.indexes, "name").get(column.name)
+    )
+
+    if column.hash_key and column.range_key:
+        raise InvalidModel(f"Tried to bind {safe_repr} as both a hash and range key.")
+
+    if force:
+        if same_name:
+            unbind(meta, name=column.name)
+        if same_dynamo_name:
+            unbind(meta, dynamo_name=column.dynamo_name)
+    else:
+        if same_name:
+            raise InvalidModel(
+                f"The column {safe_repr} has the same name as an existing column "
+                f"or index {same_name}.  Did you mean to bind with force=True?")
+        if same_dynamo_name:
+            raise InvalidModel(
+                f"The column {safe_repr} has the same dynamo_name as an existing "
+                f"column or index {same_name}.  Did you mean to bind with force=True?")
+        if column.hash_key and meta.hash_key:
+            raise InvalidModel(
+                f"Tried to bind {safe_repr} but {meta.model} "
+                f"already has a different hash_key: {meta.hash_key}")
+        if column.range_key and meta.range_key:
+            raise InvalidModel(
+                f"Tried to bind {safe_repr} but {meta.model} "
+                f"already has a different range_key: {meta.range_key}")
+
+    # success!
+    # --------------------------------
+    column.model = meta.model
+    meta.columns.add(column)
+    meta.columns_by_name[name] = column
+    setattr(meta.model, name, column)
+
+    if column.hash_key:
+        meta.hash_key = column
+        meta.keys.add(column)
+    if column.range_key:
+        meta.range_key = column
+        meta.keys.add(column)
+
+    try:
+        for index in meta.indexes:
+            refresh_index(meta, index)
+    except KeyError as e:
+        raise InvalidModel(
+            f"Binding column {column} removed a required column for index {unbound_repr(index)}") from e
+
+    if recursive:
+        for subclass in util.walk_subclasses(meta.model):
+            try:
+                subclass.Meta.bind_column(name, column, force=False, recursive=False, copy=True)
+            except InvalidModel:
+                pass
+
+    return column
 
 
-def bind_index(meta, index):
-    """Compute attributes and resolve column names.
+def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> Index:
+    if copy:
+        index = copyfn(index)
+    # TODO elif index.model is not None: logger.warning(f"Trying to rebind index bound to {index.model}")
+    index._name = name
+    safe_repr = unbound_repr(index)
 
-    * If hash and/or range keys are strings, resolve them to :class:`~bloop.models.Column` instances from
-      the model by ``name``.
-    * If projection is a list of strings, resolve each to a Column instance.
-    * Compute :data:`~Index.projection` dict from model Metadata and Index's temporary ``projection``
-      attribute.
+    # Guard against name, dynamo_name collisions; if force=True, unbind any matches
+    same_dynamo_name = (
+        util.index(meta.columns, "dynamo_name").get(index.dynamo_name) or
+        util.index(meta.indexes, "dynamo_name").get(index.dynamo_name)
+    )
+    same_name = (
+        meta.columns_by_name.get(index.name) or
+        util.index(meta.indexes, "name").get(index.name)
+    )
 
-    :param meta: The Meta of the :class:`~bloop.models.BaseModel` this Index is attached to.
-    :param index: The :class:`~bloop.models.Index` to attach to the model.
-    :raises bloop.exceptions.InvalidIndex: If the hash or range keys are misconfigured.
-    """
-    # Index by name so we can replace hash_key, range_key with the proper `bloop.Column` object
-    columns = util.index(meta.columns, "name")
+    if isinstance(index, LocalSecondaryIndex) and not meta.range_key:
+            raise InvalidModel("An LSI requires the Model to have a range key.")
+
+    if force:
+        if same_name:
+            unbind(meta, name=index.name)
+        if same_dynamo_name:
+            unbind(meta, dynamo_name=index.dynamo_name)
+    else:
+        if same_name:
+            raise InvalidModel(
+                f"The index {safe_repr} has the same name as an existing index "
+                f"or column {same_name}.  Did you mean to bind with force=True?")
+        if same_dynamo_name:
+            raise InvalidModel(
+                f"The index {safe_repr} has the same dynamo_name as an existing "
+                f"index or column {same_name}.  Did you mean to bind with force=True?")
+
+    # success!
+    # --------------------------------
+    index.model = meta.model
+    meta.indexes.add(index)
+    setattr(meta.model, name, index)
+
     if isinstance(index, LocalSecondaryIndex):
-        if not meta.range_key:
-            raise InvalidIndex("An LSI requires the Model to have a range key.")
-        index.hash_key = meta.hash_key
-    if isinstance(index.hash_key, str):
-        index.hash_key = columns[index.hash_key]
-    if not isinstance(index.hash_key, Column):
-        raise InvalidIndex("Index hash key must be a Column or Column model name.")
-    if index.range_key:
-        if isinstance(index.range_key, str):
-            index.range_key = columns[index.range_key]
-        if not isinstance(index.range_key, Column):
-            raise InvalidIndex("Index range key (if provided) must be a Column or Column model name.")
+        meta.lsis.add(index)
+    if isinstance(index, GlobalSecondaryIndex):
+        meta.gsis.add(index)
 
-    index.keys = {index.hash_key}
-    if index.range_key:
-        index.keys.add(index.range_key)
+    try:
+        refresh_index(meta, index)
+    except KeyError as e:
+        raise InvalidModel("Index expected a hash or range key that does not exist") from e
 
-    # Compute and the projected columns
+    if recursive:
+        for subclass in util.walk_subclasses(meta.model):
+            try:
+                subclass.Meta.bind_index(name, index, force=False, recursive=False, copy=True)
+            except (InvalidIndex, InvalidModel):
+                pass
+
+    return index
+
+
+def refresh_index(meta, index):
     # All projections include model + index keys
     projection_keys = set.union(meta.keys, index.keys)
 
-    if index.projection["mode"] == "keys":
-        index.projection["included"] = projection_keys
-    elif index.projection["mode"] == "all":
-        index.projection["included"] = meta.columns
-    elif index.projection["mode"] == "include":  # pragma: no branch
-        # name -> Column
-        if all(isinstance(p, str) for p in index.projection["included"]):
-            projection = set(columns[name] for name in index.projection["included"])
+    proj = index.projection
+    mode = proj["mode"]
+    strict = proj["strict"]
+
+    if mode == "keys":
+        proj["included"] = projection_keys
+    elif mode == "all":
+        proj["included"] = meta.columns
+    elif mode == "include":  # pragma: no branch
+        if all(isinstance(p, str) for p in proj["included"]):
+            projection = set(meta.columns_by_name[n] for n in proj["included"])
         else:
-            projection = set(index.projection["included"])
+            projection = set(proj["included"])
         projection.update(projection_keys)
-        index.projection["included"] = projection
+        proj["included"] = projection
 
-    # Strict has the same availability as the included columns,
-    # while non-strict has access to the full range of columns
-    if index.projection["strict"]:
-        index.projection["available"] = index.projection["included"]
+    if strict:
+        proj["available"] = proj["included"]
     else:
-        index.projection["available"] = meta.columns
+        proj["available"] = meta.columns
 
 
-class BaseModel:
-    """Abstract base that all models derive from.
+def unbind(meta, name=None, dynamo_name=None):
+    if name is not None:
+        columns = {x for x in meta.columns if x.name == name}
+        indexes = {x for x in meta.indexes if x.name == name}
+    elif dynamo_name is not None:
+        columns = {x for x in meta.columns if x.dynamo_name == dynamo_name}
+        indexes = {x for x in meta.indexes if x.dynamo_name == dynamo_name}
+    else:
+        raise RuntimeError("Must provide name= or dynamo_name= to unbind from meta")
 
-    Provides a basic ``__init__`` method that takes \*\*kwargs whose
-    keys are columns names:
+    # Nothing in bloop should allow name or dynamo_name
+    # collisions to exist, so this is either a bug or
+    # the user manually hacked up meta.
+    assert len(columns) <= 1
+    assert len(indexes) <= 1
+    assert not (columns and indexes)
 
-    .. code-block:: python
+    if columns:
+        [column] = columns
+        meta.columns.remove(column)
 
-        class URL(BaseModel):
-            id = Column(UUID, hash_key=True)
-            ip = Column(IPv6)
-            name = Column(String)
+        # If these don't line up, there's likely a bug in bloop
+        # or the user manually hacked up columns_by_name
+        expect_same = meta.columns_by_name[column.name]
+        assert expect_same is column
+        meta.columns_by_name.pop(column.name)
 
-        url = URL(id=uuid.uuid4(), name="google")
-    """
-    class Meta:
-        abstract = True
-
-    def __init__(self, **attrs):
-        # Only set values from **attrs if there's a
-        # corresponding `name` for a column in the model
-        for column in self.Meta.columns:
-            value = attrs.get(column.name, missing)
-            if value is not missing:
-                setattr(self, column.name, value)
-
-    def __init_subclass__(cls, **kwargs):
-        ensure_hash(cls)
-        meta = ensure_meta(cls)
-        meta.model = cls
-
-        # Entry point for model population. By default this is the
-        # class's __init__ function. Custom models can specify the
-        # Meta attr `init`, which must be a function taking no
-        # arguments that returns an instance of the class
-        setdefault(meta, "init", cls)
-
-        setdefault(meta, "abstract", False)
-        setdefault(meta, "table_name", cls.__name__)
-        setdefault(meta, "write_units", None)
-        setdefault(meta, "read_units", None)
-        setdefault(meta, "stream", None)
-
-        setup_columns(meta)
-        setup_indexes(meta)
-
-        validate_stream(meta.stream)
-        model_created.send(None, model=cls)
-
-    @classmethod
-    def _load(cls, attrs, *, context, **kwargs):
-        """ dict (dynamo name) -> obj """
-        return unpack_from_dynamodb(
-            model=cls,
-            attrs=attrs or {},
-            expected=cls.Meta.columns,
-            context=context, **kwargs)
-
-    @classmethod
-    def _dump(cls, obj, *, context, **kwargs):
-        """ obj -> dict """
-        if obj is None:
-            return None
-        dump = context["engine"]._dump
-        filtered = filter(
-            lambda item: item[1] is not None,
-            ((
-                column.dynamo_name,
-                dump(column.typedef, getattr(obj, column.name, None), context=context, **kwargs)
-            ) for column in cls.Meta.columns))
-        return dict(filtered) or None
-
-    def __repr__(self):
-        attrs = ", ".join("{}={!r}".format(*item) for item in loaded_columns(self))
-        return f"{self.__class__.__name__}({attrs})"
+        if column in meta.keys:
+            meta.keys.remove(column)
+        if meta.hash_key is column:
+            meta.hash_key = None
+        if meta.range_key is column:
+            meta.range_key = None
+    if indexes:
+        [index] = indexes
+        meta.indexes.remove(index)
+        if index in meta.gsis:
+            meta.gsis.remove(index)
+        if index in meta.lsis:
+            meta.lsis.remove(index)
 
 
-class Index:
-    """Abstract base class for GSIs and LSIs.
-
-    An index must be bound to a model by calling :func:`bind_index(meta, model) <bloop.models.bind_index>`,
-    which lets the index compute projected columns, validate hash and range keys, etc.
-
-    .. seealso::
-
-        :class:`~bloop.models.GlobalSecondaryIndex` and :class:`~bloop.models.LocalSecondaryIndex`
-
-    :param projection: Either "keys", "all", or a list of column name or objects.
-        Included columns will be projected into the index.  Key columns are always included.
-    :param hash_key: The column that the index can be queried against.  Always the table hash_key for LSIs.
-    :param range_key: The column that the index can be sorted on.  Always required for an LSI.  Default is None.
-    :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
-    """
-    def __init__(self, *, projection, hash_key=None, range_key=None, dynamo_name=None, **kwargs):
-        self.model = None
-        self.hash_key = hash_key
-        self.range_key = range_key
-        self._name = None
-        self._dynamo_name = dynamo_name
-
-        self.projection = validate_projection(projection)
-
-    def __set_name__(self, owner, name):
-        self.model = owner
-        self._name = name
-
-    def __repr__(self):
-        if isinstance(self, LocalSecondaryIndex):
-            cls_name = "LSI"
-        elif isinstance(self, GlobalSecondaryIndex):
-            cls_name = "GSI"
-        else:
-            cls_name = self.__class__.__name__
-
-        # <GSI[User.by_email=all]>
-        # <GSI[User.by_email=keys]>
-        # <LSI[User.by_email=include]>
-        return f"<{cls_name}[{self.model.__name__}.{self.name}={self.projection['mode']}]>"
-
-    @property
-    def name(self):
-        """Name of the model's attr that references self"""
-        return self._name
-
-    @property
-    def dynamo_name(self):
-        if self._dynamo_name is None:
-            return self.name
-        return self._dynamo_name
-
-    def __set__(self, obj, value):
-        raise AttributeError(f"{self.model.__name__}.{self.name} is a {self.__class__.__name__}")
-
-    def __get__(self, obj, type=None):
-        if obj is None:
-            return self
-        raise AttributeError(f"{self.model.__name__}.{self.name} is a {self.__class__.__name__}")
-
-    def __delete__(self, obj):
-        raise AttributeError(f"{self.model.__name__}.{self.name} is a {self.__class__.__name__}")
-
-
-class GlobalSecondaryIndex(Index):
-    """See `GlobalSecondaryIndex`_ in the DynamoDB Developer Guide for details.
-
-    :param projection: Either "keys", "all", or a list of column name or objects.
-        Included columns will be projected into the index.  Key columns are always included.
-    :param hash_key: The column that the index can be queried against.
-    :param range_key: *(Optional)* The column that the index can be sorted on.  Default is None.
-    :param int read_units: *(Optional)* Provisioned read units for the index.  Default is None.
-        When no value is provided and the index does not exist, it will be created with 1 read unit.  If the index
-        already exists, it will use the actual index's read units.
-    :param int write_units:  *(Optional)* Provisioned write units for the index.  Default is None.
-        When no value is provided and the index does not exist, it will be created with 1 write unit.  If the index
-        already exists, it will use the actual index's write units.
-    :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
-
-    .. _GlobalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/GSI.html
-    """
-    def __init__(
-            self, *, projection,
-            hash_key, range_key=None,
-            read_units=None, write_units=None,
-            dynamo_name=None, **kwargs):
-        super().__init__(
-            hash_key=hash_key, range_key=range_key,
-            dynamo_name=dynamo_name, projection=projection, **kwargs)
-        self.write_units = write_units
-        self.read_units = read_units
-
-
-class LocalSecondaryIndex(Index):
-    """See `LocalSecondaryIndex`_ in the DynamoDB Developer GUide for details.
-
-    Unlike :class:`~bloop.models.GlobalSecondaryIndex`\, LSIs share their throughput with the table,
-    and their hash key is always the table hash key.
-
-    :param projection: Either "keys", "all", or a list of column name or objects.
-        Included columns will be projected into the index.  Key columns are always included.
-    :param range_key: The column that the index can be sorted against.
-    :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
-    :param bool strict: *(Optional)* Restricts queries and scans on the LSI to columns in the projection.
-        When False, DynamoDB may silently incur additional reads to load results.  You should not disable this
-        unless you have an explicit need.  Default is True.
-
-    .. _LocalSecondaryIndex: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
-    """
-    def __init__(self, *, projection, range_key, dynamo_name=None, strict=True, **kwargs):
-        # Hash key MUST be the table hash; do not specify
-        if "hash_key" in kwargs:
-            raise InvalidIndex("An LSI shares its hash key with the Model.")
-        if ("write_units" in kwargs) or ("read_units" in kwargs):
-            raise InvalidIndex("An LSI shares its provisioned throughput with the Model.")
-        super().__init__(range_key=range_key, dynamo_name=dynamo_name, projection=projection, **kwargs)
-        self.projection["strict"] = strict
-
-    @property
-    def read_units(self):
-        return self.model.Meta.read_units
-
-    @read_units.setter
-    def read_units(self, value):
-        self.model.Meta.read_units = value
-
-    @property
-    def write_units(self):
-        return self.model.Meta.write_units
-
-    @write_units.setter
-    def write_units(self, value):
-        self.model.Meta.write_units = value
-
-
-def subclassof(obj, classinfo):
-    """Wrap issubclass to only return True/False"""
-    try:
-        return issubclass(obj, classinfo)
-    except TypeError:
-        return False
-
-
-def instanceof(obj, classinfo):
-    """Wrap isinstance to only return True/False"""
-    try:
-        return isinstance(obj, classinfo)
-    except TypeError:  # pragma: no cover
-        # No coverage since we never call this without a class,
-        # type, or tuple of classes, types, or such typles.
-        return False
-
-
-class Column(ComparisonMixin):
-    """Represents a single attribute in DynamoDB.
-
-    :param typedef: The type of this attribute.  Can be either a :class:`~bloop.types.Type` or
-        an instance thereof.  If a type class is provided, the column will call the constructor without arguments
-        to create an instance.  For example, ``Column(Integer)`` and ``Column(Integer())`` are equivalent.
-    :param bool hash_key: *(Optional)* True if this is the model's hash key.
-        A model must have exactly one Column with ``hash_key=True``.  Default is False.
-    :param bool range_key:  *(Optional)* True if this is the model's range key.
-        A model can have at most one Column with
-        ``range_key=True``.  Default is False.
-    :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
-    """
-    def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, **kwargs):
-        self.hash_key = hash_key
-        self.range_key = range_key
-        self._name = None
-        self._dynamo_name = dynamo_name
-        if subclassof(typedef, Type):
-            typedef = typedef()
-        if instanceof(typedef, Type):
-            self.typedef = typedef
-        else:
-            raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
-
-    __hash__ = object.__hash__
-
-    def __set_name__(self, owner, name):
-        self.model = owner
-        self._name = name
-
-    def __set__(self, obj, value):
-        self.set(obj, value)
-
-    def __get__(self, obj, type=None):
-        if obj is None:
-            return self
-        return self.get(obj)
-
-    def __delete__(self, obj):
-        self.delete(obj)
-
-    def __repr__(self):
-        if self.hash_key:
-            extra = "=hash"
-        elif self.range_key:
-            extra = "=range"
-        else:
-            extra = ""
-
-        # <Column[Pin.url]>
-        # <Column[User.id=hash]>
-        # <Column[File.fragment=range]>
-        return f"<Column[{self.model.__name__}.{self.name}{extra}]>"
-
-    @property
-    def name(self):
-        """Name of the model's attr that references self"""
-        return self._name
-
-    @property
-    def dynamo_name(self):
-        if self._dynamo_name is None:
-            return self.name
-        return self._dynamo_name
-
-    def set(self, obj, value):
-        if self._name is None:
-            raise AttributeError("Can't set field without binding to model")
-        obj.__dict__[self._name] = value
-        # Notify the tracking engine that this value was intentionally mutated
-        object_modified.send(self, obj=obj, column=self, value=value)
-
-    def get(self, obj):
-        if self._name is None:
-            raise AttributeError("Can't get field without binding to model")
-        try:
-            return obj.__dict__[self._name]
-        except KeyError:
-            raise AttributeError(f"'{obj.__class__}' has no attribute '{self._name}'")
-
-    def delete(self, obj):
-        try:
-            if self._name is None:
-                raise AttributeError("Can't delete field without binding to model")
-            try:
-                del obj.__dict__[self._name]
-            except KeyError:
-                raise AttributeError(f"'{obj.__class__}' has no attribute '{self._name}'")
-        finally:
-            # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
-            # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
-            object_modified.send(self, obj=obj, column=self, value=None)
+# required to bootstrap BaseModel.__init_subclass__
+initialize_meta(BaseModel)

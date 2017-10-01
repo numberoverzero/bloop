@@ -1,6 +1,5 @@
 import collections
 
-from . import util
 from .conditions import BaseCondition, iter_columns, render
 from .exceptions import (
     ConstraintViolation,
@@ -94,7 +93,7 @@ def validate_search_projection(model, index, projection):
 
     # name -> Column
     if all(isinstance(p, str) for p in projection):
-        by_name = util.index(model.Meta.columns, "name")
+        by_name = model.Meta.columns_by_name
         # This could be a list comprehension, but then the
         # user gets a KeyError when they passed a list.  So,
         # do each individually and throw a useful exception.
@@ -478,6 +477,7 @@ class SearchModelIterator(SearchIterator):
         return obj
 
 
+# noinspection PyUnresolvedReferences
 class ScanIterator(SearchModelIterator):
     """Reusable scan iterator that unpacks result dicts into model instances.
 
@@ -492,6 +492,7 @@ class ScanIterator(SearchModelIterator):
     mode = "scan"
 
 
+# noinspection PyUnresolvedReferences
 class QueryIterator(SearchModelIterator):
     """Reusable query iterator that unpacks result dicts into model instances.
 

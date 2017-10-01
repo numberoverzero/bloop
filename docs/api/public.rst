@@ -302,8 +302,8 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
     # Long traceback
     Inexact: [<class 'decimal.Inexact'>, <class 'decimal.Rounded'>]
 
-    >>> from decimal import Decimal as D
-    >>> product.rating = D('3.14')
+    >>> from decimal import Decimal
+    >>> product.rating = Decimal('3.14')
     >>> engine.save(product)
     >>> # Success!
 

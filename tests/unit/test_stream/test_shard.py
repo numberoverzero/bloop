@@ -200,7 +200,7 @@ def test_token(caplog):
     assert not caplog.records
 
     shard.iterator_type = "trim_horizon"
-    shard.token
+    getattr(shard, "token")
     assert caplog.record_tuples == [
         ("bloop.stream", logging.WARNING, "creating shard token at non-exact location \"trim_horizon\"")
     ]

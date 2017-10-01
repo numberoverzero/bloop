@@ -157,6 +157,8 @@ class Engine:
         validate_is_model(model)
 
         concrete = set(filter(lambda m: not m.Meta.abstract, walk_subclasses(model)))
+        if not model.Meta.abstract:
+            concrete.add(model)
         logger.debug("binding non-abstract models {}".format(
             sorted(c.__name__ for c in concrete)
         ))

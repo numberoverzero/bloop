@@ -1133,7 +1133,7 @@ def test_ior_basic():
     # in
     (InCondition(column=c, values=[]), "(M.c in [])"),
     (InCondition(column=c, values=[2, 3]), "(M.c in [2, 3])"),
-    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [<Column[M.d]>, 3])"),
+    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [<MockColumn[M.d]>, 3])"),
 
     # empty
     (Condition(), "()")
@@ -1409,7 +1409,7 @@ def test_unsupported_mixin_function_conditions(op, typedefs, args):
     class Model(BaseModel):
         id = Column(Integer, hash_key=True)
     for typedef in typedefs:
-        column = Column(typedef, name="d")
+        column = Column(typedef, dynamo_name="d")
         column.model = Model
         column._name = "c"
         with pytest.raises(InvalidCondition):

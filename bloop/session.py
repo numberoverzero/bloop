@@ -212,7 +212,7 @@ class SessionWrapper:
         :param str stream_arn: Stream arn, usually from the model's ``Meta.stream["arn"]``.
         :param str first_shard: *(Optional)* If provided, only shards after this shard id will be returned.
         :return: All shards in the stream, or a subset if ``first_shard`` is provided.
-        :rtype: list
+        :rtype: dict
         """
         description = {"Shards": []}
 
@@ -540,6 +540,7 @@ def create_table_request(table_name, model):
             local_secondary_index(index) for index in model.Meta.lsis]
     if model.Meta.stream:
         include = model.Meta.stream["include"]
+        # noinspection PyTypeChecker
         view = {
             ("keys",): "KEYS_ONLY",
             ("new",): "NEW_IMAGE",

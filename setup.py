@@ -5,6 +5,7 @@ from setuptools import setup, find_packages
 HERE = pathlib.Path(os.path.abspath(os.path.dirname(__file__)))
 README = (HERE / "README.rst").read_text()
 CHANGES = (HERE / "CHANGELOG.rst").read_text()
+VERSION = "VERSION-NOT-FOUND"
 for line in (HERE / "bloop" / "__init__.py").read_text().split("\n"):
     if line.startswith("__version__"):
         VERSION = eval(line.split("=")[-1])
@@ -12,6 +13,7 @@ for line in (HERE / "bloop" / "__init__.py").read_text().split("\n"):
 REQUIREMENTS = [
     "blinker==1.4",
     "boto3==1.4.7",
+    "botocore"  # no version because we'll take what boto3 uses
 ]
 
 if __name__ == "__main__":

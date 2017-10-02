@@ -381,6 +381,18 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
     .. attribute:: python_type
         :annotation: = datetime.datetime
 
+-----------
+ Timestamp
+-----------
+
+.. autoclass:: bloop.types.Timestamp
+
+    .. attribute:: backing_type
+        :annotation: = "N"
+
+    .. attribute:: python_type
+        :annotation: = datetime.datetime
+
 ---------
  Integer
 ---------
@@ -728,3 +740,34 @@ or trying to use an unknown projection type.
 .. _arrow: http://crsmithdev.com/arrow
 .. _delorean: https://delorean.readthedocs.io/en/latest/
 .. _pendulum: https://pendulum.eustace.io
+
+-----------
+ Timestamp
+-----------
+
+.. class:: Timestamp(timezone=datetime.timezone.utc)
+
+    Drop-in replacement for :class:`~bloop.types.Timestamp`.  Support for `arrow`_, `delorean`_, and `pendulum`_:
+
+    .. code-block:: python
+
+        from bloop.ext.arrow import Timestamp
+        from bloop.ext.delorean import Timestamp
+        from bloop.ext.pendulum import Timestamp
+
+    .. attribute:: backing_type
+        :annotation: = "N"
+
+    .. attribute:: python_type
+        :annotation:
+
+        Depending on where it's imported from, one of:
+
+        * :class:`arrow.Arrow <arrow.arrow.Arrow>`
+        * :class:`delorean.Delorean`
+        * :class:`pendulum.Pendulum`
+
+    .. attribute:: timezone
+        :annotation: = tzinfo
+
+        The timezone that values loaded from DynamoDB will use.

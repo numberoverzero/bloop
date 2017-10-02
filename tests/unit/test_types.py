@@ -133,6 +133,17 @@ def test_datetime():
     symmetric_test(typedef, (now, now_str))
 
 
+@pytest.mark.parametrize("naive", (datetime.datetime.now(), datetime.datetime.utcnow()))
+def test_datetime_naive(naive):
+    """
+    Python 3.6 made astimezone assume the system timezone when tzinfo is None.
+    Therefore bloop explicitly guards against a naive object.
+    """
+    typedef = DateTime()
+    with pytest.raises(ValueError):
+        typedef.dynamo_dump(naive, context=None)
+
+
 def test_number():
     typedef = Number()
     d = decimal.Decimal

@@ -167,7 +167,7 @@ FIXED_ISO8601_FORMAT = "%Y-%m-%dT%H:%M:%S.%f+00:00"
 class DateTime(String):
     """Always stored in DynamoDB using the :data:`~bloop.types.FIXED_ISO8601_FORMAT` format.
 
-    Does not support naive (no timezone) datetimes.
+    Naive datetimes (``tzinfo is None``) are not supported, and trying to use one will raise ``ValueError``.
 
     .. code-block:: python
 
@@ -211,11 +211,20 @@ class DateTime(String):
         if value is None:
             return None
         dt = datetime.datetime.strptime(value, FIXED_ISO8601_FORMAT)
+        # we assume all stored values are utc, so we simply force timezone to utc
+        # without changing the day/time values
         return dt.replace(tzinfo=datetime.timezone.utc)
 
     def dynamo_dump(self, value, *, context, **kwargs):
         if value is None:
             return None
+        if value.tzinfo is None:
+            raise ValueError(
+                "naive datetime instances are not supported.  You can set a timezone with either "
+                "your_dt.replace(tzinfo=) or your_dt.astimezone(tz=).  WARNING: calling astimezone on a naive "
+                "datetime will assume the naive datetime is in the system's timezone, even though "
+                "datetime.utcnow() creates a naive object!  You almost certainly don't want to do that."
+            )
         dt = value.astimezone(tz=datetime.timezone.utc)
         return dt.strftime(FIXED_ISO8601_FORMAT)
 
@@ -251,10 +260,10 @@ class Number(Type):
 
 
 class Integer(Number):
-    """
+    """Truncates values when loading or dumping.
 
-    Truncates values when loading or dumping.  For example, '3.14' in DynamoDB is loaded as 3.
-    If a value is 7.5 locally, it's stored in DynamoDB as '7'.
+    For example, ``3.14`` in DynamoDB is loaded as ``3``. If a value is ``7.5``
+    locally, it's stored in DynamoDB as ``7``.
     """
     python_type = int
 

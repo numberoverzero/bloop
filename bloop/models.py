@@ -10,7 +10,7 @@ from . import util
 from .conditions import ComparisonMixin
 from .exceptions import InvalidIndex, InvalidModel, InvalidStream
 from .signals import model_created, object_modified
-from .types import Type
+from .types import Type, Number, DateTime
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
@@ -26,6 +26,7 @@ class IMeta:
     read_units: Optional[int]
     write_units: Optional[int]
     stream: Optional[Dict]
+    ttl: Optional[Dict]
 
     model: "BaseModel"
 
@@ -159,6 +160,9 @@ class BaseModel:
         # Currently, this just checks that a hash key is defined
         if not meta.abstract and not meta.hash_key:
             raise InvalidModel(f"{meta.model.__name__!r} has no hash key.")
+
+        validate_stream(meta)
+        validate_ttl(meta)
 
         # 3.0 Fire model_created for customizing the class after creation
         model_created.send(None, model=cls)
@@ -556,7 +560,8 @@ def validate_projection(projection):
     return validated_projection
 
 
-def validate_stream(stream):
+def validate_stream(meta):
+    stream = meta.stream
     if stream is None:
         return
 
@@ -580,6 +585,36 @@ def validate_stream(stream):
     if include == {"new", "keys"} or include == {"old", "keys"}:
         raise InvalidStream("The option 'keys' cannot be used with either 'old' or 'new'.")
     stream.setdefault("arn", None)
+
+
+def validate_ttl(meta):
+    ttl = meta.ttl
+    if ttl is None:
+        return
+    if not isinstance(ttl, collections.abc.MutableMapping):
+        raise InvalidModel("TTL must be None or a dict.")
+    if "column" not in ttl:
+        raise InvalidModel("TTL must specify the column to use with the 'column' key.")
+    ttl_column = ttl["column"]
+    if isinstance(ttl_column, Column):
+        # late-bind to column by name in case it was re-bound since declaration
+        ttl["column"] = meta.columns_by_name[ttl_column.name]
+    elif isinstance(ttl_column, str):
+        ttl["column"] = meta.columns_by_name[ttl_column]
+    else:
+        raise InvalidModel("TTL column must be a column name or column instance.")
+
+    typedef = ttl["column"].typedef
+    if typedef.backing_type != Number.backing_type:
+        # special case this check for common confusion between DateTime and Timestamp
+        if isinstance(typedef, DateTime):
+            raise InvalidModel(
+                "TTL column must be a unix timestamp but was a bloop.DateTime instead.  "
+                "Did you mean to use bloop.Timestamp?")
+        else:
+            raise InvalidModel(
+                "TTL column must be a unix timestamp with backing_type 'N' but was "
+                f"{typedef.backing_type!r} instead.")
 
 
 def unbound_repr(obj):
@@ -637,6 +672,7 @@ def initialize_meta(cls: type):
     setdefault(meta, "write_units", None)
     setdefault(meta, "read_units", None)
     setdefault(meta, "stream", None)
+    setdefault(meta, "ttl", None)
 
     setdefault(meta, "hash_key", None)
     setdefault(meta, "range_key", None)
@@ -661,7 +697,6 @@ def initialize_meta(cls: type):
     setdefault(meta, "bind_column", functools.partial(bind_column, meta))
     setdefault(meta, "bind_index", functools.partial(bind_index, meta))
 
-    validate_stream(meta.stream)
     return meta
 
 

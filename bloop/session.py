@@ -166,6 +166,9 @@ class SessionWrapper:
                 raise BloopException("Unexpected error while describing table.") from error
             status = simple_table_status(actual)
         logger.debug("validate_table: table \"{}\" was in ACTIVE state after {} calls".format(table_name, calls))
+        if model.Meta.ttl:
+            ttl = self.dynamodb_client.describe_time_to_live(TableName=table_name)
+            actual["TimeToLiveDescription"] = ttl["TimeToLiveDescription"]
         expected = expected_table_description(table_name, model)
         if not compare_tables(model, actual, expected):
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
@@ -176,6 +179,8 @@ class SessionWrapper:
                     model.__name__, stream_arn
                 )
             )
+        if model.Meta.ttl:
+            model.Meta.ttl["enabled"] = actual["TimeToLiveDescription"]["TimeToLiveStatus"].lower()
         if model.Meta.read_units is None:
             read_units = model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
             logger.debug(
@@ -350,10 +355,12 @@ def compare_tables(model, actual, expected):
     # value in the model post-validation)
     actual = sanitize_table_description(actual)
 
-    # 1. If the table doesn't specify an expected stream type,
-    #    don't inspect the StreamSpecification at all.
+    # 1. If the table doesn't specify an expected stream type or ttl,
+    #    don't inspect the StreamSpecification or TimeToLiveDescription at all.
     if not model.Meta.stream:
         actual.pop("StreamSpecification", None)
+    if not model.Meta.ttl:
+        actual.pop("TimeToLiveDescription", None)
     if model.Meta.read_units is None:
         actual["ProvisionedThroughput"].pop("ReadCapacityUnits")
         expected["ProvisionedThroughput"].pop("ReadCapacityUnits")
@@ -556,10 +563,13 @@ def create_table_request(table_name, model):
 
 
 def expected_table_description(table_name, model):
-    # Right now, we expect the exact same thing as create_table_request
-    # This doesn't include statuses (table, indexes) since that's
-    # pulled out by the polling mechanism
     table = create_table_request(table_name, model)
+    if model.Meta.ttl:
+        table["TimeToLiveDescription"] = {
+            # For now we ignore TimeToLiveStatus because enabling can take up to an hour;
+            # we don't really care if it's on, so long as it's specified.
+            "AttributeName": model.Meta.ttl["column"].dynamo_name
+        }
     return table
 
 
@@ -616,14 +626,20 @@ def sanitize_table_description(description):
                 description.get("ProvisionedThroughput", {"WriteCapacityUnits": None})["WriteCapacityUnits"]
         },
         "StreamSpecification": description.get("StreamSpecification", None),
-        "TableName": description.get("TableName", None)
+        "TableName": description.get("TableName", None),
+        "TimeToLiveDescription": {
+            "AttributeName": description.get("TimeToLiveDescription", {"AttributeName": None})["AttributeName"],
+        },
     }
 
     indexes = table["GlobalSecondaryIndexes"] + table["LocalSecondaryIndexes"]
     for index in indexes:
         if not index["Projection"]["NonKeyAttributes"]:
             index["Projection"].pop("NonKeyAttributes")
-    for possibly_empty in ["GlobalSecondaryIndexes", "LocalSecondaryIndexes", "StreamSpecification"]:
+    if not table["TimeToLiveDescription"]["AttributeName"]:
+        table.pop("TimeToLiveDescription")
+    allowed_empty = ["GlobalSecondaryIndexes", "LocalSecondaryIndexes", "StreamSpecification"]
+    for possibly_empty in allowed_empty:
         if not table[possibly_empty]:
             table.pop(possibly_empty)
 

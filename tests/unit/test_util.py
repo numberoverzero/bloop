@@ -116,7 +116,7 @@ def test_weakref_default_dict():
         data = Column(Integer)
 
     def new(i):
-        obj = MyModel(id=i, data=2*i)
+        obj = MyModel(id=i, data=2 * i)
         return obj
 
     weak_dict = WeakDefaultDictionary(lambda: {"foo": "bar"})

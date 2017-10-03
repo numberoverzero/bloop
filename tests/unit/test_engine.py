@@ -16,7 +16,7 @@ from bloop.exceptions import (
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper
 from bloop.signals import object_saved
-from bloop.types import DateTime, Integer, String
+from bloop.types import DateTime, Integer, String, Timestamp
 from bloop.util import ordered
 
 from ..helpers.models import ComplexModel, User, VectorModel
@@ -715,6 +715,21 @@ def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):
          "skip_table_setup is True; not trying to create tables or validate models during bind"),
         ("bloop.engine", logging.INFO, "successfully bound 1 models to the engine"),
     ]
+
+
+def test_bind_configures_ttl(dynamodb, dynamodbstreams):
+    # Required so engine doesn't pass boto3 to the wrapper
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    engine.session = Mock(spec=SessionWrapper)
+
+    class MyUser(BaseModel):
+        class Meta:
+            ttl = {"column": "expiry"}
+        id = Column(Integer, hash_key=True)
+        expiry = Column(Timestamp)
+
+    engine.bind(MyUser)
+    engine.session.enable_ttl.assert_called_once_with("MyUser", MyUser)
 
 
 @pytest.mark.parametrize("op_name, plural", [("save", True), ("load", True), ("delete", True)], ids=str)

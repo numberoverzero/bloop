@@ -615,6 +615,7 @@ def validate_ttl(meta):
             raise InvalidModel(
                 "TTL column must be a unix timestamp with backing_type 'N' but was "
                 f"{typedef.backing_type!r} instead.")
+    ttl.setdefault("enabled", "disabled")
 
 
 def unbound_repr(obj):

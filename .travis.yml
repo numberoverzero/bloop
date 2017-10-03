@@ -18,10 +18,6 @@ notifications:
     on_success: change
     on_failure: always
     on_start: never
-addons:
-  code_climate:
-    repo_token:
-      secure: "f5tVkDn8f4Rd6ebk1O9RS14FBl/X7N90G7pL9hv1HQo2fcQJBccVVqXxwtwV/GatwBlAXlGolqMLHKZA6SKcvF6aWlh3x1G6J8kEWVlWo0YOTYO/1J/xXK3iqPBpuoVmbDgsM2soMGRW8fEHc+xhl3fRZN+AaVwyz2NIRO3V97Y="
 
 # container-based for faster builds
 sudo: false

@@ -8,7 +8,6 @@ from bloop import (
     Integer,
     MissingObjects,
     String,
-    Timestamp,
 )
 
 from .models import User

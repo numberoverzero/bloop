@@ -8,6 +8,7 @@ from bloop import (
     Integer,
     MissingObjects,
     String,
+    Timestamp,
 )
 
 from .models import User
@@ -81,6 +82,17 @@ def test_stream_read(engine):
         assert record["new"].id == expected.id
         assert record["new"].data == expected.data
         assert record["old"] is None
+
+
+# TODO enable when/if DynamoDBLocal supports DescribeTimeToLive, UpdateTimeToLive
+# def test_ttl_enabled(engine):
+#     class MyModel(BaseModel):
+#         class Meta:
+#             ttl = {"column": "expiry"}
+#         id = Column(Integer, hash_key=True)
+#         expiry = Column(Timestamp, dynamo_name='e')
+#     engine.bind(MyModel)
+#     assert MyModel.Meta.ttl["enabled"] == "enabled"
 
 
 def test_model_overlap(dynamodb, engine):

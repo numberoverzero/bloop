@@ -182,6 +182,7 @@ class Engine:
             if not skip_table_setup:
                 table_name = self._compute_table_name(model)
                 if is_creating[model] and model.Meta.ttl:
+                    self.session.describe_table(table_name)
                     self.session.enable_ttl(table_name, model)
                 self.session.validate_table(table_name, model)
 

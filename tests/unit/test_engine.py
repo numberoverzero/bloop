@@ -729,6 +729,7 @@ def test_bind_configures_ttl(dynamodb, dynamodbstreams):
         expiry = Column(Timestamp)
 
     engine.bind(MyUser)
+    engine.session.describe_table.assert_called_once_with("MyUser")
     engine.session.enable_ttl.assert_called_once_with("MyUser", MyUser)
 
 

@@ -150,6 +150,25 @@ class SessionWrapper:
             is_creating = False
         return is_creating
 
+    def describe_table(self, table_name):
+        """
+        Polls until the table is ready, then returns the first result when the table was ready.
+        :param table_name: The name of the table to describe
+        :return: The result of DescribeTable["Table"]
+        :rtype: dict
+        """
+        status, description = None, {}
+        calls = 0
+        while status is not ready:
+            calls += 1
+            try:
+                description = self.dynamodb_client.describe_table(TableName=table_name)["Table"]
+            except botocore.exceptions.ClientError as error:
+                raise BloopException("Unexpected error while describing table.") from error
+            status = simple_table_status(description)
+        logger.debug("describe_table: table \"{}\" was in ACTIVE state after {} calls".format(table_name, calls))
+        return description
+
     def validate_table(self, table_name, model):
         """Polls until a creating table is ready, then verifies the description against the model's requirements.
 
@@ -161,16 +180,7 @@ class SessionWrapper:
         :param model: The :class:`~bloop.models.BaseModel` to validate the table of.
         :raises bloop.exceptions.TableMismatch: When the table does not meet the constraints of the model.
         """
-        status, actual = None, {}
-        calls = 0
-        while status is not ready:
-            calls += 1
-            try:
-                actual = self.dynamodb_client.describe_table(TableName=table_name)["Table"]
-            except botocore.exceptions.ClientError as error:
-                raise BloopException("Unexpected error while describing table.") from error
-            status = simple_table_status(actual)
-        logger.debug("validate_table: table \"{}\" was in ACTIVE state after {} calls".format(table_name, calls))
+        actual = self.describe_table(table_name)
         if model.Meta.ttl:
             ttl = self.dynamodb_client.describe_time_to_live(TableName=table_name)
             actual["TimeToLiveDescription"] = ttl["TimeToLiveDescription"]

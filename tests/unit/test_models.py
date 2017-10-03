@@ -18,7 +18,7 @@ from bloop.models import (
     unbind,
     unpack_from_dynamodb,
 )
-from bloop.types import UUID, Boolean, DateTime, Integer, String, Type
+from bloop.types import UUID, Boolean, DateTime, Integer, String, Timestamp, Type
 
 from ..helpers.models import User, VectorModel
 
@@ -314,6 +314,20 @@ def test_meta_default_stream():
     assert Other.Meta.stream is None
 
 
+def test_meta_default_ttl():
+    """By default, ttl is None"""
+    class Model(BaseModel):
+        id = Column(UUID, hash_key=True)
+    assert Model.Meta.ttl is None
+
+    class Other(BaseModel):
+        class Meta:
+            ttl = None
+
+        id = Column(UUID, hash_key=True)
+    assert Other.Meta.ttl is None
+
+
 def test_abstract_not_inherited():
     """Meta.abstract isn't inherited, and by default subclasses are not abstract"""
     class Concrete(BaseModel):
@@ -379,6 +393,67 @@ def test_invalid_stream(invalid_stream):
             class Meta:
                 stream = invalid_stream
             id = Column(Integer, hash_key=True)
+
+
+@pytest.mark.parametrize("invalid_ttl", [
+    False, True,
+    {}, User.age, {"ttl": User.age}, {"column": None}, {"column": []}
+])
+def test_invalid_ttl(invalid_ttl):
+    """ttl must be a dict with 'column' a single Column object or Column name"""
+    with pytest.raises(InvalidModel):
+        class Model(BaseModel):
+            class Meta:
+                ttl = invalid_ttl
+            id = Column(Integer, hash_key=True)
+
+
+def test_invalid_ttl_datetime():
+    """Special handling for the built-in DateTime to help with type confusion"""
+    with pytest.raises(InvalidModel) as excinfo:
+        class Model(BaseModel):
+            class Meta:
+                ttl = {"column": "expiry"}
+
+            id = Column(Integer, hash_key=True)
+            expiry = Column(DateTime)
+    assert "Did you mean to use bloop.Timestamp?" in str(excinfo.value)
+
+
+def test_invalid_ttl_backing_type():
+    """TTL must be backed by 'N' dynamo type"""
+    with pytest.raises(InvalidModel) as excinfo:
+        class Model(BaseModel):
+            class Meta:
+                ttl = {"column": "expiry"}
+
+            id = Column(Integer, hash_key=True)
+            expiry = Column(UUID)
+    assert "TTL column must be a unix timestamp with backing_type 'N'" in str(excinfo.value)
+
+
+def test_ttl_late_binds_name():
+    """TTL late binds name, even if instance is a column"""
+    my_column = Column(Timestamp)
+
+    class Model(BaseModel):
+        class Meta:
+            ttl = {"column": my_column}
+        id = Column(Integer, hash_key=True)
+        expiry = my_column
+    assert Model.Meta.ttl["column"] is my_column
+
+
+def test_ttl_by_name():
+    """TTL can also take str of column name"""
+    my_column = Column(Timestamp)
+
+    class Model(BaseModel):
+        class Meta:
+            ttl = {"column": "expiry"}
+        id = Column(Integer, hash_key=True)
+        expiry = my_column
+    assert Model.Meta.ttl["column"] is my_column
 
 
 @pytest.mark.parametrize("valid_stream", [

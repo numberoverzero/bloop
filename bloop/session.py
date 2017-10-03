@@ -8,7 +8,7 @@ import botocore.exceptions
 from .exceptions import (
     BloopException,
     ConstraintViolation,
-    InvalidSearchMode,
+    InvalidSearch,
     InvalidShardIterator,
     InvalidStream,
     RecordsExpired,
@@ -324,7 +324,7 @@ class SessionWrapper:
 
 def validate_search_mode(mode):
     if mode not in {"query", "scan"}:
-        raise InvalidSearchMode("{!r} is not a valid search mode.".format(mode))
+        raise InvalidSearch("{!r} is not a valid search mode.".format(mode))
 
 
 def validate_stream_iterator_type(iterator_type):

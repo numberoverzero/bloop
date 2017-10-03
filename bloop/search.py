@@ -3,10 +3,7 @@ import collections
 from .conditions import BaseCondition, iter_columns, render
 from .exceptions import (
     ConstraintViolation,
-    InvalidFilterCondition,
-    InvalidKeyCondition,
-    InvalidProjection,
-    InvalidSearchMode,
+    InvalidSearch,
 )
 from .models import Column, GlobalSecondaryIndex, unpack_from_dynamodb
 from .signals import object_loaded
@@ -38,7 +35,7 @@ def search_repr(cls, model, index):
 
 def validate_search_mode(mode):
     if mode not in {"query", "scan"}:
-        raise InvalidSearchMode("{!r} is not a valid search mode.".format(mode))
+        raise InvalidSearch("{!r} is not a valid search mode.".format(mode))
 
 
 def validate_key_condition(model, index, key):
@@ -79,14 +76,14 @@ def validate_key_condition(model, index, key):
 
 def validate_search_projection(model, index, projection):
     if not projection:
-        raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
+        raise InvalidSearch("The projection must be 'count', 'all', or a list of Columns to include.")
     if projection == "count":
         return None
 
     if projection == "all":
         return (index or model.Meta).projection["included"]
     elif isinstance(projection, str):
-        raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
+        raise InvalidSearch("The projection must be 'count', 'all', or a list of Columns to include.")
 
     # Keep original around for error messages
     original_projection = projection
@@ -102,19 +99,19 @@ def validate_search_projection(model, index, projection):
             try:
                 converted_projection.append(by_name[p])
             except KeyError:
-                raise InvalidProjection("{!r} is not a column of {!r}.".format(p, model))
+                raise InvalidSearch("{!r} is not a column of {!r}.".format(p, model))
         projection = converted_projection
 
     # Could have been str/Column mix, or just not Columns.
     if not all(isinstance(p, Column) for p in projection):
-        raise InvalidProjection(
+        raise InvalidSearch(
             "{!r} is not valid: it must be only Columns or only their model names.".format(original_projection))
 
     # Can the full available columns support this projection?
     if set(projection) <= (index or model.Meta).projection["available"]:
         return projection
 
-    raise InvalidProjection(
+    raise InvalidSearch(
         "{!r} includes columns that are not available for {!r}.".format(
             original_projection, printable_query(index or model.Meta)))
 
@@ -126,12 +123,12 @@ def validate_filter_condition(condition, available_columns, column_blacklist):
     for column in iter_columns(condition):
         # All of the columns in the condition must be in the available columns
         if column not in available_columns:
-            raise InvalidFilterCondition(
+            raise InvalidSearch(
                 "{!r} is not available for the projection.".format(column))
         # If this is a query, the condition can't contain the hash or range keys.
         # Those are passed in as the column_blacklist.
         if column in column_blacklist:
-            raise InvalidFilterCondition("{!r} can not be included in the filter condition.".format(column))
+            raise InvalidSearch("{!r} can not be included in the filter condition.".format(column))
 
 
 def check_hash_key(query_on, key):
@@ -154,13 +151,13 @@ def check_range_key(query_on, key):
 
 def fail_bad_hash(query_on):
     msg = "The key condition for a Query on {!r} must be `{}.{} == value`."
-    raise InvalidKeyCondition(msg.format(
+    raise InvalidSearch(msg.format(
         printable_query(query_on), query_on.model.__name__, query_on.hash_key.name))
 
 
 def fail_bad_range(query_on):
     msg = "Invalid key condition for a Query on {!r}."
-    raise InvalidKeyCondition(msg.format(printable_query(query_on)))
+    raise InvalidSearch(msg.format(printable_query(query_on)))
 
 
 class Search:

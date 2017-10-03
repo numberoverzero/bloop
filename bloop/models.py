@@ -8,7 +8,7 @@ from typing import Callable, Dict, Optional, Set
 
 from . import util
 from .conditions import ComparisonMixin
-from .exceptions import InvalidIndex, InvalidModel, InvalidStream
+from .exceptions import InvalidModel, InvalidStream
 from .signals import model_created, object_modified
 from .types import Type, Number, DateTime
 
@@ -214,9 +214,9 @@ class Index:
     def __init__(self, *, projection, hash_key=None, range_key=None, dynamo_name=None, **kwargs):
         self.model = None
         if not isinstance(hash_key, (str, Column, type(None))):
-            raise InvalidIndex(f"hash_key must be a str or Column, but was {type(hash_key)!r}")
+            raise InvalidModel(f"Index hash_key must be a str or Column, but was {type(hash_key)!r}")
         if not isinstance(range_key, (str, Column, type(None))):
-            raise InvalidIndex(f"range_key must be a str or Column, but was {type(range_key)!r}")
+            raise InvalidModel(f"Index range_key must be a str or Column, but was {type(range_key)!r}")
         self._hash_key = hash_key
         self._range_key = range_key
         self._name = None
@@ -350,9 +350,9 @@ class LocalSecondaryIndex(Index):
     def __init__(self, *, projection, range_key, dynamo_name=None, strict=True, **kwargs):
         # Hash key MUST be the table hash; do not specify
         if "hash_key" in kwargs:
-            raise InvalidIndex("An LSI shares its hash key with the Model.")
+            raise InvalidModel("An LSI shares its hash key with the Model.")
         if ("write_units" in kwargs) or ("read_units" in kwargs):
-            raise InvalidIndex("An LSI shares its provisioned throughput with the Model.")
+            raise InvalidModel("An LSI shares its provisioned throughput with the Model.")
         super().__init__(range_key=range_key, dynamo_name=dynamo_name, projection=projection, **kwargs)
         self.projection["strict"] = strict
 
@@ -539,7 +539,7 @@ def validate_projection(projection):
     # Without this, the following will make "unknown" a list
     if isinstance(projection, str):
         if projection not in ("keys", "all"):
-            raise InvalidIndex(f"{projection!r} is not a valid Index projection.")
+            raise InvalidModel(f"{projection!r} is not a valid Index projection.")
         validated_projection["mode"] = projection
     elif isinstance(projection, collections.abc.Iterable):
         projection = list(projection)
@@ -554,9 +554,9 @@ def validate_projection(projection):
             validated_projection["mode"] = "include"
             validated_projection["included"] = projection
         else:
-            raise InvalidIndex("Index projection must be a list of strings or Columns to select specific Columns.")
+            raise InvalidModel("Index projection must be a list of strings or Columns to select specific Columns.")
     else:
-        raise InvalidIndex("Index projection must be 'all', 'keys', or a list of Columns or Column names.")
+        raise InvalidModel("Index projection must be 'all', 'keys', or a list of Columns or Column names.")
     return validated_projection
 
 
@@ -830,7 +830,7 @@ def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> In
         for subclass in util.walk_subclasses(meta.model):
             try:
                 subclass.Meta.bind_index(name, index, force=False, recursive=False, copy=True)
-            except (InvalidIndex, InvalidModel):
+            except InvalidModel:
                 pass
 
     return index

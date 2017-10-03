@@ -5,7 +5,7 @@ import operator
 import pytest
 
 from bloop.conditions import ConditionRenderer
-from bloop.exceptions import InvalidIndex, InvalidModel, InvalidStream
+from bloop.exceptions import InvalidModel, InvalidStream
 from bloop.models import (
     BaseModel,
     Column,
@@ -868,7 +868,7 @@ def test_index_bad_key(key_type, value, valid):
     if valid:
         run()
     else:
-        with pytest.raises(InvalidIndex):
+        with pytest.raises(InvalidModel):
             run()
 
 
@@ -906,13 +906,13 @@ def test_index_binds_names():
 
 def test_index_projection_validation():
     """should be all, keys, a list of columns, or a list of column model names"""
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         Index(projection="foo")
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         Index(projection=object())
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         Index(projection=["only strings", 1, None])
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         Index(projection=["foo", User.joined])
 
     index = Index(projection="all")
@@ -959,16 +959,16 @@ def test_index_unmodifiable():
 
 
 def test_lsi_specifies_hash_key():
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         LocalSecondaryIndex(hash_key="blah", range_key="foo", projection="keys")
 
 
 def test_lsi_init_throughput():
     """Can't set throughput when creating an LSI"""
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         LocalSecondaryIndex(range_key="range", projection="keys", write_units=1)
 
-    with pytest.raises(InvalidIndex):
+    with pytest.raises(InvalidModel):
         LocalSecondaryIndex(range_key="range", projection="keys", read_units=1)
 
 

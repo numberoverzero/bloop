@@ -669,23 +669,13 @@ fail with :exc`~bloop.exceptions.ConstraintViolation`.
 These are thrown when an option is invalid or missing, such as forgetting a key condition for a query,
 or trying to use an unknown projection type.
 
-.. autoclass:: bloop.exceptions.InvalidComparisonOperator
-
 .. autoclass:: bloop.exceptions.InvalidCondition
-
-.. autoclass:: bloop.exceptions.InvalidFilterCondition
-
-.. autoclass:: bloop.exceptions.InvalidIndex
-
-.. autoclass:: bloop.exceptions.InvalidKeyCondition
 
 .. autoclass:: bloop.exceptions.InvalidModel
 
 .. autoclass:: bloop.exceptions.InvalidPosition
 
-.. autoclass:: bloop.exceptions.InvalidProjection
-
-.. autoclass:: bloop.exceptions.InvalidSearchMode
+.. autoclass:: bloop.exceptions.InvalidSearch
 
 .. autoclass:: bloop.exceptions.InvalidShardIterator
 

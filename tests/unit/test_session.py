@@ -7,7 +7,7 @@ import pytest
 from bloop.exceptions import (
     BloopException,
     ConstraintViolation,
-    InvalidSearchMode,
+    InvalidSearch,
     InvalidShardIterator,
     InvalidStream,
     RecordsExpired,
@@ -352,7 +352,7 @@ def test_query_scan_raise(session, dynamodb):
 
 
 def test_search_unknown(session):
-    with pytest.raises(InvalidSearchMode) as excinfo:
+    with pytest.raises(InvalidSearch) as excinfo:
         session.search_items(mode="foo", request={})
     assert "foo" in str(excinfo.value)
 

@@ -131,19 +131,24 @@ class SessionWrapper:
         return response
 
     def create_table(self, table_name, model):
-        """Create the model's table.
+        """Create the model's table.  Returns True if the table is being created, False otherwise.
 
         Does not wait for the table to create, and does not validate an existing table.
         Will not raise "ResourceInUseException" if the table exists or is being created.
 
         :param str table_name: The name of the table to create for the model.
         :param model: The :class:`~bloop.models.BaseModel` to create the table for.
+        :return: True if the table is being created, False if the table exists
+        :rtype: bool
         """
         table = create_table_request(table_name, model)
         try:
             self.dynamodb_client.create_table(**table)
+            is_creating = True
         except botocore.exceptions.ClientError as error:
             handle_table_exists(error, model)
+            is_creating = False
+        return is_creating
 
     def validate_table(self, table_name, model):
         """Polls until a creating table is ready, then verifies the description against the model's requirements.
@@ -210,6 +215,25 @@ class SessionWrapper:
                     "{}.{} does not specify write_units, set to {} from DescribeTable response".format(
                         model.__name__, index.name, write_units)
                 )
+
+    def enable_ttl(self, table_name, model):
+        """Calls UpdateTimeToLive on the table according to model.Meta["ttl"]
+
+        :param table_name: The name of the table to enable the TTL setting on
+        :param model: The model to get TTL settings from
+        """
+        ttl_name = model.Meta.ttl["column"].dynamo_name
+        request = {
+            "TableName": table_name,
+            "TimeToLiveSpecification": {
+                "AttributeName": ttl_name,
+                "Enabled": True
+            }
+        }
+        try:
+            self.dynamodb_client.update_time_to_live(**request)
+        except botocore.exceptions.ClientError as error:
+            raise BloopException("Unexpected error while setting TTL.") from error
 
     def describe_stream(self, stream_arn, first_shard=None):
         """Wraps :func:`boto3.DynamoDBStreams.Client.describe_stream`, handling continuation tokens.

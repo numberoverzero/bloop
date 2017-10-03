@@ -1,11 +1,13 @@
 import datetime
 import logging
+import uuid
+
 import operator
 
 import pytest
 
 from bloop.conditions import ConditionRenderer
-from bloop.exceptions import InvalidModel, InvalidStream
+from bloop.exceptions import InvalidModel, InvalidStream, ValidationError
 from bloop.models import (
     BaseModel,
     Column,
@@ -20,7 +22,7 @@ from bloop.models import (
     unbind,
     unpack_from_dynamodb,
 )
-from bloop.types import UUID, Boolean, DateTime, Integer, String, Timestamp, Type
+from bloop.types import UUID, Boolean, DateTime, Integer, String, Timestamp, Type, Number, Binary, Set, List, Map
 
 from ..helpers.models import User, VectorModel
 
@@ -846,6 +848,139 @@ def test_contains_container_types(container_column, engine):
         'ExpressionAttributeNames': {'#n0': container_column.dynamo_name}
     }
     assert renderer.rendered == expected
+
+
+def test_column_defaults():
+
+    # Set should send the new value
+    called = False
+    num_called = 0
+    received = {}
+
+    @object_modified.connect
+    def verify_expected(_, *, obj, column, value):
+        nonlocal num_called, called, received
+        called = True
+        num_called += 1
+        received['obj'] = obj
+        received['column'] = column
+        received['value'] = value
+
+    class ColumnDefaultModel(BaseModel):
+        id = Column(Integer, hash_key=True, default=12)
+
+    default_obj = ColumnDefaultModel()
+
+    assert called is True
+    assert num_called == 1
+    assert received["obj"] is default_obj
+    assert received["column"] is ColumnDefaultModel.id
+    assert received["value"] == 12
+
+
+def test_column_default_func():
+
+    # Set should send the new value
+    called = False
+    num_called = 0
+    received = {}
+
+    @object_modified.connect
+    def verify_expected(_, *, obj, column, value):
+        nonlocal num_called, called, received
+        called = True
+        num_called += 1
+        received['obj'] = obj
+        received['column'] = column
+        received['value'] = value
+
+    def return_number():
+        return 123
+
+    class ColumnDefaultFuncModel(BaseModel):
+        id = Column(Integer, hash_key=True, default=return_number)
+
+    default_obj = ColumnDefaultFuncModel()
+
+    assert called is True
+    assert num_called == 1
+    assert received["obj"] is default_obj
+    assert received["column"] is ColumnDefaultFuncModel.id
+    assert received["value"] == 123
+
+
+@pytest.mark.parametrize("type, value", [
+    (String, "bob"), (UUID, uuid.uuid4()),
+    (DateTime, datetime.datetime.utcnow()), (Number, 34),
+    (Integer, 123), (Timestamp, datetime.datetime.utcnow()),
+    (Binary, 'bob'.encode()), (Boolean, False),
+    (Set(String), {'bob', 'joe', 'john'}),
+    (Set(Integer), {1, 2, 3}),
+    (Set(Binary), {b'bob', b'joe', b'john'}),
+    (List(String), ['bob', 'joe', 'john']),
+    (List(Integer), [1, 2, 3]),
+    (List(Binary), [b'bob', b'joe', b'john']),
+    (Map, {"created": DateTime, "referrer": UUID, "cache": String})
+])
+def test_column_validation(type, value):
+    class ColumnValidateModel(BaseModel):
+        class Meta:
+            validate_columns = True
+        col = Column(type, hash_key=True)
+
+    obj = ColumnValidateModel(col=value)
+    assert obj.col == value
+
+    obj.col = value
+    assert obj.col == value
+
+
+@pytest.mark.parametrize("type, value", [
+    (String, 12), (String, b'test'), (String, object()),
+    (UUID, 12), (UUID, b'test'), (UUID, object()),
+    (DateTime, 12), (DateTime, b'test'), (DateTime, object()),
+    (Number, "b12"), (Number, b'test'), (Number, object()),
+    (Integer, "b12"), (Integer, b'test'), (Integer, object()),
+    (Timestamp, "b12"), (Timestamp, b'test'), (Timestamp, object()),
+    (Binary, "b12"), (Binary, 3.14), (Binary, object()),
+    (Boolean, "b12"), (Boolean, 3.14), (Boolean, object()),
+    (Set(String), "b12"), (Set(Integer), 3.14), (Set(Binary), object()),
+    (List(String), "b12"), (List(Integer), 3.14), (List(Binary), object()),
+    (Map, "b12"), (Map, 3.14), (Map, object()),
+])
+def test_column_validation_bad(type, value):
+    class ColumnValidateModel(BaseModel):
+        class Meta:
+            validate_columns = True
+        col = Column(type, hash_key=True)
+
+    with pytest.raises(ValidationError):
+        ColumnValidateModel(col=value)
+
+    with pytest.raises(ValidationError):
+        obj = ColumnValidateModel()
+        obj.col = value
+
+
+def test_column_bad_default_func():
+    def get_bad_value():
+        return 'bob'
+
+    class ColumnDefaultFuncModel(BaseModel):
+        class Meta:
+            validate_columns = True
+        id = Column(Integer, hash_key=True, default=get_bad_value)
+
+    with pytest.raises(ValidationError):
+        ColumnDefaultFuncModel()
+
+    class ColumnDefaultFuncModel(BaseModel):
+        class Meta:
+            validate_columns = True
+        id = Column(Integer, hash_key=True, default='bob')
+
+    with pytest.raises(ValidationError):
+        ColumnDefaultFuncModel()
 
 
 # END COLUMN =============================================================================================== END COLUMN

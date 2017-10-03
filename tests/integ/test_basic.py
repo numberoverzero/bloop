@@ -1,4 +1,7 @@
 """Basic scenarios, symmetric tests"""
+import uuid
+from random import randint
+
 import pytest
 
 from bloop import (
@@ -8,6 +11,7 @@ from bloop import (
     Integer,
     MissingObjects,
     String,
+    UUID
 )
 
 from .models import User
@@ -34,6 +38,73 @@ def test_crud(engine):
     with pytest.raises(MissingObjects) as excinfo:
         engine.load(same_user, consistent=True)
     assert [same_user] == excinfo.value.objects
+
+
+def test_model_defaults(engine):
+    class ColumnDefaultsModel(BaseModel):
+        hash = Column(Integer, hash_key=True, default=12)
+        range = Column(Integer, range_key=True, default=24)
+        other = Column(Integer, default=48)
+    engine.bind(ColumnDefaultsModel)
+
+    obj = ColumnDefaultsModel()
+    assert obj.hash == 12
+    assert obj.range == 24
+    assert obj.other == 48
+
+    engine.save(obj)
+
+    same_obj = ColumnDefaultsModel(hash=12, range=24)
+    engine.load(same_obj)
+
+    assert same_obj.hash == 12
+    assert same_obj.range == 24
+    assert same_obj.other == 48
+
+
+def test_model_defaults_load(engine):
+    class ColumnDefaultLoadModel(BaseModel):
+        hash = Column(Integer, hash_key=True, default=12)
+        range = Column(Integer, range_key=True, default=24)
+        other = Column(Integer, default=48)
+    engine.bind(ColumnDefaultLoadModel)
+
+    obj = ColumnDefaultLoadModel(hash=333, range=333)
+    engine.save(obj)
+
+    same_obj = ColumnDefaultLoadModel(hash=obj.hash, range=obj.range)
+    engine.load(same_obj)
+
+    assert same_obj.hash == 333
+    assert same_obj.range == 333
+    assert same_obj.other == 48
+
+
+def test_model_default_func(engine):
+    def get_int():
+        return 404
+
+    def random_int():
+        return randint(1, 100)
+
+    class ColumnDefaultFuncModel(BaseModel):
+        hash = Column(UUID, hash_key=True, default=uuid.uuid4())
+        range = Column(Integer, range_key=True, default=get_int)
+        other = Column(Integer, default=random_int)
+    engine.bind(ColumnDefaultFuncModel)
+
+    obj = ColumnDefaultFuncModel()
+    assert isinstance(obj.hash, uuid.UUID)
+    assert obj.range == 404
+
+    engine.save(obj)
+
+    same_obj = ColumnDefaultFuncModel(hash=obj.hash, range=obj.range)
+    engine.load(same_obj)
+
+    assert same_obj.hash == obj.hash
+    assert same_obj.range == obj.range
+    assert same_obj.other == obj.other
 
 
 def test_projection_overlap(engine):

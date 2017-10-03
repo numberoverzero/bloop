@@ -11,7 +11,6 @@ from .exceptions import InvalidModel, InvalidStream
 from .signals import model_created, object_modified
 from .types import Type, Number, DateTime
 
-
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 
 logger = logging.getLogger("bloop.models")
@@ -26,6 +25,7 @@ class IMeta:
     write_units: Optional[int]
     stream: Optional[Dict]
     ttl: Optional[Dict]
+    validate_columns: Optional[bool]
 
     model: "BaseModel"
 
@@ -68,6 +68,9 @@ class BaseModel:
             value = attrs.get(column.name, missing)
             if value is not missing:
                 setattr(self, column.name, value)
+            else:
+                if column.default:
+                    setattr(self, column.name, column.default)
 
     def __init_subclass__(cls: type, **kwargs):
         ensure_hash(cls)
@@ -387,7 +390,7 @@ class Column(ComparisonMixin):
         ``range_key=True``.  Default is False.
     :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
     """
-    def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, **kwargs):
+    def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, default=missing, **kwargs):
         self.hash_key: bool = hash_key
         self.range_key: bool = range_key
         self._name: str = None
@@ -396,9 +399,16 @@ class Column(ComparisonMixin):
             typedef = typedef()
         if instanceof(typedef, Type):
             self.typedef = typedef
+
         else:
             raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
         super().__init__(**kwargs)
+
+        # we only apply defaults if the argument 'default' is not None (see BaseModel.__init__ above)
+        if default is not missing:
+            self._default = default
+        else:
+            self._default = None
 
     def __copy__(self):
         cls = self.__class__
@@ -455,6 +465,13 @@ class Column(ComparisonMixin):
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
         return f"<{self.__class__.__name__}[{self.model.__name__}.{self.name}{extra}]>"
+
+    @property
+    def default(self):
+        """ Get a shallow copy of the default value """
+        if hasattr(self._default, '__call__'):
+            return self._default()
+        return copyfn(self._default)
 
     @property
     def name(self):
@@ -661,6 +678,7 @@ def initialize_meta(cls: type):
     setdefault(meta, "read_units", None)
     setdefault(meta, "stream", None)
     setdefault(meta, "ttl", None)
+    setdefault(meta, "validate_columns", False)
 
     setdefault(meta, "hash_key", None)
     setdefault(meta, "range_key", None)

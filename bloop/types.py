@@ -4,6 +4,7 @@ import datetime
 import decimal
 import uuid
 
+from bloop.exceptions import ValidationError
 
 ENCODING = "utf-8"
 STRING = "S"
@@ -121,6 +122,18 @@ class Type:
         if value is not None:
             value = next(iter(value.values()))
         return self.dynamo_load(value, **kwargs)
+
+    def validate(self, value, *, context, **kwargs):
+        """Validates the value for the specific type.
+        """
+        if value is None:
+            return None
+        if not isinstance(value, self.python_type):
+            raise ValidationError(f"Invalid value for type '{self.python_type}': {value}")
+
+    def _validate(self, column, value, model, **kwargs):
+        context = {'column': column, "model": model}
+        return self.validate(value, context=context, **kwargs)
 
     def __repr__(self):
         # Render class python types by name
@@ -258,6 +271,17 @@ class Number(Type):
             raise TypeError("{!r} does not support Infinity and NaN.".format(self))
         return n
 
+    def validate(self, value, *, context, **kwargs):
+        if value is None:
+            return None
+        try:
+            n = self.context.create_decimal(value)
+            if any(filter(lambda x: x in str(n), ("Infinity", "NaN"))):
+                raise TypeError("{!r} does not support Infinity and NaN.".format(self))
+        except Exception as error:
+            raise ValidationError(f"Invalid value for type '{self.python_type}': {value}. {error}")
+        super().validate(n, context=context, **kwargs)
+
 
 class Integer(Number):
     """Truncates values when loading or dumping.
@@ -278,6 +302,15 @@ class Integer(Number):
             return None
         value = int(value)
         return super().dynamo_dump(value, context=context, **kwargs)
+
+    def validate(self, value, *, context, **kwargs):
+        if value is None:
+            return None
+        try:
+            n = int(value)
+        except (ValueError, TypeError):
+            raise ValidationError(f"Invalid value for type '{self.python_type}': {value}")
+        Type.validate(self, n, context=context)
 
 
 class Timestamp(Integer):
@@ -343,6 +376,9 @@ class Timestamp(Integer):
             )
         value = value.timestamp()
         return super().dynamo_dump(value, context=context, **kwargs)
+
+    def validate(self, value, *, context, **kwargs):
+        Type.validate(self, value, context=context, **kwargs)
 
 
 class Binary(Type):
@@ -429,6 +465,24 @@ class Set(Type):
                 dumped.append(value)
         return dumped or None
 
+    def validate(self, value, *, context, **kwargs):
+        """Validates the value for the specific type.
+        """
+        typedef = self.inner_typedef
+        if not isinstance(value, (list, set)):
+            raise ValidationError(f"Invalid value for Set: {value}")
+
+        bad_apples = []
+        for item in value:
+            try:
+                typedef.validate(item, context=context, **kwargs)
+            except ValidationError as error:
+                bad_apples.append(str(error))
+
+        if bad_apples:
+            errors = "\n  ".join(bad_apples)
+            raise ValidationError(f"Invalid values found in Set: {errors}")
+
 
 class List(Type):
     """Holds values of a single type.
@@ -473,6 +527,25 @@ class List(Type):
             return None
         dumped = (self.inner_typedef._dump(value, context=context, **kwargs) for value in values)
         return [value for value in dumped if value is not None] or None
+
+    def validate(self, value, *, context, **kwargs):
+        """Validates the value for the specific type.
+        """
+        typedef = self.inner_typedef
+
+        if not isinstance(value, (list, set)):
+            raise ValidationError(f"Invalid value for Set: {value}")
+
+        bad_apples = []
+        for item in value:
+            try:
+                typedef.validate(item, context=context, **kwargs)
+            except ValidationError as error:
+                bad_apples.append(str(error))
+
+        if bad_apples:
+            errors = "\n  ".join(bad_apples)
+            raise ValidationError(f"Invalid values found in List: {errors}")
 
 
 class Map(Type):
@@ -528,3 +601,21 @@ class Map(Type):
             if value is not None:
                 dumped[key] = value
         return dumped or None
+
+    def validate(self, value, *, context, **kwargs):
+        """Validates the value for the specific type.
+        """
+        if not isinstance(value, dict):
+            raise ValidationError(f"Invalid value for Set: {value}")
+
+        bad_apples = []
+        for key, typedef in self.types.items():
+            try:
+                if key in value:
+                    typedef.validate(value[key], context=context, **kwargs)
+            except ValidationError as error:
+                bad_apples.append(str(error))
+
+        if bad_apples:
+            errors = "\n  ".join(bad_apples)
+            raise ValidationError(f"Invalid values found in Map: {errors}")

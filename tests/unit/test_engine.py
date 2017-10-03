@@ -1,5 +1,6 @@
 import datetime
 import logging
+import uuid
 from unittest.mock import Mock
 
 import pytest
@@ -360,7 +361,7 @@ def test_load_missing_key(engine):
 
     complex_models = [
         ComplexModel(),
-        ComplexModel(name="no range"),
+        ComplexModel(name=uuid.uuid4()),
         ComplexModel(date="no hash")
     ]
     for model in complex_models:

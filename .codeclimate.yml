@@ -1,0 +1,6 @@
+engines:
+  radon:
+    enabled: true
+    checks:
+      Complexity:
+        enabled: false

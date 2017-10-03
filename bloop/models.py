@@ -8,9 +8,9 @@ from typing import Callable, Dict, Optional, Set
 
 from . import util
 from .conditions import ComparisonMixin
-from .exceptions import InvalidIndex, InvalidModel, InvalidStream
+from .exceptions import InvalidModel, InvalidStream
 from .signals import model_created, object_modified
-from .types import Type
+from .types import Type, Number, DateTime
 
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
@@ -26,6 +26,7 @@ class IMeta:
     read_units: Optional[int]
     write_units: Optional[int]
     stream: Optional[Dict]
+    ttl: Optional[Dict]
 
     model: "BaseModel"
 
@@ -160,6 +161,9 @@ class BaseModel:
         if not meta.abstract and not meta.hash_key:
             raise InvalidModel(f"{meta.model.__name__!r} has no hash key.")
 
+        validate_stream(meta)
+        validate_ttl(meta)
+
         # 3.0 Fire model_created for customizing the class after creation
         model_created.send(None, model=cls)
 
@@ -210,9 +214,9 @@ class Index:
     def __init__(self, *, projection, hash_key=None, range_key=None, dynamo_name=None, **kwargs):
         self.model = None
         if not isinstance(hash_key, (str, Column, type(None))):
-            raise InvalidIndex(f"hash_key must be a str or Column, but was {type(hash_key)!r}")
+            raise InvalidModel(f"Index hash_key must be a str or Column, but was {type(hash_key)!r}")
         if not isinstance(range_key, (str, Column, type(None))):
-            raise InvalidIndex(f"range_key must be a str or Column, but was {type(range_key)!r}")
+            raise InvalidModel(f"Index range_key must be a str or Column, but was {type(range_key)!r}")
         self._hash_key = hash_key
         self._range_key = range_key
         self._name = None
@@ -346,9 +350,9 @@ class LocalSecondaryIndex(Index):
     def __init__(self, *, projection, range_key, dynamo_name=None, strict=True, **kwargs):
         # Hash key MUST be the table hash; do not specify
         if "hash_key" in kwargs:
-            raise InvalidIndex("An LSI shares its hash key with the Model.")
+            raise InvalidModel("An LSI shares its hash key with the Model.")
         if ("write_units" in kwargs) or ("read_units" in kwargs):
-            raise InvalidIndex("An LSI shares its provisioned throughput with the Model.")
+            raise InvalidModel("An LSI shares its provisioned throughput with the Model.")
         super().__init__(range_key=range_key, dynamo_name=dynamo_name, projection=projection, **kwargs)
         self.projection["strict"] = strict
 
@@ -535,7 +539,7 @@ def validate_projection(projection):
     # Without this, the following will make "unknown" a list
     if isinstance(projection, str):
         if projection not in ("keys", "all"):
-            raise InvalidIndex(f"{projection!r} is not a valid Index projection.")
+            raise InvalidModel(f"{projection!r} is not a valid Index projection.")
         validated_projection["mode"] = projection
     elif isinstance(projection, collections.abc.Iterable):
         projection = list(projection)
@@ -550,13 +554,14 @@ def validate_projection(projection):
             validated_projection["mode"] = "include"
             validated_projection["included"] = projection
         else:
-            raise InvalidIndex("Index projection must be a list of strings or Columns to select specific Columns.")
+            raise InvalidModel("Index projection must be a list of strings or Columns to select specific Columns.")
     else:
-        raise InvalidIndex("Index projection must be 'all', 'keys', or a list of Columns or Column names.")
+        raise InvalidModel("Index projection must be 'all', 'keys', or a list of Columns or Column names.")
     return validated_projection
 
 
-def validate_stream(stream):
+def validate_stream(meta):
+    stream = meta.stream
     if stream is None:
         return
 
@@ -580,6 +585,37 @@ def validate_stream(stream):
     if include == {"new", "keys"} or include == {"old", "keys"}:
         raise InvalidStream("The option 'keys' cannot be used with either 'old' or 'new'.")
     stream.setdefault("arn", None)
+
+
+def validate_ttl(meta):
+    ttl = meta.ttl
+    if ttl is None:
+        return
+    if not isinstance(ttl, collections.abc.MutableMapping):
+        raise InvalidModel("TTL must be None or a dict.")
+    if "column" not in ttl:
+        raise InvalidModel("TTL must specify the column to use with the 'column' key.")
+    ttl_column = ttl["column"]
+    if isinstance(ttl_column, Column):
+        # late-bind to column by name in case it was re-bound since declaration
+        ttl["column"] = meta.columns_by_name[ttl_column.name]
+    elif isinstance(ttl_column, str):
+        ttl["column"] = meta.columns_by_name[ttl_column]
+    else:
+        raise InvalidModel("TTL column must be a column name or column instance.")
+
+    typedef = ttl["column"].typedef
+    if typedef.backing_type != Number.backing_type:
+        # special case this check for common confusion between DateTime and Timestamp
+        if isinstance(typedef, DateTime):
+            raise InvalidModel(
+                "TTL column must be a unix timestamp but was a bloop.DateTime instead.  "
+                "Did you mean to use bloop.Timestamp?")
+        else:
+            raise InvalidModel(
+                "TTL column must be a unix timestamp with backing_type 'N' but was "
+                f"{typedef.backing_type!r} instead.")
+    ttl.setdefault("enabled", "disabled")
 
 
 def unbound_repr(obj):
@@ -637,6 +673,7 @@ def initialize_meta(cls: type):
     setdefault(meta, "write_units", None)
     setdefault(meta, "read_units", None)
     setdefault(meta, "stream", None)
+    setdefault(meta, "ttl", None)
 
     setdefault(meta, "hash_key", None)
     setdefault(meta, "range_key", None)
@@ -661,7 +698,6 @@ def initialize_meta(cls: type):
     setdefault(meta, "bind_column", functools.partial(bind_column, meta))
     setdefault(meta, "bind_index", functools.partial(bind_index, meta))
 
-    validate_stream(meta.stream)
     return meta
 
 
@@ -794,7 +830,7 @@ def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> In
         for subclass in util.walk_subclasses(meta.model):
             try:
                 subclass.Meta.bind_index(name, index, force=False, recursive=False, copy=True)
-            except (InvalidIndex, InvalidModel):
+            except InvalidModel:
                 pass
 
     return index

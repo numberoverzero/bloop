@@ -8,9 +8,7 @@ env:
   - TOXENV=docs
 install: pip install tox codecov
 script: tox -e $TOXENV
-after_success:
-- test $TOXENV = "unit" && codecov
-- test $TOXENV = "integ" && codecov
+
 notifications:
   slack:
     secure: cXjzhmFI0oAWifBilGvTApiL8VSyM7/4v3Ve4TZeU+15EoYf05AhNoHs0FKVcj+ockYPqlj3p+SIUXnGfcI41QFlO09gGvFVB/FA/PHH2n4hb20+zxSx5Ic9ac3B2Nb5u2lWGsSsRTvCHtC0Wcxx878ML5UFrP5yu4vKIgj8AyE=
@@ -20,6 +18,11 @@ notifications:
     on_success: change
     on_failure: always
     on_start: never
+addons:
+  code_climate:
+    repo_token:
+      secure: "f5tVkDn8f4Rd6ebk1O9RS14FBl/X7N90G7pL9hv1HQo2fcQJBccVVqXxwtwV/GatwBlAXlGolqMLHKZA6SKcvF6aWlh3x1G6J8kEWVlWo0YOTYO/1J/xXK3iqPBpuoVmbDgsM2soMGRW8fEHc+xhl3fRZN+AaVwyz2NIRO3V97Y="
+
 # container-based for faster builds
 sudo: false
 # tls 1.2

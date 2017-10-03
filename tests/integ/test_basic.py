@@ -83,6 +83,17 @@ def test_stream_read(engine):
         assert record["old"] is None
 
 
+# TODO enable when/if DynamoDBLocal supports DescribeTimeToLive, UpdateTimeToLive
+# def test_ttl_enabled(engine):
+#     class MyModel(BaseModel):
+#         class Meta:
+#             ttl = {"column": "expiry"}
+#         id = Column(Integer, hash_key=True)
+#         expiry = Column(Timestamp, dynamo_name='e')
+#     engine.bind(MyModel)
+#     assert MyModel.Meta.ttl["enabled"] == "enabled"
+
+
 def test_model_overlap(dynamodb, engine):
     """Two models backed by the same table, with different indexes"""
     class FirstOverlap(BaseModel):

@@ -15,6 +15,7 @@ from bloop.types import (
     Number,
     Set,
     String,
+    Timestamp,
     Type,
 )
 
@@ -56,7 +57,7 @@ def test_load_dump_best_effort(engine):
     assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={"engine": engine})
 
 
-@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Number, Integer, Binary, Boolean])
+@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Timestamp, Number, Integer, Binary, Boolean])
 def test_none_scalar_types(typedef):
     """single-value types without an explicit 'lack of value' sentinel should return None when given None"""
     type = typedef()
@@ -131,6 +132,37 @@ def test_datetime():
     now = datetime.datetime.now(datetime.timezone.utc)
     now_str = now.isoformat()
     symmetric_test(typedef, (now, now_str))
+
+
+@pytest.mark.parametrize("naive", (datetime.datetime.now(), datetime.datetime.utcnow()))
+def test_datetime_naive(naive):
+    """
+    Python 3.6 made astimezone assume the system timezone when tzinfo is None.
+    Therefore bloop explicitly guards against a naive object.
+    """
+    typedef = DateTime()
+    with pytest.raises(ValueError):
+        typedef.dynamo_dump(naive, context=None)
+
+
+def test_timestamp():
+    typedef = Timestamp()
+    # .replace because microseconds are dropped
+    now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+    # numbers are passed to dynamodb as strings
+    now_str = str(int(now.timestamp()))
+    symmetric_test(typedef, (now, now_str))
+
+
+@pytest.mark.parametrize("naive", (datetime.datetime.now(), datetime.datetime.utcnow()))
+def test_timestamp_naive(naive):
+    """
+    Python 3.6 made astimezone assume the system timezone when tzinfo is None.
+    Therefore bloop explicitly guards against a naive object.
+    """
+    typedef = Timestamp()
+    with pytest.raises(ValueError):
+        typedef.dynamo_dump(naive, context=None)
 
 
 def test_number():

@@ -169,16 +169,23 @@ class Engine:
         if skip_table_setup:
             logger.info("skip_table_setup is True; not trying to create tables or validate models during bind")
 
+        is_creating = {}
+
         for model in concrete:
             table_name = self._compute_table_name(model)
             before_create_table.send(self, engine=self, model=model)
             if not skip_table_setup:
-                self.session.create_table(table_name, model)
+                creating = self.session.create_table(table_name, model)
+                is_creating[model] = creating
 
         for model in concrete:
             if not skip_table_setup:
                 table_name = self._compute_table_name(model)
+                if is_creating[model] and model.Meta.ttl:
+                    self.session.describe_table(table_name)
+                    self.session.enable_ttl(table_name, model)
                 self.session.validate_table(table_name, model)
+
             model_validated.send(self, engine=self, model=model)
 
             model_bound.send(self, engine=self, model=model)

@@ -8,7 +8,7 @@ import botocore.exceptions
 from .exceptions import (
     BloopException,
     ConstraintViolation,
-    InvalidSearchMode,
+    InvalidSearch,
     InvalidShardIterator,
     InvalidStream,
     RecordsExpired,
@@ -131,19 +131,43 @@ class SessionWrapper:
         return response
 
     def create_table(self, table_name, model):
-        """Create the model's table.
+        """Create the model's table.  Returns True if the table is being created, False otherwise.
 
         Does not wait for the table to create, and does not validate an existing table.
         Will not raise "ResourceInUseException" if the table exists or is being created.
 
         :param str table_name: The name of the table to create for the model.
         :param model: The :class:`~bloop.models.BaseModel` to create the table for.
+        :return: True if the table is being created, False if the table exists
+        :rtype: bool
         """
         table = create_table_request(table_name, model)
         try:
             self.dynamodb_client.create_table(**table)
+            is_creating = True
         except botocore.exceptions.ClientError as error:
             handle_table_exists(error, model)
+            is_creating = False
+        return is_creating
+
+    def describe_table(self, table_name):
+        """
+        Polls until the table is ready, then returns the first result when the table was ready.
+        :param table_name: The name of the table to describe
+        :return: The result of DescribeTable["Table"]
+        :rtype: dict
+        """
+        status, description = None, {}
+        calls = 0
+        while status is not ready:
+            calls += 1
+            try:
+                description = self.dynamodb_client.describe_table(TableName=table_name)["Table"]
+            except botocore.exceptions.ClientError as error:
+                raise BloopException("Unexpected error while describing table.") from error
+            status = simple_table_status(description)
+        logger.debug("describe_table: table \"{}\" was in ACTIVE state after {} calls".format(table_name, calls))
+        return description
 
     def validate_table(self, table_name, model):
         """Polls until a creating table is ready, then verifies the description against the model's requirements.
@@ -156,16 +180,10 @@ class SessionWrapper:
         :param model: The :class:`~bloop.models.BaseModel` to validate the table of.
         :raises bloop.exceptions.TableMismatch: When the table does not meet the constraints of the model.
         """
-        status, actual = None, {}
-        calls = 0
-        while status is not ready:
-            calls += 1
-            try:
-                actual = self.dynamodb_client.describe_table(TableName=table_name)["Table"]
-            except botocore.exceptions.ClientError as error:
-                raise BloopException("Unexpected error while describing table.") from error
-            status = simple_table_status(actual)
-        logger.debug("validate_table: table \"{}\" was in ACTIVE state after {} calls".format(table_name, calls))
+        actual = self.describe_table(table_name)
+        if model.Meta.ttl:
+            ttl = self.dynamodb_client.describe_time_to_live(TableName=table_name)
+            actual["TimeToLiveDescription"] = ttl["TimeToLiveDescription"]
         expected = expected_table_description(table_name, model)
         if not compare_tables(model, actual, expected):
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
@@ -176,6 +194,8 @@ class SessionWrapper:
                     model.__name__, stream_arn
                 )
             )
+        if model.Meta.ttl:
+            model.Meta.ttl["enabled"] = actual["TimeToLiveDescription"]["TimeToLiveStatus"].lower()
         if model.Meta.read_units is None:
             read_units = model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
             logger.debug(
@@ -205,6 +225,25 @@ class SessionWrapper:
                     "{}.{} does not specify write_units, set to {} from DescribeTable response".format(
                         model.__name__, index.name, write_units)
                 )
+
+    def enable_ttl(self, table_name, model):
+        """Calls UpdateTimeToLive on the table according to model.Meta["ttl"]
+
+        :param table_name: The name of the table to enable the TTL setting on
+        :param model: The model to get TTL settings from
+        """
+        ttl_name = model.Meta.ttl["column"].dynamo_name
+        request = {
+            "TableName": table_name,
+            "TimeToLiveSpecification": {
+                "AttributeName": ttl_name,
+                "Enabled": True
+            }
+        }
+        try:
+            self.dynamodb_client.update_time_to_live(**request)
+        except botocore.exceptions.ClientError as error:
+            raise BloopException("Unexpected error while setting TTL.") from error
 
     def describe_stream(self, stream_arn, first_shard=None):
         """Wraps :func:`boto3.DynamoDBStreams.Client.describe_stream`, handling continuation tokens.
@@ -285,7 +324,7 @@ class SessionWrapper:
 
 def validate_search_mode(mode):
     if mode not in {"query", "scan"}:
-        raise InvalidSearchMode("{!r} is not a valid search mode.".format(mode))
+        raise InvalidSearch("{!r} is not a valid search mode.".format(mode))
 
 
 def validate_stream_iterator_type(iterator_type):
@@ -350,10 +389,12 @@ def compare_tables(model, actual, expected):
     # value in the model post-validation)
     actual = sanitize_table_description(actual)
 
-    # 1. If the table doesn't specify an expected stream type,
-    #    don't inspect the StreamSpecification at all.
+    # 1. If the table doesn't specify an expected stream type or ttl,
+    #    don't inspect the StreamSpecification or TimeToLiveDescription at all.
     if not model.Meta.stream:
         actual.pop("StreamSpecification", None)
+    if not model.Meta.ttl:
+        actual.pop("TimeToLiveDescription", None)
     if model.Meta.read_units is None:
         actual["ProvisionedThroughput"].pop("ReadCapacityUnits")
         expected["ProvisionedThroughput"].pop("ReadCapacityUnits")
@@ -556,10 +597,13 @@ def create_table_request(table_name, model):
 
 
 def expected_table_description(table_name, model):
-    # Right now, we expect the exact same thing as create_table_request
-    # This doesn't include statuses (table, indexes) since that's
-    # pulled out by the polling mechanism
     table = create_table_request(table_name, model)
+    if model.Meta.ttl:
+        table["TimeToLiveDescription"] = {
+            # For now we ignore TimeToLiveStatus because enabling can take up to an hour;
+            # we don't really care if it's on, so long as it's specified.
+            "AttributeName": model.Meta.ttl["column"].dynamo_name
+        }
     return table
 
 
@@ -616,14 +660,20 @@ def sanitize_table_description(description):
                 description.get("ProvisionedThroughput", {"WriteCapacityUnits": None})["WriteCapacityUnits"]
         },
         "StreamSpecification": description.get("StreamSpecification", None),
-        "TableName": description.get("TableName", None)
+        "TableName": description.get("TableName", None),
+        "TimeToLiveDescription": {
+            "AttributeName": description.get("TimeToLiveDescription", {"AttributeName": None})["AttributeName"],
+        },
     }
 
     indexes = table["GlobalSecondaryIndexes"] + table["LocalSecondaryIndexes"]
     for index in indexes:
         if not index["Projection"]["NonKeyAttributes"]:
             index["Projection"].pop("NonKeyAttributes")
-    for possibly_empty in ["GlobalSecondaryIndexes", "LocalSecondaryIndexes", "StreamSpecification"]:
+    if not table["TimeToLiveDescription"]["AttributeName"]:
+        table.pop("TimeToLiveDescription")
+    allowed_empty = ["GlobalSecondaryIndexes", "LocalSecondaryIndexes", "StreamSpecification"]
+    for possibly_empty in allowed_empty:
         if not table[possibly_empty]:
             table.pop(possibly_empty)
 

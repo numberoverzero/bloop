@@ -17,10 +17,7 @@ from bloop.conditions import (
 )
 from bloop.exceptions import (
     ConstraintViolation,
-    InvalidFilterCondition,
-    InvalidKeyCondition,
-    InvalidProjection,
-    InvalidSearchMode,
+    InvalidSearch,
 )
 from bloop.models import (
     BaseModel,
@@ -314,7 +311,7 @@ def test_single_key_failure(model, index, key_lambda):
     hash_key_column = (index or model.Meta).hash_key
     key = key_lambda(column=hash_key_column)
 
-    with pytest.raises(InvalidKeyCondition):
+    with pytest.raises(InvalidSearch):
         validate_key_condition(model, index, key)
 
 
@@ -324,7 +321,7 @@ def test_and_not_two(model, index, count):
     """AND on hash+range fails if there aren't exactly 2 key conditions"""
     hash_key_column = (index or model.Meta).hash_key
     key = AndCondition(*[hash_key_column == "value"] * count)
-    with pytest.raises(InvalidKeyCondition):
+    with pytest.raises(InvalidSearch):
         validate_key_condition(model, index, key)
 
 
@@ -335,7 +332,7 @@ def test_and_both_same_key(model, index, key_name):
     key_column = getattr(index or model.Meta, key_name)
     condition = key_column == "value"
     key = AndCondition(condition, condition)
-    with pytest.raises(InvalidKeyCondition):
+    with pytest.raises(InvalidSearch):
         validate_key_condition(model, index, key)
 
 
@@ -356,9 +353,9 @@ def test_and_bad_hash_key(model, index, range_condition_lambda):
     hash_condition = (index or model.Meta).hash_key.between("bad", "condition")
     range_condition = range_condition_lambda(column=(index or model.Meta).range_key)
 
-    with pytest.raises(InvalidKeyCondition):
+    with pytest.raises(InvalidSearch):
         validate_key_condition(model, index, AndCondition(hash_condition, range_condition))
-    with pytest.raises(InvalidKeyCondition):
+    with pytest.raises(InvalidSearch):
         validate_key_condition(model, index, AndCondition(range_condition, hash_condition))
 
 
@@ -369,18 +366,18 @@ def test_and_bad_range_key(model, index, range_condition_lambda):
     hash_condition = (index or model.Meta).hash_key == "value"
     range_condition = range_condition_lambda(column=(index or model.Meta).range_key)
 
-    with pytest.raises(InvalidKeyCondition):
+    with pytest.raises(InvalidSearch):
         validate_key_condition(model, index, AndCondition(hash_condition, range_condition))
-    with pytest.raises(InvalidKeyCondition):
+    with pytest.raises(InvalidSearch):
         validate_key_condition(model, index, AndCondition(range_condition, hash_condition))
 
 
 @pytest.mark.parametrize("model, index", all_permutations)
 def test_search_projection_is_required(model, index):
     """Test a missing projection, and an empty list of column names"""
-    with pytest.raises(InvalidProjection):
+    with pytest.raises(InvalidSearch):
         validate_search_projection(model, index, projection=None)
-    with pytest.raises(InvalidProjection):
+    with pytest.raises(InvalidSearch):
         validate_search_projection(model, index, projection=list())
 
 
@@ -398,9 +395,9 @@ def test_search_projection_all(model, index):
 
 @pytest.mark.parametrize("model, index", all_permutations)
 def test_search_projection_unknown_column(model, index):
-    with pytest.raises(InvalidProjection):
+    with pytest.raises(InvalidSearch):
         validate_search_projection(model, index, projection=["model_hash", "unknown"])
-    with pytest.raises(InvalidProjection):
+    with pytest.raises(InvalidSearch):
         validate_search_projection(model, index, projection=["model_hash", None])
 
 
@@ -435,7 +432,7 @@ def test_search_projection_includes_non_projected_column(model, index):
         assert projected == [model.model_hash, model.not_projected]
 
     else:
-        with pytest.raises(InvalidProjection):
+        with pytest.raises(InvalidSearch):
             validate_search_projection(model, index, projection=projection)
 
 
@@ -445,7 +442,7 @@ def test_search_projection_unknown_string(model, index):
     Users can be explicit with list("string") if their column names are all single-characters
     """
 
-    with pytest.raises(InvalidProjection):
+    with pytest.raises(InvalidSearch):
         validate_search_projection(model, index, projection="keys")
 
 
@@ -456,13 +453,13 @@ def test_validate_no_filter():
 
 def test_validate_filter_not_available():
     """The condition uses a column that's not available"""
-    with pytest.raises(InvalidFilterCondition):
+    with pytest.raises(InvalidSearch):
         validate_filter_condition(ComplexModel.date == "now", set(), set())
 
 
 def test_validate_filter_blacklisted():
     """The condition uses a column that's on the blacklist"""
-    with pytest.raises(InvalidFilterCondition):
+    with pytest.raises(InvalidSearch):
         validate_filter_condition(ComplexModel.date == "now", ComplexModel.Meta.columns, {ComplexModel.date})
 
 
@@ -493,7 +490,7 @@ def test_prepare_iterator_cls(valid_search, engine, mode, cls):
 
 def test_prepare_unknown_mode(valid_search):
     valid_search.mode = "foo"
-    with pytest.raises(InvalidSearchMode):
+    with pytest.raises(InvalidSearch):
         valid_search.prepare()
 
 
@@ -515,7 +512,7 @@ def test_prepare_key_for_scan(valid_search):
 
 def test_prepare_key_bad_condition(valid_search):
     valid_search.key = ComplexModel.email <= "foobar"
-    with pytest.raises(InvalidKeyCondition):
+    with pytest.raises(InvalidSearch):
         valid_search.prepare()
 
 
@@ -561,7 +558,7 @@ def test_prepare_invalid_filter(valid_search):
     condition = ComplexModel.name > "hello"
     valid_search.filter = condition
 
-    with pytest.raises(InvalidFilterCondition):
+    with pytest.raises(InvalidSearch):
         valid_search.prepare()
 
 

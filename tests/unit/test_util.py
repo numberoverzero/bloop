@@ -3,6 +3,8 @@ import gc
 
 import pytest
 
+from bloop.models import BaseModel, Column
+from bloop.types import Integer
 from bloop.util import (
     Sentinel,
     WeakDefaultDictionary,
@@ -109,27 +111,29 @@ def test_sentinel_repr():
 
 def test_weakref_default_dict():
     """Provides defaultdict behavior for a WeakKeyDictionary"""
-    class Object:
-        pass
+    class MyModel(BaseModel):
+        id = Column(Integer, hash_key=True)
+        data = Column(Integer)
 
-    def counter():
-        current = 0
-        while True:
-            yield current
-            current += 1
+    def new(i):
+        obj = MyModel(id=i, data=2 * i)
+        return obj
 
-    weak_dict = WeakDefaultDictionary(counter().__next__)
-    objs = [Object() for _ in range(3)]
+    weak_dict = WeakDefaultDictionary(lambda: {"foo": "bar"})
 
-    for i, obj in enumerate(objs):
+    n_objs = 10
+    objs = [new(i) for i in range(n_objs)]
+
+    for obj in objs:
         # default_factory is called
-        assert weak_dict[obj] == i
+        assert weak_dict[obj] == {"foo": "bar"}
+    # don't keep a reference to the last obj, throws off the count below
+    del obj
 
-    # Interesting: deleting objs[-1] won't work here because the for loop above
-    # has a ref to that object stored in the `obj` variable, which gets leaked
-    # :(
-
-    del objs[0]
-    gc.collect()
-    # Properly cleaning up data when gc'd
-    assert len(weak_dict) == 2
+    calls = 0
+    while weak_dict:
+        del objs[0]
+        gc.collect()
+        calls += 1
+        assert len(weak_dict) == len(objs)
+    assert calls == n_objs

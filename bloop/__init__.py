@@ -32,6 +32,7 @@ from .types import (
     Number,
     Set,
     String,
+    Timestamp,
 )
 
 
@@ -49,7 +50,7 @@ __all__ = [
     "object_deleted", "object_loaded", "object_modified", "object_saved",
 
     # Types
-    "UUID", "Binary", "Boolean", "DateTime", "Integer", "List", "Map", "Number", "Set", "String",
+    "UUID", "Binary", "Boolean", "DateTime", "Integer", "List", "Map", "Number", "Set", "String", "Timestamp",
 
     # Misc
     "Condition", "QueryIterator", "ScanIterator", "Stream"

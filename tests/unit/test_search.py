@@ -825,7 +825,7 @@ def test_model_iterator_unpacks(simple_iter, session, cls):
     assert obj.name == "numberoverzero"
     assert obj.joined is None
     for attr in ["id", "age", "email"]:
-        assert not hasattr(obj, attr)
+        assert getattr(obj, attr) is None
 
 
 # END ITERATOR TESTS =============================================================================== END ITERATOR TESTS

@@ -13,7 +13,7 @@ def test_query_with_projection(engine):
         projection={User.email, User.username})
 
     result = query.one()
-    assert not hasattr(result, "profile")
+    assert getattr(result, "profile") is None
 
 
 def test_scan_count(engine):

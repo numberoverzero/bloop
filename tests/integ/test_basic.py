@@ -107,6 +107,43 @@ def test_model_default_func(engine):
     assert same_obj.other == obj.other
 
 
+def test_model_default_projection(engine):
+    def token_hex(prefix=None):
+        if prefix:
+            return prefix + uuid.uuid4().hex
+        return uuid.uuid4().hex
+
+    class MyModel(BaseModel):
+        id = Column(Integer, hash_key=True)
+        email = Column(String)
+
+        password = Column(String, default=token_hex)
+
+        by_email = GlobalSecondaryIndex(
+            projection="keys",
+            hash_key="email"
+        )
+
+    engine.bind(MyModel)
+
+    expected_password = token_hex("RC_")
+    instance = MyModel(
+        id=3, email="u@d.com",
+        password=expected_password
+    )
+    engine.save(instance)
+
+    q = engine.query(MyModel.by_email, key=MyModel.email == "u@d.com")
+    same_instance = q.first()
+
+    assert same_instance.password is None
+
+    q = engine.query(MyModel, key=MyModel.id == 3)
+    same_instance = q.first()
+
+    assert same_instance.password == expected_password
+
+
 def test_projection_overlap(engine):
     class ProjectionOverlap(BaseModel):
         hash = Column(Integer, hash_key=True)
@@ -130,20 +167,20 @@ def test_stream_creation(engine):
 
 
 def test_stream_read(engine):
-    class MyModel(BaseModel):
+    class MyStreamReadModel(BaseModel):
         class Meta:
             stream = {
                 "include": ["new", "old"]
             }
         id = Column(Integer, hash_key=True)
         data = Column(String)
-    engine.bind(MyModel)
+    engine.bind(MyStreamReadModel)
 
-    stream = engine.stream(MyModel, "trim_horizon")
+    stream = engine.stream(MyStreamReadModel, "trim_horizon")
     assert next(stream) is None
 
-    obj = MyModel(id=3, data="hello, world")
-    another = MyModel(id=5, data="foobar")
+    obj = MyStreamReadModel(id=3, data="hello, world")
+    another = MyStreamReadModel(id=5, data="foobar")
     # Two calls to ensure ordering
     engine.save(obj)
     engine.save(another)

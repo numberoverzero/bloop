@@ -523,10 +523,16 @@ def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, 
         raise ValueError("Only specify model or obj.")
     if model:
         obj = model.Meta.init()
+    else:
+        model = obj.Meta.model
 
-    for column in expected:
-        value = attrs.get(column.dynamo_name, None)
-        value = engine._load(column.typedef, value, context=context, **kwargs)
+    for column in model.Meta.columns:
+        if column in expected:
+            value = attrs.get(column.dynamo_name, None)
+            value = engine._load(column.typedef, value, context=context, **kwargs)
+        else:
+            # ensure that we don't set defaults when it's a projection query
+            value = None
         setattr(obj, column.name, value)
     return obj
 

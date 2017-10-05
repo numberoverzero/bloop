@@ -1,6 +1,5 @@
 import collections
 import collections.abc
-import functools
 import inspect
 import logging
 from copy import copy as copyfn
@@ -42,9 +41,6 @@ class IMeta:
 
     init: Callable[[], "BaseModel"]
     projection: Dict
-
-    bind_column: Callable[..., "Column"]
-    bind_index: Callable[..., "Index"]
 
 
 class BaseModel:
@@ -139,22 +135,22 @@ class BaseModel:
         # 1.0 Bind derived columns so they can be referenced by derived indexes
         for attr in derived_attrs:
             if isinstance(attr, Column):
-                meta.bind_column(attr.name, attr, copy=True)
+                bind_column(cls, attr.name, attr, copy=True)
 
         # 1.1 Bind derived indexes
         for attr in derived_attrs:
             if isinstance(attr, Index):
-                meta.bind_index(attr.name, attr, copy=True)
+                bind_index(cls, attr.name, attr, copy=True)
 
         # 1.2 Bind local columns, allowing them to overwrite existing columns
         for name, attr in local_attrs.items():
             if isinstance(attr, Column):
-                meta.bind_column(name, attr, force=True)
+                bind_column(cls, name, attr, force=True)
 
         # 1.3 Bind local indexes, allowing them to overwrite existing indexes
         for name, attr in local_attrs.items():
             if isinstance(attr, Index):
-                meta.bind_index(name, attr, force=True)
+                bind_index(cls, name, attr, force=True)
 
         # 2.0 Ensure concrete models are valid
         # Currently, this just checks that a hash key is defined
@@ -686,13 +682,13 @@ def initialize_meta(cls: type):
         "strict": True
     })
 
-    setdefault(meta, "bind_column", functools.partial(bind_column, meta))
-    setdefault(meta, "bind_index", functools.partial(bind_index, meta))
-
     return meta
 
 
-def bind_column(meta, name, column, force=False, recursive=False, copy=False) -> Column:
+def bind_column(model, name, column, force=False, recursive=False, copy=False) -> Column:
+    if not subclassof(model, BaseModel):
+        raise InvalidModel(f"{model} is not a subclass of BaseModel")
+    meta = model.Meta
     if copy:
         column = copyfn(column)
     # TODO elif column.model is not None: logger.warning(f"Trying to rebind column bound to {column.model}")
@@ -759,14 +755,17 @@ def bind_column(meta, name, column, force=False, recursive=False, copy=False) ->
     if recursive:
         for subclass in util.walk_subclasses(meta.model):
             try:
-                subclass.Meta.bind_column(name, column, force=False, recursive=False, copy=True)
+                bind_column(subclass, name, column, force=False, recursive=False, copy=True)
             except InvalidModel:
                 pass
 
     return column
 
 
-def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> Index:
+def bind_index(model, name, index, force=False, recursive=True, copy=False) -> Index:
+    if not subclassof(model, BaseModel):
+        raise InvalidModel(f"{model} is not a subclass of BaseModel")
+    meta = model.Meta
     if copy:
         index = copyfn(index)
     # TODO elif index.model is not None: logger.warning(f"Trying to rebind index bound to {index.model}")
@@ -820,7 +819,7 @@ def bind_index(meta, name, index, force=False, recursive=True, copy=False) -> In
     if recursive:
         for subclass in util.walk_subclasses(meta.model):
             try:
-                subclass.Meta.bind_index(name, index, force=False, recursive=False, copy=True)
+                bind_index(subclass, name, index, force=False, recursive=False, copy=True)
             except InvalidModel:
                 pass
 

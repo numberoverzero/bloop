@@ -13,6 +13,8 @@ from bloop.models import (
     IMeta,
     Index,
     LocalSecondaryIndex,
+    bind_column,
+    bind_index,
     model_created,
     object_modified,
     unbind,
@@ -898,10 +900,10 @@ def test_index_binds_names():
     # hash key must be a string or column
     bad_index = Index(projection="all", hash_key="this_name_is_missing")
     with pytest.raises(InvalidModel):
-        Model.Meta.bind_index("another_index", bad_index)
+        bind_index(Model, "another_index", bad_index)
     bad_index = Index(projection="all", hash_key="foo", range_key="this_name_is_missing")
     with pytest.raises(InvalidModel):
-        Model.Meta.bind_index("another_index", bad_index)
+        bind_index(Model, "another_index", bad_index)
 
 
 def test_index_projection_validation():
@@ -1050,13 +1052,28 @@ def new_abstract_model(indexes=False):
     return MyModel
 
 
+def test_bind_non_model():
+    """bind_column, bind_index take subclass of Model"""
+    column = Column(String, dynamo_name="other")
+    index = GlobalSecondaryIndex(projection="keys", hash_key="foo")
+
+    class NotAModel:
+        class Meta:
+            pass
+
+    with pytest.raises(InvalidModel):
+        bind_column(NotAModel, "c", column)
+    with pytest.raises(InvalidModel):
+        bind_index(NotAModel, "i", index)
+
+
 def test_bind_column_name_conflict_fails():
     """When a name conflicts and force=False, bind fails"""
     model = new_abstract_model()
     other = Column(String, dynamo_name="other")
 
     with pytest.raises(InvalidModel) as excinfo:
-        model.Meta.bind_column("data", other)
+        bind_column(model, "data", other)
     assert "has the same name" in str(excinfo.value)
 
 
@@ -1065,7 +1082,7 @@ def test_bind_column_name_conflict_force():
     model = new_abstract_model()
     other = Column(String, dynamo_name="other")
 
-    bound = model.Meta.bind_column("data", other, force=True)
+    bound = bind_column(model, "data", other, force=True)
     # not proxied
     assert bound is other
     assert len(model.Meta.columns) == 1
@@ -1078,7 +1095,7 @@ def test_bind_column_dynamo_name_conflict_fails():
     other = Column(String, dynamo_name="dynamo-data")
 
     with pytest.raises(InvalidModel) as excinfo:
-        model.Meta.bind_column("other", other)
+        bind_column(model, "other", other)
     assert "has the same dynamo_name" in str(excinfo.value)
 
 
@@ -1087,7 +1104,7 @@ def test_bind_column_dynamo_name_conflict_force():
     model = new_abstract_model()
     other = Column(String, dynamo_name="dynamo-data")
 
-    bound = model.Meta.bind_column("other", other, force=True)
+    bound = bind_column(model, "other", other, force=True)
     # not proxied
     assert bound is other
     assert len(model.Meta.columns) == 1
@@ -1101,23 +1118,23 @@ def test_bind_column_force_keys():
     assert not model.Meta.range_key
 
     hash_key = Column(String, hash_key=True)
-    model.Meta.bind_column("data", hash_key, force=True)
+    bind_column(model, "data", hash_key, force=True)
     assert model.Meta.hash_key is hash_key
     assert not model.Meta.range_key
     assert model.Meta.keys == {hash_key}
 
     range_key = Column(String, range_key=True)
-    model.Meta.bind_column("data", range_key, force=True)
+    bind_column(model, "data", range_key, force=True)
     assert not model.Meta.hash_key
     assert model.Meta.range_key is range_key
     assert model.Meta.keys == {range_key}
 
     # force rebind over a hash or range key
     new_hash_key = Column(Integer, hash_key=True)
-    bound_nhk = model.Meta.bind_column("data", new_hash_key, force=True, copy=True)
+    bound_nhk = bind_column(model, "data", new_hash_key, force=True, copy=True)
     assert model.Meta.hash_key is bound_nhk
     new_range_key = Column(Integer, range_key=True)
-    bound_nrk = model.Meta.bind_column("data", new_range_key, force=True, copy=True)
+    bound_nrk = bind_column(model, "data", new_range_key, force=True, copy=True)
     assert model.Meta.range_key is bound_nrk
 
 
@@ -1128,8 +1145,8 @@ def test_bind_column_extra_hash_key():
     range_key = Column(String, range_key=True)
 
     # setup "existing" hash and range keys
-    model.Meta.bind_column("my_hash", hash_key, force=True)
-    model.Meta.bind_column("my_range", range_key, force=True)
+    bind_column(model, "my_hash", hash_key, force=True)
+    bind_column(model, "my_range", range_key, force=True)
     assert hash_key is model.my_hash is model.Meta.hash_key
     assert range_key is model.my_range is model.Meta.range_key
     assert model.Meta.keys == {hash_key, range_key}
@@ -1137,13 +1154,13 @@ def test_bind_column_extra_hash_key():
     # binding another hash_key fails, even without name/dynamo_name collisions
     extra = Column(String, hash_key=True, dynamo_name="extra-hash")
     with pytest.raises(InvalidModel) as excinfo:
-        model.Meta.bind_column("extra", extra)
+        bind_column(model, "extra", extra)
     assert "has a different hash_key" in str(excinfo.value)
 
     # binding another range_key fails
     extra = Column(String, range_key=True, dynamo_name="extra-range")
     with pytest.raises(InvalidModel) as excinfo:
-        model.Meta.bind_column("extra", extra)
+        bind_column(model, "extra", extra)
     assert "has a different range_key" in str(excinfo.value)
 
 
@@ -1153,14 +1170,14 @@ def test_bind_column_recalculates_index_projection():
     hash_key = Column(String, hash_key=True)
     index = GlobalSecondaryIndex(projection="all", hash_key="data")
 
-    model.Meta.bind_column("id", hash_key)
-    model.Meta.bind_index("by_data", index)
+    bind_column(model, "id", hash_key)
+    bind_index(model, "by_data", index)
 
     assert index.projection["included"] == {model.Meta.hash_key, model.data}
 
     # bind a new column, which will now be part of the projection
     new_column = Column(String)
-    model.Meta.bind_column("something", new_column)
+    bind_column(model, "something", new_column)
     assert index.projection["included"] == {model.Meta.hash_key, model.data, model.something}
 
 
@@ -1173,7 +1190,7 @@ def test_bind_column_breaks_index_key():
     # Note that since this puts the model in an inconsistent state, even force=True
     # won't prevent the exception
     with pytest.raises(InvalidModel):
-        model.Meta.bind_column("different_name", new_column, force=True)
+        bind_column(model, "different_name", new_column, force=True)
 
 
 def test_bind_column_parent_class():
@@ -1203,14 +1220,14 @@ def test_bind_column_parent_class():
     dynamo_name_conflict = Column(Integer, dynamo_name="DYNAMO-NAME-CONFLICT")
 
     # 0. Non-recursive binds don't modify children
-    parent_bind = Parent.Meta.bind_column("parent_only", no_conflict)
+    parent_bind = bind_column(Parent, "parent_only", no_conflict)
     assert Parent.Meta.columns == {parent_bind}
     assert len(Child.Meta.columns) == 2
     assert len(AnotherChild.Meta.columns) == 2
     assert len(Grandchild.Meta.columns) == 2
 
     # 1. Recursive binds with no conflicts are applied to all descendants
-    recursive_bind = Parent.Meta.bind_column("all_children", no_conflict_recursive, recursive=True)
+    recursive_bind = bind_column(Parent, "all_children", no_conflict_recursive, recursive=True)
     assert Parent.Meta.columns == {parent_bind, recursive_bind}
     assert len(Child.Meta.columns) == 3
     assert len(AnotherChild.Meta.columns) == 3
@@ -1218,7 +1235,7 @@ def test_bind_column_parent_class():
 
     # 2. Recursive bind with name conflict isn't added to
     #    Child or Grandchild, but is added to AnotherChild
-    first_conflict = Parent.Meta.bind_column("NAME_CONFLICT", name_conflict, recursive=True)
+    first_conflict = bind_column(Parent, "NAME_CONFLICT", name_conflict, recursive=True)
     assert Parent.Meta.columns == {parent_bind, recursive_bind, first_conflict}
     assert len(Child.Meta.columns) == 3
     assert len(AnotherChild.Meta.columns) == 4
@@ -1226,7 +1243,7 @@ def test_bind_column_parent_class():
 
     # 3. Recursive bind with dynamo_name conflict isn't added to AnotherChild,
     #    but is added to Child and Grandchild
-    second_conflict = Parent.Meta.bind_column("NAME_OK", dynamo_name_conflict, recursive=True)
+    second_conflict = bind_column(Parent, "NAME_OK", dynamo_name_conflict, recursive=True)
     assert Parent.Meta.columns == {parent_bind, recursive_bind, first_conflict, second_conflict}
     assert len(Child.Meta.columns) == 4
     assert len(AnotherChild.Meta.columns) == 4
@@ -1245,11 +1262,11 @@ def test_bind_column_copy():
 
     column = Column(String, dynamo_name="dynamo-name")
 
-    bound = model.Meta.bind_column("to_model", column, copy=True)
+    bound = bind_column(model, "to_model", column, copy=True)
     assert bound is not column
     assert model.to_model is bound
 
-    other_bound = other_model.Meta.bind_column("to_other_model", column, copy=True)
+    other_bound = bind_column(other_model, "to_other_model", column, copy=True)
     assert other_bound is not column
     assert other_model.to_other_model is other_bound
 
@@ -1276,7 +1293,7 @@ def test_bind_column_no_copy():
     model = new_abstract_model()
     column = Column(String, dynamo_name="dynamo-name")
 
-    bound_column = model.Meta.bind_column("another-name", column, copy=False)
+    bound_column = bind_column(model, "another-name", column, copy=False)
     assert column is bound_column
 
 
@@ -1286,7 +1303,7 @@ def test_bind_index_name_conflict_fails():
     other = GlobalSecondaryIndex(projection="all", hash_key="data")
 
     with pytest.raises(InvalidModel) as excinfo:
-        model.Meta.bind_index("by_data", other)
+        bind_index(model, "by_data", other)
     assert "has the same name" in str(excinfo.value)
 
 
@@ -1296,7 +1313,7 @@ def test_bind_index_name_conflict_force():
     other = LocalSecondaryIndex(projection="all", range_key="data")
     another = GlobalSecondaryIndex(projection="all", hash_key="data")
 
-    bound = model.Meta.bind_index("by_data", other, force=True)
+    bound = bind_index(model, "by_data", other, force=True)
     # not proxied
     assert bound is other
     assert len(model.Meta.indexes) == 2
@@ -1304,7 +1321,7 @@ def test_bind_index_name_conflict_force():
     assert bound in model.Meta.indexes
     assert bound in model.Meta.lsis
 
-    new_bound = model.Meta.bind_index("by_data", another, force=True)
+    new_bound = bind_index(model, "by_data", another, force=True)
     assert new_bound is another
     assert len(model.Meta.indexes) == 2
     assert model.by_data is another
@@ -1321,7 +1338,7 @@ def test_bind_index_dynamo_name_conflict_fails():
     other = GlobalSecondaryIndex(projection="all", hash_key="data", dynamo_name="dynamo-by-data")
 
     with pytest.raises(InvalidModel) as excinfo:
-        model.Meta.bind_index("other", other)
+        bind_index(model, "other", other)
     assert "has the same dynamo_name" in str(excinfo.value)
 
 
@@ -1330,7 +1347,7 @@ def test_bind_index_dynamo_name_conflict_force():
     model = new_abstract_model(indexes=True)
     other = GlobalSecondaryIndex(projection="all", hash_key="data", dynamo_name="dynamo-by-data")
 
-    bound = model.Meta.bind_index("other", other, force=True)
+    bound = bind_index(model, "other", other, force=True)
     # not proxied
     assert bound is other
     assert len(model.Meta.indexes) == 2
@@ -1344,18 +1361,18 @@ def test_bind_index_recalculates_index_projection():
 
     # bind the hash key with force since the model already has a column named "data"
     hash_key = Column(String, hash_key=True)
-    bound_hash_key = model.Meta.bind_column("data", hash_key, copy=True, force=True)
+    bound_hash_key = bind_column(model, "data", hash_key, copy=True, force=True)
 
     # index points to an outdated column, but its name will be
     # used to resolve the current hash_key
     index = GlobalSecondaryIndex(projection="all", hash_key=old_data_column)
-    bound_index = model.Meta.bind_index("by_data", index, copy=True)
+    bound_index = bind_index(model, "by_data", index, copy=True)
 
     assert bound_index.projection["included"] == {bound_hash_key}
 
     # bind a new column, which will now be part of the projection
     new_column = Column(String)
-    model.Meta.bind_column("something", new_column)
+    bind_column(model, "something", new_column)
     assert bound_index.projection["included"] == {bound_hash_key, model.something}
 
     # because we used a copy, the original index should be unchanged
@@ -1400,14 +1417,14 @@ def test_bind_index_parent_class():
         projection="all", range_key="id", dynamo_name="DYNAMO-NAME-CONFLICT")
 
     # 0. Non-recursive binds don't modify children
-    parent_bind = Parent.Meta.bind_index("parent_only", no_conflict)
+    parent_bind = bind_index(Parent, "parent_only", no_conflict)
     assert Parent.Meta.indexes == {parent_bind}
     assert len(Child.Meta.indexes) == 2
     assert len(AnotherChild.Meta.indexes) == 2
     assert len(Grandchild.Meta.indexes) == 2
 
     # 1. Recursive binds with no conflicts are applied to all descendants
-    recursive_bind = Parent.Meta.bind_index("all_children", no_conflict_recursive, recursive=True)
+    recursive_bind = bind_index(Parent, "all_children", no_conflict_recursive, recursive=True)
     assert Parent.Meta.indexes == {parent_bind, recursive_bind}
     assert len(Child.Meta.indexes) == 3
     assert len(AnotherChild.Meta.indexes) == 3
@@ -1415,7 +1432,7 @@ def test_bind_index_parent_class():
 
     # 2. Recursive bind with name conflict isn't added to
     #    Child or Grandchild, but is added to AnotherChild
-    first_conflict = Parent.Meta.bind_index("NAME_CONFLICT", name_conflict, recursive=True)
+    first_conflict = bind_index(Parent, "NAME_CONFLICT", name_conflict, recursive=True)
     assert Parent.Meta.indexes == {parent_bind, recursive_bind, first_conflict}
     assert len(Child.Meta.indexes) == 3
     assert len(AnotherChild.Meta.indexes) == 4
@@ -1423,7 +1440,7 @@ def test_bind_index_parent_class():
 
     # 3. Recursive bind with dynamo_name conflict isn't added to AnotherChild,
     #    but is added to Child and Grandchild
-    second_conflict = Parent.Meta.bind_index("NAME_OK", dynamo_name_conflict, recursive=True)
+    second_conflict = bind_index(Parent, "NAME_OK", dynamo_name_conflict, recursive=True)
     assert Parent.Meta.indexes == {parent_bind, recursive_bind, first_conflict, second_conflict}
     assert len(Child.Meta.indexes) == 4
     assert len(AnotherChild.Meta.indexes) == 4
@@ -1441,12 +1458,12 @@ def test_bind_index_copy():
     assert model is not other_model  # guard against refactor to return the same model
 
     index = GlobalSecondaryIndex(projection="all", hash_key="data", dynamo_name="dynamo-name")
-    bound = model.Meta.bind_index("by_data_copy", index, copy=True)
+    bound = bind_index(model, "by_data_copy", index, copy=True)
 
     assert bound is not index
     assert model.by_data_copy is bound
 
-    other_bound = other_model.Meta.bind_index("by_data_other", index, copy=True)
+    other_bound = bind_index(other_model, "by_data_other", index, copy=True)
     assert other_bound is not index
     assert other_model.by_data_other is other_bound
 

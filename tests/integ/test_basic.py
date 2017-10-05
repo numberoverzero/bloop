@@ -175,3 +175,38 @@ def test_unknown_throughput(dynamodb, engine):
     engine.bind(ImplicitValues)
     assert ImplicitValues.Meta.read_units == 10
     assert ImplicitValues.by_other.read_units == 11
+
+
+def test_partial_load_save(engine):
+    engine.bind(User)
+
+    obj = User(
+        email="my-email@",
+        username="my-username",
+        profile="original-profile",
+        data="original-data",
+        extra="my-extra"
+    )
+    engine.save(obj)
+
+    partial = engine.query(
+        User.by_username,
+        key=User.username == "my-username").one()
+    assert getattr(partial, "profile", None) is None
+
+    partial.data = "new-data"
+    partial.extra = None
+    engine.save(partial)
+
+    same = User(
+        email="my-email@",
+        username="my-username"
+    )
+    engine.load(same)
+
+    # never modified
+    assert same.profile == "original-profile"
+    # modified from partial
+    assert same.data == "new-data"
+    # deleted from partial
+    assert getattr(same, "extra", None) is None

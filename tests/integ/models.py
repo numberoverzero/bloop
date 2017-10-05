@@ -105,8 +105,11 @@ class User(BaseModel):
         write_units = 3
     email = Column(String, hash_key=True)
     username = Column(String, range_key=True)
+    by_username = GlobalSecondaryIndex(projection="keys", hash_key="username")
 
     profile = Column(String)
+    data = Column(String)
+    extra = Column(String)
 
 
 def _letters(n):

@@ -390,8 +390,9 @@ class Column(ComparisonMixin):
         A model can have at most one Column with
         ``range_key=True``.  Default is False.
     :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    :param metadata: Extra arguments to be stored as metadata.
     """
-    def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, **kwargs):
+    def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, **metadata):
         self.hash_key: bool = hash_key
         self.range_key: bool = range_key
         self._name: str = None
@@ -402,7 +403,8 @@ class Column(ComparisonMixin):
             self.typedef = typedef
         else:
             raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
-        super().__init__(**kwargs)
+        super().__init__(**metadata)
+        self.metadata = metadata
 
     def __copy__(self):
         cls = self.__class__

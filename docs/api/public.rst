@@ -81,6 +81,10 @@ See :ref:`defining models <define-models>` in the User Guide.
 
         True if this is the model's range key.
 
+    .. attribute:: metadata
+
+        All extra arguments are stored as metadata.
+
 ----------------------
  GlobalSecondaryIndex
 ----------------------

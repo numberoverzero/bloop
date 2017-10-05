@@ -418,15 +418,34 @@ class Column(ComparisonMixin):
     __hash__ = object.__hash__
 
     def __set__(self, obj, value):
-        self.set(obj, value)
+        if self._name is None:
+            raise AttributeError("Can't set field without binding to model")
+        obj.__dict__[self._name] = value
+        # Notify the tracking engine that this value was intentionally mutated
+        object_modified.send(self, obj=obj, column=self, value=value)
 
     def __get__(self, obj, type=None):
         if obj is None:
             return self
-        return self.get(obj)
+        if self._name is None:
+            raise AttributeError("Can't get field without binding to model")
+        try:
+            return obj.__dict__[self._name]
+        except KeyError:
+            raise AttributeError(f"'{obj.__class__}' has no attribute '{self._name}'")
 
     def __delete__(self, obj):
-        self.delete(obj)
+        try:
+            if self._name is None:
+                raise AttributeError("Can't delete field without binding to model")
+            try:
+                del obj.__dict__[self._name]
+            except KeyError:
+                raise AttributeError(f"'{obj.__class__}' has no attribute '{self._name}'")
+        finally:
+            # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
+            # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
+            object_modified.send(self, obj=obj, column=self, value=None)
 
     def __repr__(self):
         if self.hash_key:
@@ -451,34 +470,6 @@ class Column(ComparisonMixin):
         if self._dynamo_name is None:
             return self.name
         return self._dynamo_name
-
-    def set(self, obj, value):
-        if self._name is None:
-            raise AttributeError("Can't set field without binding to model")
-        obj.__dict__[self._name] = value
-        # Notify the tracking engine that this value was intentionally mutated
-        object_modified.send(self, obj=obj, column=self, value=value)
-
-    def get(self, obj):
-        if self._name is None:
-            raise AttributeError("Can't get field without binding to model")
-        try:
-            return obj.__dict__[self._name]
-        except KeyError:
-            raise AttributeError(f"'{obj.__class__}' has no attribute '{self._name}'")
-
-    def delete(self, obj):
-        try:
-            if self._name is None:
-                raise AttributeError("Can't delete field without binding to model")
-            try:
-                del obj.__dict__[self._name]
-            except KeyError:
-                raise AttributeError(f"'{obj.__class__}' has no attribute '{self._name}'")
-        finally:
-            # Unlike set, we always want to mark on delete.  If we didn't, and the column wasn't loaded
-            # (say from a query) then the intention "ensure this doesn't have a value" wouldn't be captured.
-            object_modified.send(self, obj=obj, column=self, value=None)
 
 
 def subclassof(obj, classinfo):

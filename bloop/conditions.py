@@ -803,7 +803,7 @@ class InCondition(BaseCondition):
 class ComparisonMixin:
     # noinspection PyArgumentList
     def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
+        super().__init__()
 
     def __repr__(self):
         return "<ComparisonMixin>"

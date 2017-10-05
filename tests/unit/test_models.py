@@ -747,6 +747,15 @@ def test_column_dynamo_name():
     assert column.dynamo_name == "foo"
 
 
+def test_column_metadata():
+    """ Column metadata is available """
+    desc = "The id of the something or other"
+    column = Column(Integer, description=desc)
+
+    assert 'description' in column.metadata
+    assert column.metadata['description'] == desc
+
+
 def test_column_repr():
     column = Column(Integer, dynamo_name="f")
     column.model = User

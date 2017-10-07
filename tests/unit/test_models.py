@@ -7,7 +7,7 @@ import operator
 import pytest
 
 from bloop.conditions import ConditionRenderer
-from bloop.exceptions import InvalidModel, InvalidStream, ValidationError
+from bloop.exceptions import InvalidModel, InvalidStream
 from bloop.models import (
     BaseModel,
     Column,
@@ -907,80 +907,6 @@ def test_column_default_func():
     assert received["obj"] is default_obj
     assert received["column"] is ColumnDefaultFuncModel.id
     assert received["value"] == 123
-
-
-@pytest.mark.parametrize("type, value", [
-    (String, "bob"), (UUID, uuid.uuid4()),
-    (DateTime, datetime.datetime.utcnow()), (Number, 34),
-    (Integer, 123), (Timestamp, datetime.datetime.utcnow()),
-    (Binary, 'bob'.encode()), (Boolean, False),
-    (Set(String), {'bob', 'joe', 'john'}),
-    (Set(Integer), {1, 2, 3}),
-    (Set(Binary), {b'bob', b'joe', b'john'}),
-    (List(String), ['bob', 'joe', 'john']),
-    (List(Integer), [1, 2, 3]),
-    (List(Binary), [b'bob', b'joe', b'john']),
-    (Map, {"created": DateTime, "referrer": UUID, "cache": String})
-])
-def test_column_validation(type, value):
-    class ColumnValidateModel(BaseModel):
-        class Meta:
-            validate_columns = True
-        col = Column(type, hash_key=True)
-
-    obj = ColumnValidateModel(col=value)
-    assert obj.col == value
-
-    obj.col = value
-    assert obj.col == value
-
-
-@pytest.mark.parametrize("type, value", [
-    (String, 12), (String, b'test'), (String, object()),
-    (UUID, 12), (UUID, b'test'), (UUID, object()),
-    (DateTime, 12), (DateTime, b'test'), (DateTime, object()),
-    (Number, "b12"), (Number, b'test'), (Number, object()),
-    (Integer, "b12"), (Integer, b'test'), (Integer, object()),
-    (Timestamp, "b12"), (Timestamp, b'test'), (Timestamp, object()),
-    (Binary, "b12"), (Binary, 3.14), (Binary, object()),
-    (Boolean, "b12"), (Boolean, 3.14), (Boolean, object()),
-    (Set(String), "b12"), (Set(Integer), 3.14), (Set(Binary), object()),
-    (List(String), "b12"), (List(Integer), 3.14), (List(Binary), object()),
-    (Map, "b12"), (Map, 3.14), (Map, object()),
-])
-def test_column_validation_bad(type, value):
-    class ColumnValidateModel(BaseModel):
-        class Meta:
-            validate_columns = True
-        col = Column(type, hash_key=True)
-
-    with pytest.raises(ValidationError):
-        ColumnValidateModel(col=value)
-
-    with pytest.raises(ValidationError):
-        obj = ColumnValidateModel()
-        obj.col = value
-
-
-def test_column_bad_default_func():
-    def get_bad_value():
-        return 'bob'
-
-    class ColumnDefaultFuncModel(BaseModel):
-        class Meta:
-            validate_columns = True
-        id = Column(Integer, hash_key=True, default=get_bad_value)
-
-    with pytest.raises(ValidationError):
-        ColumnDefaultFuncModel()
-
-    class ColumnDefaultFuncModel(BaseModel):
-        class Meta:
-            validate_columns = True
-        id = Column(Integer, hash_key=True, default='bob')
-
-    with pytest.raises(ValidationError):
-        ColumnDefaultFuncModel()
 
 
 # END COLUMN =============================================================================================== END COLUMN

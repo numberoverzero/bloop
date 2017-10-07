@@ -59,7 +59,3 @@ class InvalidCondition(BloopException, ValueError):
 
 class InvalidPosition(BloopException, ValueError):
     """This is not a valid position for a Stream."""
-
-
-class ValidationError(BloopException, ValueError):
-    """This is not a valid value for this column."""

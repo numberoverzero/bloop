@@ -25,7 +25,6 @@ class IMeta:
     write_units: Optional[int]
     stream: Optional[Dict]
     ttl: Optional[Dict]
-    validate_columns: Optional[bool]
 
     model: "BaseModel"
 
@@ -684,7 +683,6 @@ def initialize_meta(cls: type):
     setdefault(meta, "read_units", None)
     setdefault(meta, "stream", None)
     setdefault(meta, "ttl", None)
-    setdefault(meta, "validate_columns", False)
 
     setdefault(meta, "hash_key", None)
     setdefault(meta, "range_key", None)

@@ -2,7 +2,7 @@ import collections
 import collections.abc
 import inspect
 import logging
-from copy import copy as copyfn
+from copy import copy as copyfn, copy
 from typing import Callable, Dict, Optional, Set
 
 from . import util
@@ -68,7 +68,7 @@ class BaseModel:
             if value is not missing:
                 setattr(self, column.name, value)
             else:
-                if column.default:
+                if column._default is not missing:
                     setattr(self, column.name, column.default)
 
     def __init_subclass__(cls: type, **kwargs):
@@ -394,6 +394,8 @@ class Column(ComparisonMixin):
         self.range_key: bool = range_key
         self._name: str = None
         self._dynamo_name: str = dynamo_name
+        self._default = default
+
         if subclassof(typedef, Type):
             typedef = typedef()
         if instanceof(typedef, Type):
@@ -402,12 +404,6 @@ class Column(ComparisonMixin):
         else:
             raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
         super().__init__(**kwargs)
-
-        # we only apply defaults if the argument 'default' is not None (see BaseModel.__init__ above)
-        if default is not missing:
-            self._default = default
-        else:
-            self._default = None
 
     def __copy__(self):
         cls = self.__class__
@@ -468,9 +464,9 @@ class Column(ComparisonMixin):
     @property
     def default(self):
         """ Get a shallow copy of the default value """
-        if hasattr(self._default, '__call__'):
+        if callable(self._default):
             return self._default()
-        return copyfn(self._default)
+        return copy(self._default)
 
     @property
     def name(self):
@@ -522,16 +518,10 @@ def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, 
         raise ValueError("Only specify model or obj.")
     if model:
         obj = model.Meta.init()
-    else:
-        model = obj.Meta.model
 
-    for column in model.Meta.columns:
-        if column in expected:
-            value = attrs.get(column.dynamo_name, None)
-            value = engine._load(column.typedef, value, context=context, **kwargs)
-        else:
-            # ensure that we don't set defaults when it's a projection query
-            value = None
+    for column in expected:
+        value = attrs.get(column.dynamo_name, None)
+        value = engine._load(column.typedef, value, context=context, **kwargs)
         setattr(obj, column.name, value)
     return obj
 
@@ -675,7 +665,7 @@ def initialize_meta(cls: type):
 
     meta.model = cls
 
-    setdefault(meta, "init", cls)
+    setdefault(meta, "init", lambda: cls.__new__(cls))
     setdefault(meta, "abstract", False)
 
     setdefault(meta, "table_name", cls.__name__)

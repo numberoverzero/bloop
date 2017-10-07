@@ -81,10 +81,17 @@ def test_model_defaults_load(engine):
 
 
 def test_model_default_func(engine):
+    get_int_called = 0
+    get_randint_called = 0
+
     def get_int():
+        nonlocal get_int_called
+        get_int_called += 1
         return 404
 
     def random_int():
+        nonlocal get_randint_called
+        get_randint_called += 1
         return randint(1, 100)
 
     class ColumnDefaultFuncModel(BaseModel):
@@ -94,14 +101,19 @@ def test_model_default_func(engine):
     engine.bind(ColumnDefaultFuncModel)
 
     obj = ColumnDefaultFuncModel()
+    assert get_int_called == 1
+    assert get_randint_called == 1
     assert isinstance(obj.hash, uuid.UUID)
     assert obj.range == 404
 
     engine.save(obj)
 
+    # get_int shouldn't be called because we are passing that value in the constructor
     same_obj = ColumnDefaultFuncModel(hash=obj.hash, range=obj.range)
     engine.load(same_obj)
 
+    assert get_int_called == 1
+    assert get_randint_called == 2
     assert same_obj.hash == obj.hash
     assert same_obj.range == obj.range
     assert same_obj.other == obj.other
@@ -136,7 +148,7 @@ def test_model_default_projection(engine):
     q = engine.query(MyModel.by_email, key=MyModel.email == "u@d.com")
     same_instance = q.first()
 
-    assert same_instance.password is None
+    assert not hasattr(same_instance, 'password')
 
     q = engine.query(MyModel, key=MyModel.id == 3)
     same_instance = q.first()

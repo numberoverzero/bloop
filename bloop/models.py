@@ -2,7 +2,7 @@ import collections
 import collections.abc
 import inspect
 import logging
-from copy import copy as copyfn
+from copy import copy as copyfn, copy
 from typing import Callable, Dict, Optional, Set
 
 from . import util
@@ -10,7 +10,6 @@ from .conditions import ComparisonMixin
 from .exceptions import InvalidModel, InvalidStream
 from .signals import model_created, object_modified
 from .types import Type, Number, DateTime
-
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 
@@ -68,6 +67,9 @@ class BaseModel:
             value = attrs.get(column.name, missing)
             if value is not missing:
                 setattr(self, column.name, value)
+            else:
+                if column._default is not missing:
+                    setattr(self, column.name, column.default)
 
     def __init_subclass__(cls: type, **kwargs):
         ensure_hash(cls)
@@ -387,15 +389,18 @@ class Column(ComparisonMixin):
         ``range_key=True``.  Default is False.
     :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
     """
-    def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, **kwargs):
+    def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, default=missing, **kwargs):
         self.hash_key: bool = hash_key
         self.range_key: bool = range_key
         self._name: str = None
         self._dynamo_name: str = dynamo_name
+        self._default = default
+
         if subclassof(typedef, Type):
             typedef = typedef()
         if instanceof(typedef, Type):
             self.typedef = typedef
+
         else:
             raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
         super().__init__(**kwargs)
@@ -455,6 +460,13 @@ class Column(ComparisonMixin):
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
         return f"<{self.__class__.__name__}[{self.model.__name__}.{self.name}{extra}]>"
+
+    @property
+    def default(self):
+        """ Get a shallow copy of the default value """
+        if callable(self._default):
+            return self._default()
+        return copy(self._default)
 
     @property
     def name(self):
@@ -653,7 +665,7 @@ def initialize_meta(cls: type):
 
     meta.model = cls
 
-    setdefault(meta, "init", cls)
+    setdefault(meta, "init", lambda: cls.__new__(cls))
     setdefault(meta, "abstract", False)
 
     setdefault(meta, "table_name", cls.__name__)

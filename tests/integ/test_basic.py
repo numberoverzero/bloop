@@ -1,4 +1,7 @@
 """Basic scenarios, symmetric tests"""
+import uuid
+from random import randint
+
 import pytest
 
 from bloop import (
@@ -8,6 +11,7 @@ from bloop import (
     Integer,
     MissingObjects,
     String,
+    UUID
 )
 
 from .models import User
@@ -36,6 +40,122 @@ def test_crud(engine):
     assert [same_user] == excinfo.value.objects
 
 
+def test_model_defaults(engine):
+    class ColumnDefaultsModel(BaseModel):
+        hash = Column(Integer, hash_key=True, default=12)
+        range = Column(Integer, range_key=True, default=24)
+        other = Column(Integer, default=48)
+    engine.bind(ColumnDefaultsModel)
+
+    obj = ColumnDefaultsModel()
+    assert obj.hash == 12
+    assert obj.range == 24
+    assert obj.other == 48
+
+    engine.save(obj)
+
+    same_obj = ColumnDefaultsModel(hash=12, range=24)
+    engine.load(same_obj)
+
+    assert same_obj.hash == 12
+    assert same_obj.range == 24
+    assert same_obj.other == 48
+
+
+def test_model_defaults_load(engine):
+    class ColumnDefaultLoadModel(BaseModel):
+        hash = Column(Integer, hash_key=True, default=12)
+        range = Column(Integer, range_key=True, default=24)
+        other = Column(Integer, default=48)
+    engine.bind(ColumnDefaultLoadModel)
+
+    obj = ColumnDefaultLoadModel(hash=333, range=333)
+    engine.save(obj)
+
+    same_obj = ColumnDefaultLoadModel(hash=obj.hash, range=obj.range)
+    engine.load(same_obj)
+
+    assert same_obj.hash == 333
+    assert same_obj.range == 333
+    assert same_obj.other == 48
+
+
+def test_model_default_func(engine):
+    get_int_called = 0
+    get_randint_called = 0
+
+    def get_int():
+        nonlocal get_int_called
+        get_int_called += 1
+        return 404
+
+    def random_int():
+        nonlocal get_randint_called
+        get_randint_called += 1
+        return randint(1, 100)
+
+    class ColumnDefaultFuncModel(BaseModel):
+        hash = Column(UUID, hash_key=True, default=uuid.uuid4())
+        range = Column(Integer, range_key=True, default=get_int)
+        other = Column(Integer, default=random_int)
+    engine.bind(ColumnDefaultFuncModel)
+
+    obj = ColumnDefaultFuncModel()
+    assert get_int_called == 1
+    assert get_randint_called == 1
+    assert isinstance(obj.hash, uuid.UUID)
+    assert obj.range == 404
+
+    engine.save(obj)
+
+    # get_int shouldn't be called because we are passing that value in the constructor
+    same_obj = ColumnDefaultFuncModel(hash=obj.hash, range=obj.range)
+    engine.load(same_obj)
+
+    assert get_int_called == 1
+    assert get_randint_called == 2
+    assert same_obj.hash == obj.hash
+    assert same_obj.range == obj.range
+    assert same_obj.other == obj.other
+
+
+def test_model_default_projection(engine):
+    def token_hex(prefix=None):
+        if prefix:
+            return prefix + uuid.uuid4().hex
+        return uuid.uuid4().hex
+
+    class MyModel(BaseModel):
+        id = Column(Integer, hash_key=True)
+        email = Column(String)
+
+        password = Column(String, default=token_hex)
+
+        by_email = GlobalSecondaryIndex(
+            projection="keys",
+            hash_key="email"
+        )
+
+    engine.bind(MyModel)
+
+    expected_password = token_hex("RC_")
+    instance = MyModel(
+        id=3, email="u@d.com",
+        password=expected_password
+    )
+    engine.save(instance)
+
+    q = engine.query(MyModel.by_email, key=MyModel.email == "u@d.com")
+    same_instance = q.first()
+
+    assert not hasattr(same_instance, 'password')
+
+    q = engine.query(MyModel, key=MyModel.id == 3)
+    same_instance = q.first()
+
+    assert same_instance.password == expected_password
+
+
 def test_projection_overlap(engine):
     class ProjectionOverlap(BaseModel):
         hash = Column(Integer, hash_key=True)
@@ -59,20 +179,20 @@ def test_stream_creation(engine):
 
 
 def test_stream_read(engine):
-    class MyModel(BaseModel):
+    class MyStreamReadModel(BaseModel):
         class Meta:
             stream = {
                 "include": ["new", "old"]
             }
         id = Column(Integer, hash_key=True)
         data = Column(String)
-    engine.bind(MyModel)
+    engine.bind(MyStreamReadModel)
 
-    stream = engine.stream(MyModel, "trim_horizon")
+    stream = engine.stream(MyStreamReadModel, "trim_horizon")
     assert next(stream) is None
 
-    obj = MyModel(id=3, data="hello, world")
-    another = MyModel(id=5, data="foobar")
+    obj = MyStreamReadModel(id=3, data="hello, world")
+    another = MyStreamReadModel(id=5, data="foobar")
     # Two calls to ensure ordering
     engine.save(obj)
     engine.save(another)

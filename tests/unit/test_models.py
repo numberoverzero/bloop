@@ -1,7 +1,7 @@
 import datetime
 import logging
-import operator
 
+import operator
 import pytest
 
 from bloop.conditions import ConditionRenderer
@@ -20,10 +20,8 @@ from bloop.models import (
     unbind,
     unpack_from_dynamodb,
 )
-from bloop.types import UUID, Boolean, DateTime, Integer, String, Timestamp, Type
-
+from bloop.types import Boolean, DateTime, Integer, String, Timestamp, Type, UUID
 from ..helpers.models import User, VectorModel
-
 
 operations = [
     (operator.ne, "!="),
@@ -58,7 +56,7 @@ def test_default_model_init():
 
 
 def test_load_default_init(engine):
-    """The default model loader uses the model's __init__ method"""
+    """The default model loader uses the model's cls.__new__(cls) method"""
     init_called = False
 
     class Blob(BaseModel):
@@ -73,7 +71,7 @@ def test_load_default_init(engine):
         data = Column(String)
     engine.bind(Blob)
 
-    assert Blob.Meta.init is Blob
+    assert isinstance(Blob.Meta.init(), Blob)
 
     blob = {
         "id": {"S": "foo"},
@@ -81,13 +79,9 @@ def test_load_default_init(engine):
         "extra_field": {"N": "0.125"}
     }
 
-    loaded_blob = engine._load(Blob, blob)
+    engine._load(Blob, blob)
 
-    assert init_called
-
-    assert loaded_blob.id == "foo"
-    assert loaded_blob.data == "data"
-    assert not hasattr(loaded_blob, "extra_field")
+    assert init_called is False
 
 
 def test_load_dump(engine):
@@ -846,6 +840,59 @@ def test_contains_container_types(container_column, engine):
         'ExpressionAttributeNames': {'#n0': container_column.dynamo_name}
     }
     assert renderer.rendered == expected
+
+
+def test_column_defaults():
+
+    # Set should send the new value
+    num_called = 0
+    received = {}
+
+    @object_modified.connect
+    def verify_expected(_, *, obj, column, value):
+        nonlocal num_called, received
+        num_called += 1
+        received['obj'] = obj
+        received['column'] = column
+        received['value'] = value
+
+    class ColumnDefaultModel(BaseModel):
+        id = Column(Integer, hash_key=True, default=12)
+
+    default_obj = ColumnDefaultModel()
+
+    assert num_called == 1
+    assert received["obj"] is default_obj
+    assert received["column"] is ColumnDefaultModel.id
+    assert received["value"] == 12
+
+
+def test_column_default_func():
+
+    # Set should send the new value
+    num_called = 0
+    received = {}
+
+    @object_modified.connect
+    def verify_expected(_, *, obj, column, value):
+        nonlocal num_called, received
+        num_called += 1
+        received['obj'] = obj
+        received['column'] = column
+        received['value'] = value
+
+    def return_number():
+        return 123
+
+    class ColumnDefaultFuncModel(BaseModel):
+        id = Column(Integer, hash_key=True, default=return_number)
+
+    default_obj = ColumnDefaultFuncModel()
+
+    assert num_called == 1
+    assert received["obj"] is default_obj
+    assert received["column"] is ColumnDefaultFuncModel.id
+    assert received["value"] == 123
 
 
 # END COLUMN =============================================================================================== END COLUMN

@@ -2,7 +2,7 @@ import collections
 import collections.abc
 import inspect
 import logging
-from copy import copy as copyfn, copy
+from copy import copy as copyfn
 from typing import Callable, Dict, Optional, Set
 
 from . import util
@@ -65,11 +65,10 @@ class BaseModel:
         # corresponding `name` for a column in the model
         for column in self.Meta.columns:
             value = attrs.get(column.name, missing)
+            if value is missing:
+                value = column.default()
             if value is not missing:
                 setattr(self, column.name, value)
-            else:
-                if column._default is not missing:
-                    setattr(self, column.name, column.default)
 
     def __init_subclass__(cls: type, **kwargs):
         ensure_hash(cls)
@@ -394,7 +393,11 @@ class Column(ComparisonMixin):
         self.range_key: bool = range_key
         self._name: str = None
         self._dynamo_name: str = dynamo_name
-        self._default = default
+
+        if not callable(default):
+            self.default = lambda: default
+        else:
+            self.default = default
 
         if subclassof(typedef, Type):
             typedef = typedef()
@@ -460,13 +463,6 @@ class Column(ComparisonMixin):
         # <Column[User.id=hash]>
         # <Column[File.fragment=range]>
         return f"<{self.__class__.__name__}[{self.model.__name__}.{self.name}{extra}]>"
-
-    @property
-    def default(self):
-        """ Get a shallow copy of the default value """
-        if callable(self._default):
-            return self._default()
-        return copy(self._default)
 
     @property
     def name(self):

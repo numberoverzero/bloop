@@ -56,7 +56,7 @@ def test_default_model_init():
 
 
 def test_load_default_init(engine):
-    """The default model loader uses the model's cls.__new__(cls) method"""
+    """The default model loader uses cls.__new__(cls) method"""
     init_called = False
 
     class Blob(BaseModel):

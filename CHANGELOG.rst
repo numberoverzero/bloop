@@ -13,12 +13,22 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  [Unreleased]
 --------------
 
-* TODO document all changes for the refactor-type-engine branch.
-* TODO explain ``model_name -> name``, ``name -> dynamo_name`` changes
-* TODO migration notes for 2.0
+TODO migration guide
+TODO docs changes
+TODO abstract inheritance CHANGELOG
+TODO review commit messages from: https://github.com/numberoverzero/bloop/compare/dev-2.0
 
-Added
-=====
+[Added]
+=======
+
+* *(internal)* A new abstract interface, ``bloop.models.IMeta`` was added to assist with code completion.  This
+  fully describes the contents of a ``BaseModel.Meta`` instance, and can safely be subclassed to provide hints to your
+  editor::
+
+    class MyModel(BaseModel):
+        class Meta(bloop.models.IMeta):
+            table_name = "my-table"
+        ...
 
 * ``Engine`` takes an optional keyword-only arg "table_name_template" which takes either a string used to format each
   name, or a function which will be called with the model to get the table name of.  This removes the need to connect
@@ -28,26 +38,135 @@ Added
   table names may be added to the model.Meta in the future.  (see `Issue #96`_)
 * A new exception ``InvalidTemplate`` is raised when an Engine's table_name_template is a string but does
   not contain the required "{table_name}" formatting key.
+* You can now specify a TTL__ (see `Issue #87`_) on a model much like a Stream::
 
-Changed
-=======
+    class MyModel(BaseModel):
+        class Meta:
+            ttl = {
+                "column": "expire_after"
+            }
 
+
+        id = Column(UUID, hash_key=True)
+        expire_after = Column(Timestamp)
+
+
+* A new type, ``Timestamp`` was added.  This stores a ``datetime.datetime`` as a unix timestamp in whole seconds.
+* Corresponding ``Timestamp`` types were added to the following extensions, mirroring the ``DateTime`` extension:
+  ``bloop.ext.arrow.Timestamp``, ``bloop.ext.delorean.Timestamp``, and ``bloop.ext.pendulum.Timestamp``.
+* *(internal)* ``bloop.session.SessionWrapper.enable_ttl`` can be used to enable a TTL on a table.  This SHOULD NOT
+  be called unless the table was just created by bloop.
+* *(internal)* helpers for dynamic model inheritance have been added to the ``bloop.models`` package:
+
+  * ``bloop.models.bind_column``
+  * ``bloop.models.bind_index``
+  * ``bloop.models.refresh_index``
+  * ``bloop.models.unbind``
+
+  Direct use is discouraged without a strong understanding of how binding and inheritance work within bloop.
+* ``Column`` takes an optional kwarg ``default``, either a single value or a no-arg function that returns a value.
+  Defaults are applied only during ``BaseModel.__init__`` and not when loading objects from a Query, Scan, or Stream.
+  If your function returns ``bloop.util.missing``, no default will be applied.  (see `PR #90`_, `PR #105`_
+  for extensive discussion)
+
+__ https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-supports-automatic-item-expiration-with-time-to-live-ttl/
+.. _Issue #96: https://github.com/numberoverzero/bloop/issues/96
+.. _Issue #87: https://github.com/numberoverzero/bloop/issues/87
+.. _PR #90: https://github.com/numberoverzero/bloop/pull/90
+.. _PR #105: https://github.com/numberoverzero/bloop/pull/105
+
+
+[Changed]
+=========
+
+* Python 3.6 is the minimum supported version.
+* *(internal)* ``bloop.session.SessionWrapper`` methods now require an explicit table name, which is not read from the
+  model name.  This exists to support different computed table names per engine.  The following methods now require
+  a table name: ``create_table``, ``describe_table`` *(new)*, ``validate_table``, and ``enable_ttl`` *(new)*.
+* ``BaseModel`` no longer requires a Metaclass, which allows it to be used as a mixin to an existing class which
+  may have a Metaclass.
+* ``BaseModel.Meta.init`` no longer defaults to the model's ``__init__`` method, and will instead use
+  ``cls.__new__(cls)`` to obtain an instance of the model.  You can still specify a custom initialization function::
+
+    class MyModel(BaseModel):
+        class Meta:
+            @classmethod
+            def init(_):
+                instance = MyModel.__new__(MyModel)
+                instance.created_from_init = True
+        id = Column(...)
+
+* ``Column`` and ``Index`` support the shallow copy method ``__copy__`` to simplify inheritance with custom subclasses.
+  You may override this to change how your subclasses are inherited.
+* ``DateTime`` explicitly guards against ``tzinfo is None``, since ``datetime.astimezone`` started silently allowing
+  this in Python 3.6 -- you should not use a naive datetime for any reason.
 * ``Column.model_name`` is now ``Column.name``, and ``Index.model_name`` is now ``Index.name``.
 * ``Column(name=)`` is now ``Column(dynamo_name=)`` and ``Index(name=)`` is now ``Index(dynamo_name=)``
+* The exception ``InvalidModel`` is raised instead of ``InvalidIndex``.
+* The exception ``InvalidSearch`` is raised instead of the following: ``InvalidSearchMode``, ``InvalidKeyCondition``,
+  ``InvalidFilterCondition``, and ``InvalidProjection``.
 
-Removed
+[Removed]
+=========
+
+* bloop no longer supports Python versions below 3.6.0
+* bloop no longer depends on declare__
+* ``Column.get``, ``Column.set``, and ``Column.delete`` helpers have been removed in favor of using the Descriptor
+  protocol methods directly:  ``Column.__get__``, ``Column.__set__``, and ``Column.__delete__``.
+* *(internal)* ``Index._bind`` has been replaced with the more complete solutions in ``bloop.models.bind_column`` and
+  ``bloop.models.bind_index``.
+* ``bloop.Type`` no longer exposes a ``_register`` method; there is no need to register types before using them,
+  and you can remove the call entirely.
+* ``Column.model_name``, ``Index.model_name``, and the kwargs ``Column(name=)``, ``Index(name=))`` (see above)
+* The exception ``InvalidIndex`` has been removed.
+* The exception ``InvalidComparisonOperator`` was unused and has been removed.
+* The exception ``UnboundModel`` is no longer raised during ``Engine.bind`` and has been removed.
+* The exceptions ``InvalidSearchMode``, ``InvalidKeyCondition``, ``InvalidFilterCondition``, and ``InvalidProjection``
+  have been removed.
+
+__ https://pypi.python.org/pypi/declare
+
+[Fixed]
 =======
 
-* The exception ``UnboundModel`` is no longer raised during ``Engine.bind`` and has been removed.
+--------------------
+ 1.3.0 - 2017-10-08
+--------------------
 
-.. _Issue #96: https://github.com/numberoverzero/bloop/issues/96
+This release is exclusively to prepare users for the ``name``/``model_name``/``dynamo_name`` changes coming in 2.0;
+your 1.2.0 code will continue to work as usual but will raise ``DeprecationWarning`` when accessing ``model_name`` on
+a Column or Index, or when specifying the ``name=`` kwarg in the ``__init__`` method of ``Column``,
+``GlobalSecondaryIndex``, or ``LocalSecondaryIndex``.
+
+Previously it was unclear if ``Column.model_name`` was the name of this column in its model, or the name of the model
+it is attached to (eg. a shortcut for ``Column.model.__name__``).  Additionally the ``name=`` kwarg actually mapped to
+the object's ``.dynamo_name`` value, which was not obvious.
+
+Now the ``Column.name`` attribute will hold the name of the column in its model, while ``Column.dynamo_name`` will
+hold the name used in DynamoDB, and is passed during initialization as ``dynamo_name=``.  Accessing ``model_name`` or
+passing ``name=`` during ``__init__`` will raise deprecation warnings, and bloop 2.0.0 will remove the deprecated
+properties and ignore the deprecated kwargs.
+
+[Added]
+=======
+
+* ``Column.name`` is the new home of the ``Column.model_name`` attribute.  The same is true for
+  ``Index``, ``GlobalSecondaryIndex``, and ``LocalSecondaryIndex``.
+* The ``__init__`` method of ``Column``, ``Index``, ``GlobalSecondaryIndex``, and ``LocalSecondaryIndex`` now takes
+  ``dynamo_name=`` in place of ``name=``.
+
+[Changed]
+=========
+
+* Accessing ``Column.model_name`` raises ``DeprecationWarning``, and the same for Index/GSI/LSI.
+* Providing ``Column(name=)`` raises ``DeprecationWarning``, and the same for Index/GSI/LSI.
 
 --------------------
  1.2.0 - 2017-09-11
 --------------------
 
-Changed
-=======
+[Changed]
+=========
 
 * When a Model's Meta does not explicitly set ``read_units`` and ``write_units``, it will only default to 1/1 if the
   table does not exist and needs to be created.  If the table already exists, any throughput will be considered
@@ -71,8 +190,8 @@ Changed
   immediately execute and exhaust the iterator to provide the count or scanned count.  This simplifies the previous
   workaround of calling ``next(query, None)`` before using ``query.count``.
 
-Fixed
-=====
+[Fixed]
+=======
 
 * Fixed a bug where a Query or Scan with projection "count" would always raise KeyError (see `Issue #95`_)
 * Fixed a bug where resetting a Query or Scan would cause ``__next__``
@@ -84,8 +203,8 @@ Fixed
  1.1.0 - 2017-04-26
 --------------------
 
-Added
-=====
+[Added]
+=======
 * ``Engine.bind`` takes optional kwarg ``skip_table_setup``
   to skip CreateTable and DescribeTable calls (see `Issue #83`_)
 * Index validates against a superset of the projection (see `Issue #71`_)
@@ -100,8 +219,8 @@ Added
 
 Bug fix.
 
-Fixed
-=====
+[Fixed]
+=======
 
 * Stream orders records on the integer of SequenceNumber, not the lexicographical sorting of its string
   representation.  This is an annoying bug, because `as documented`__ we **should** be using lexicographical sorting
@@ -118,8 +237,8 @@ __ http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_streams_Str
 
 Minor bug fix.
 
-Fixed
-=====
+[Fixed]
+=======
 
 * extension types in ``ext.arrow``, ``ext.delorean``, and ``ext.pendulum`` now load and dump ``None`` correctly.
 
@@ -129,14 +248,14 @@ Fixed
 
 Bug fixes.
 
-Changed
-=======
+[Changed]
+=========
 
 * The ``arrow``, ``delorean``, and ``pendulum`` extensions now have a default timezone of ``"utc"`` instead of
   ``datetime.timezone.utc``.  There are open issues for both projects to verify if that is the expected behavior.
 
-Fixed
-=====
+[Fixed]
+=======
 
 * DynamoDBStreams return a Timestamp for each record's ApproximateCreationDateTime, which botocore is translating
   into a real datetime.datetime object.  Previously, the record parser assumed an int was used.  While this fix is
@@ -168,8 +287,8 @@ See the Migration Guide above for specific examples of breaking changes and how 
 a tour of the new Bloop.  Lastly, the Public and Internal API References are finally available and should cover
 everything you need to extend or replace whole subsystems in Bloop (if not, please open an issue).
 
-Added
-=====
+[Added]
+=======
 
 * ``bloop.signals`` exposes Blinker signals which can be used to monitor object changes, when
   instances are loaded from a query, before models are bound, etc.
@@ -216,8 +335,8 @@ Added
   ``func(..., default=Sentinel<[Missing]>)``
 
 
-Changed
-=======
+[Changed]
+=========
 
 * ``bloop.Column`` emits ``object_modified`` on ``__set__`` and ``__del__``
 * Conditions now check if they can be used with a column's ``typedef`` and raise ``InvalidCondition`` when they can't.
@@ -293,8 +412,8 @@ Changed
 * *(internal)* ``Filter`` and ``FilterIterator`` rewritten entirely in the ``bloop.search`` module across multiple
   classes
 
-Removed
-=======
+[Removed]
+=========
 
 * ``AbstractModelException`` has been rolled into ``UnboundModel``
 * The ``all()`` method has been removed from the query and scan iterator interface.  Simply iterate with
@@ -310,8 +429,8 @@ Removed
 * *(internal)* ``Engine._instance`` has been removed in favor of directly creating instances from
   ``model.Meta.init()`` in ``unpack_from_dynamodb``
 
-Fixed
-=====
+[Fixed]
+=======
 
 * ``Column.contains(value)`` now renders ``value`` with the column typedef's inner type.  Previously, the container
   type was used, so ``Data.some_list.contains("foo"))`` would render as ``(contains(some_list, ["f", "o", "o"]))``
@@ -465,7 +584,7 @@ You'll now create a base without any relation to an engine, and then bind it to 
 * A new function ``engine_for_profile`` takes a profile name for the config file and creates an appropriate session.
   This is a temporary utility, since ``Engine`` will eventually take instances of dynamodb and dynamodbstreams
   clients.  **This will be going away in 1.0.0**.
-* A new base exception ``BloopException`` which can be used to catch anything raised by Bloop.
+* A new base exception ``BloopException`` which can be used to catch anything thrown by Bloop.
 * A new function ``new_base()`` creates an abstract base for models.  This replaces ``Engine.model`` now that multiple
   engines can bind the same model.  **This will be going away in 1.0.0** which will provide a ``BaseModel`` class.
 

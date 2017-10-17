@@ -390,7 +390,7 @@ class Column(ComparisonMixin):
     :param bool range_key:  *(Optional)* True if this is the model's range key.
         A model can have at most one Column with
         ``range_key=True``.  Default is False.
-    :param str dynamo_name: *(Optional)* The index's name in in DynamoDB. Defaults to the index’s name in the model.
+    :param str dynamo_name: *(Optional)* The column's name in in DynamoDB. Defaults to the index’s name in the model.
     """
     def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, default=missing, **kwargs):
         self.hash_key: bool = hash_key

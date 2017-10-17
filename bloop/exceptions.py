@@ -18,7 +18,7 @@ class TableMismatch(BloopException):
 
 
 class UnknownType(BloopException, ValueError):
-    """This Type has not been registered with the type engine."""
+    """This does not support the Type interface."""
 
 
 class InvalidSearch(BloopException, ValueError):

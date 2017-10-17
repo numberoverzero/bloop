@@ -61,4 +61,3 @@ def stream_replicate():
             replica.save(record["new"])
         else:
             replica.delete(record["old"])
-

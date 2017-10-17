@@ -78,7 +78,7 @@ def validate_is_model(model):
 
 def fail_unknown(model, ctx):
     # Best-effort check for a more helpful message
-    msg = "{!r} is not a registered Type."
+    msg = "{!r} does not support the Type interface."
     obj = getattr(model, "__name__", model)
     raise UnknownType(msg.format(obj)) from ctx
 

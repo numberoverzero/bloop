@@ -56,6 +56,10 @@ class BaseModel:
             name = Column(String)
 
         url = URL(id=uuid.uuid4(), name="google")
+
+    By default, the ``__init__`` method is not called when new instances are
+    required, for example when iterating results from Query, Scan or a Stream.
+
     """
     class Meta(IMeta):
         abstract = True

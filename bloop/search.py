@@ -364,6 +364,12 @@ class SearchIterator:
         self._count = 0
         self._scanned = 0
         self._exhausted = False
+        self._limit = None
+
+    def limit(self, limit=None):
+        if limit:
+            self._limit = limit
+        return self
 
     @property
     def count(self):
@@ -388,7 +394,9 @@ class SearchIterator:
         :raises bloop.exceptions.ConstraintViolation: No results.
         """
         self.reset()
+        self.limit(1)
         value = next(self, None)
+        self._limit = None
         if value is None:
             raise ConstraintViolation("{} did not find any results.".format(self.mode.capitalize()))
         return value
@@ -400,8 +408,10 @@ class SearchIterator:
         :return: The unique result.
         :raises bloop.exceptions.ConstraintViolation: Not exactly one result.
         """
-        first = self.first()
+        self.limit(2)
+        first = next(self, None)
         second = next(self, None)
+        self._limit = None
         if second is not None:
             raise ConstraintViolation("{} found more than one result.".format(self.mode.capitalize()))
         return first
@@ -412,7 +422,26 @@ class SearchIterator:
         self._count = 0
         self._scanned = 0
         self._exhausted = False
+        self._limit = None
         self.request.pop("ExclusiveStartKey", None)
+
+    def _fetch_from_dyno(self, limit=None):
+        if not limit and self._limit:
+            limit = self._limit
+
+        if limit:
+            self.request['Limit'] = limit
+
+        while (not self._exhausted) and len(self.buffer) == 0:
+            response = self.session.search_items(self.mode, self.request)
+            continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
+            self._exhausted = not continuation_token
+
+            self._count += response["Count"]
+            self._scanned += response["ScannedCount"]
+
+            # Each item is a dict of attributes
+            self.buffer.extend(response.get("Items", []))
 
     @property
     def exhausted(self):
@@ -426,16 +455,7 @@ class SearchIterator:
         return self
 
     def __next__(self):
-        while (not self._exhausted) and len(self.buffer) == 0:
-            response = self.session.search_items(self.mode, self.request)
-            continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
-            self._exhausted = not continuation_token
-
-            self._count += response["Count"]
-            self._scanned += response["ScannedCount"]
-
-            # Each item is a dict of attributes
-            self.buffer.extend(response.get("Items", []))
+        self._fetch_from_dyno()
 
         if self.buffer:
             return self.buffer.popleft()

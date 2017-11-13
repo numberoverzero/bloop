@@ -131,10 +131,8 @@ Table configuration defaults are:
             stream = None
 
 If ``abstract`` is true, no backing table will be created in DynamoDB.  Instances of abstract models can't be saved
-or loaded.  Currently, abstract models and inheritance don't mix.  `In the future`__, abstract models
-may be usable as mixins.
-
-__ https://github.com/numberoverzero/bloop/issues/72
+or loaded.  You can use abstract models, or even plain classes with Columns and Indexes, as mixins.  Derived models
+never copy their parents' Meta value.  For more information, see the :ref:`user-models-inheritance` section.
 
 The default ``table_name`` is simply the model's ``__name__``.  This property is useful for mapping a model
 to an existing table, or mapping multiple models to the same table:
@@ -412,3 +410,87 @@ DynamoDB, you can always disable and re-enable it in the future.
     `Local Secondary Indexes`__ in the DynamoDB Developer Guide
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
+
+.. _user-models-inheritance:
+
+========================
+ Inheritance and Mixins
+========================
+
+Your models will often have identical constructs, especially when sharing a table.  Rather than define these repeatedly
+in each model, Bloop provides the ability to derive Columns and Indexes from base classes.  Consider a set of models
+that each has a UUID and sorts on a DateTime:
+
+.. code-block:: python
+
+    class HashRangeBase(BaseModel):
+        id = Column(UUID, hash_key=True, dynamo_name="i")
+        date = Column(DateTime, range_key=True, dynamo_name="d")
+
+        class Meta:
+            abstract = True
+
+
+    class User(HashRangeBase):
+        pass
+
+
+    class Upload(HashRangeBase):
+        class Meta:
+            write_units = 50
+            read_units = 10
+
+Subclassing ``BaseModel`` is optional, and provides early validation against missing columns/indexes.  Mixins do not
+need to be specified in any particular order:
+
+.. code-block:: python
+
+    class IndexedEmail:
+        by_email = GlobalSecondaryIndex(projection="keys", hash_key="email")
+
+
+    class WithEmail:
+        email = Column(String)
+
+
+    class User(BaseModel, IndexedEmail, WithEmail):
+        id = Column(Integer, hash_key=True)
+
+
+    assert User.by_email.hash_key is User.email  # True
+    assert User.email is not WithEmail.email  # True
+
+Even though the ``by_email`` Index requires the ``email`` Column to exist, it is first in the User's bases.
+
+------------------------
+ Modify Derived Columns
+------------------------
+
+Bloop uses the ``__copy__`` method to create shallow copies of the base Columns and Indexes.  You can override
+this to modify derived Columns and Indexes:
+
+.. code-block:: python
+
+    class MyColumn(Column):
+        def __copy__(self):
+            copy = super().__copy__()
+            copy.derived = True
+
+
+    class WithEmail:
+        email = MyColumn(String)
+
+
+    class User(BaseModel, WithEmail):
+        id = Column(String, hash_key=True)
+
+
+    assert User.email.derived  # True
+    assert not hasattr(WithEmail.email, "derived")  # True
+
+----------------------------
+ Conflicting Derived Values
+----------------------------
+
+TODO when two subclasses define the same column "email" or same index "some_index".  Same for collisions on
+"dynamo_name".

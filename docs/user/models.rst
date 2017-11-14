@@ -129,6 +129,7 @@ Table configuration defaults are:
             read_units = None  # uses DynamoDB value, or 1 for new tables
             write_units = None  # uses DynamoDB value, or 1 for new tables
             stream = None
+            ttl = None
 
 If ``abstract`` is true, no backing table will be created in DynamoDB.  Instances of abstract models can't be saved
 or loaded.  You can use abstract models, or even plain classes with Columns and Indexes, as mixins.  Derived models
@@ -162,7 +163,7 @@ the table or GSI does not exist, they fall back to 1.
     Previously, ``read_units`` and ``write_units`` defaulted to ``1``.  This was inconvenient when throughput
     is controlled by an external script, and totally broken with the new auto-scaling features.
 
-Finally, ``stream`` can be used to enable DynamoDBStreams on the table.  By default streaming is not enabled, and this
+You can use ``stream`` to enable DynamoDBStreams on the table.  By default streaming is not enabled, and this
 is ``None``.  To enable a stream with both new and old images, use:
 
 .. code-block:: python
@@ -173,6 +174,33 @@ is ``None``.  To enable a stream with both new and old images, use:
         }
 
 See the :ref:`user-streams` section of the user guide to get started.  Streams are awesome.
+
+Finally, you can use ``ttl`` to enable the TTL feature on the table.  By default a TTL attribute is not set, and this
+is ``None``.  To enable a ttl on the attribute ``"delete_after"``, use:
+
+.. code-block:: python
+
+    class Meta:
+        ttl = {
+            "column": "delete_after"
+        }
+
+The ``Column.typedef`` of the ttl column must be :class:`~bloop.types.Number` and per the DynamoDB documents, must
+represent the deletion time as number of seconds since the epoch.  The :class:`~bloop.types.Timestamp` type is provided
+for your convenience, and is used as a class:`datetime.datetime`:
+
+.. code-block:: python
+
+    class TemporaryPaste(BaseModel):
+        id = Column(UUID, hash_key=True)
+        private = Column(Boolean)
+        delete_after = Column(Timestamp)
+
+        class Meta:
+            ttl = {"column": "delete_after"}
+
+Like :class:`~bloop.types.DateTime`, ``bloop.ext`` exposes drop-in replacements for ``Timestamp`` for each of three
+popular python datetime libraries: arrow, delorean, and pendulum.
 
 ---------------------
  Model Introspection
@@ -492,5 +520,68 @@ this to modify derived Columns and Indexes:
  Conflicting Derived Values
 ----------------------------
 
-TODO when two subclasses define the same column "email" or same index "some_index".  Same for collisions on
-"dynamo_name".
+A model cannot derive from two base models or mixins that define the same column or index, or that have an
+overlapping ``dynamo_name``.  Consider the following mixins:
+
+.. code-block:: python
+
+    class Id:
+        id = Column(String)
+
+    class AlsoId:
+        id = Column(String, dynamo_name="shared-id")
+
+    class AnotherId:
+        some_id = Column(String, dynamo_name="shared-id")
+
+
+Each of the following are invalid, and will fail:
+
+.. code-block:: python
+
+    # Id, AlsoId have the same column name "id"
+    class Invalid(BaseModel, Id, AlsoId):
+        hash = Column(String, hash_key=True)
+
+    # AlsoId, AnotherId have same column dynamo_name "shared-id"
+    class AlsoInvalid(BaseModel, AlsoId, AnotherId):
+        hash = Column(String, hash_key=True)
+
+For simplicity, Bloop also disallows subclassing more than one model or mixin that defines a hash key, a range key,
+or an Index (either by name or dynamo_name).
+
+However, a derived class may always overwrite an inherited column or index.  The following is valid:
+
+.. code-block:: python
+
+    class SharedIds:
+        hash = Column(String, hash_key=True)
+        range = Column(Integer, range_key=True)
+
+
+    class CustomHash(BaseModel, SharedIds):
+        hash = Column(Integer, hash_key=True)
+
+
+    assert CustomHash.hash.typedef is Integer  # True
+    assert SharedIds.hash.typedef is String  # True  # mixin column is unchanged
+    assert CustomHash.range.typedef is Integer  # Still inherited
+
+This also allows you to hide or omit a derived column:
+
+.. code-block:: python
+
+    class SharedColumns:
+        foo = Column(String)
+        bar = Column(String)
+
+
+    class MyModel(BaseModel, SharedColumns):
+        id = Column(Integer, hash_key=True)
+
+        foo = None
+
+
+    assert MyModel.foo is None  # True
+    assert MyModel.bar.typedef is String  # True
+    assert {MyModel.id, MyModel.bar} == MyModel.Meta.columns  # True

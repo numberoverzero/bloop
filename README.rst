@@ -7,7 +7,9 @@
 .. image:: https://img.shields.io/gitter/room/numberoverzero/bloop.svg?style=flat-square
     :target: https://gitter.im/numberoverzero/bloop
 
-Bloop is an object mapper for DynamoDB and DynamoDBStreams. py35+
+Bloop is an object mapper for DynamoDB and DynamoDBStreams.
+
+Requires Python 3.6+
 
 ::
 

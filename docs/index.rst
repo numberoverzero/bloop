@@ -4,6 +4,8 @@ Bloop: DynamoDB Modeling
 DynamoDB's concurrency model is great, but using it correctly is tedious and unforgiving.
 `Bloop manages that complexity for you.`__
 
+Requires Python 3.6+
+
 __ https://gist.github.com/numberoverzero/9584cfc375de0e087c8e1ae35ab8559c
 
 ========

@@ -23,6 +23,9 @@ Index
 -----
 
 .. autoclass:: bloop.models.Index
+    :members: __copy__
+    :undoc-members:
+    :special-members: __copy__
 
     .. attribute:: dynamo_name
 

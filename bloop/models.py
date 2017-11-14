@@ -226,6 +226,30 @@ class Index:
         self.projection = validate_projection(projection)
 
     def __copy__(self):
+        """
+        Create a shallow copy of this Index.  Primarily used when initializing models that subclass other abstract
+        models or mixins (baseless classes that contain Columns and Indexes).  You can override this method to
+        change how derived models are created:
+
+        .. code-block:: python
+
+            import copy
+
+
+            class MyIndex(Index):
+                def __copy__(self):
+                    new = super().__copy__()
+                    new.derived = True
+                    return new
+
+
+            index = MyIndex(projection="keys", hash_key="some_column")
+            same = copy.copy(index)
+            assert same.derived  # True
+
+        :return: A shallow copy of this Index, with the ``model`` and ``_name`` attributes unset, and the
+                 computed projection invalidated.
+        """
         cls = self.__class__
         obj = cls.__new__(cls)
         obj.__dict__.update(self.__dict__)
@@ -413,6 +437,29 @@ class Column(ComparisonMixin):
         super().__init__(**kwargs)
 
     def __copy__(self):
+        """
+        Create a shallow copy of this Column.  Primarily used when initializing models that subclass other abstract
+        models or mixins (baseless classes that contain Columns and Indexes).  You can override this method to
+        change how derived models are created:
+
+        .. code-block:: python
+
+            import copy
+
+
+            class MyColumn(Column):
+                def __copy__(self):
+                    new = super().__copy__()
+                    new.derived = True
+                    return new
+
+
+            column = MyColumn(Integer)
+            same = copy.copy(column)
+            assert same.derived  # True
+
+        :return: A shallow copy of this Column, with the ``model`` and ``_name`` attributes unset.
+        """
         cls = self.__class__
         obj = cls.__new__(cls)
         obj.__dict__.update(self.__dict__)

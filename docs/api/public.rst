@@ -47,7 +47,9 @@ See :ref:`defining models <define-models>` in the User Guide.
 --------
 
 .. autoclass:: bloop.models.Column
-    :members:
+    :members: __copy__
+    :undoc-members:
+    :special-members: __copy__
 
     .. attribute:: dynamo_name
 
@@ -86,6 +88,10 @@ See :ref:`defining models <define-models>` in the User Guide.
 ----------------------
 
 .. autoclass:: bloop.models.GlobalSecondaryIndex
+    :members: __copy__
+    :undoc-members:
+    :special-members: __copy__
+
 
     .. attribute:: dynamo_name
 
@@ -146,6 +152,9 @@ See :ref:`defining models <define-models>` in the User Guide.
 ---------------------
 
 .. autoclass:: bloop.models.LocalSecondaryIndex
+    :members: __copy__
+    :undoc-members:
+    :special-members: __copy__
 
     .. attribute:: dynamo_name
 

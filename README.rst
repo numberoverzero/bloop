@@ -22,7 +22,7 @@ First, we need to import all the things:
 .. code-block:: python
 
     >>> from bloop import (
-    ...     BaseModel, Column, String, UUID,
+    ...     BaseModel, Boolean, Column, String, UUID,
     ...     GlobalSecondaryIndex, Engine
     ... )
 
@@ -38,7 +38,8 @@ Next we'll define the account model (with streaming enabled), and create the bac
     ...     id = Column(UUID, hash_key=True)
     ...     name = Column(String)
     ...     email = Column(String)
-    ...    by_email = GlobalSecondaryIndex(projection='keys', hash_key='email')
+    ...     by_email = GlobalSecondaryIndex(projection='keys', hash_key='email')
+    ...     verified = Column(Boolean, default=False)
     ...
     >>> engine = Engine()
     >>> engine.bind(Account)
@@ -64,7 +65,8 @@ And find them again:
     ... )
     >>> q.first()
     Account(email='help@domain.com',
-            id=UUID('d30e343f-f067-4fe5-bc5e-0b00cdeaf2ba'))
+            id=UUID('d30e343f-f067-4fe5-bc5e-0b00cdeaf2ba'),
+            verified=False)
 
 .. code-block:: python
 
@@ -75,7 +77,8 @@ And find them again:
     >>> s.one()
     Account(email='admin@domain.com',
             id=UUID('08da44ac-5ff6-4f70-8a3f-b75cadb4dd79'),
-            name='Admin McAdminFace')
+            name='Admin McAdminFace',
+            verified=False)
 
 Let's find them in the stream:
 
@@ -92,7 +95,8 @@ Let's find them in the stream:
      'new': Account(
                 email='help@domain.com',
                 id=UUID('d30e343f-...-0b00cdeaf2ba'),
-                name='this-is-fine.jpg'),
+                name='this-is-fine.jpg',
+                verified=False),
      'old': None}
     >>> next(stream)
     {'key': None,
@@ -104,7 +108,8 @@ Let's find them in the stream:
      'new': Account(
                 email='admin@domain.com',
                 id=UUID('08da44ac-...-b75cadb4dd79'),
-                name='Admin McAdminFace'),
+                name='Admin McAdminFace',
+                verified=False),
      'old': None}
     >>> next(stream)
     >>> next(stream)

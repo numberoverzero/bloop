@@ -7,20 +7,26 @@ In addition to documenting internal classes, this section describes complex inte
 atomic tracking via weakrefs) and specific parameters and error handling that Bloop employs when talking to DynamoDB
 (such as SessionWrapper's error inspection, and partial table validation).
 
-==============
-SessionWrapper
-==============
+================
+ SessionWrapper
+================
 
 .. autoclass:: bloop.session.SessionWrapper
     :members:
 
-========
-Modeling
-========
+==========
+ Modeling
+==========
 
------
-Index
------
+-------
+ IMeta
+-------
+
+.. autoclass:: bloop.models.IMeta
+
+-------
+ Index
+-------
 
 .. autoclass:: bloop.models.Index
     :members: __copy__
@@ -63,35 +69,47 @@ Index
 
         The column that the index can be sorted on.
 
-=========
-Searching
-=========
+---------
+ binding
+---------
 
-------
-Search
-------
+.. automethod:: bloop.models.bind_column
+
+.. automethod:: bloop.models.bind_index
+
+.. automethod:: bloop.models.refresh_index
+
+.. automethod:: bloop.models.unbind
+
+===========
+ Searching
+===========
+
+--------
+ Search
+--------
 
 .. autoclass:: bloop.search.Search
     :members:
 
---------------
-PreparedSearch
---------------
+----------------
+ PreparedSearch
+----------------
 
 .. autoclass:: bloop.search.PreparedSearch
     :members:
 
---------------
-SearchIterator
---------------
+----------------
+ SearchIterator
+----------------
 
 .. autoclass:: bloop.search.SearchIterator
     :members:
 
 
--------------------
-SearchModelIterator
--------------------
+---------------------
+ SearchModelIterator
+---------------------
 
 .. autoclass:: bloop.search.SearchModelIterator
 
@@ -122,52 +140,52 @@ SearchModelIterator
         Number of items that DynamoDB evaluated, before any filter was applied.
         When projection type is "count", accessing this will automatically exhaust the query.
 
-=========
-Streaming
-=========
+===========
+ Streaming
+===========
 
------------
-Coordinator
------------
+-------------
+ Coordinator
+-------------
 
 .. autoclass:: bloop.stream.coordinator.Coordinator
     :members:
 
------
-Shard
------
+-------
+ Shard
+-------
 
 .. autoclass:: bloop.stream.shard.Shard
     :members:
 
-------------
-RecordBuffer
-------------
+--------------
+ RecordBuffer
+--------------
 
 .. autoclass:: bloop.stream.buffer.RecordBuffer
     :members:
 
-==========
-Conditions
-==========
+============
+ Conditions
+============
 
-----------------
-ReferenceTracker
-----------------
+------------------
+ ReferenceTracker
+------------------
 
 .. autoclass:: bloop.conditions.ReferenceTracker
         :members: any_ref, pop_refs
 
------------------
-ConditionRenderer
------------------
+-------------------
+ ConditionRenderer
+-------------------
 
 .. autoclass:: bloop.conditions.ConditionRenderer
         :members: render, rendered
 
--------------------
-Built-in Conditions
--------------------
+---------------------
+ Built-in Conditions
+---------------------
 
 .. autoclass:: bloop.conditions.BaseCondition
         :members:
@@ -199,9 +217,9 @@ Built-in Conditions
 .. autoclass:: bloop.conditions.ComparisonMixin
         :members:
 
-=========
-Utilities
-=========
+===========
+ Utilities
+===========
 
 .. autoclass:: bloop.util.Sentinel
     :members:
@@ -209,15 +227,15 @@ Utilities
 .. autoclass:: bloop.util.WeakDefaultDictionary
     :members:
 
-======================
-Implementation Details
-======================
+========================
+ Implementation Details
+========================
 
 .. _implementation-model-hash:
 
------------------------
-Models must be Hashable
------------------------
+-------------------------
+ Models must be Hashable
+-------------------------
 
 By default python makes all user classes are hashable:
 
@@ -271,9 +289,9 @@ and won't fall back to a parent class's definition:
 
 .. _internal-streams:
 
---------------------------
-Stream Ordering Guarantees
---------------------------
+----------------------------
+ Stream Ordering Guarantees
+----------------------------
 
 The `DynamoDB Streams API`__ exposes a limited amount temporal information and few options for navigating
 within a shard.  Due to these constraints, it was hard to reduce the API down to a single ``__next__`` call

@@ -9,7 +9,7 @@ First define a model and create the backing table in DynamoDB:
 
     >>> import uuid
     >>> from bloop import (
-    ...     BaseModel, Column, Engine,
+    ...     BaseModel, Boolean, Column, Engine,
     ...     GlobalSecondaryIndex, String, UUID)
     ...
     >>> class Account(BaseModel):
@@ -19,6 +19,7 @@ First define a model and create the backing table in DynamoDB:
     ...     by_email = GlobalSecondaryIndex(
     ...         projection='keys',
     ...         hash_key='email')
+    ...     verified = Column(Boolean, default=False)
     ...
     >>> engine = Engine()
     >>> engine.bind(Account)

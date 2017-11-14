@@ -18,7 +18,31 @@ missing = util.missing
 
 
 class IMeta:
-    """This class exists solely to help autocomplete with variables set on a model's Meta object"""
+    """This class exists to provide autocomplete hints for computed variables on a model's Meta object.
+
+    Subclassing IMeta is **OPTIONAL** and rarely necessary; it is primarily available for users writing generic code
+    over a class of models, eg. transforms on all columns of a model or a Marshmallow adapter.
+
+
+    .. code-block:: python
+
+        import bloop.models
+
+
+        class User(BaseModel):
+            id = Column(String, hash_key=True)
+            email = Column(String, dynamo_name="e")
+
+            class Meta(bloop.models.IMeta):
+                read_units = 500
+
+        User.Meta.co  # Pycharm renders:
+                      #     +---------------------------+
+                      #     | User.Meta.columns         |
+                      #     | User.Meta.columns_by_name |
+                      #     +---------------------------+
+
+    """
     abstract: bool
     table_name: str
     read_units: Optional[int]
@@ -745,6 +769,52 @@ def initialize_meta(cls: type):
 
 
 def bind_column(model, name, column, force=False, recursive=False, copy=False) -> Column:
+    """Bind a column to the model with the given name.
+
+    This method is primarily used during BaseModel.__init_subclass__, although it can be used to easily
+    attach a new column to an existing model:
+
+    .. code-block:: python
+
+        import bloop.models
+
+        class User(BaseModel):
+            id = Column(String, hash_key=True)
+
+
+        email = Column(String, dynamo_name="e")
+        bound = bloop.models.bind_column(User, "email", email)
+        assert bound is email
+
+        # rebind with force, and use a copy
+        bound = bloop.models.bind_column(User, "email", email, force=True, copy=True)
+        assert bound is not email
+
+    If an existing index refers to this column, it will be updated to point to the new column
+    using :meth:`~bloop.models.refresh_index`, including recalculating the index projection.
+    Meta attributes including ``Meta.columns``, ``Meta.hash_key``, etc. will be updated if necessary.
+
+    If ``name`` or the column's ``dynamo_name`` conflicts with an existing column or index on the model, raises
+    :exc:`~bloop.exceptions.InvalidModel` unless ``force`` is True. If ``recursive`` is ``True`` and there are
+    existing subclasses of ``model``, a copy of the column will attempt to bind to each subclass.  The recursive
+    calls will not force the bind, and will always use a new copy.  If ``copy`` is ``True`` then a copy of the
+    provided column is used.  This uses a shallow copy via :meth:`~bloop.models.Column.__copy__`.
+
+    :param model:
+        The model to bind the column to.
+    :param name:
+        The name to bind the column as.  In effect, used for ``setattr(model, name, column)``
+    :param column:
+        The column to bind to the model.
+    :param force:
+        Unbind existing columns or indexes with the same name or dynamo_name.  Default is False.
+    :param recursive:
+        Bind to each subclass of this model.  Default is False.
+    :param copy:
+        Use a copy of the column instead of the column directly.  Default is False.
+    :return:
+        The bound column.  This is a new column when ``copy`` is True, otherwise the input column.
+    """
     if not subclassof(model, BaseModel):
         raise InvalidModel(f"{model} is not a subclass of BaseModel")
     meta = model.Meta
@@ -822,6 +892,49 @@ def bind_column(model, name, column, force=False, recursive=False, copy=False) -
 
 
 def bind_index(model, name, index, force=False, recursive=True, copy=False) -> Index:
+    """Bind an index to the model with the given name.
+
+        This method is primarily used during BaseModel.__init_subclass__, although it can be used to easily
+        attach a new index to an existing model:
+
+        .. code-block:: python
+
+            import bloop.models
+
+            class User(BaseModel):
+                id = Column(String, hash_key=True)
+                email = Column(String, dynamo_name="e")
+
+
+            by_email = GlobalSecondaryIndex(projection="keys", hash_key="email")
+            bound = bloop.models.bind_index(User, "by_email", by_email)
+            assert bound is by_email
+
+            # rebind with force, and use a copy
+            bound = bloop.models.bind_index(User, "by_email", by_email, force=True, copy=True)
+            assert bound is not by_email
+
+        If ``name`` or the index's ``dynamo_name`` conflicts with an existing column or index on the model, raises
+        :exc:`~bloop.exceptions.InvalidModel` unless ``force`` is True. If ``recursive`` is ``True`` and there are
+        existing subclasses of ``model``, a copy of the index will attempt to bind to each subclass.  The recursive
+        calls will not force the bind, and will always use a new copy.  If ``copy`` is ``True`` then a copy of the
+        provided index is used.  This uses a shallow copy via :meth:`~bloop.models.Index.__copy__`.
+
+        :param model:
+            The model to bind the index to.
+        :param name:
+            The name to bind the index as.  In effect, used for ``setattr(model, name, index)``
+        :param index:
+            The index to bind to the model.
+        :param force:
+            Unbind existing columns or indexes with the same name or dynamo_name.  Default is False.
+        :param recursive:
+            Bind to each subclass of this model.  Default is False.
+        :param copy:
+            Use a copy of the index instead of the index directly.  Default is False.
+        :return:
+            The bound index.  This is a new column when ``copy`` is True, otherwise the input index.
+        """
     if not subclassof(model, BaseModel):
         raise InvalidModel(f"{model} is not a subclass of BaseModel")
     meta = model.Meta
@@ -885,7 +998,12 @@ def bind_index(model, name, index, force=False, recursive=True, copy=False) -> I
     return index
 
 
-def refresh_index(meta, index):
+def refresh_index(meta, index) -> None:
+    """Recalculate the projection, hash_key, and range_key for the given index.
+
+    :param meta: model.Meta to find columns by name
+    :param index: The index to refresh
+    """
     # All projections include model + index keys
     projection_keys = set.union(meta.keys, index.keys)
 
@@ -911,7 +1029,35 @@ def refresh_index(meta, index):
         proj["available"] = meta.columns
 
 
-def unbind(meta, name=None, dynamo_name=None):
+def unbind(meta, name=None, dynamo_name=None) -> None:
+    """Unconditionally remove any columns or indexes bound to the given name or dynamo_name.
+
+    .. code-block:: python
+
+        import bloop.models
+
+
+        class User(BaseModel):
+            id = Column(String, hash_key=True)
+            email = Column(String, dynamo_name="e")
+            by_email = GlobalSecondaryIndex(projection="keys", hash_key=email)
+
+
+        for dynamo_name in ("id", "e", "by_email"):
+            bloop.models.unbind(User.Meta, dynamo_name=dynamo_name)
+
+        assert not User.Meta.columns
+        assert not User.Meta.indexes
+        assert not User.Meta.keys
+
+    .. warning::
+        This method does not pre- or post- validate the model with the requested changes.  You are responsible
+        for ensuring the model still has a hash key, that required columns exist for each index, etc.
+
+    :param meta: model.Meta to remove the columns or indexes from
+    :param name: column or index name to unbind by.  Default is None.
+    :param dynamo_name: column or index name to unbind by.  Default is None.
+    """
     if name is not None:
         columns = {x for x in meta.columns if x.name == name}
         indexes = {x for x in meta.indexes if x.name == name}
@@ -944,6 +1090,9 @@ def unbind(meta, name=None, dynamo_name=None):
             meta.hash_key = None
         if meta.range_key is column:
             meta.range_key = None
+
+        delattr(meta.model, column.name)
+
     if indexes:
         [index] = indexes
         meta.indexes.remove(index)
@@ -951,6 +1100,8 @@ def unbind(meta, name=None, dynamo_name=None):
             meta.gsis.remove(index)
         if index in meta.lsis:
             meta.lsis.remove(index)
+
+        delattr(meta.model, index.name)
 
 
 # required to bootstrap BaseModel.__init_subclass__

@@ -51,6 +51,12 @@ See :ref:`defining models <define-models>` in the User Guide.
     :undoc-members:
     :special-members: __copy__
 
+    .. attribute:: default
+
+        A no-arg function used during instantiation of the column's
+        model.  Returns ``bloop.util.missing`` when the column does
+        not have a default.  Defaults to ``lambda: bloop.util.missing``.
+
     .. attribute:: dynamo_name
 
         The name of this column in DynamoDB.  Defaults to the column's

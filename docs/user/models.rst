@@ -328,6 +328,85 @@ Locally, the model names "referrer" and "version" are still used.  An instance w
     ...     version=get_current_version())
     >>> engine.save(click)
 
+
+----------------
+ Default Values
+----------------
+
+You can provide a default value or a no-arg function that returns a default value when specifying a Column:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        id = Column(UUID)
+        verified = Column(Boolean, default=False)
+        created = Column(DateTime, default=lambda: datetime.datetime.now())
+
+
+Defaults are only applied when new instances are created locally by the default ``BaseModel.__init__`` method.
+When new instances are created as part of a Query, Scan, or iterating a Stream, defaults are not applied.  This is
+because a projection query may not include an existing value; applying the default would locally overwrite the
+previous value in DynamoDB.
+
+.. code-block:: python
+
+
+    import datetime
+
+    def two_days_later():
+        offset = datetime.timedelta(days=2)
+        now = datetime.datetime.now()
+        return now + offset
+
+
+    class TemporaryPaste(BaseModel):
+        class Meta:
+            ttl = {"column": "delete_after"}
+
+        id = Column(UUID, hash_key=True, default=uuid.uuid4)
+        delete_after = Column(Timestamp, default=two_days_later)
+        verified = Column(Boolean, default=False)
+        views = Column(Integer, default=1)
+
+
+Like default function arguments in python, the provided value is not copied but used directly.  For example, a
+default value of ``[1, 2, 3]`` will use the **same list object** on each new instance of the model.  If you want a
+copy of a mutable value, you should wrap it in a lambda: ``lambda: [1, 2, 3]``.
+
+If you don't want to set a default value, you can return the special sentinel ``bloop.missing`` from your function:
+
+.. code-block:: python
+
+    import datetime
+    import random
+    from bloop import missing
+
+    specials = [
+        "one free latte",
+        "50% off chai for a month",
+        "free drip coffee for a year",
+    ]
+
+    offer_ends = datetime.datetime.now() + datetime.timedelta(hours=8)
+
+
+    def limited_time_offer():
+        now = datetime.datetime.now()
+        if now < offer_ends:
+            return random.choice(specials)
+        return missing
+
+
+    class User(BaseModel):
+        id = Column(UUID, hash_key=True)
+        active_coupon = Column(String, default=limited_time_offer)
+
+In this example, a random special is applied to new users for the next 8 hours.  Afterwards, the
+``limited_time_offer`` function will return ``bloop.missing`` and the user won't have an active coupon.
+
+Returning ``bloop.missing`` tells Bloop not to set the value, which is different than setting the value to ``None``.
+An explicit ``None`` will clear any existing value on save, while not setting it leaves the value as-is.
+
 =========
  Indexes
 =========

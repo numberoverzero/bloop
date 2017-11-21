@@ -13,8 +13,34 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  [Unreleased]
 --------------
 
+2.0.0 introduces 3 significant new features:
+
+* Model inheritance and mixins
+* Table name templates:  ``table_name_template="prod-{table_name}"``
+* `TTL`_ Support: ``ttl = {"column": "not_after"}``
+* Column defaults::
+
+    verified=Column(Boolean, default=False)
+    not_after = Column(
+        Timestamp,
+        default=lambda: (
+            datetime.datetime.now() +
+            datetime.timedelta(days=30)
+        )
+    )
+
+Python 3.6.0 is now the minimum supported version, as Bloop takes advantage of ``__set_name`` and
+``__init_subclass__`` to avoid the need for a Metaclass.
+
+A number of internal-only and rarely-used external methods have been removed, as the processes which required them
+have been simplified:
+
+* ``Column.get, Column.set, Column.delete`` in favor of their descriptor protocol counterparts
+* ``bloop.Type._register`` is no longer necessary before using a custom Type
+* ``Index._bind`` is replaced by helpers ``bind_index`` and ``refresh_index``.  You should not need to call these.
+* A number of overly-specific exceptions have been removed.
+
 TODO migration guide
-TODO abstract inheritance CHANGELOG
 
 [Added]
 =======
@@ -27,7 +53,7 @@ TODO abstract inheritance CHANGELOG
   table names may be added to the model.Meta in the future.  (see `Issue #96`_)
 * A new exception ``InvalidTemplate`` is raised when an Engine's table_name_template is a string but does
   not contain the required "{table_name}" formatting key.
-* You can now specify a TTL__ (see `Issue #87`_) on a model much like a Stream::
+* You can now specify a `TTL`_ (see `Issue #87`_) on a model much like a Stream::
 
     class MyModel(BaseModel):
         class Meta:
@@ -67,7 +93,7 @@ TODO abstract inheritance CHANGELOG
 
   Direct use is discouraged without a strong understanding of how binding and inheritance work within bloop.
 
-__ https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-supports-automatic-item-expiration-with-time-to-live-ttl/
+.. _TTL: https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-supports-automatic-item-expiration-with-time-to-live-ttl/
 .. _Issue #96: https://github.com/numberoverzero/bloop/issues/96
 .. _Issue #87: https://github.com/numberoverzero/bloop/issues/87
 .. _PR #90: https://github.com/numberoverzero/bloop/pull/90
@@ -114,7 +140,7 @@ __ https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-suppor
   protocol methods directly:  ``Column.__get__``, ``Column.__set__``, and ``Column.__delete__``.
 * ``bloop.Type`` no longer exposes a ``_register`` method; there is no need to register types before using them,
   and you can remove the call entirely.
-* ``Column.model_name``, ``Index.model_name``, and the kwargs ``Column(name=)``, ``Index(name=))`` (see above)
+* ``Column.model_name``, ``Index.model_name``, and the kwargs ``Column(name=)``, ``Index(name=)`` (see above)
 * The exception ``InvalidIndex`` has been removed.
 * The exception ``InvalidComparisonOperator`` was unused and has been removed.
 * The exception ``UnboundModel`` is no longer raised during ``Engine.bind`` and has been removed.

@@ -1,7 +1,7 @@
 import datetime
 import logging
-
 import operator
+
 import pytest
 
 from bloop.conditions import ConditionRenderer
@@ -20,8 +20,18 @@ from bloop.models import (
     unbind,
     unpack_from_dynamodb,
 )
-from bloop.types import Boolean, DateTime, Integer, String, Timestamp, Type, UUID
+from bloop.types import (
+    UUID,
+    Boolean,
+    DateTime,
+    Integer,
+    String,
+    Timestamp,
+    Type,
+)
+
 from ..helpers.models import User, VectorModel
+
 
 operations = [
     (operator.ne, "!="),

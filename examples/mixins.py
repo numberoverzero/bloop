@@ -1,9 +1,12 @@
-from bloop import BaseModel, Column, Engine, String, Integer, Binary
-from bloop.ext.delorean import Timestamp
-import datetime
-import delorean
 import base64
+import datetime
 import hashlib
+
+import delorean
+
+from bloop import BaseModel, Binary, Column, Engine, Integer, String
+from bloop.ext.delorean import Timestamp
+
 
 DEFAULT_PASTE_LIFETIME_DAYS = 31
 

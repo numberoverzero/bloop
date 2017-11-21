@@ -9,7 +9,8 @@ from . import util
 from .conditions import ComparisonMixin
 from .exceptions import InvalidModel, InvalidStream
 from .signals import model_created, object_modified
-from .types import Type, Number, DateTime
+from .types import DateTime, Number, Type
+
 
 __all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
 

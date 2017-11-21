@@ -5,13 +5,13 @@ from random import randint
 import pytest
 
 from bloop import (
+    UUID,
     BaseModel,
     Column,
     GlobalSecondaryIndex,
     Integer,
     MissingObjects,
     String,
-    UUID
 )
 
 from .models import User

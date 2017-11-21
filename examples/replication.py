@@ -1,12 +1,7 @@
 import boto3
 import pendulum
 
-from bloop import (
-    BaseModel,
-    Column,
-    Engine,
-    UUID,
-)
+from bloop import UUID, BaseModel, Column, Engine
 from bloop.ext.pendulum import DateTime
 
 

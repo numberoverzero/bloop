@@ -1,10 +1,7 @@
 import collections
 
 from .conditions import BaseCondition, iter_columns, render
-from .exceptions import (
-    ConstraintViolation,
-    InvalidSearch,
-)
+from .exceptions import ConstraintViolation, InvalidSearch
 from .models import Column, GlobalSecondaryIndex, unpack_from_dynamodb
 from .signals import object_loaded
 

@@ -15,10 +15,7 @@ from bloop.conditions import (
     OrCondition,
     comparison_aliases,
 )
-from bloop.exceptions import (
-    ConstraintViolation,
-    InvalidSearch,
-)
+from bloop.exceptions import ConstraintViolation, InvalidSearch
 from bloop.models import (
     BaseModel,
     Column,

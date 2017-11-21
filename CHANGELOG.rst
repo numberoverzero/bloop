@@ -14,21 +14,10 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 --------------
 
 TODO migration guide
-TODO docs changes
 TODO abstract inheritance CHANGELOG
-TODO review commit messages from: https://github.com/numberoverzero/bloop/compare/dev-2.0
 
 [Added]
 =======
-
-* *(internal)* A new abstract interface, ``bloop.models.IMeta`` was added to assist with code completion.  This
-  fully describes the contents of a ``BaseModel.Meta`` instance, and can safely be subclassed to provide hints to your
-  editor::
-
-    class MyModel(BaseModel):
-        class Meta(bloop.models.IMeta):
-            table_name = "my-table"
-        ...
 
 * ``Engine`` takes an optional keyword-only arg "table_name_template" which takes either a string used to format each
   name, or a function which will be called with the model to get the table name of.  This removes the need to connect
@@ -54,6 +43,19 @@ TODO review commit messages from: https://github.com/numberoverzero/bloop/compar
 * A new type, ``Timestamp`` was added.  This stores a ``datetime.datetime`` as a unix timestamp in whole seconds.
 * Corresponding ``Timestamp`` types were added to the following extensions, mirroring the ``DateTime`` extension:
   ``bloop.ext.arrow.Timestamp``, ``bloop.ext.delorean.Timestamp``, and ``bloop.ext.pendulum.Timestamp``.
+* ``Column`` takes an optional kwarg ``default``, either a single value or a no-arg function that returns a value.
+  Defaults are applied only during ``BaseModel.__init__`` and not when loading objects from a Query, Scan, or Stream.
+  If your function returns ``bloop.util.missing``, no default will be applied.  (see `PR #90`_, `PR #105`_
+  for extensive discussion)
+* *(internal)* A new abstract interface, ``bloop.models.IMeta`` was added to assist with code completion.  This
+  fully describes the contents of a ``BaseModel.Meta`` instance, and can safely be subclassed to provide hints to your
+  editor::
+
+    class MyModel(BaseModel):
+        class Meta(bloop.models.IMeta):
+            table_name = "my-table"
+        ...
+
 * *(internal)* ``bloop.session.SessionWrapper.enable_ttl`` can be used to enable a TTL on a table.  This SHOULD NOT
   be called unless the table was just created by bloop.
 * *(internal)* helpers for dynamic model inheritance have been added to the ``bloop.models`` package:
@@ -64,10 +66,6 @@ TODO review commit messages from: https://github.com/numberoverzero/bloop/compar
   * ``bloop.models.unbind``
 
   Direct use is discouraged without a strong understanding of how binding and inheritance work within bloop.
-* ``Column`` takes an optional kwarg ``default``, either a single value or a no-arg function that returns a value.
-  Defaults are applied only during ``BaseModel.__init__`` and not when loading objects from a Query, Scan, or Stream.
-  If your function returns ``bloop.util.missing``, no default will be applied.  (see `PR #90`_, `PR #105`_
-  for extensive discussion)
 
 __ https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-supports-automatic-item-expiration-with-time-to-live-ttl/
 .. _Issue #96: https://github.com/numberoverzero/bloop/issues/96
@@ -80,9 +78,6 @@ __ https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-suppor
 =========
 
 * Python 3.6 is the minimum supported version.
-* *(internal)* ``bloop.session.SessionWrapper`` methods now require an explicit table name, which is not read from the
-  model name.  This exists to support different computed table names per engine.  The following methods now require
-  a table name: ``create_table``, ``describe_table`` *(new)*, ``validate_table``, and ``enable_ttl`` *(new)*.
 * ``BaseModel`` no longer requires a Metaclass, which allows it to be used as a mixin to an existing class which
   may have a Metaclass.
 * ``BaseModel.Meta.init`` no longer defaults to the model's ``__init__`` method, and will instead use
@@ -105,6 +100,10 @@ __ https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-suppor
 * The exception ``InvalidModel`` is raised instead of ``InvalidIndex``.
 * The exception ``InvalidSearch`` is raised instead of the following: ``InvalidSearchMode``, ``InvalidKeyCondition``,
   ``InvalidFilterCondition``, and ``InvalidProjection``.
+* *(internal)* ``bloop.session.SessionWrapper`` methods now require an explicit table name, which is not read from the
+  model name.  This exists to support different computed table names per engine.  The following methods now require
+  a table name: ``create_table``, ``describe_table`` *(new)*, ``validate_table``, and ``enable_ttl`` *(new)*.
+
 
 [Removed]
 =========
@@ -113,8 +112,6 @@ __ https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-suppor
 * bloop no longer depends on declare__
 * ``Column.get``, ``Column.set``, and ``Column.delete`` helpers have been removed in favor of using the Descriptor
   protocol methods directly:  ``Column.__get__``, ``Column.__set__``, and ``Column.__delete__``.
-* *(internal)* ``Index._bind`` has been replaced with the more complete solutions in ``bloop.models.bind_column`` and
-  ``bloop.models.bind_index``.
 * ``bloop.Type`` no longer exposes a ``_register`` method; there is no need to register types before using them,
   and you can remove the call entirely.
 * ``Column.model_name``, ``Index.model_name``, and the kwargs ``Column(name=)``, ``Index(name=))`` (see above)
@@ -123,6 +120,8 @@ __ https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-suppor
 * The exception ``UnboundModel`` is no longer raised during ``Engine.bind`` and has been removed.
 * The exceptions ``InvalidSearchMode``, ``InvalidKeyCondition``, ``InvalidFilterCondition``, and ``InvalidProjection``
   have been removed.
+* *(internal)* ``Index._bind`` has been replaced with the more complete solutions in ``bloop.models.bind_column`` and
+  ``bloop.models.bind_index``.
 
 __ https://pypi.python.org/pypi/declare
 

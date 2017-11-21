@@ -440,7 +440,7 @@ class Column(ComparisonMixin):
         ``range_key=True``.  Default is False.
     :param str dynamo_name: *(Optional)* The column's name in in DynamoDB. Defaults to the index’s name in the model.
     """
-    def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, default=missing, **kwargs):
+    def __init__(self, typedef, hash_key=False, range_key=False, dynamo_name=None, default=missing):
         self.hash_key: bool = hash_key
         self.range_key: bool = range_key
         self._name: str = None
@@ -458,7 +458,7 @@ class Column(ComparisonMixin):
 
         else:
             raise TypeError(f"Expected {typedef} to be instance or subclass of Type")
-        super().__init__(**kwargs)
+        super().__init__()
 
     def __copy__(self):
         """

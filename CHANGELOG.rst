@@ -9,11 +9,17 @@ __ http://keepachangelog.com/en/0.3.0/
 __ http://semver.org/spec/v2.0.0.html
 __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 
---------------
- [Unreleased]
---------------
+------------
+ Unreleased
+------------
 
-2.0.0 introduces 3 significant new features:
+*(no unreleased changes)*
+
+--------------------
+ 2.0.0 - 2017-11-21
+--------------------
+
+2.0.0 introduces 4 significant new features:
 
 * Model inheritance and mixins
 * Table name templates:  ``table_name_template="prod-{table_name}"``
@@ -29,7 +35,7 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
         )
     )
 
-Python 3.6.0 is now the minimum supported version, as Bloop takes advantage of ``__set_name`` and
+Python 3.6.0 is now the minimum required version, as Bloop takes advantage of ``__set_name`` and
 ``__init_subclass__`` to avoid the need for a Metaclass.
 
 A number of internal-only and rarely-used external methods have been removed, as the processes which required them
@@ -45,14 +51,14 @@ TODO migration guide
 [Added]
 =======
 
-* ``Engine`` takes an optional keyword-only arg "table_name_template" which takes either a string used to format each
-  name, or a function which will be called with the model to get the table name of.  This removes the need to connect
-  to the ``before_create_table`` signal, which also could not handle multiple table names for the same model.  With
-  this change ``BaseModel.Meta.table_name`` will no longer be authoritative, and the engine must be consulted to find
-  a given model's table name.  An internal function ``Engine._compute_table_name`` is available, and the per-engine
-  table names may be added to the model.Meta in the future.  (see `Issue #96`_)
+* ``Engine`` takes an optional keyword-only arg ``"table_name_template"`` which takes either a string used to format
+  each name, or a function which will be called with the model to get the table name of.  This removes the need to
+  connect to the ``before_create_table`` signal, which also could not handle multiple table names for the same model.
+  With this change ``BaseModel.Meta.table_name`` will no longer be authoritative, and the engine must be consulted to
+  find a given model's table name.  An internal function ``Engine._compute_table_name`` is available, and the
+  per-engine table names may be added to the model.Meta in the future.  (see `Issue #96`_)
 * A new exception ``InvalidTemplate`` is raised when an Engine's table_name_template is a string but does
-  not contain the required "{table_name}" formatting key.
+  not contain the required ``"{table_name}"`` formatting key.
 * You can now specify a `TTL`_ (see `Issue #87`_) on a model much like a Stream::
 
     class MyModel(BaseModel):

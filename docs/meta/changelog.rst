@@ -8,6 +8,56 @@ versions dating back to :ref:`v0.9.0<changelog-v0.9.0>` from December 2015.  The
 examples and tips for migrating from the previous major version (excluding the 1.0.0 guide, which only covers
 migration from 0.9.0 and newer).
 
+
+====================
+ Migrating to 2.0.0
+====================
+
+The 2.0.0 release includes a number of api changes and new features.
+
+* The largest functional change is the ability to compose models through subclassing; this is
+  referred to as Abstract Inheritance and Mixins throughout the User Guide.
+* Python 3.6.0 is the minimum required version. ``Meta.init`` now defaults to ``cls.__new__(cls)`` instead of
+  ``cls.__init__()``; when model instances are created as part of ``engine.query``, ``engine.stream`` etc. these will
+  not call your model's ``__init__`` method.  The default `BaseModel.__init__`` is not meant for use outside of local
+  instantiation.
+
+
+--------
+ Engine
+--------
+
+-------------
+ Inheritance
+-------------
+
+
+-----------
+ Meta.init
+-----------
+
+-----------------
+ Column Defaults
+-----------------
+
+-----
+ TTL
+-----
+
+-------
+ Types
+-------
+
+------------
+ Exceptions
+------------
+
+* ``InvalidIndex`` was replaced by the existing ``InvalidModel``
+* ``InvalidSearchMode``, ``InvalidKeyCondition``, ``InvalidFilterCondition``, and ``InvalidProjection`` were replaced
+  by ``InvalidSearch``
+* ``UnboundModel`` was removed without replacement; ``Engine.bind`` was refactored so that it would never be raised.
+* ``InvalidComparisonOperator`` was removed without replacement; it was never raised.
+
 ====================
  Migrating to 1.0.0
 ====================

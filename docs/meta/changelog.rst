@@ -17,15 +17,43 @@ The 2.0.0 release includes a number of api changes and new features.
 
 * The largest functional change is the ability to compose models through subclassing; this is
   referred to as Abstract Inheritance and Mixins throughout the User Guide.
-* Python 3.6.0 is the minimum required version. ``Meta.init`` now defaults to ``cls.__new__(cls)`` instead of
-  ``cls.__init__()``; when model instances are created as part of ``engine.query``, ``engine.stream`` etc. these will
-  not call your model's ``__init__`` method.  The default `BaseModel.__init__`` is not meant for use outside of local
-  instantiation.
+* Python 3.6.0 is the minimum required version.
+* ``Meta.init`` now defaults to ``cls.__new__(cls)`` instead of ``cls.__init__()``; when model instances are created
+  as part of ``engine.query``, ``engine.stream`` etc. these will not call your model's ``__init__`` method.  The
+  default `BaseModel.__init__`` is not meant for use outside of local instantiation.
+* The ``Column`` and ``Index`` kwarg ``name`` was renamed to ``dynamo_name`` to accurately reflect how the value was
+  used: ``Column(SomeType, name="foo")`` becomes ``Column(SomeType, dynamo_name="foo")``.
+  Additionally, the column and index attribute ``model_name`` was renamed to ``name``; ``dynamo_name`` is unchanged
+  and reflects the kwarg value, if provided.
 
 
 --------
  Engine
 --------
+
+A new Engine kwarg ``table_name_template`` can be used to modify the table name used per-engine, as documented in
+the new :ref:`Engine Configuration <user-engine-config>` section of the User Guide.  Previously, you may have used
+the ``before_create_table`` signal as follows:
+
+.. code-block:: python
+
+    # Nonce table names to avoid testing collisions
+    @before_create_table.connect
+    def apply_table_nonce(_, model, **__):
+        nonce = datetime.now().isoformat()
+        model.Meta.table_name += "-test-{}".format(nonce)
+
+This will modify the actual model's ``Meta.table_name``, whereas the new kwarg can be used to only modify the bound
+table name for a single engine.  The following can be expressed for a single Engine as follows:
+
+
+.. code-block:: python
+
+    def apply_nonce(model):
+        nonce = datetime.now().isoformat()
+        return f"{model.Meta.table_name}-test-{nonce}"
+
+    engine = Engine(table_name_template=apply_nonce)
 
 -------------
  Inheritance
@@ -44,9 +72,43 @@ The 2.0.0 release includes a number of api changes and new features.
  TTL
 -----
 
+DynamoDB introduced the ability to specify a `TTL`_ column, which indicates a date (in seconds since the epoch) after
+which the row may be automatically (eventually) cleaned up.  This column must be a Number, and Bloop exposes the
+``Timestamp`` type which is used as a ``datetime.datetime``.  Like the DynamoDBStreams feature, the TTL is configured
+on a model's Meta attribute:
+
+.. code-block:: python
+
+    class TemporaryPaste(BaseModel):
+        class Meta:
+            ttl = {
+                "column": "delete_after"
+            }
+        id = Column(String, hash_key=True)
+        s3_location = Column(String, dynamo_name="s3")
+        delete_after = Column(Timestamp)
+
+Remember that it can take up to 24 hours for the row to be deleted; you should guard your reads using the current time
+against the cleanup time, or a filter with your queries:
+
+.. code-block:: python
+
+    # made up index
+    query = engine.Query(
+        TemporaryPaste.by_email,
+        key=TemporaryPaste.email=="me@gmail.com",
+        filter=TemporaryPaste.delete_after <= datetime.datetime.now())
+    print(query.first())
+
+.. _TTL: https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-supports-automatic-item-expiration-with-time-to-live-ttl/
+
 -------
  Types
 -------
+
+A new type ``Timestamp`` was added for use with the new TTL feature (see above).  This is a ``datetime.datetime`` in
+Python just like the ``DateTime`` type, but is stored as an integer (whole seconds since epoch) instead of an ISO 8601
+string.  As with ``DateTime``, drop-in replacements are available for ``arrow``, ``delorean``, and ``pendulum``.
 
 ------------
  Exceptions

@@ -13,7 +13,7 @@ import pytest
 import requests
 from tests.helpers.utils import get_tables
 
-from bloop import BaseModel, Engine
+from bloop import BaseModel, BloopException, Engine
 from bloop.session import SessionWrapper
 from bloop.util import walk_subclasses
 
@@ -203,7 +203,7 @@ def engine(dynamodb, dynamodbstreams, request):
             objs = list(engine.scan(model))
             if objs:
                 engine.delete(*objs)
-        except:  # ignore any exceptions
+        except BloopException:
             pass
 
 

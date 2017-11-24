@@ -12,7 +12,7 @@ for line in (HERE / "bloop" / "__init__.py").read_text().split("\n"):
 
 REQUIREMENTS = [
     "blinker==1.4",
-    "boto3==1.4.7",
+    "boto3==1.4.8",
     "botocore"  # no version because we'll take what boto3 uses
 ]
 

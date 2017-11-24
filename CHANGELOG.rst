@@ -46,8 +46,6 @@ have been simplified:
 * ``Index._bind`` is replaced by helpers ``bind_index`` and ``refresh_index``.  You should not need to call these.
 * A number of overly-specific exceptions have been removed.
 
-TODO migration guide
-
 [Added]
 =======
 

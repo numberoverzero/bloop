@@ -64,9 +64,100 @@ table name for a single engine.  The following can be expressed for a single Eng
  Meta.init
 -----------
 
+With the addition of column defaults (see below) Bloop needed to differentiate local mode instantiation from remote
+model instantiation.  Local model instantiation still uses ``__init__``, as in:
+
+.. code-block:: python
+
+    user = User(email="me@gmail.com", verified=False)
+
+Unlike ``Engine.load`` which takes existing model instances, all of ``Engine.query, Engine.scan, Engine.stream``
+will create their own instances.  These methods use the model's ``Meta.init`` to create new instances.  Previously
+this defaulted to ``__init__``.  However, with the default ``__init__`` method applying defaults in 2.0.0 this is
+no longer acceptable for remote instantiation.  Instead, ``cls.__new__(cls)`` is used by default to create instances
+during query/scan/stream.
+
+This is an important distinction that Bloop should have made early on, but was forced due to defaults.  For example,
+imagine querying an index that doesn't project a column with a default.  If the base ``__init__`` was still used, the
+Column's default would be used for the non-projected column even if there was already a value in DynamoDB.  Here's one
+model that would have the problem:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        id = Column(UUID, hash_key=True)
+        created = Column(DateTime, default=datetime.datetime.now)
+        email = Column(String)
+        by_email = GlobalSecondaryIndex(projection="keys", hash_key=email)
+
+    user = User(id=uuid.uuid4(), email="me@gmail.com")
+    engine.save(user)
+    print(user.created)  # Some datetime T1
+
+
+    query = engine.Query(User.by_email, hash_key=User.email=="me@gmail.com")
+    partial_user = query.first()
+
+    partial_user.created  # This column isn't part of the index's projection!
+
+
+If ``User.Meta.init`` was still ``User.__init__`` then ``partial_user.created`` would invoke the default function for
+``User.created`` and give us the current datetime.  Instead, Bloop 2.0.0 will call ``User.__new__(User)`` and we'll
+get an ``AttributeError`` because ``partial_user`` doesn't have a ``created`` value.
+
+
 -----------------
  Column Defaults
 -----------------
+
+Many columns have the same initialization value, even across models.  For example, all but one of the following
+columns will be set to the same value or using the same logic:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        email = Column(String, hash_key=True)
+        id = Column(UUID)
+        verified = Column(Boolean)
+        created = Column(DateTime)
+        followers = Column(Integer)
+
+Previously, you might apply defaults by creating a simple function:
+
+.. code-block:: python
+
+    def new_user(email) -> User:
+        return User(
+            email=email,
+            id=uuid.uuid4(),
+            verified=False,
+            created=datetime.datetime.now(),
+            followers=0)
+
+You'll still need a function for related initialization (eg. across fields or model instances) but for simple defaults,
+you can now specify them with the Column:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        email = Column(String, hash_key=True)
+        id = Column(UUID, default=uuid.uuid4)
+        verified = Column(Boolean, default=False)
+        created = Column(DateTime, default=datetime.datetime.now)
+        followers = Column(Integer, default=0)
+
+
+    def new_user(email) -> User:
+        return User(email=email)
+
+Defaults are only applied when creating new local instances inside the default ``BaseModel.__init__`` - they are not
+evaluated when loading objects with ``Engine.load``, ``Engine.query``, ``Engine.stream`` etc.  If you define a custom
+``__init__`` without calling ``super().__init__(...)`` they will not be applied.
+
+In a related change, see above for the ``BaseModel.Meta.init`` change.  By default Bloop uses ``cls.__new__(cls)`` to
+create new instances of your models during ``Engine.scan`` and ``Engine.query`` instead of the previous default to
+``__init__``.  This is intentional, to avoid applying unnecessary defaults to partially-loaded objects.
+
 
 -----
  TTL
@@ -99,6 +190,9 @@ against the cleanup time, or a filter with your queries:
         key=TemporaryPaste.email=="me@gmail.com",
         filter=TemporaryPaste.delete_after <= datetime.datetime.now())
     print(query.first())
+
+Bloop still refuses to update existing tables, so TTL will only be enabled on tables if they are created by Bloop
+during ``Engine.bind``.  Otherwise, the declaration exists exclusively to verify configuration.
 
 .. _TTL: https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-supports-automatic-item-expiration-with-time-to-live-ttl/
 

@@ -59,6 +59,69 @@ table name for a single engine.  The following can be expressed for a single Eng
  Inheritance
 -------------
 
+You can now use abstract base models to more easily compose common models.  For example, you may use the same
+id structure for classes.  Previously, this would look like the following:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        id = Column(String, hash_key=True)
+        version = Column(Integer, range_key=True)
+        data = Column(Binary)
+
+    class Profile(BaseModel):
+        id = Column(String, hash_key=True)
+        version = Column(Integer, range_key=True)
+        summary = Column(String)
+
+Now, you can define an abstract base and re-use the ``id`` and ``version`` columns in both:
+
+.. code-block:: python
+
+    class MyBase(BaseModel):
+        class Meta:
+            abstract = True
+        id = Column(String, hash_key=True)
+        version = Column(Integer, range_key=True)
+
+    class User(MyBase):
+        data = Column(Binary)
+
+    class Profile(MyBase):
+        summary = Column(String)
+
+
+You can use multiple inheritance to compose models from multiple mixins; base classes do not need to subclass
+``BaseModel``.  Here's the same two models as above, but the hash and range keys are defined across two mixins:
+
+
+.. code-block:: python
+
+    class StringHash:
+        id = Column(String, hash_key=True)
+
+    class IntegerRange:
+        version = Column(Integer, range_key=True)
+
+
+    class User(StringHash, IntegerRange, BaseModel):
+        data = Column(Binary)
+
+    class Profile(StringHash, IntegerRange, BaseModel):
+        summary = Column(String)
+
+Mixins may also contain ``GlobalSecondaryIndex`` and ``LocalSecondaryIndex``, even if their hash/range keys aren't
+defined in that mixin:
+
+
+.. code-block:: python
+
+    class ByEmail:
+        by_email = GlobalSecondaryIndex(projection="keys", hash_key="email")
+
+
+    class User(StringHash, IntegerRange, ByEmail, BaseModel):
+        email = Column(String)
 
 -----------
  Meta.init

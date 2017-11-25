@@ -70,7 +70,7 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
         The column that the index can be sorted on.
 
 ---------
- binding
+ Binding
 ---------
 
 .. automethod:: bloop.models.bind_column
@@ -293,7 +293,7 @@ and won't fall back to a parent class's definition:
  Stream Ordering Guarantees
 ----------------------------
 
-The `DynamoDB Streams API`__ exposes a limited amount temporal information and few options for navigating
+The `DynamoDB Streams API`__ exposes a limited amount of temporal information and few options for navigating
 within a shard.  Due to these constraints, it was hard to reduce the API down to a single ``__next__`` call
 without compromising performance or ordering.
 
@@ -418,7 +418,7 @@ Low-throughput tables will only have a single open shard at any time, and can re
 above for rebuilding the exact order of changes to the table.
 
 For high throughput tables, there can be more than one root shard, and each shard lineage can have more than one
-child open at once.  In this case, Bloop's streaming interface can't guarantees ordering for all records in the
+child open at once.  In this case, Bloop's streaming interface can't guarantee ordering for all records in the
 stream, because there is no absolute chronological ordering across a partitioned table.  Instead, Bloop will fall
 back to a total ordering scheme that uses each record's ``ApproximateCreationDateTime`` and, when two records have
 the same creation time, a monotonically increasing integral clock to break ties.

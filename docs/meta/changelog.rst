@@ -20,7 +20,7 @@ The 2.0.0 release includes a number of api changes and new features.
 * Python 3.6.0 is the minimum required version.
 * ``Meta.init`` now defaults to ``cls.__new__(cls)`` instead of ``cls.__init__()``; when model instances are created
   as part of ``engine.query``, ``engine.stream`` etc. these will not call your model's ``__init__`` method.  The
-  default `BaseModel.__init__`` is not meant for use outside of local instantiation.
+  default ``BaseModel.__init__`` is not meant for use outside of local instantiation.
 * The ``Column`` and ``Index`` kwarg ``name`` was renamed to ``dynamo_name`` to accurately reflect how the value was
   used: ``Column(SomeType, name="foo")`` becomes ``Column(SomeType, dynamo_name="foo")``.
   Additionally, the column and index attribute ``model_name`` was renamed to ``name``; ``dynamo_name`` is unchanged

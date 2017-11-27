@@ -24,7 +24,7 @@ from bloop.conditions import (
     get_snapshot,
     iter_columns,
     iter_conditions,
-    printable_column_name,
+    printable_name,
     render,
 )
 from bloop.models import BaseModel, Column
@@ -35,10 +35,10 @@ from ..helpers.models import Document, User
 
 
 class MockColumn(Column):
-    """model, model_name, dynamo_name, __repr__"""
+    """model, name, dynamo_name, __repr__"""
     def __init__(self, name):
-        super().__init__(String(), name="d_" + name)
-        self.model_name = name
+        super().__init__(String(), dynamo_name="d_" + name)
+        self._name = name
 
         # Mock model so this can render as M.name
         self.model = type("M", tuple(), {})
@@ -373,7 +373,7 @@ def test_ref_value_dumped_path(reference_tracker):
     assert reference_tracker.attr_values == expected_values
 
 
-def test_ref_any_column_name(reference_tracker):
+def test_ref_any_name(reference_tracker):
     """Render a reference to the column name (and path) when there's no value"""
     column = Document.data["Description"]["Body"]
     expected_ref = Reference(name="#n0.#n1.#n2", type="name", value=None)
@@ -1133,7 +1133,7 @@ def test_ior_basic():
     # in
     (InCondition(column=c, values=[]), "(M.c in [])"),
     (InCondition(column=c, values=[2, 3]), "(M.c in [2, 3])"),
-    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [<Column[M.d]>, 3])"),
+    (InCondition(column=c, values=[MockColumn("d"), 3]), "(M.c in [<MockColumn[M.d]>, 3])"),
 
     # empty
     (Condition(), "()")
@@ -1409,9 +1409,9 @@ def test_unsupported_mixin_function_conditions(op, typedefs, args):
     class Model(BaseModel):
         id = Column(Integer, hash_key=True)
     for typedef in typedefs:
-        column = Column(typedef, name="d")
+        column = Column(typedef, dynamo_name="d")
         column.model = Model
-        column.model_name = "c"
+        column._name = "c"
         with pytest.raises(InvalidCondition):
             getattr(column, op)(*args)
             column.begins_with(object())
@@ -1430,31 +1430,31 @@ def test_unsupported_mixin_function_conditions(op, typedefs, args):
 def test_unsupported_mixin_comparison_conditions(op, typedef):
     class Model(BaseModel):
         id = Column(Integer, hash_key=True)
-    column = Column(typedef, name="d")
+    column = Column(typedef, dynamo_name="d")
     column.model = Model
-    column.model_name = "c"
+    column._name = "c"
     with pytest.raises(InvalidCondition):
         op(column, "value")
 
 
 def test_printable_column_no_path():
     """Model.column"""
-    assert printable_column_name(User.email) == "email"
+    assert printable_name(User.email) == "email"
 
 
 def test_printable_column_mixed_path():
     """Model.column[3].foo[1]"""
-    assert printable_column_name(User.id, path=[3, "foo", "bar", 0, 1]) == "id[3].foo.bar[0][1]"
+    assert printable_name(User.id, path=[3, "foo", "bar", 0, 1]) == "id[3].foo.bar[0][1]"
 
 
 def test_printable_column_included_path():
     """Path is part of the 'column' that's provided"""
-    assert printable_column_name(User.id[3]["foo"]["bar"][0][1]) == "id[3].foo.bar[0][1]"
+    assert printable_name(User.id[3]["foo"]["bar"][0][1]) == "id[3].foo.bar[0][1]"
 
 
 def test_printable_column_both_paths():
     """When both paths are provided, the explicit path wins"""
-    assert printable_column_name(User.id["not used"], path=[3, "foo", "bar", 0, 1]) == "id[3].foo.bar[0][1]"
+    assert printable_name(User.id["not used"], path=[3, "foo", "bar", 0, 1]) == "id[3].foo.bar[0][1]"
 
 
 # END COMPARISON MIXIN ========================================================================== END COMPARISON MIXIN

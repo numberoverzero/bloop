@@ -47,12 +47,20 @@ See :ref:`defining models <define-models>` in the User Guide.
 --------
 
 .. autoclass:: bloop.models.Column
-    :members:
+    :members: __copy__
+    :undoc-members:
+    :special-members: __copy__
+
+    .. attribute:: default
+
+        A no-arg function used during instantiation of the column's
+        model.  Returns ``bloop.util.missing`` when the column does
+        not have a default.  Defaults to ``lambda: bloop.util.missing``.
 
     .. attribute:: dynamo_name
 
         The name of this column in DynamoDB.  Defaults to the column's
-        :data:`~Column.model_name`.
+        :data:`~Column.name`.
 
     .. attribute:: hash_key
 
@@ -62,7 +70,7 @@ See :ref:`defining models <define-models>` in the User Guide.
 
         The model this column is attached to.
 
-    .. attribute:: model_name
+    .. attribute:: name
 
         The name of this column in the model.  Not settable.
 
@@ -72,7 +80,7 @@ See :ref:`defining models <define-models>` in the User Guide.
             ...     ...
             ...     cheat_codes = Column(Set(String), name="cc")
             ...
-            >>> Document.cheat_codes.model_name
+            >>> Document.cheat_codes.name
             cheat_codes
             >>> Document.cheat_codes.dynamo_name
             cc
@@ -86,11 +94,15 @@ See :ref:`defining models <define-models>` in the User Guide.
 ----------------------
 
 .. autoclass:: bloop.models.GlobalSecondaryIndex
+    :members: __copy__
+    :undoc-members:
+    :special-members: __copy__
+
 
     .. attribute:: dynamo_name
 
         The name of this index in DynamoDB.  Defaults to the index's
-        :data:`~GlobalSecondaryIndex.model_name`.
+        :data:`~GlobalSecondaryIndex.name`.
 
     .. attribute:: hash_key
 
@@ -100,7 +112,7 @@ See :ref:`defining models <define-models>` in the User Guide.
 
         The model this index is attached to.
 
-    .. attribute:: model_name
+    .. attribute:: name
 
         The name of this index in the model.  Not settable.
 
@@ -111,7 +123,7 @@ See :ref:`defining models <define-models>` in the User Guide.
             ...     by_email = GlobalSecondaryIndex(
             ...         projection="keys", name="ind_e", hash_key="email")
             ...
-            >>> Document.by_email.model_name
+            >>> Document.by_email.name
             by_email
             >>> Document.by_email.dynamo_name
             ind_e
@@ -146,11 +158,14 @@ See :ref:`defining models <define-models>` in the User Guide.
 ---------------------
 
 .. autoclass:: bloop.models.LocalSecondaryIndex
+    :members: __copy__
+    :undoc-members:
+    :special-members: __copy__
 
     .. attribute:: dynamo_name
 
         The name of this index in DynamoDB.  Defaults to the index's
-        :data:`~LocalSecondaryIndex.model_name`.
+        :data:`~LocalSecondaryIndex.name`.
 
     .. attribute:: hash_key
 
@@ -160,7 +175,7 @@ See :ref:`defining models <define-models>` in the User Guide.
 
         The model this index is attached to.
 
-    .. attribute:: model_name
+    .. attribute:: name
 
         The name of this index in the model.  Not settable.
 
@@ -171,7 +186,7 @@ See :ref:`defining models <define-models>` in the User Guide.
             ...     by_date = LocalSecondaryIndex(
             ...         projection="keys", name="ind_co", range_key="created_on")
             ...
-            >>> Document.by_date.model_name
+            >>> Document.by_date.name
             by_date
             >>> Document.by_date.dynamo_name
             ind_co
@@ -230,15 +245,14 @@ The column will create an instance of the type by calling the constructor withou
     class SomeModel(BaseModel):
         custom_hash_key = Column(ReversedString, hash_key=True)
 
-In rare cases, complex types may need to implement :func:`~bloop.types.Type._dump`,
-:func:`~bloop.types.Type._load`, or :func:`~bloop.types.Type._register`.
+In rare cases, complex types may need to implement :func:`~bloop.types.Type._dump` or :func:`~bloop.types.Type._load`.
 
 ------
  Type
 ------
 
 .. autoclass:: bloop.types.Type
-    :members: dynamo_dump, dynamo_load, _dump, _load, _register
+    :members: dynamo_dump, dynamo_load, _dump, _load
     :member-order: bysource
 
     .. attribute:: python_type
@@ -303,8 +317,8 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
     # Long traceback
     Inexact: [<class 'decimal.Inexact'>, <class 'decimal.Rounded'>]
 
-    >>> from decimal import Decimal as D
-    >>> product.rating = D('3.14')
+    >>> from decimal import Decimal
+    >>> product.rating = Decimal('3.14')
     >>> engine.save(product)
     >>> # Success!
 
@@ -378,6 +392,18 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
 
     .. attribute:: backing_type
         :annotation: = "S"
+
+    .. attribute:: python_type
+        :annotation: = datetime.datetime
+
+-----------
+ Timestamp
+-----------
+
+.. autoclass:: bloop.types.Timestamp
+
+    .. attribute:: backing_type
+        :annotation: = "N"
 
     .. attribute:: python_type
         :annotation: = datetime.datetime
@@ -658,31 +684,21 @@ fail with :exc`~bloop.exceptions.ConstraintViolation`.
 These are thrown when an option is invalid or missing, such as forgetting a key condition for a query,
 or trying to use an unknown projection type.
 
-.. autoclass:: bloop.exceptions.InvalidComparisonOperator
-
 .. autoclass:: bloop.exceptions.InvalidCondition
-
-.. autoclass:: bloop.exceptions.InvalidFilterCondition
-
-.. autoclass:: bloop.exceptions.InvalidIndex
-
-.. autoclass:: bloop.exceptions.InvalidKeyCondition
 
 .. autoclass:: bloop.exceptions.InvalidModel
 
 .. autoclass:: bloop.exceptions.InvalidPosition
 
-.. autoclass:: bloop.exceptions.InvalidProjection
-
-.. autoclass:: bloop.exceptions.InvalidSearchMode
+.. autoclass:: bloop.exceptions.InvalidSearch
 
 .. autoclass:: bloop.exceptions.InvalidShardIterator
 
 .. autoclass:: bloop.exceptions.InvalidStream
 
-.. autoclass:: bloop.exceptions.MissingKey
+.. autoclass:: bloop.exceptions.InvalidTemplate
 
-.. autoclass:: bloop.exceptions.UnboundModel
+.. autoclass:: bloop.exceptions.MissingKey
 
 .. autoclass:: bloop.exceptions.UnknownType
 
@@ -729,3 +745,34 @@ or trying to use an unknown projection type.
 .. _arrow: http://crsmithdev.com/arrow
 .. _delorean: https://delorean.readthedocs.io/en/latest/
 .. _pendulum: https://pendulum.eustace.io
+
+-----------
+ Timestamp
+-----------
+
+.. class:: Timestamp(timezone=datetime.timezone.utc)
+
+    Drop-in replacement for :class:`~bloop.types.Timestamp`.  Support for `arrow`_, `delorean`_, and `pendulum`_:
+
+    .. code-block:: python
+
+        from bloop.ext.arrow import Timestamp
+        from bloop.ext.delorean import Timestamp
+        from bloop.ext.pendulum import Timestamp
+
+    .. attribute:: backing_type
+        :annotation: = "N"
+
+    .. attribute:: python_type
+        :annotation:
+
+        Depending on where it's imported from, one of:
+
+        * :class:`arrow.Arrow <arrow.arrow.Arrow>`
+        * :class:`delorean.Delorean`
+        * :class:`pendulum.Pendulum`
+
+    .. attribute:: timezone
+        :annotation: = tzinfo
+
+        The timezone that values loaded from DynamoDB will use.

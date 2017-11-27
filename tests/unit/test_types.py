@@ -2,7 +2,6 @@ import datetime
 import decimal
 import uuid
 
-import declare
 import pytest
 
 from bloop.types import (
@@ -16,6 +15,7 @@ from bloop.types import (
     Number,
     Set,
     String,
+    Timestamp,
     Type,
 )
 
@@ -29,7 +29,7 @@ def symmetric_test(typedef, *pairs):
         assert typedef.dynamo_dump(loaded, context={}) == dumped
 
 
-def test_missing_abstract_methods(engine):
+def test_missing_abstract_methods():
     """NotImplementedError when dynamo_load or dynamo_dump are missing"""
 
     class MyType(Type):
@@ -37,8 +37,6 @@ def test_missing_abstract_methods(engine):
         python_type = str
 
     typedef = MyType()
-    engine.type_engine.register(typedef)
-    engine.type_engine.bind()
 
     with pytest.raises(NotImplementedError):
         typedef._load({"S": "value"}, context={})
@@ -55,14 +53,11 @@ def test_load_dump_best_effort(engine):
         python_type = float
 
     typedef = MyType()
-    engine.type_engine.register(typedef)
-    engine.type_engine.bind()
-
     assert "not_a_float" == typedef._load({"NOT_FOO": "not_a_float"}, context={"engine": engine})
     assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={"engine": engine})
 
 
-@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Number, Integer, Binary, Boolean])
+@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Timestamp, Number, Integer, Binary, Boolean])
 def test_none_scalar_types(typedef):
     """single-value types without an explicit 'lack of value' sentinel should return None when given None"""
     type = typedef()
@@ -90,8 +85,6 @@ def test_none_scalar_types(typedef):
 ])
 def test_load_none_vector_types(engine, typedef, default):
     """multi-value types return empty containers when given None"""
-    engine.type_engine.register(DocumentType)
-    engine.type_engine.bind()
     context = {"engine": engine}
 
     assert typedef._load(None, context=context) == default
@@ -104,8 +97,6 @@ def test_load_none_vector_types(engine, typedef, default):
     (DocumentType, ({"Rating": None}, {}, None))
 ])
 def test_dump_none_vector_types(engine, typedef, nones):
-    engine.type_engine.register(typedef)
-    engine.type_engine.bind()
     context = {"engine": engine}
 
     for values in nones:
@@ -121,8 +112,6 @@ def test_dump_none_vector_types(engine, typedef, nones):
 ])
 def test_dump_partial_none(engine, typedef, values, expected):
     """vector types filter out inner Nones"""
-    engine.type_engine.register(typedef)
-    engine.type_engine.bind()
     assert typedef.dynamo_dump(values, context={"engine": engine}) == expected
 
 
@@ -143,6 +132,37 @@ def test_datetime():
     now = datetime.datetime.now(datetime.timezone.utc)
     now_str = now.isoformat()
     symmetric_test(typedef, (now, now_str))
+
+
+@pytest.mark.parametrize("naive", (datetime.datetime.now(), datetime.datetime.utcnow()))
+def test_datetime_naive(naive):
+    """
+    Python 3.6 made astimezone assume the system timezone when tzinfo is None.
+    Therefore bloop explicitly guards against a naive object.
+    """
+    typedef = DateTime()
+    with pytest.raises(ValueError):
+        typedef.dynamo_dump(naive, context=None)
+
+
+def test_timestamp():
+    typedef = Timestamp()
+    # .replace because microseconds are dropped
+    now = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0)
+    # numbers are passed to dynamodb as strings
+    now_str = str(int(now.timestamp()))
+    symmetric_test(typedef, (now, now_str))
+
+
+@pytest.mark.parametrize("naive", (datetime.datetime.now(), datetime.datetime.utcnow()))
+def test_timestamp_naive(naive):
+    """
+    Python 3.6 made astimezone assume the system timezone when tzinfo is None.
+    Therefore bloop explicitly guards against a naive object.
+    """
+    typedef = Timestamp()
+    with pytest.raises(ValueError):
+        typedef.dynamo_dump(naive, context=None)
 
 
 def test_number():
@@ -189,8 +209,6 @@ def test_binary():
         (Binary, {b"123", b"456"}, ["MTIz", "NDU2"])], ids=str)
 def test_sets(engine, set_type, loaded, dumped):
     typedef = Set(set_type)
-    engine.type_engine.register(typedef)
-    engine.type_engine.bind()
 
     assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
 
@@ -219,20 +237,6 @@ def test_set_illegal_backing_type():
             Set(typedef)
 
 
-def test_set_registered():
-    """set registers its typedef so loading/dumping happens properly"""
-    type_engine = declare.TypeEngine.unique()
-    string_type = String()
-    string_set_type = Set(string_type)
-
-    type_engine.bind()
-    assert string_type not in type_engine.bound_types
-
-    type_engine.register(string_set_type)
-    type_engine.bind()
-    assert string_type in type_engine.bound_types
-
-
 @pytest.mark.parametrize("value", [1, True, object(), bool, "str", False, 0, set(), ""], ids=repr)
 def test_bool(value):
     """Boolean handles all values except None with bool(value)"""
@@ -246,8 +250,6 @@ def test_list(engine):
     loaded = [uuid.uuid4() for _ in range(5)]
     expected = [{"S": str(id)} for id in loaded]
 
-    engine.type_engine.register(typedef)
-    engine.type_engine.bind()
     dumped = typedef.dynamo_dump(loaded, context={"engine": engine})
     assert dumped == expected
     assert typedef.dynamo_load(dumped, context={"engine": engine}) == loaded
@@ -285,8 +287,6 @@ def test_map_dump(engine):
                 'Body': {'S': 'Body text'}}},
         'Updated': {'S': now.isoformat()}
     }
-    engine.type_engine.register(DocumentType)
-    engine.type_engine.bind()
     dumped = DocumentType.dynamo_dump(loaded, context={"engine": engine})
     assert dumped == expected
 
@@ -314,8 +314,6 @@ def test_map_load(engine):
         'Id': uid,
         'Updated': None
     }
-    engine.type_engine.register(DocumentType)
-    engine.type_engine.bind()
     loaded = DocumentType.dynamo_load(dumped, context={"engine": engine})
     assert loaded == expected
 

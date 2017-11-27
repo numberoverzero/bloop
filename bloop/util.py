@@ -15,6 +15,46 @@ __signals = blinker.Namespace()
 signal = __signals.signal
 
 
+def index(objects, attr):
+    """
+    Generate a mapping of a list of objects indexed by the given attr.
+
+    Parameters
+    ----------
+    objects : :class:`list`, iterable
+    attr : string
+        The attribute to index the list of objects by
+
+    Returns
+    -------
+    dictionary : dict
+        keys are the value of each object's attr, and values are from objects
+
+    Example
+    -------
+
+    class Person(object):
+        def __init__(self, name, email, age):
+            self.name = name
+            self.email = email
+            self.age = age
+
+    people = [
+        Person('one', 'one@people.com', 1),
+        Person('two', 'two@people.com', 2),
+        Person('three', 'three@people.com', 3)
+    ]
+
+    by_email = index(people, 'email')
+    by_name = index(people, 'name')
+
+    assert by_name['one'] is people[0]
+    assert by_email['two@people.com'] is people[1]
+
+    """
+    return {getattr(obj, attr): obj for obj in objects}
+
+
 def ordered(obj):
     """
     Return sorted version of nested dicts/lists for comparing.
@@ -33,43 +73,17 @@ def ordered(obj):
         return obj
 
 
-def printable_query(query_on):
-    # Model.Meta -> Model
-    if getattr(query_on, "__name__", "") == "Meta":
-        return query_on.model
-    # Index -> Index
-    return query_on
-
-
-def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, context=None, **kwargs):
-    """Push values by dynamo_name into an object"""
-    context = context or {"engine": engine}
-    engine = engine or context.get("engine", None)
-    if not engine:
-        raise ValueError("You must provide engine or a context with an engine.")
-    if model is None and obj is None:
-        raise ValueError("You must provide a model or obj to unpack.")
-    if model is not None and obj is not None:
-        raise ValueError("Only specify model or obj.")
-    if model:
-        obj = model.Meta.init()
-
-    for column in expected:
-        value = attrs.get(column.dynamo_name, None)
-        value = engine._load(column.typedef, value, context=context, **kwargs)
-        setattr(obj, column.model_name, value)
-    return obj
-
-
-def walk_subclasses(cls):
-    classes = {cls}
+def walk_subclasses(root):
+    """Does not yield the input class"""
+    classes = [root]
     visited = set()
     while classes:
         cls = classes.pop()
-        # Testing this branch would require checking walk_subclass(object)
-        if cls is not type:  # pragma: no branch
-            classes.update(cls.__subclasses__())
-            visited.add(cls)
+        if cls is type or cls in visited:
+            continue
+        classes.extend(cls.__subclasses__())
+        visited.add(cls)
+        if cls is not root:
             yield cls
 
 

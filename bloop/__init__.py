@@ -32,7 +32,10 @@ from .types import (
     Number,
     Set,
     String,
+    Timestamp,
 )
+
+from .util import missing
 
 
 __all__ = [
@@ -49,9 +52,9 @@ __all__ = [
     "object_deleted", "object_loaded", "object_modified", "object_saved",
 
     # Types
-    "UUID", "Binary", "Boolean", "DateTime", "Integer", "List", "Map", "Number", "Set", "String",
+    "UUID", "Binary", "Boolean", "DateTime", "Integer", "List", "Map", "Number", "Set", "String", "Timestamp",
 
     # Misc
-    "Condition", "QueryIterator", "ScanIterator", "Stream"
+    "Condition", "QueryIterator", "ScanIterator", "Stream", "missing"
 ]
-__version__ = "1.2.0"
+__version__ = "2.0.0"

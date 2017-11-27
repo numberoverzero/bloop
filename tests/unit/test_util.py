@@ -3,26 +3,28 @@ import gc
 
 import pytest
 
+from bloop.models import BaseModel, Column
+from bloop.types import Integer
 from bloop.util import (
     Sentinel,
     WeakDefaultDictionary,
+    index,
     ordered,
-    printable_query,
-    unpack_from_dynamodb,
     walk_subclasses,
 )
 
-from ..helpers.models import User
 
+def test_index():
+    """Index by each object's value for an attribute"""
+    class Person:
+        def __init__(self, name):
+            self.name = name
 
-@pytest.fixture
-def unpack_kwargs(engine):
-    return {
-        "attrs": {"name": {"S": "numberoverzero"}},
-        "expected": {User.name, User.joined},
-        "model": User,
-        "engine": engine,
-        "context": {"engine": engine, "extra": "foo"},
+    p1, p2, p3 = Person("foo"), Person("bar"), Person("baz")
+    assert index([p1, p2, p3], "name") == {
+        "foo": p1,
+        "bar": p2,
+        "baz": p3
     }
 
 
@@ -72,49 +74,6 @@ def test_ordered_recursion(obj, expected):
     assert ordered(obj) == expected
 
 
-@pytest.mark.parametrize("query_on, expected", [
-    (User.Meta, User),
-    (User.by_email, User.by_email)
-])
-def test_printable_query(query_on, expected):
-    """Unpacks Model.Meta into Model, Index into Index for consistent attribute lookup"""
-    assert printable_query(query_on) is expected
-
-
-def test_unpack_no_engine(unpack_kwargs):
-    del unpack_kwargs["engine"]
-    del unpack_kwargs["context"]["engine"]
-
-    with pytest.raises(ValueError):
-        unpack_from_dynamodb(**unpack_kwargs)
-
-
-def test_unpack_no_obj_or_model(unpack_kwargs):
-    del unpack_kwargs["model"]
-    with pytest.raises(ValueError):
-        unpack_from_dynamodb(**unpack_kwargs)
-
-
-def test_unpack_obj_and_model(unpack_kwargs):
-    unpack_kwargs["obj"] = User()
-    with pytest.raises(ValueError):
-        unpack_from_dynamodb(**unpack_kwargs)
-
-
-def test_unpack_model(unpack_kwargs):
-    result = unpack_from_dynamodb(**unpack_kwargs)
-    assert result.name == "numberoverzero"
-    assert result.joined is None
-
-
-def test_unpack_obj(unpack_kwargs):
-    del unpack_kwargs["model"]
-    unpack_kwargs["obj"] = User()
-    result = unpack_from_dynamodb(**unpack_kwargs)
-    assert result.name == "numberoverzero"
-    assert result.joined is None
-
-
 def test_walk_subclasses():
     class A:
         pass
@@ -125,10 +84,18 @@ def test_walk_subclasses():
     class C(A):
         pass
 
-    class D(B, C, A):
+    class D(A):
         pass
 
-    assert set(walk_subclasses(A)) == {A, C, D}
+    class E(C, A):  # would be visited twice without dedupe
+        pass
+
+    class F(D, A):  # would be visited twice without dedupe
+        pass
+
+    # list instead of set ensures we don't false succeed on duplicates
+    subclasses = sorted(walk_subclasses(A), key=lambda c: c.__name__)
+    assert subclasses == [C, D, E, F]
 
 
 def test_sentinel_uniqueness():
@@ -144,27 +111,29 @@ def test_sentinel_repr():
 
 def test_weakref_default_dict():
     """Provides defaultdict behavior for a WeakKeyDictionary"""
-    class Object:
-        pass
+    class MyModel(BaseModel):
+        id = Column(Integer, hash_key=True)
+        data = Column(Integer)
 
-    def counter():
-        current = 0
-        while True:
-            yield current
-            current += 1
+    def new(i):
+        obj = MyModel(id=i, data=2 * i)
+        return obj
 
-    weak_dict = WeakDefaultDictionary(counter().__next__)
-    objs = [Object() for _ in range(3)]
+    weak_dict = WeakDefaultDictionary(lambda: {"foo": "bar"})
 
-    for i, obj in enumerate(objs):
+    n_objs = 10
+    objs = [new(i) for i in range(n_objs)]
+
+    for obj in objs:
         # default_factory is called
-        assert weak_dict[obj] == i
+        assert weak_dict[obj] == {"foo": "bar"}
+    # don't keep a reference to the last obj, throws off the count below
+    del obj
 
-    # Interesting: deleting objs[-1] won't work here because the for loop above
-    # has a ref to that object stored in the `obj` variable, which gets leaked
-    # :(
-
-    del objs[0]
-    gc.collect()
-    # Properly cleaning up data when gc'd
-    assert len(weak_dict) == 2
+    calls = 0
+    while weak_dict:
+        del objs[0]
+        gc.collect()
+        calls += 1
+        assert len(weak_dict) == len(objs)
+    assert calls == n_objs

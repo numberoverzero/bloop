@@ -129,12 +129,11 @@ Table configuration defaults are:
             read_units = None  # uses DynamoDB value, or 1 for new tables
             write_units = None  # uses DynamoDB value, or 1 for new tables
             stream = None
+            ttl = None
 
 If ``abstract`` is true, no backing table will be created in DynamoDB.  Instances of abstract models can't be saved
-or loaded.  Currently, abstract models and inheritance don't mix.  `In the future`__, abstract models
-may be usable as mixins.
-
-__ https://github.com/numberoverzero/bloop/issues/72
+or loaded.  You can use abstract models, or even plain classes with Columns and Indexes, as mixins.  Derived models
+never copy their parents' Meta value.  For more information, see the :ref:`user-models-inheritance` section.
 
 The default ``table_name`` is simply the model's ``__name__``.  This property is useful for mapping a model
 to an existing table, or mapping multiple models to the same table:
@@ -145,6 +144,12 @@ to an existing table, or mapping multiple models to the same table:
         class Meta:
             table_name = "employees-uk"
         ...
+
+.. versionchanged:: 2.0.0
+
+    Engines can customize table names using ``table_name_template``.  This does not change the value of
+    ``Meta.table_name``.  For example, the template "dev-{table_name}" would cause the ``Employee`` model
+    above to use the table "dev-employees-uk"
 
 
 Default ``read_units`` and ``write_units`` are None.  These do not include provisioned throughput for any
@@ -158,7 +163,7 @@ the table or GSI does not exist, they fall back to 1.
     Previously, ``read_units`` and ``write_units`` defaulted to ``1``.  This was inconvenient when throughput
     is controlled by an external script, and totally broken with the new auto-scaling features.
 
-Finally, ``stream`` can be used to enable DynamoDBStreams on the table.  By default streaming is not enabled, and this
+You can use ``stream`` to enable DynamoDBStreams on the table.  By default streaming is not enabled, and this
 is ``None``.  To enable a stream with both new and old images, use:
 
 .. code-block:: python
@@ -169,6 +174,33 @@ is ``None``.  To enable a stream with both new and old images, use:
         }
 
 See the :ref:`user-streams` section of the user guide to get started.  Streams are awesome.
+
+Finally, you can use ``ttl`` to enable the TTL feature on the table.  By default a TTL attribute is not set, and this
+is ``None``.  To enable a ttl on the attribute ``"delete_after"``, use:
+
+.. code-block:: python
+
+    class Meta:
+        ttl = {
+            "column": "delete_after"
+        }
+
+The ``Column.typedef`` of the ttl column must be :class:`~bloop.types.Number` and per the DynamoDB documents, must
+represent the deletion time as number of seconds since the epoch.  The :class:`~bloop.types.Timestamp` type is provided
+for your convenience, and is used as a class:`datetime.datetime`:
+
+.. code-block:: python
+
+    class TemporaryPaste(BaseModel):
+        id = Column(UUID, hash_key=True)
+        private = Column(Boolean)
+        delete_after = Column(Timestamp)
+
+        class Meta:
+            ttl = {"column": "delete_after"}
+
+Like :class:`~bloop.types.DateTime`, ``bloop.ext`` exposes drop-in replacements for ``Timestamp`` for each of three
+popular python datetime libraries: arrow, delorean, and pendulum.
 
 ---------------------
  Model Introspection
@@ -273,7 +305,7 @@ a column can't be both, there can't be more than one of each, and there must be 
         referrer = Column(String, hash_key=True)
         version = Column(Integer, range_key=True)
 
-By default values will be stored in DynamoDB under the name of the column in the model definition (its ``model_name``).
+By default values will be stored in DynamoDB under the name of the column in the model definition (its ``name``).
 If you want to conserve read and write units, you can use shorter names for attributes in DynamoDB (attribute names
 are counted against your provisioned throughput).  Like the ``table_name`` in Meta, the optional ``name`` parameter
 lets you use descriptive model names without binding you to those names in DynamoDB.  This is also convenient when
@@ -295,6 +327,85 @@ Locally, the model names "referrer" and "version" are still used.  An instance w
     ...     referrer="google.com",
     ...     version=get_current_version())
     >>> engine.save(click)
+
+
+----------------
+ Default Values
+----------------
+
+You can provide a default value or a no-arg function that returns a default value when specifying a Column:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        id = Column(UUID)
+        verified = Column(Boolean, default=False)
+        created = Column(DateTime, default=lambda: datetime.datetime.now())
+
+
+Defaults are only applied when new instances are created locally by the default ``BaseModel.__init__`` method.
+When new instances are created as part of a Query, Scan, or iterating a Stream, defaults are not applied.  This is
+because a projection query may not include an existing value; applying the default would locally overwrite the
+previous value in DynamoDB.
+
+.. code-block:: python
+
+
+    import datetime
+
+    def two_days_later():
+        offset = datetime.timedelta(days=2)
+        now = datetime.datetime.now()
+        return now + offset
+
+
+    class TemporaryPaste(BaseModel):
+        class Meta:
+            ttl = {"column": "delete_after"}
+
+        id = Column(UUID, hash_key=True, default=uuid.uuid4)
+        delete_after = Column(Timestamp, default=two_days_later)
+        verified = Column(Boolean, default=False)
+        views = Column(Integer, default=1)
+
+
+Like default function arguments in python, the provided value is not copied but used directly.  For example, a
+default value of ``[1, 2, 3]`` will use the **same list object** on each new instance of the model.  If you want a
+copy of a mutable value, you should wrap it in a lambda: ``lambda: [1, 2, 3]``.
+
+If you don't want to set a default value, you can return the special sentinel ``bloop.missing`` from your function:
+
+.. code-block:: python
+
+    import datetime
+    import random
+    from bloop import missing
+
+    specials = [
+        "one free latte",
+        "50% off chai for a month",
+        "free drip coffee for a year",
+    ]
+
+    offer_ends = datetime.datetime.now() + datetime.timedelta(hours=8)
+
+
+    def limited_time_offer():
+        now = datetime.datetime.now()
+        if now < offer_ends:
+            return random.choice(specials)
+        return missing
+
+
+    class User(BaseModel):
+        id = Column(UUID, hash_key=True)
+        active_coupon = Column(String, default=limited_time_offer)
+
+In this example, a random special is applied to new users for the next 8 hours.  Afterwards, the
+``limited_time_offer`` function will return ``bloop.missing`` and the user won't have an active coupon.
+
+Returning ``bloop.missing`` tells Bloop not to set the value, which is different than setting the value to ``None``.
+An explicit ``None`` will clear any existing value on save, while not setting it leaves the value as-is.
 
 =========
  Indexes
@@ -330,7 +441,7 @@ names.  If you specify a list of columns, key columns will always be included.
             ["email", "username"], hash_key="created_on")
 
 A GlobalSecondaryIndex must have a ``hash_key``, and can optionally have a ``range_key``.  This can either be the
-model_name of a column, or the column object itself:
+name of a column, or the column object itself:
 
 .. code-block:: python
 
@@ -406,3 +517,150 @@ DynamoDB, you can always disable and re-enable it in the future.
     `Local Secondary Indexes`__ in the DynamoDB Developer Guide
 
     __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/LSI.html
+
+.. _user-models-inheritance:
+
+========================
+ Inheritance and Mixins
+========================
+
+Your models will often have identical constructs, especially when sharing a table.  Rather than define these repeatedly
+in each model, Bloop provides the ability to derive Columns and Indexes from base classes.  Consider a set of models
+that each has a UUID and sorts on a DateTime:
+
+.. code-block:: python
+
+    class HashRangeBase(BaseModel):
+        id = Column(UUID, hash_key=True, dynamo_name="i")
+        date = Column(DateTime, range_key=True, dynamo_name="d")
+
+        class Meta:
+            abstract = True
+
+
+    class User(HashRangeBase):
+        pass
+
+
+    class Upload(HashRangeBase):
+        class Meta:
+            write_units = 50
+            read_units = 10
+
+Subclassing ``BaseModel`` is optional, and provides early validation against missing columns/indexes.  Mixins do not
+need to be specified in any particular order:
+
+.. code-block:: python
+
+    class IndexedEmail:
+        by_email = GlobalSecondaryIndex(projection="keys", hash_key="email")
+
+
+    class WithEmail:
+        email = Column(String)
+
+
+    class User(BaseModel, IndexedEmail, WithEmail):
+        id = Column(Integer, hash_key=True)
+
+
+    assert User.by_email.hash_key is User.email  # True
+    assert User.email is not WithEmail.email  # True
+
+Even though the ``by_email`` Index requires the ``email`` Column to exist, it is first in the User's bases.
+
+------------------------
+ Modify Derived Columns
+------------------------
+
+Bloop uses the ``__copy__`` method to create shallow copies of the base Columns and Indexes.  You can override
+this to modify derived Columns and Indexes:
+
+.. code-block:: python
+
+    class MyColumn(Column):
+        def __copy__(self):
+            copy = super().__copy__()
+            copy.derived = True
+
+
+    class WithEmail:
+        email = MyColumn(String)
+
+
+    class User(BaseModel, WithEmail):
+        id = Column(String, hash_key=True)
+
+
+    assert User.email.derived  # True
+    assert not hasattr(WithEmail.email, "derived")  # True
+
+----------------------------
+ Conflicting Derived Values
+----------------------------
+
+A model cannot derive from two base models or mixins that define the same column or index, or that have an
+overlapping ``dynamo_name``.  Consider the following mixins:
+
+.. code-block:: python
+
+    class Id:
+        id = Column(String)
+
+    class AlsoId:
+        id = Column(String, dynamo_name="shared-id")
+
+    class AnotherId:
+        some_id = Column(String, dynamo_name="shared-id")
+
+
+Each of the following are invalid, and will fail:
+
+.. code-block:: python
+
+    # Id, AlsoId have the same column name "id"
+    class Invalid(BaseModel, Id, AlsoId):
+        hash = Column(String, hash_key=True)
+
+    # AlsoId, AnotherId have same column dynamo_name "shared-id"
+    class AlsoInvalid(BaseModel, AlsoId, AnotherId):
+        hash = Column(String, hash_key=True)
+
+For simplicity, Bloop also disallows subclassing more than one model or mixin that defines a hash key, a range key,
+or an Index (either by name or dynamo_name).
+
+However, a derived class may always overwrite an inherited column or index.  The following is valid:
+
+.. code-block:: python
+
+    class SharedIds:
+        hash = Column(String, hash_key=True)
+        range = Column(Integer, range_key=True)
+
+
+    class CustomHash(BaseModel, SharedIds):
+        hash = Column(Integer, hash_key=True)
+
+
+    assert CustomHash.hash.typedef is Integer  # True
+    assert SharedIds.hash.typedef is String  # True  # mixin column is unchanged
+    assert CustomHash.range.typedef is Integer  # Still inherited
+
+This also allows you to hide or omit a derived column:
+
+.. code-block:: python
+
+    class SharedColumns:
+        foo = Column(String)
+        bar = Column(String)
+
+
+    class MyModel(BaseModel, SharedColumns):
+        id = Column(Integer, hash_key=True)
+
+        foo = None
+
+
+    assert MyModel.foo is None  # True
+    assert MyModel.bar.typedef is String  # True
+    assert {MyModel.id, MyModel.bar} == MyModel.Meta.columns  # True

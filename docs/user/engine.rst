@@ -12,6 +12,39 @@ Once you've :ref:`defined some models <define-models>`, you're ready to start
     :ref:`go back <define-models>` and set that up.
 
 
+.. _user-engine-config:
+
+===============
+ Configuration
+===============
+
+Engines expose a small number of configuration options.  On ``__init__``, there are three optional kwargs:
+
+* ``dynamodb``, a DynamoDB client defaulting to ``boto3.client("dynamodb")``
+* ``dynamodbstreams``, a DynamoDBStreams client defaulting to ``boto3.client("dynamodbstreams")``
+* ``table_name_template``, a format string containing "{table_name}" or a function that takes a model and returns a
+  table name for the engine.
+
+You will rarely need to modify the first two, except when you are constructing multiple engines (eg. cross-region
+replication) or connecting to DynamoDBLocal.  For examples of both, see :ref:`Bloop Patterns <patterns-local>`.
+
+Most of the time, you will use ``table_name_template`` to inject configuration into your model/table bindings.  For
+example, the following will prefix every table name with ``"dev-"`` for local development:
+
+.. code-block:: python
+
+    engine = Engine(table_name_template="dev-{table_name}")
+
+Meanwhile, the following function will suffix the table name with a random int:
+
+.. code-block:: python
+
+    def with_nonce(model):
+        return f"{model.Meta.table_name}-{random.randint(0, 10)}"
+
+    engine = Engine(table_name_template=with_nonce)
+
+
 ======
  Bind
 ======

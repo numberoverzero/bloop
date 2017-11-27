@@ -4,8 +4,6 @@ import datetime
 import decimal
 import uuid
 
-import declare
-
 
 ENCODING = "utf-8"
 STRING = "S"
@@ -47,7 +45,7 @@ def supports_operation(operation, typedef):
     return typedef.backing_type in SUPPORTED_OPERATIONS[operation]
 
 
-class Type(declare.TypeDefinition):
+class Type:
     """Abstract base type."""
 
     python_type = None
@@ -124,22 +122,6 @@ class Type(declare.TypeDefinition):
             value = next(iter(value.values()))
         return self.dynamo_load(value, **kwargs)
 
-    def _register(self, engine):
-        """Called when the type is registered.
-
-        Register any types this type depends on.  For example, a container might use:
-
-        .. code-block:: python
-
-            class Container(Type):
-                def __init__(self, container_type):
-                    self._type = container_type
-
-                def _register(self, engine):
-                    engine.register(self._type)
-        """
-        super()._register(engine)
-
     def __repr__(self):
         # Render class python types by name
         python_type = self.python_type
@@ -185,7 +167,7 @@ FIXED_ISO8601_FORMAT = "%Y-%m-%dT%H:%M:%S.%f+00:00"
 class DateTime(String):
     """Always stored in DynamoDB using the :data:`~bloop.types.FIXED_ISO8601_FORMAT` format.
 
-    Does not support naive (no timezone) datetimes.
+    Naive datetimes (``tzinfo is None``) are not supported, and trying to use one will raise ``ValueError``.
 
     .. code-block:: python
 
@@ -211,7 +193,7 @@ class DateTime(String):
     .. note::
 
         To use common datetime libraries such as `arrow`_, `delorean`_, or `pendulum`_,
-        see :ref:`DateTime Extensions <user-extensions-datetime>` in the user guide.  These
+        see :ref:`DateTime and Timestamp Extensions <user-extensions-datetime>` in the user guide.  These
         are drop-in replacements and support non-utc timezones:
 
         .. code-block:: python
@@ -229,11 +211,20 @@ class DateTime(String):
         if value is None:
             return None
         dt = datetime.datetime.strptime(value, FIXED_ISO8601_FORMAT)
+        # we assume all stored values are utc, so we simply force timezone to utc
+        # without changing the day/time values
         return dt.replace(tzinfo=datetime.timezone.utc)
 
     def dynamo_dump(self, value, *, context, **kwargs):
         if value is None:
             return None
+        if value.tzinfo is None:
+            raise ValueError(
+                "naive datetime instances are not supported.  You can set a timezone with either "
+                "your_dt.replace(tzinfo=) or your_dt.astimezone(tz=).  WARNING: calling astimezone on a naive "
+                "datetime will assume the naive datetime is in the system's timezone, even though "
+                "datetime.utcnow() creates a naive object!  You almost certainly don't want to do that."
+            )
         dt = value.astimezone(tz=datetime.timezone.utc)
         return dt.strftime(FIXED_ISO8601_FORMAT)
 
@@ -269,10 +260,10 @@ class Number(Type):
 
 
 class Integer(Number):
-    """
+    """Truncates values when loading or dumping.
 
-    Truncates values when loading or dumping.  For example, '3.14' in DynamoDB is loaded as 3.
-    If a value is 7.5 locally, it's stored in DynamoDB as '7'.
+    For example, ``3.14`` in DynamoDB is loaded as ``3``. If a value is ``7.5``
+    locally, it's stored in DynamoDB as ``7``.
     """
     python_type = int
 
@@ -286,6 +277,71 @@ class Integer(Number):
         if value is None:
             return None
         value = int(value)
+        return super().dynamo_dump(value, context=context, **kwargs)
+
+
+class Timestamp(Integer):
+    """Stores the unix (epoch) time in seconds.  Milliseconds are truncated to 0 on load and save.
+
+    Naive datetimes (``tzinfo is None``) are not supported, and trying to use one will raise ``ValueError``.
+
+    .. code-block:: python
+
+        from datetime import datetime, timedelta, timezone
+
+        class Model(Base):
+            id = Column(Integer, hash_key=True)
+            date = Column(Timestamp)
+        engine.bind()
+
+        obj = Model(id=1, date=datetime.now(timezone.utc))
+        engine.save(obj)
+
+        one_day_ago = datetime.now(timezone.utc) - timedelta(days=1)
+
+        query = engine.query(
+            Model,
+            key=Model.id==1,
+            filter=Model.date >= one_day_ago)
+
+        query.first().date
+
+    .. note::
+
+        To use common datetime libraries such as `arrow`_, `delorean`_, or `pendulum`_,
+        see :ref:`DateTime and Timestamp Extensions <user-extensions-datetime>` in the user guide.  These
+        are drop-in replacements and support non-utc timezones:
+
+        .. code-block:: python
+
+            from bloop import Timestamp  # becomes:
+            from bloop.ext.pendulum import Timestamp
+
+    .. _arrow: http://crsmithdev.com/arrow
+    .. _delorean: https://delorean.readthedocs.io/en/latest/
+    .. _pendulum: https://pendulum.eustace.io
+    """
+    python_type = datetime.datetime
+
+    def dynamo_load(self, value, *, context, **kwargs):
+        if value is None:
+            return None
+        value = super().dynamo_load(value, context=context, **kwargs)
+        # we assume all stored values are utc, so we simply force timezone to utc
+        # without changing the day/time values
+        return datetime.datetime.fromtimestamp(value, tz=datetime.timezone.utc)
+
+    def dynamo_dump(self, value, *, context, **kwargs):
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            raise ValueError(
+                "naive datetime instances are not supported.  You can set a timezone with either "
+                "your_dt.replace(tzinfo=) or your_dt.astimezone(tz=).  WARNING: calling astimezone on a naive "
+                "datetime will assume the naive datetime is in the system's timezone, even though "
+                "datetime.utcnow() creates a naive object!  You almost certainly don't want to do that."
+            )
+        value = value.timestamp()
         return super().dynamo_dump(value, context=context, **kwargs)
 
 
@@ -356,10 +412,6 @@ class Set(Type):
             raise TypeError("{!r} is not a valid set type.".format(self.backing_type))
         super().__init__()
 
-    def _register(self, engine):
-        """Register the set's type"""
-        engine.register(self.inner_typedef)
-
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return set()
@@ -409,9 +461,6 @@ class List(Type):
     def __getitem__(self, key):
         return self.inner_typedef
 
-    def _register(self, engine):
-        engine.register(self.inner_typedef)
-
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return list()
@@ -460,11 +509,6 @@ class Map(Type):
     def __getitem__(self, key):
         """Overload allows easy nested access to types"""
         return self.types[key]
-
-    def _register(self, engine):
-        """Register all types for the map"""
-        for typedef in self.types.values():
-            engine.register(typedef)
 
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:

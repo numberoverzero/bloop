@@ -33,7 +33,7 @@ class RecordBuffer:
 
         (total_ordering, record, shard)
 
-    where ``total_ordering`` is a tuple of ``(created_at, sequence_number, monotomic_clock)`` created from each
+    where ``total_ordering`` is a tuple of ``(created_at, sequence_number, monotonic_clock)`` created from each
     record as it is inserted.
     """
     def __init__(self):

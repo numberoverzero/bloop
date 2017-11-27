@@ -1,39 +1,25 @@
-""" Setup file """
 import os
+import pathlib
+from setuptools import setup, find_packages
 
-from setuptools import setup
-
-
-HERE = os.path.abspath(os.path.dirname(__file__))
-with open(os.path.join(HERE, "README.rst")) as f:
-    README = f.read()
-
-with open(os.path.join(HERE, "CHANGELOG.rst")) as f:
-    CHANGES = f.read()
-
-
-def get_version():
-    with open(os.path.join(HERE, "bloop/__init__.py")) as f:
-        for line in f:
-            if line.startswith("__version__"):
-                return eval(line.split("=")[-1])
-
-PACKAGES = [
-    "bloop",
-    "bloop.ext",
-    "bloop.stream"
-]
+HERE = pathlib.Path(os.path.abspath(os.path.dirname(__file__)))
+README = (HERE / "README.rst").read_text()
+CHANGES = (HERE / "CHANGELOG.rst").read_text()
+VERSION = "VERSION-NOT-FOUND"
+for line in (HERE / "bloop" / "__init__.py").read_text().split("\n"):
+    if line.startswith("__version__"):
+        VERSION = eval(line.split("=")[-1])
 
 REQUIREMENTS = [
     "blinker==1.4",
-    "boto3==1.4.4",
-    "declare==0.9.11",
+    "boto3==1.4.8",
+    "botocore"  # no version because we'll take what boto3 uses
 ]
 
 if __name__ == "__main__":
     setup(
         name="bloop",
-        version=get_version(),
+        version=VERSION,
         description="ORM for DynamoDB",
         long_description=README + "\n\n" + CHANGES,
         classifiers=[
@@ -43,7 +29,7 @@ if __name__ == "__main__":
             "Operating System :: OS Independent",
             "Programming Language :: Python",
             "Programming Language :: Python :: 3",
-            "Programming Language :: Python :: 3.5",
+            "Programming Language :: Python :: 3.6",
             "Topic :: Software Development :: Libraries"
         ],
         author="Joe Cross",
@@ -53,6 +39,6 @@ if __name__ == "__main__":
         keywords="aws dynamo dynamodb dynamodbstreams orm",
         platforms="any",
         include_package_data=True,
-        packages=PACKAGES,
+        packages=find_packages(exclude=("docs", "examples", "scripts", "tests")),
         install_requires=REQUIREMENTS,
     )

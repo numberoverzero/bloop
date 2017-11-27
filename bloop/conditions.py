@@ -39,17 +39,17 @@ _obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None
 
 
 @object_deleted.connect
-def on_object_deleted(_, *, obj, **kwargs):
+def on_object_deleted(_, *, obj, **__):
     _obj_tracking[obj].pop("snapshot", None)
 
 
 @object_loaded.connect
-def on_object_loaded(_, *, engine, obj, **kwargs):
+def on_object_loaded(_, *, engine, obj, **__):
     sync(obj, engine)
 
 
 @object_modified.connect
-def on_object_modified(_, *, obj, column, **kwargs):
+def on_object_modified(_, *, obj, column, **__):
     # Mark a column for a given object as being modified in any way.
     # Any marked columns will be pushed (possibly as DELETES) in
     # future UpdateItem calls that include the object.
@@ -57,7 +57,7 @@ def on_object_modified(_, *, obj, column, **kwargs):
 
 
 @object_saved.connect
-def on_object_saved(_, *, engine, obj, **kwargs):
+def on_object_saved(_, *, engine, obj, **__):
     sync(obj, engine)
 
 
@@ -68,7 +68,7 @@ def sync(obj, engine):
     snapshot = Condition()
     # Only expect values (or lack of a value) for columns that have been explicitly set
     for column in sorted(_obj_tracking[obj]["marked"], key=lambda col: col.dynamo_name):
-        value = getattr(obj, column.model_name, None)
+        value = getattr(obj, column.name, None)
         value = engine._dump(column.typedef, value)
         condition = column == value
         # The renderer shouldn't try to dump the value again.
@@ -368,7 +368,7 @@ class ConditionRenderer:
                 filter(lambda c: c not in obj.Meta.keys, get_marked(obj)),
                 key=lambda c: c.dynamo_name):
             name_ref = self.refs.any_ref(column=column)
-            value_ref = self.refs.any_ref(column=column, value=getattr(obj, column.model_name, None))
+            value_ref = self.refs.any_ref(column=column, value=getattr(obj, column.name, None))
             # Can't set to an empty value
             if is_empty(value_ref):
                 self.refs.pop_refs(value_ref)
@@ -667,7 +667,7 @@ class ComparisonCondition(BaseCondition):
 
     def __repr__(self):
         return "({}.{} {} {!r})".format(
-            self.column.model.__name__, printable_column_name(self.column),
+            self.column.model.__name__, printable_name(self.column),
             self.operation, self.values[0])
 
     def render(self, renderer):
@@ -704,7 +704,7 @@ class BeginsWithCondition(BaseCondition):
 
     def __repr__(self):
         return "begins_with({}.{}, {!r})".format(
-            self.column.model.__name__, printable_column_name(self.column),
+            self.column.model.__name__, printable_name(self.column),
             self.values[0])
 
     def render(self, renderer):
@@ -728,7 +728,7 @@ class BetweenCondition(BaseCondition):
 
     def __repr__(self):
         return "({}.{} between [{!r}, {!r}])".format(
-            self.column.model.__name__, printable_column_name(self.column),
+            self.column.model.__name__, printable_name(self.column),
             self.values[0], self.values[1])
 
     def render(self, renderer):
@@ -754,7 +754,7 @@ class ContainsCondition(BaseCondition):
 
     def __repr__(self):
         return "contains({}.{}, {!r})".format(
-            self.column.model.__name__, printable_column_name(self.column),
+            self.column.model.__name__, printable_name(self.column),
             self.values[0])
 
     def render(self, renderer):
@@ -778,7 +778,7 @@ class InCondition(BaseCondition):
 
     def __repr__(self):
         return "({}.{} in {!r})".format(
-            self.column.model.__name__, printable_column_name(self.column),
+            self.column.model.__name__, printable_name(self.column),
             self.values)
 
     def render(self, renderer):
@@ -800,24 +800,7 @@ class InCondition(BaseCondition):
 # END CONDITIONS ====================================================================================== END CONDITIONS
 
 
-def check_support(column, operation):
-    typedef = column.typedef
-    for segment in path_of(column):
-        typedef = typedef[segment]
-    if not supports_operation(operation, typedef):
-        tpl = "Backing type {!r} for {}.{} does not support condition {!r}."
-        raise InvalidCondition(tpl.format(
-            column.typedef.backing_type,
-            column.model.__name__,
-            printable_column_name(column),
-            operation
-        ))
-
-
 class ComparisonMixin:
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-
     def __repr__(self):
         return "<ComparisonMixin>"
 
@@ -869,6 +852,20 @@ class ComparisonMixin:
     is_not = __ne__
 
 
+def check_support(column: ComparisonMixin, operation):
+    typedef = column.typedef
+    for segment in path_of(column):
+        typedef = typedef[segment]
+    if not supports_operation(operation, typedef):
+        tpl = "Backing type {!r} for {}.{} does not support condition {!r}."
+        raise InvalidCondition(tpl.format(
+            column.typedef.backing_type,
+            column.model.__name__,
+            printable_name(column),
+            operation
+        ))
+
+
 class Proxy(ComparisonMixin):
     def __init__(self, obj, path):
         self._obj = obj
@@ -884,16 +881,16 @@ class Proxy(ComparisonMixin):
     def __repr__(self):
         # "<Proxy[File.metadata[3].foo.bar[0]]>"
         name = self._obj.model.__name__
-        path = printable_column_name(self._obj, self._path)
+        path = printable_name(self._obj, self._path)
         return "<Proxy[{}.{}]>".format(name, path)
 
 
-def printable_column_name(column, path=None):
+def printable_name(column, path=None):
     """Provided for debug output when rendering conditions.
 
     User.name[3]["foo"][0]["bar"] -> name[3].foo[0].bar
     """
-    pieces = [column.model_name]
+    pieces = [column.name]
     path = path or path_of(column)
     for segment in path:
         if isinstance(segment, str):

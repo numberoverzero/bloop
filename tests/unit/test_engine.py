@@ -1,5 +1,6 @@
 import datetime
 import logging
+import uuid
 from unittest.mock import Mock
 
 import pytest
@@ -8,18 +9,86 @@ from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
     InvalidModel,
     InvalidStream,
+    InvalidTemplate,
     MissingKey,
     MissingObjects,
-    UnboundModel,
     UnknownType,
 )
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper
 from bloop.signals import object_saved
-from bloop.types import DateTime, Integer, String
+from bloop.types import DateTime, Integer, String, Timestamp
 from bloop.util import ordered
 
 from ..helpers.models import ComplexModel, User, VectorModel
+
+
+def test_default_table_name_template(dynamodb, dynamodbstreams, session):
+    """When no table_name_template is provided, the default of '{table_name}' is used"""
+    class LocalModel(BaseModel):
+        class Meta:
+            table_name = "my-table-name"
+        id = Column(Integer, hash_key=True)
+
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    # Replace mock clients immediately
+    engine.session = session
+
+    engine.bind(LocalModel)
+    session.create_table.assert_called_once_with("my-table-name", LocalModel)
+    session.validate_table.assert_called_once_with("my-table-name", LocalModel)
+
+
+def test_str_table_name_template(dynamodb, dynamodbstreams, session):
+    """When a string is provided for table_name_template, .format is called on it with the key table_name"""
+    class LocalModel(BaseModel):
+        class Meta:
+            table_name = "my-table-name"
+        id = Column(Integer, hash_key=True)
+
+    template = "prefix-{table_name}"
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams, table_name_template=template)
+    # Replace mock clients immediately
+    engine.session = session
+
+    engine.bind(LocalModel)
+    session.create_table.assert_called_once_with("prefix-my-table-name", LocalModel)
+    session.validate_table.assert_called_once_with("prefix-my-table-name", LocalModel)
+
+
+def test_malformed_table_name_template(dynamodb, dynamodbstreams):
+    """When a string is provided that doesn't have the correct format key {table_name}, InvalidTemplate is raised"""
+    template = "prefix-{wrong_key}"
+    with pytest.raises(InvalidTemplate):
+        Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams, table_name_template=template)
+
+
+def test_wrong_type_table_name_template(dynamodb, dynamodbstreams):
+    """When the template is neither a string nor a function is provided, ValueError is raised."""
+    template = object()
+    with pytest.raises(ValueError):
+        # noinspection PyTypeChecker
+        Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams, table_name_template=template)
+
+
+def test_func_table_name_template(dynamodb, dynamodbstreams, session):
+    """When a function is provided for table_name_template, it is called with the model as its sole argument."""
+    class LocalModel(BaseModel):
+        class Meta:
+            table_name = "my-table-name"
+        id = Column(Integer, hash_key=True)
+
+    def template(model):
+        assert issubclass(model, BaseModel)
+        return "reverse-" + model.Meta.table_name[::-1]
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams, table_name_template=template)
+    # Replace mock clients immediately
+    engine.session = session
+
+    engine.bind(LocalModel)
+    expected = "reverse-eman-elbat-ym"
+    session.create_table.assert_called_once_with(expected, LocalModel)
+    session.validate_table.assert_called_once_with(expected, LocalModel)
 
 
 def test_missing_objects(engine, session, caplog):
@@ -171,7 +240,7 @@ def test_load_shared_table(engine, session, caplog):
         id = Column(String, hash_key=True)
         range = Column(String, range_key=True)
         first = Column(String)
-        as_date = Column(DateTime, name="shared")
+        as_date = Column(DateTime, dynamo_name="shared")
 
     class SecondModel(BaseModel):
         class Meta:
@@ -180,7 +249,7 @@ def test_load_shared_table(engine, session, caplog):
         id = Column(String, hash_key=True)
         range = Column(String, range_key=True)
         second = Column(String)
-        as_string = Column(String, name="shared")
+        as_string = Column(String, dynamo_name="shared")
     engine.bind(BaseModel)
 
     id = "foo"
@@ -206,9 +275,9 @@ def test_load_shared_table(engine, session, caplog):
     expected_second = SecondModel(id=id, range=range, second="second", as_string=now_str)
 
     missing = object()
-    for attr in (c.model_name for c in FirstModel.Meta.columns):
+    for attr in (c.name for c in FirstModel.Meta.columns):
         assert getattr(first, attr, missing) == getattr(expected_first, attr, missing)
-    for attr in (c.model_name for c in SecondModel.Meta.columns):
+    for attr in (c.name for c in SecondModel.Meta.columns):
         assert getattr(second, attr, missing) == getattr(expected_second, attr, missing)
     assert not hasattr(first, "second")
     assert not hasattr(second, "first")
@@ -240,15 +309,15 @@ def test_load_dump_unbound(engine):
     obj = Model(id=5)
     value = {"id": {"N": "5"}}
 
-    with pytest.raises(UnboundModel):
-        engine._load(Model, value)
+    loaded = engine._load(Model, value)
+    assert loaded.id == 5
 
-    with pytest.raises(UnboundModel):
-        engine._dump(Model, obj)
+    dumped = engine._dump(Model, obj)
+    assert dumped == {"id": {"N": "5"}}
 
 
 def test_load_dump_subclass(engine):
-    """Only the immediate Columns of a model should be dumped"""
+    """Both immediate and inherited Columns should be dumped"""
 
     class Admin(User):
         admin_id = Column(Integer, hash_key=True)
@@ -256,18 +325,16 @@ def test_load_dump_subclass(engine):
     engine.bind(User)
 
     admin = Admin(admin_id=3)
-    # Set an attribute that would be a column on the parent class, but should
-    # have no meaning for the subclass
+    # Set an attribute for a column on the parent class
     admin.email = "admin@domain.com"
 
-    dumped_admin = {"admin_id": {"N": "3"}}
+    dumped_admin = {"admin_id": {"N": "3"}, "email": {"S": "admin@domain.com"}}
     assert engine._dump(Admin, admin) == dumped_admin
 
-    # Inject a value that would have meaning for a column on the parent class,
-    # but should not be loaded for the subclass
+    # Inject a value that for a column on the parent class
     dumped_admin["email"] = {"S": "support@foo.com"}
     same_admin = engine._load(Admin, dumped_admin)
-    assert not hasattr(same_admin, "email")
+    assert same_admin.email == "support@foo.com"
 
 
 def test_load_dump_unknown(engine):
@@ -294,7 +361,7 @@ def test_load_missing_key(engine):
 
     complex_models = [
         ComplexModel(),
-        ComplexModel(name="no range"),
+        ComplexModel(name=uuid.uuid4()),
         ComplexModel(date="no hash")
     ]
     for model in complex_models:
@@ -587,10 +654,10 @@ def test_bind_skip_abstract_models(engine, session, caplog):
     caplog.handler.records.clear()
     engine.bind(Abstract)
 
-    session.create_table.assert_any_call(Concrete)
-    session.validate_table.assert_any_call(Concrete)
-    session.create_table.assert_any_call(AlsoConcrete)
-    session.validate_table.assert_any_call(AlsoConcrete)
+    session.create_table.assert_any_call("Concrete", Concrete)
+    session.validate_table.assert_any_call("Concrete", Concrete)
+    session.create_table.assert_any_call("AlsoConcrete", AlsoConcrete)
+    session.validate_table.assert_any_call("AlsoConcrete", AlsoConcrete)
 
     assert caplog.record_tuples == [
         ("bloop.engine", logging.DEBUG, "binding non-abstract models ['AlsoConcrete', 'Concrete']"),
@@ -605,8 +672,8 @@ def test_bind_concrete_base(engine, session):
     class Concrete(BaseModel):
         id = Column(Integer, hash_key=True)
     engine.bind(Concrete)
-    session.create_table.assert_called_once_with(Concrete)
-    session.validate_table.assert_called_once_with(Concrete)
+    session.create_table.assert_called_once_with("Concrete", Concrete)
+    session.validate_table.assert_called_once_with("Concrete", Concrete)
 
 
 def test_bind_different_engines(dynamodb, dynamodbstreams):
@@ -623,15 +690,10 @@ def test_bind_different_engines(dynamodb, dynamodbstreams):
     second_engine.bind(Concrete)
 
     # Create/Validate are only called once per bind
-    first_engine.session.create_table.assert_called_once_with(Concrete)
-    first_engine.session.validate_table.assert_called_once_with(Concrete)
-    second_engine.session.create_table.assert_called_once_with(Concrete)
-    second_engine.session.validate_table.assert_called_once_with(Concrete)
-
-    # The model (and its columns) are bound to each engine's TypeEngine,
-    # regardless of how many times the model has been bound already
-    assert Concrete in first_engine.type_engine.bound_types
-    assert Concrete in second_engine.type_engine.bound_types
+    first_engine.session.create_table.assert_called_once_with("Concrete", Concrete)
+    first_engine.session.validate_table.assert_called_once_with("Concrete", Concrete)
+    second_engine.session.create_table.assert_called_once_with("Concrete", Concrete)
+    second_engine.session.validate_table.assert_called_once_with("Concrete", Concrete)
 
 
 def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):
@@ -639,16 +701,37 @@ def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):
     engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
     engine.session = Mock(spec=SessionWrapper)
 
-    engine.bind(User, skip_table_setup=True)
+    class MyUser(BaseModel):
+        id = Column(Integer, hash_key=True)
+
+    caplog.handler.records.clear()
+
+    engine.bind(MyUser, skip_table_setup=True)
     engine.session.create_table.assert_not_called()
     engine.session.validate_table.assert_not_called()
 
     assert caplog.record_tuples == [
-        ("bloop.engine", logging.DEBUG, "binding non-abstract models ['Admin', 'User']"),
+        ("bloop.engine", logging.DEBUG, "binding non-abstract models ['MyUser']"),
         ("bloop.engine", logging.INFO,
          "skip_table_setup is True; not trying to create tables or validate models during bind"),
-        ("bloop.engine", logging.INFO, "successfully bound 2 models to the engine"),
+        ("bloop.engine", logging.INFO, "successfully bound 1 models to the engine"),
     ]
+
+
+def test_bind_configures_ttl(dynamodb, dynamodbstreams):
+    # Required so engine doesn't pass boto3 to the wrapper
+    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+    engine.session = Mock(spec=SessionWrapper)
+
+    class MyUser(BaseModel):
+        class Meta:
+            ttl = {"column": "expiry"}
+        id = Column(Integer, hash_key=True)
+        expiry = Column(Timestamp)
+
+    engine.bind(MyUser)
+    engine.session.describe_table.assert_called_once_with("MyUser")
+    engine.session.enable_ttl.assert_called_once_with("MyUser", MyUser)
 
 
 @pytest.mark.parametrize("op_name, plural", [("save", True), ("load", True), ("delete", True)], ids=str)

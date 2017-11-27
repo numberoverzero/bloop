@@ -8,6 +8,275 @@ versions dating back to :ref:`v0.9.0<changelog-v0.9.0>` from December 2015.  The
 examples and tips for migrating from the previous major version (excluding the 1.0.0 guide, which only covers
 migration from 0.9.0 and newer).
 
+
+====================
+ Migrating to 2.0.0
+====================
+
+The 2.0.0 release includes a number of api changes and new features.
+
+* The largest functional change is the ability to compose models through subclassing; this is
+  referred to as Abstract Inheritance and Mixins throughout the User Guide.
+* Python 3.6.0 is the minimum required version.
+* ``Meta.init`` now defaults to ``cls.__new__(cls)`` instead of ``cls.__init__()``; when model instances are created
+  as part of ``engine.query``, ``engine.stream`` etc. these will not call your model's ``__init__`` method.  The
+  default `BaseModel.__init__`` is not meant for use outside of local instantiation.
+* The ``Column`` and ``Index`` kwarg ``name`` was renamed to ``dynamo_name`` to accurately reflect how the value was
+  used: ``Column(SomeType, name="foo")`` becomes ``Column(SomeType, dynamo_name="foo")``.
+  Additionally, the column and index attribute ``model_name`` was renamed to ``name``; ``dynamo_name`` is unchanged
+  and reflects the kwarg value, if provided.
+
+
+--------
+ Engine
+--------
+
+A new Engine kwarg ``table_name_template`` can be used to modify the table name used per-engine, as documented in
+the new :ref:`Engine Configuration <user-engine-config>` section of the User Guide.  Previously, you may have used
+the ``before_create_table`` signal as follows:
+
+.. code-block:: python
+
+    # Nonce table names to avoid testing collisions
+    @before_create_table.connect
+    def apply_table_nonce(_, model, **__):
+        nonce = datetime.now().isoformat()
+        model.Meta.table_name += "-test-{}".format(nonce)
+
+This will modify the actual model's ``Meta.table_name``, whereas the new kwarg can be used to only modify the bound
+table name for a single engine.  The following can be expressed for a single Engine as follows:
+
+
+.. code-block:: python
+
+    def apply_nonce(model):
+        nonce = datetime.now().isoformat()
+        return f"{model.Meta.table_name}-test-{nonce}"
+
+    engine = Engine(table_name_template=apply_nonce)
+
+-------------
+ Inheritance
+-------------
+
+You can now use abstract base models to more easily compose common models.  For example, you may use the same
+id structure for classes.  Previously, this would look like the following:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        id = Column(String, hash_key=True)
+        version = Column(Integer, range_key=True)
+        data = Column(Binary)
+
+    class Profile(BaseModel):
+        id = Column(String, hash_key=True)
+        version = Column(Integer, range_key=True)
+        summary = Column(String)
+
+Now, you can define an abstract base and re-use the ``id`` and ``version`` columns in both:
+
+.. code-block:: python
+
+    class MyBase(BaseModel):
+        class Meta:
+            abstract = True
+        id = Column(String, hash_key=True)
+        version = Column(Integer, range_key=True)
+
+    class User(MyBase):
+        data = Column(Binary)
+
+    class Profile(MyBase):
+        summary = Column(String)
+
+
+You can use multiple inheritance to compose models from multiple mixins; base classes do not need to subclass
+``BaseModel``.  Here's the same two models as above, but the hash and range keys are defined across two mixins:
+
+
+.. code-block:: python
+
+    class StringHash:
+        id = Column(String, hash_key=True)
+
+    class IntegerRange:
+        version = Column(Integer, range_key=True)
+
+
+    class User(StringHash, IntegerRange, BaseModel):
+        data = Column(Binary)
+
+    class Profile(StringHash, IntegerRange, BaseModel):
+        summary = Column(String)
+
+Mixins may also contain ``GlobalSecondaryIndex`` and ``LocalSecondaryIndex``, even if their hash/range keys aren't
+defined in that mixin:
+
+
+.. code-block:: python
+
+    class ByEmail:
+        by_email = GlobalSecondaryIndex(projection="keys", hash_key="email")
+
+
+    class User(StringHash, IntegerRange, ByEmail, BaseModel):
+        email = Column(String)
+
+-----------
+ Meta.init
+-----------
+
+With the addition of column defaults (see below) Bloop needed to differentiate local mode instantiation from remote
+model instantiation.  Local model instantiation still uses ``__init__``, as in:
+
+.. code-block:: python
+
+    user = User(email="me@gmail.com", verified=False)
+
+Unlike ``Engine.load`` which takes existing model instances, all of ``Engine.query, Engine.scan, Engine.stream``
+will create their own instances.  These methods use the model's ``Meta.init`` to create new instances.  Previously
+this defaulted to ``__init__``.  However, with the default ``__init__`` method applying defaults in 2.0.0 this is
+no longer acceptable for remote instantiation.  Instead, ``cls.__new__(cls)`` is used by default to create instances
+during query/scan/stream.
+
+This is an important distinction that Bloop should have made early on, but was forced due to defaults.  For example,
+imagine querying an index that doesn't project a column with a default.  If the base ``__init__`` was still used, the
+Column's default would be used for the non-projected column even if there was already a value in DynamoDB.  Here's one
+model that would have the problem:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        id = Column(UUID, hash_key=True)
+        created = Column(DateTime, default=datetime.datetime.now)
+        email = Column(String)
+        by_email = GlobalSecondaryIndex(projection="keys", hash_key=email)
+
+    user = User(id=uuid.uuid4(), email="me@gmail.com")
+    engine.save(user)
+    print(user.created)  # Some datetime T1
+
+
+    query = engine.Query(User.by_email, hash_key=User.email=="me@gmail.com")
+    partial_user = query.first()
+
+    partial_user.created  # This column isn't part of the index's projection!
+
+
+If ``User.Meta.init`` was still ``User.__init__`` then ``partial_user.created`` would invoke the default function for
+``User.created`` and give us the current datetime.  Instead, Bloop 2.0.0 will call ``User.__new__(User)`` and we'll
+get an ``AttributeError`` because ``partial_user`` doesn't have a ``created`` value.
+
+
+-----------------
+ Column Defaults
+-----------------
+
+Many columns have the same initialization value, even across models.  For example, all but one of the following
+columns will be set to the same value or using the same logic:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        email = Column(String, hash_key=True)
+        id = Column(UUID)
+        verified = Column(Boolean)
+        created = Column(DateTime)
+        followers = Column(Integer)
+
+Previously, you might apply defaults by creating a simple function:
+
+.. code-block:: python
+
+    def new_user(email) -> User:
+        return User(
+            email=email,
+            id=uuid.uuid4(),
+            verified=False,
+            created=datetime.datetime.now(),
+            followers=0)
+
+You'll still need a function for related initialization (eg. across fields or model instances) but for simple defaults,
+you can now specify them with the Column:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        email = Column(String, hash_key=True)
+        id = Column(UUID, default=uuid.uuid4)
+        verified = Column(Boolean, default=False)
+        created = Column(DateTime, default=datetime.datetime.now)
+        followers = Column(Integer, default=0)
+
+
+    def new_user(email) -> User:
+        return User(email=email)
+
+Defaults are only applied when creating new local instances inside the default ``BaseModel.__init__`` - they are not
+evaluated when loading objects with ``Engine.load``, ``Engine.query``, ``Engine.stream`` etc.  If you define a custom
+``__init__`` without calling ``super().__init__(...)`` they will not be applied.
+
+In a related change, see above for the ``BaseModel.Meta.init`` change.  By default Bloop uses ``cls.__new__(cls)`` to
+create new instances of your models during ``Engine.scan`` and ``Engine.query`` instead of the previous default to
+``__init__``.  This is intentional, to avoid applying unnecessary defaults to partially-loaded objects.
+
+
+-----
+ TTL
+-----
+
+DynamoDB introduced the ability to specify a `TTL`_ column, which indicates a date (in seconds since the epoch) after
+which the row may be automatically (eventually) cleaned up.  This column must be a Number, and Bloop exposes the
+``Timestamp`` type which is used as a ``datetime.datetime``.  Like the DynamoDBStreams feature, the TTL is configured
+on a model's Meta attribute:
+
+.. code-block:: python
+
+    class TemporaryPaste(BaseModel):
+        class Meta:
+            ttl = {
+                "column": "delete_after"
+            }
+        id = Column(String, hash_key=True)
+        s3_location = Column(String, dynamo_name="s3")
+        delete_after = Column(Timestamp)
+
+Remember that it can take up to 24 hours for the row to be deleted; you should guard your reads using the current time
+against the cleanup time, or a filter with your queries:
+
+.. code-block:: python
+
+    # made up index
+    query = engine.Query(
+        TemporaryPaste.by_email,
+        key=TemporaryPaste.email=="me@gmail.com",
+        filter=TemporaryPaste.delete_after <= datetime.datetime.now())
+    print(query.first())
+
+Bloop still refuses to update existing tables, so TTL will only be enabled on tables if they are created by Bloop
+during ``Engine.bind``.  Otherwise, the declaration exists exclusively to verify configuration.
+
+.. _TTL: https://aws.amazon.com/about-aws/whats-new/2017/02/amazon-dynamodb-now-supports-automatic-item-expiration-with-time-to-live-ttl/
+
+-------
+ Types
+-------
+
+A new type ``Timestamp`` was added for use with the new TTL feature (see above).  This is a ``datetime.datetime`` in
+Python just like the ``DateTime`` type, but is stored as an integer (whole seconds since epoch) instead of an ISO 8601
+string.  As with ``DateTime``, drop-in replacements are available for ``arrow``, ``delorean``, and ``pendulum``.
+
+------------
+ Exceptions
+------------
+
+* ``InvalidIndex`` was replaced by the existing ``InvalidModel``
+* ``InvalidSearchMode``, ``InvalidKeyCondition``, ``InvalidFilterCondition``, and ``InvalidProjection`` were replaced
+  by ``InvalidSearch``
+* ``UnboundModel`` was removed without replacement; ``Engine.bind`` was refactored so that it would never be raised.
+* ``InvalidComparisonOperator`` was removed without replacement; it was never raised.
+
 ====================
  Migrating to 1.0.0
 ====================

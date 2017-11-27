@@ -10,14 +10,15 @@ Bloop extensions are part of the :ref:`Public API <public-extensions>`, and subj
 
 .. _user-extensions-datetime:
 
-==========
- DateTime
-==========
+========================
+ DateTime and Timestamp
+========================
 
 Working with python's :class:`datetime.datetime` is tedious, but there are a number of popular libraries
 that improve the situation.  Bloop includes drop-in replacements for the basic
-:class:`~bloop.types.DateTime` type for `arrow`_, `delorean`_, and `pendulum`_ through the
-:ref:`extensions module<public-ext-datetime>`.  For example, let's swap out some code using the built-in DateTime:
+:class:`~bloop.types.DateTime` and :class:`~bloop.types.Timestamp` types for `arrow`_, `delorean`_, and `pendulum`_
+through the :ref:`extensions module<public-ext-datetime>`.  For example, let's swap out some code using the
+built-in DateTime:
 
 .. code-block:: python
     :emphasize-lines: 1, 2, 9, 10
@@ -78,7 +79,6 @@ Now, using arrow:
         created_on=now
     )
 
-..
 .. _arrow: http://crsmithdev.com/arrow
 .. _delorean: https://delorean.readthedocs.io/en/latest/
 .. _pendulum: https://pendulum.eustace.io

@@ -1,5 +1,5 @@
 language: python
-python: 3.5
+python: 3.6
 cache: pip
 env:
   matrix:
@@ -8,9 +8,7 @@ env:
   - TOXENV=docs
 install: pip install tox codecov
 script: tox -e $TOXENV
-after_success:
-- test $TOXENV = "unit" && codecov
-- test $TOXENV = "integ" && codecov
+
 notifications:
   slack:
     secure: cXjzhmFI0oAWifBilGvTApiL8VSyM7/4v3Ve4TZeU+15EoYf05AhNoHs0FKVcj+ockYPqlj3p+SIUXnGfcI41QFlO09gGvFVB/FA/PHH2n4hb20+zxSx5Ic9ac3B2Nb5u2lWGsSsRTvCHtC0Wcxx878ML5UFrP5yu4vKIgj8AyE=
@@ -20,6 +18,7 @@ notifications:
     on_success: change
     on_failure: always
     on_start: never
+
 # container-based for faster builds
 sudo: false
 # tls 1.2

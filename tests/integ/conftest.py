@@ -8,16 +8,14 @@ import string
 import subprocess
 import zipfile
 
-import blinker
 import boto3
 import pytest
 import requests
 from tests.helpers.utils import get_tables
-from tests.integ.models import User
 
-from bloop import Engine
+from bloop import BaseModel, BloopException, Engine
 from bloop.session import SessionWrapper
-from bloop.signals import model_created
+from bloop.util import walk_subclasses
 
 
 LATEST_DYNAMODB_LOCAL_SHA = "70d9a92529782ac93713258fe69feb4ff6e007ae2c3319c7ffae7da38b698a61"
@@ -144,16 +142,6 @@ def pytest_addoption(parser):
     )
 
 
-def pytest_configure(config):
-    nonce = config.getoption("--nonce")
-
-    @model_created.connect_via(sender=blinker.ANY, weak=False)
-    def nonce_table_name(_, *, model, **kwargs):
-        table_name = model.Meta.table_name
-        if nonce not in table_name:
-            model.Meta.table_name += nonce
-
-
 @pytest.fixture(scope="session")
 def dynamodb_local(request):
     nonce = request.config.getoption("--nonce")
@@ -198,10 +186,25 @@ def dynamodbstreams(dynamodb_local):
 
 
 @pytest.fixture
-def engine(dynamodb, dynamodbstreams):
-    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+def engine(dynamodb, dynamodbstreams, request):
+    engine = Engine(
+        dynamodb=dynamodb, dynamodbstreams=dynamodbstreams,
+        table_name_template="{table_name}" + request.config.getoption("--nonce")
+    )
     yield engine
-    engine.delete(*engine.scan(User))
+
+    # This collects all subclasses of BaseModel and are not abstract.  We are trying to delete any data in
+    # dynamodb-local between unit tests so we don't step on each other's toes.
+    concrete = set(filter(lambda m: not m.Meta.abstract, walk_subclasses(BaseModel)))
+    for model in concrete:
+        # we can run into a situation where the class was created, but not bound in the engine (or table created), so
+        # we only try.  As the dynamodb-local process is only running in memory this isn't too much of a problem.
+        try:
+            objs = list(engine.scan(model))
+            if objs:
+                engine.delete(*objs)
+        except BloopException:
+            pass
 
 
 @pytest.fixture

@@ -216,22 +216,22 @@ a nullable constraint on columns.  Instead, these can be trivially added to the 
 
     class Column(bloop.Column):
 
-        def __init__(self, *args, nullable=True, **kwargs):
+        def __init__(self, *args, nullable=True, check_type=True, **kwargs):
             super().__init__(*args, **kwargs)
             self.nullable = nullable
+            self.check_type = True
 
-        def set(self, obj, value):
-            if value is None:
-                if not self.nullable:
-                    msg = "Tried to set {} to None but column is not nullable"
-                    raise ValueError(msg.format(self.model_name))
-            elif not isinstance(value, self.typedef.python_type):
+        def __set__(self, obj, value):
+            if not self.nullable and value is None:
+                msg = "Tried to set {} to None but column is not nullable"
+                raise ValueError(msg.format(self.name))
+            elif self.check_type and not isinstance(value, self.typedef.python_type):
                 msg = "Tried to set {} with invalid type {} (expected {})"
                 raise TypeError(msg.format(
-                    self.model_name, type(value),
+                    self.name, type(value),
                     self.typedef.python_type
                 ))
-            super().set(obj, value)
+            super().__set__(obj, value)
 
 Using this class, a type failure looks like:
 
@@ -240,7 +240,7 @@ Using this class, a type failure looks like:
     >>> class Appointment(BaseModel):
     ...     id = Column(UUID, hash_key=True, nullable=False)
     ...     date = Column(DateTime)
-    ...     location = Column(String)
+    ...     location = Column(String, check_type=True)
     >>> engine.bind(Appointment)
     >>> appt = Appointment(id=uuid.uuid4())
 
@@ -287,7 +287,7 @@ uses flask and marshmallow to expose get and list operations for a User class:
         class Meta:
             # Fields to expose
             fields = ["_links"]
-            fields += [column.model_name for column in User.Meta.columns]
+            fields += [column.name for column in User.Meta.columns]
         # Smart hyperlinking
         _links = ma.Hyperlinks({
             'self': ma.URLFor('user_detail', id='<id>'),

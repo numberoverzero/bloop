@@ -17,16 +17,12 @@ class TableMismatch(BloopException):
     """The expected and actual tables for this Model do not match."""
 
 
-class UnboundModel(BloopException, ValueError):
-    """This Model has not been bound to the Engine."""
-
-
 class UnknownType(BloopException, ValueError):
-    """This Type has not been registered with the type engine."""
+    """This does not support the Type interface."""
 
 
-class InvalidSearchMode(BloopException, ValueError):
-    """Search mode must be 'scan' or 'query'."""
+class InvalidSearch(BloopException, ValueError):
+    """The search was malformed"""
 
 
 class MissingKey(BloopException, ValueError):
@@ -45,8 +41,8 @@ class InvalidModel(BloopException, ValueError):
     """This is not a valid Model."""
 
 
-class InvalidIndex(BloopException, ValueError):
-    """This is not a valid Index."""
+class InvalidTemplate(BloopException, ValueError):
+    """This is not a valid template string."""
 
 
 class InvalidStream(BloopException, ValueError):
@@ -57,24 +53,8 @@ class InvalidShardIterator(BloopException, ValueError):
     """This is not a valid shard iterator."""
 
 
-class InvalidComparisonOperator(BloopException, ValueError):
-    """This is not a valid Comparison operator."""
-
-
 class InvalidCondition(BloopException, ValueError):
     """This is not a valid Condition."""
-
-
-class InvalidKeyCondition(BloopException, ValueError):
-    """This is not a valid key condition for the Model and Index."""
-
-
-class InvalidFilterCondition(BloopException, ValueError):
-    """This is not a valid filter condition for the Model and Index."""
-
-
-class InvalidProjection(BloopException, ValueError):
-    """This is not a valid projection option for the Model and Index."""
 
 
 class InvalidPosition(BloopException, ValueError):

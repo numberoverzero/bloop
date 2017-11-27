@@ -1,39 +1,38 @@
 import collections
 
-import declare
-
 from .conditions import BaseCondition, iter_columns, render
-from .exceptions import (
-    ConstraintViolation,
-    InvalidFilterCondition,
-    InvalidKeyCondition,
-    InvalidProjection,
-    InvalidSearchMode,
-)
-from .models import Column, GlobalSecondaryIndex
+from .exceptions import ConstraintViolation, InvalidSearch
+from .models import Column, GlobalSecondaryIndex, unpack_from_dynamodb
 from .signals import object_loaded
-from .util import printable_query, unpack_from_dynamodb
 
 
 __all__ = ["ScanIterator", "QueryIterator"]
 
 
+def printable_query(query_on):
+    # Model.Meta -> Model
+    if getattr(query_on, "__name__", "") == "Meta":
+        return query_on.model
+    # Index -> Index
+    return query_on
+
+
 def search_repr(cls, model, index):
     if model is not None:
         if index is not None:
-            return "<{}[{}.{}]>".format(cls.__name__, model.__name__, index.model_name)
+            return "<{}[{}.{}]>".format(cls.__name__, model.__name__, index.name)
         else:
             return "<{}[{}]>".format(cls.__name__, model.__name__)
     else:
         if index is not None:
-            return "<{}[None.{}]>".format(cls.__name__, index.model_name)
+            return "<{}[None.{}]>".format(cls.__name__, index.name)
         else:
             return "<{}[None]>".format(cls.__name__)
 
 
 def validate_search_mode(mode):
     if mode not in {"query", "scan"}:
-        raise InvalidSearchMode("{!r} is not a valid search mode.".format(mode))
+        raise InvalidSearch("{!r} is not a valid search mode.".format(mode))
 
 
 def validate_key_condition(model, index, key):
@@ -74,42 +73,42 @@ def validate_key_condition(model, index, key):
 
 def validate_search_projection(model, index, projection):
     if not projection:
-        raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
+        raise InvalidSearch("The projection must be 'count', 'all', or a list of Columns to include.")
     if projection == "count":
         return None
 
     if projection == "all":
         return (index or model.Meta).projection["included"]
     elif isinstance(projection, str):
-        raise InvalidProjection("The projection must be 'count', 'all', or a list of Columns to include.")
+        raise InvalidSearch("The projection must be 'count', 'all', or a list of Columns to include.")
 
     # Keep original around for error messages
     original_projection = projection
 
-    # model_name -> Column
+    # name -> Column
     if all(isinstance(p, str) for p in projection):
-        by_model_name = declare.index(model.Meta.columns, "model_name")
+        by_name = model.Meta.columns_by_name
         # This could be a list comprehension, but then the
         # user gets a KeyError when they passed a list.  So,
         # do each individually and throw a useful exception.
         converted_projection = []
         for p in projection:
             try:
-                converted_projection.append(by_model_name[p])
+                converted_projection.append(by_name[p])
             except KeyError:
-                raise InvalidProjection("{!r} is not a column of {!r}.".format(p, model))
+                raise InvalidSearch("{!r} is not a column of {!r}.".format(p, model))
         projection = converted_projection
 
     # Could have been str/Column mix, or just not Columns.
     if not all(isinstance(p, Column) for p in projection):
-        raise InvalidProjection(
+        raise InvalidSearch(
             "{!r} is not valid: it must be only Columns or only their model names.".format(original_projection))
 
     # Can the full available columns support this projection?
     if set(projection) <= (index or model.Meta).projection["available"]:
         return projection
 
-    raise InvalidProjection(
+    raise InvalidSearch(
         "{!r} includes columns that are not available for {!r}.".format(
             original_projection, printable_query(index or model.Meta)))
 
@@ -121,12 +120,12 @@ def validate_filter_condition(condition, available_columns, column_blacklist):
     for column in iter_columns(condition):
         # All of the columns in the condition must be in the available columns
         if column not in available_columns:
-            raise InvalidFilterCondition(
+            raise InvalidSearch(
                 "{!r} is not available for the projection.".format(column))
         # If this is a query, the condition can't contain the hash or range keys.
         # Those are passed in as the column_blacklist.
         if column in column_blacklist:
-            raise InvalidFilterCondition("{!r} can not be included in the filter condition.".format(column))
+            raise InvalidSearch("{!r} can not be included in the filter condition.".format(column))
 
 
 def check_hash_key(query_on, key):
@@ -149,13 +148,13 @@ def check_range_key(query_on, key):
 
 def fail_bad_hash(query_on):
     msg = "The key condition for a Query on {!r} must be `{}.{} == value`."
-    raise InvalidKeyCondition(msg.format(
-        printable_query(query_on), query_on.model.__name__, query_on.hash_key.model_name))
+    raise InvalidSearch(msg.format(
+        printable_query(query_on), query_on.model.__name__, query_on.hash_key.name))
 
 
 def fail_bad_range(query_on):
     msg = "Invalid key condition for a Query on {!r}."
-    raise InvalidKeyCondition(msg.format(printable_query(query_on)))
+    raise InvalidSearch(msg.format(printable_query(query_on)))
 
 
 class Search:
@@ -301,7 +300,7 @@ class PreparedSearch:
 
     def prepare_request(self):
         request = self._request = {}
-        request["TableName"] = self.model.Meta.table_name
+        request["TableName"] = self.engine._compute_table_name(self.model)
         request["ConsistentRead"] = self.consistent
 
         if self.mode == "scan":
@@ -472,6 +471,7 @@ class SearchModelIterator(SearchIterator):
         return obj
 
 
+# noinspection PyUnresolvedReferences
 class ScanIterator(SearchModelIterator):
     """Reusable scan iterator that unpacks result dicts into model instances.
 
@@ -486,6 +486,7 @@ class ScanIterator(SearchModelIterator):
     mode = "scan"
 
 
+# noinspection PyUnresolvedReferences
 class QueryIterator(SearchModelIterator):
     """Reusable query iterator that unpacks result dicts into model instances.
 

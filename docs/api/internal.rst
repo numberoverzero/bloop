@@ -7,38 +7,35 @@ In addition to documenting internal classes, this section describes complex inte
 atomic tracking via weakrefs) and specific parameters and error handling that Bloop employs when talking to DynamoDB
 (such as SessionWrapper's error inspection, and partial table validation).
 
-==============
-SessionWrapper
-==============
+================
+ SessionWrapper
+================
 
 .. autoclass:: bloop.session.SessionWrapper
     :members:
 
-========
-Modeling
-========
+==========
+ Modeling
+==========
 
---------------
-ModelMetaclass
---------------
+-------
+ IMeta
+-------
 
-.. autoclass:: bloop.models.ModelMetaclass
-    :members:
+.. autoclass:: bloop.models.IMeta
 
-    The metaclass for :class:`~bloop.models.BaseModel`.  Binds ``model_name`` to each :class:`~bloop.models.Column`;
-    validates key configuration; binds the model to each :class:`~bloop.models.Index`; populates model's ``Meta``
-    with modeling metadata (``columns``, ``keys``, ``indexes``, etc).
-
------
-Index
------
+-------
+ Index
+-------
 
 .. autoclass:: bloop.models.Index
-    :members: _bind
+    :members: __copy__
+    :undoc-members:
+    :special-members: __copy__
 
     .. attribute:: dynamo_name
 
-        The name of this index in DynamoDB.  Defaults to the index's :data:`~Index.model_name`.
+        The name of this index in DynamoDB.  Defaults to the index's :data:`~Index.name`.
 
     .. attribute:: hash_key
 
@@ -49,13 +46,15 @@ Index
 
         The model this index is attached to.
 
-    .. attribute:: model_name
+    .. attribute:: name
 
-        The name of this index in the model.  Set during :func:`~bloop.models.Index._bind`.
+        The name of this index in the model.  Set by :func:`~bloop.models.bind_index`
+        during :func:`~bloop.models.BaseModel.__init_subclass__`.
 
     .. attribute:: projection
 
-        Computed during :func:`~bloop.models.Index._bind`.
+        Computed during :func:`~bloop.models.bind_index`
+        during :func:`~bloop.models.BaseModel.__init_subclass__`.
 
         .. code-block:: python
 
@@ -70,35 +69,47 @@ Index
 
         The column that the index can be sorted on.
 
-=========
-Searching
-=========
+---------
+ Binding
+---------
 
-------
-Search
-------
+.. automethod:: bloop.models.bind_column
+
+.. automethod:: bloop.models.bind_index
+
+.. automethod:: bloop.models.refresh_index
+
+.. automethod:: bloop.models.unbind
+
+===========
+ Searching
+===========
+
+--------
+ Search
+--------
 
 .. autoclass:: bloop.search.Search
     :members:
 
---------------
-PreparedSearch
---------------
+----------------
+ PreparedSearch
+----------------
 
 .. autoclass:: bloop.search.PreparedSearch
     :members:
 
---------------
-SearchIterator
---------------
+----------------
+ SearchIterator
+----------------
 
 .. autoclass:: bloop.search.SearchIterator
     :members:
 
 
--------------------
-SearchModelIterator
--------------------
+---------------------
+ SearchModelIterator
+---------------------
 
 .. autoclass:: bloop.search.SearchModelIterator
 
@@ -129,52 +140,52 @@ SearchModelIterator
         Number of items that DynamoDB evaluated, before any filter was applied.
         When projection type is "count", accessing this will automatically exhaust the query.
 
-=========
-Streaming
-=========
+===========
+ Streaming
+===========
 
------------
-Coordinator
------------
+-------------
+ Coordinator
+-------------
 
 .. autoclass:: bloop.stream.coordinator.Coordinator
     :members:
 
------
-Shard
------
+-------
+ Shard
+-------
 
 .. autoclass:: bloop.stream.shard.Shard
     :members:
 
-------------
-RecordBuffer
-------------
+--------------
+ RecordBuffer
+--------------
 
 .. autoclass:: bloop.stream.buffer.RecordBuffer
     :members:
 
-==========
-Conditions
-==========
+============
+ Conditions
+============
 
-----------------
-ReferenceTracker
-----------------
+------------------
+ ReferenceTracker
+------------------
 
 .. autoclass:: bloop.conditions.ReferenceTracker
         :members: any_ref, pop_refs
 
------------------
-ConditionRenderer
------------------
+-------------------
+ ConditionRenderer
+-------------------
 
 .. autoclass:: bloop.conditions.ConditionRenderer
         :members: render, rendered
 
--------------------
-Built-in Conditions
--------------------
+---------------------
+ Built-in Conditions
+---------------------
 
 .. autoclass:: bloop.conditions.BaseCondition
         :members:
@@ -206,9 +217,9 @@ Built-in Conditions
 .. autoclass:: bloop.conditions.ComparisonMixin
         :members:
 
-=========
-Utilities
-=========
+===========
+ Utilities
+===========
 
 .. autoclass:: bloop.util.Sentinel
     :members:
@@ -216,21 +227,21 @@ Utilities
 .. autoclass:: bloop.util.WeakDefaultDictionary
     :members:
 
-======================
-Implementation Details
-======================
+========================
+ Implementation Details
+========================
 
 .. _implementation-model-hash:
 
------------------------
-Models must be Hashable
------------------------
+-------------------------
+ Models must be Hashable
+-------------------------
 
 By default python makes all user classes are hashable:
 
 .. code-block:: pycon
 
-    >>> class Dict(): pass
+    >>> class Dict: pass
     >>> hash(Dict())
     8771845190811
 
@@ -240,25 +251,27 @@ Classes are unhashable in two cases:
 #. The class declares ``__hash__ = None``.
 #. The class implements ``__eq__`` but not ``__hash__``
 
-In the first case, Bloop will simply raise ``InvalidModel``.  In the second case, Bloop's
-:class:`~bloop.models.ModelMetaclass` manually locates a ``__hash__`` method in the model's base classes:
+In either case, during :func:`~bloop.models.BaseModel.__init_subclass__`, the :func:`~bloop.models.ensure_hash`
+function will manually locate the closest ``__hash__`` method in the model's base classes:
 
 .. code-block:: python
 
-    for base in bases:
+    if getattr(cls, "__hash__", None) is not None:
+        return
+    for base in cls.__mro__:
         hash_fn = getattr(base, "__hash__")
         if hash_fn:
             break
     else:
         hash_fn = object.__hash__
-    attrs["__hash__"] = hash_fn
+    cls.__hash__ = hash_fn
 
 This is required because python doesn't provide a default hash method when ``__eq__`` is implemented,
 and won't fall back to a parent class's definition:
 
 .. code-block:: pycon
 
-    >>> class Base():
+    >>> class Base:
     ...     def __hash__(self):
     ...         print("Base.__hash__")
     ...         return 0
@@ -276,11 +289,11 @@ and won't fall back to a parent class's definition:
 
 .. _internal-streams:
 
---------------------------
-Stream Ordering Guarantees
---------------------------
+----------------------------
+ Stream Ordering Guarantees
+----------------------------
 
-The `DynamoDB Streams API`__ exposes a limited amount temporal information and few options for navigating
+The `DynamoDB Streams API`__ exposes a limited amount of temporal information and few options for navigating
 within a shard.  Due to these constraints, it was hard to reduce the API down to a single ``__next__`` call
 without compromising performance or ordering.
 
@@ -405,7 +418,7 @@ Low-throughput tables will only have a single open shard at any time, and can re
 above for rebuilding the exact order of changes to the table.
 
 For high throughput tables, there can be more than one root shard, and each shard lineage can have more than one
-child open at once.  In this case, Bloop's streaming interface can't guarantees ordering for all records in the
+child open at once.  In this case, Bloop's streaming interface can't guarantee ordering for all records in the
 stream, because there is no absolute chronological ordering across a partitioned table.  Instead, Bloop will fall
 back to a total ordering scheme that uses each record's ``ApproximateCreationDateTime`` and, when two records have
 the same creation time, a monotonically increasing integral clock to break ties.

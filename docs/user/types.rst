@@ -56,12 +56,14 @@ This is syntactic sugar for a common pattern, and the column is actually creatin
     >>> balance = Column(Number())
 
 Most types are simply a binding between a local python format and DynamoDB's wire format, and won't have any
-parameters.  Some types have optional parameters that configure their behavior, such as :class:`~bloop.types.DateTime`:
+parameters.  Some types have optional parameters that configure their behavior, such as :class:`~bloop.types.Number`:
 
 .. code-block:: pycon
 
-    >>> from bloop import DateTime
-    >>> created_at = Column(DateTime(timezone="Europe/Paris"))
+    >>> from bloop import Number
+    >>> from decimal import Context
+    >>> context = Context(Emin=-128, Emax=126, rounding=None, prec=38, traps=[...])
+    >>> created_at = Column(Number(context=context))
 
 Finally, some types have required parameters and can't be instantiated by the Column directly:
 
@@ -122,19 +124,23 @@ and not just the primitive types above.
 .. code-block:: python
 
     import uuid
-    from datetime import datetime, timezone
-    from bloop import DateTime, UUID, Integer
+    from datetime import datetime, timedelta, timezone
+    from bloop import DateTime, Timestamp, UUID, Integer
 
 
     class Tweet(BaseModel):
         account_id = Column(Integer, hash_key=True)
         tweet_id = Column(UUID, range_key=True)
         created_at = Column(DateTime)
+        delete_after = Column(Timestamp)
 
+    now = datetime.now(timezone.utc)
+    tomorrow = now + timedelta(days=1)
     tweet = Tweet(
         account_id=3,
         tweet_id=uuid.uuid4(),
-        created_at=datetime.now(timezone.utc)
+        created_at=now,
+        delete_after=tomorrow
     )
 
 .. note::

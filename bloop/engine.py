@@ -1,17 +1,16 @@
 import logging
-
-import declare
+from typing import Any, Callable, Union
 
 from .conditions import render
 from .exceptions import (
     InvalidModel,
     InvalidStream,
+    InvalidTemplate,
     MissingKey,
     MissingObjects,
-    UnboundModel,
     UnknownType,
 )
-from .models import Index, ModelMetaclass
+from .models import BaseModel, Index, subclassof, unpack_from_dynamodb
 from .search import Search
 from .session import SessionWrapper
 from .signals import (
@@ -23,7 +22,7 @@ from .signals import (
     object_saved,
 )
 from .stream import Stream
-from .util import missing, unpack_from_dynamodb, walk_subclasses
+from .util import missing, walk_subclasses
 
 
 __all__ = ["Engine"]
@@ -53,11 +52,11 @@ def dump_key(engine, obj):
     """
     key = {}
     for key_column in obj.Meta.keys:
-        key_value = getattr(obj, key_column.model_name, missing)
+        key_value = getattr(obj, key_column.name, missing)
         if key_value is missing:
             raise MissingKey("{!r} is missing {}: {!r}".format(
                 obj, "hash_key" if key_column.hash_key else "range_key",
-                key_column.model_name
+                key_column.name
             ))
         key_value = engine._dump(key_column.typedef, key_value)
         key[key_column.dynamo_name] = key_value
@@ -72,47 +71,80 @@ def validate_not_abstract(*objs):
 
 
 def validate_is_model(model):
-    if not isinstance(model, ModelMetaclass):
+    if not subclassof(model, BaseModel):
         cls = model if isinstance(model, type) else model.__class__
         raise InvalidModel("{!r} does not subclass BaseModel.".format(cls.__name__))
 
 
-def fail_unknown(model, from_declare):
+def fail_unknown(model, ctx):
     # Best-effort check for a more helpful message
-    if isinstance(model, ModelMetaclass):
-        msg = "{!r} is not bound.  Did you forget to call engine.bind?"
-        raise UnboundModel(msg.format(model.__name__)) from from_declare
+    msg = "{!r} does not support the Type interface."
+    obj = getattr(model, "__name__", model)
+    raise UnknownType(msg.format(obj)) from ctx
+
+
+TableNameFormatter = Callable[[Any], str]
+
+
+def create_get_table_name_func(table_name_template: Union[str, TableNameFormatter]) -> TableNameFormatter:
+    if isinstance(table_name_template, str):
+        if "{table_name}" not in table_name_template:
+            raise InvalidTemplate("table name template must contain '{table_name}'")
+        return lambda o: table_name_template.format(table_name=o.Meta.table_name)
+    elif callable(table_name_template):
+        return table_name_template
     else:
-        msg = "{!r} is not a registered Type."
-        obj = model.__name__ if hasattr(model, "__name__") else model
-        raise UnknownType(msg.format(obj)) from from_declare
+        raise ValueError("table name template must be a string or function")
 
 
 class Engine:
     """Primary means of interacting with DynamoDB.
 
+    To apply a prefix to each model's table name, you can use a simple format string:
+
+    .. code-block:: pycon
+
+        >>> template = "my-prefix-{table_name}"
+        >>> engine = Engine(table_name_template=template)
+
+    For more complex table_name customization, you can provide a function:
+
+    .. code-block:: pycon
+
+        >>> def reverse_name(model):
+        ...     return model.Meta.table_name[::-1]
+        >>> engine = Engine(table_name_template=reverse_name)
+
     :param dynamodb: DynamoDB client.  Defaults to ``boto3.client("dynamodb")``.
-    :param dynamodbstreams: DynamoDbStreams client.  Defaults to ``boto3.client("dynamodbstreams")``.
+    :param dynamodbstreams: DynamoDBStreams client.  Defaults to ``boto3.client("dynamodbstreams")``.
+    :param table_name_template: Customize the table name of each model bound to the engine.  If a string
+        is provided, string.format(table_name=model.Meta.table_name) will be called.  If a function is provided, the
+        function will be called with the model as its sole argument.  Defaults to "{table_name}".
     """
-    def __init__(self, *, dynamodb=None, dynamodbstreams=None):
-        # Unique namespace so the type engine for multiple bloop Engines
-        # won't have the same TypeDefinitions
-        self.type_engine = declare.TypeEngine.unique()
+    def __init__(
+            self, *,
+            dynamodb=None, dynamodbstreams=None,
+            table_name_template: Union[str, TableNameFormatter]="{table_name}"):
+        self._compute_table_name = create_get_table_name_func(table_name_template)
         self.session = SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
     def _dump(self, model, obj, context=None, **kwargs):
         context = context or {"engine": self}
         try:
-            return context["engine"].type_engine.dump(model, obj, context=context, **kwargs)
-        except declare.DeclareException as from_declare:
-            fail_unknown(model, from_declare)
+            dump = model._dump
+        except AttributeError as e:
+            fail_unknown(model, e)
+        else:
+            return dump(obj, context=context, **kwargs)
 
     def _load(self, model, value, context=None, **kwargs):
         context = context or {"engine": self}
         try:
-            return context["engine"].type_engine.load(model, value, context=context, **kwargs)
-        except declare.DeclareException as from_declare:
-            fail_unknown(model, from_declare)
+            load = model._load
+        except AttributeError as e:
+            fail_unknown(model, e)
+        else:
+            return load(value, context=context, **kwargs)
 
     def bind(self, model, *, skip_table_setup=False):
         """Create backing tables for a model and its non-abstract subclasses.
@@ -125,6 +157,8 @@ class Engine:
         validate_is_model(model)
 
         concrete = set(filter(lambda m: not m.Meta.abstract, walk_subclasses(model)))
+        if not model.Meta.abstract:
+            concrete.add(model)
         logger.debug("binding non-abstract models {}".format(
             sorted(c.__name__ for c in concrete)
         ))
@@ -135,18 +169,25 @@ class Engine:
         if skip_table_setup:
             logger.info("skip_table_setup is True; not trying to create tables or validate models during bind")
 
+        is_creating = {}
+
         for model in concrete:
+            table_name = self._compute_table_name(model)
             before_create_table.send(self, engine=self, model=model)
             if not skip_table_setup:
-                self.session.create_table(model)
+                creating = self.session.create_table(table_name, model)
+                is_creating[model] = creating
 
         for model in concrete:
             if not skip_table_setup:
-                self.session.validate_table(model)
+                table_name = self._compute_table_name(model)
+                if is_creating[model] and model.Meta.ttl:
+                    self.session.describe_table(table_name)
+                    self.session.enable_ttl(table_name, model)
+                self.session.validate_table(table_name, model)
+
             model_validated.send(self, engine=self, model=model)
 
-            self.type_engine.register(model)
-            self.type_engine.bind(context={"engine": self})
             model_bound.send(self, engine=self, model=model)
 
         logger.info("successfully bound {} models to the engine".format(len(concrete)))
@@ -163,7 +204,7 @@ class Engine:
         validate_not_abstract(*objs)
         for obj in objs:
             self.session.delete_item({
-                "TableName": obj.Meta.table_name,
+                "TableName": self._compute_table_name(obj.__class__),
                 "Key": dump_key(self, obj),
                 **render(self, obj=obj, atomic=atomic, condition=condition)
             })
@@ -180,13 +221,14 @@ class Engine:
 
         __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html
         """
+        get_table_name = self._compute_table_name
         objs = set(objs)
         validate_not_abstract(*objs)
 
         table_index, object_index, request = {}, {}, {}
 
         for obj in objs:
-            table_name = obj.Meta.table_name
+            table_name = get_table_name(obj.__class__)
             key = dump_key(self, obj)
             index = index_for(key)
 
@@ -265,7 +307,7 @@ class Engine:
         validate_not_abstract(*objs)
         for obj in objs:
             self.session.save_item({
-                "TableName": obj.Meta.table_name,
+                "TableName": self._compute_table_name(obj.__class__),
                 "Key": dump_key(self, obj),
                 **render(self, obj=obj, atomic=atomic, condition=condition, update=True)
             })
@@ -305,6 +347,7 @@ class Engine:
         .. code-block:: pycon
 
             # Create a user so we have a record
+            >>> engine = Engine()
             >>> user = User(id=3, email="user@domain.com")
             >>> engine.save(user)
             >>> user.email = "admin@domain.com"

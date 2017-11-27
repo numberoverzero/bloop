@@ -6,6 +6,8 @@
     :target: https://codecov.io/gh/numberoverzero/bloop/branch/master
 .. image:: https://img.shields.io/gitter/room/numberoverzero/bloop.svg?style=flat-square
     :target: https://gitter.im/numberoverzero/bloop
+.. image:: https://img.shields.io/pypi/v/bloop.svg?style=flat-square
+    :target: https://pypi.python.org/pypi/bloop
 
 Bloop is an object mapper for DynamoDB and DynamoDBStreams.
 

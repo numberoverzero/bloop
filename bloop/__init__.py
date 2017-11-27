@@ -35,6 +35,8 @@ from .types import (
     Timestamp,
 )
 
+from .util import missing
+
 
 __all__ = [
     # Models
@@ -53,6 +55,6 @@ __all__ = [
     "UUID", "Binary", "Boolean", "DateTime", "Integer", "List", "Map", "Number", "Set", "String", "Timestamp",
 
     # Misc
-    "Condition", "QueryIterator", "ScanIterator", "Stream"
+    "Condition", "QueryIterator", "ScanIterator", "Stream", "missing"
 ]
 __version__ = "2.0.0"

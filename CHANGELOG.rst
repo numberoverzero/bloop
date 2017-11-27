@@ -16,7 +16,7 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 *(no unreleased changes)*
 
 --------------------
- 2.0.0 - 2017-11-25
+ 2.0.0 - 2017-11-27
 --------------------
 
 2.0.0 introduces 4 significant new features:

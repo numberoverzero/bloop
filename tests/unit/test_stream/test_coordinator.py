@@ -121,6 +121,40 @@ def test_advance_pulls_from_all_active_shards(coordinator, session):
     assert [has_records, no_records] == coordinator.active
 
 
+@pytest.mark.xfail(reason="expected failure, https://github.com/numberoverzero/bloop/issues/111")
+def test_buffer_closed_records(coordinator, session):
+    """
+    When a shard is closed, the last set of records is still buffered even though the shard is no longer tracked.
+    https://github.com/numberoverzero/bloop/issues/111
+    """
+    closed_shard = Shard(
+        stream_arn=coordinator.stream_arn,
+        shard_id="closed-shard-id",
+        iterator_id="closed-iter-id",
+        session=session)
+    coordinator.active = [closed_shard]
+
+    session.get_stream_records.return_value = {
+        "Records": [
+            dynamodb_record_with(sequence_number=123, key=True),
+            dynamodb_record_with(sequence_number=456, key=True),
+            dynamodb_record_with(sequence_number=789, key=True)
+        ]
+        # last records so no NextShardIterator
+    }
+
+    # called when the coordinator
+    session.describe_stream.return_value = {
+        "Shards": [],
+        "StreamArn": coordinator.stream_arn
+    }
+
+    record = next(coordinator)
+    assert record["meta"]["sequence_number"] == "123"
+    assert len(coordinator.buffer) == 2
+    assert not coordinator.active
+
+
 @pytest.mark.parametrize("has_children, loads_children", [(True, False), (False, False), (False, True)])
 def test_advance_removes_exhausted(has_children, loads_children, coordinator, shard, session):
     """Exhausted shards are removed; any children are promoted, and reset to trim_horizon"""

@@ -68,12 +68,15 @@ def dynamodb_record_with(key=False, new=False, old=False, sequence_number=None, 
         creation_time = 1.46480527E9
     else:
         creation_time = creation_time.timestamp()
+    if sequence_number is None:
+        sequence_number = "400000000000000499660"
+    sequence_number = str(sequence_number)
     creation_time = datetime.datetime.fromtimestamp(int(creation_time))
     template = {
         "awsRegion": "us-west-2",
         "dynamodb": {
             "ApproximateCreationDateTime": creation_time,
-            "SequenceNumber": str(sequence_number) if sequence_number is not None else "400000000000000499660",
+            "SequenceNumber": sequence_number,
             "SizeBytes": 41,
             "StreamViewType": "KEYS_ONLY",
 

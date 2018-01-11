@@ -168,6 +168,10 @@ def test_eq_not_set_or_different(attr):
     assert not other == shard
 
 
+def test_iter(shard):
+    assert iter(shard) is shard
+
+
 def test_exhausted(shard):
     assert shard.iterator_id is None
     assert not shard.exhausted

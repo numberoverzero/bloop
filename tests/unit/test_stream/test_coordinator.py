@@ -121,6 +121,50 @@ def test_advance_pulls_from_all_active_shards(coordinator, session):
     assert [has_records, no_records] == coordinator.active
 
 
+def test_buffer_closed_records(coordinator, session):
+    """
+    When a shard is closed, the last set of records is still buffered even though the shard is no longer tracked.
+    https://github.com/numberoverzero/bloop/issues/111
+    """
+    closed_shard = Shard(
+        stream_arn=coordinator.stream_arn,
+        shard_id="closed-shard-id",
+        iterator_id="closed-iter-id",
+        session=session)
+    coordinator.active = [closed_shard]
+
+    session.get_stream_records.return_value = {
+        "Records": [
+            dynamodb_record_with(sequence_number=123, key=True),
+            dynamodb_record_with(sequence_number=456, key=True),
+            dynamodb_record_with(sequence_number=789, key=True)
+        ]
+        # last records so no NextShardIterator
+    }
+
+    # called when the coordinator
+    session.describe_stream.return_value = {
+        "Shards": [],
+        "StreamArn": coordinator.stream_arn
+    }
+
+    assert not coordinator.closed
+
+    record = next(coordinator)
+    assert not coordinator.active
+    assert record["meta"]["sequence_number"] == "123"
+    assert len(coordinator.buffer) == coordinator.closed[closed_shard] == 2
+
+    record = next(coordinator)
+    assert record["meta"]["sequence_number"] == "456"
+    assert len(coordinator.buffer) == coordinator.closed[closed_shard] == 1
+
+    record = next(coordinator)
+    assert record["meta"]["sequence_number"] == "789"
+    assert not coordinator.buffer
+    assert not coordinator.closed
+
+
 @pytest.mark.parametrize("has_children, loads_children", [(True, False), (False, False), (False, True)])
 def test_advance_removes_exhausted(has_children, loads_children, coordinator, shard, session):
     """Exhausted shards are removed; any children are promoted, and reset to trim_horizon"""
@@ -270,6 +314,60 @@ def test_token(coordinator):
     assert ordered(expected_token) == ordered(coordinator.token)
 
 
+def test_token_closed_records(coordinator, session):
+    """
+    When a shard is closed, the last set of records is still buffered even though the shard is no longer tracked.
+    The token must include the closed shard until its buffered records are consumed.
+
+    https://github.com/numberoverzero/bloop/issues/111
+    """
+    closed_shard = Shard(
+        stream_arn=coordinator.stream_arn,
+        shard_id="closed-shard-id",
+        iterator_id="closed-iter-id",
+        session=session)
+    coordinator.active = [closed_shard]
+
+    session.get_stream_records.return_value = {
+        "Records": [
+            dynamodb_record_with(sequence_number=123, key=True),
+            dynamodb_record_with(sequence_number=456, key=True),
+            dynamodb_record_with(sequence_number=789, key=True)
+        ]
+        # last records so no NextShardIterator
+    }
+
+    # called when the coordinator
+    session.describe_stream.return_value = {
+        "Shards": [],
+        "StreamArn": coordinator.stream_arn
+    }
+
+    initial_token = coordinator.token
+    assert initial_token == {
+        "stream_arn": "stream-arn",
+        "active": ["closed-shard-id"],
+        "shards": []
+    }
+
+    record = next(coordinator)
+    assert record["meta"]["sequence_number"] == "123"
+    assert coordinator.closed[closed_shard] == len(coordinator.buffer) == 2
+
+    # the token should still include the shard in "active", and the "shards"
+    # list should contain a pointer to the sequence number 123
+    token = coordinator.token
+    assert token == {
+        "stream_arn": "stream-arn",
+        "active": ["closed-shard-id"],
+        "shards": [{
+            "iterator_type": "after_sequence",
+            "sequence_number": "123",
+            "shard_id": "closed-shard-id",
+        }]
+    }
+
+
 @pytest.mark.parametrize("is_active", [True, False])
 @pytest.mark.parametrize("is_root", [True, False])
 @pytest.mark.parametrize("has_buffered", [True, False])
@@ -291,7 +389,7 @@ def test_remove_shard(is_active, is_root, has_buffered, coordinator):
         coordinator.buffer.push_all((r, shard) for r in records)
     coordinator.buffer.push(local_record(sequence_number="200"), other)
 
-    coordinator.remove_shard(shard)
+    coordinator.remove_shard(shard, drop_buffered_records=True)
 
     if is_active:
         assert all(child in coordinator.active for child in children)

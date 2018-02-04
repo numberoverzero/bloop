@@ -3,9 +3,11 @@ import collections.abc
 import datetime
 import logging
 
+from typing import Dict, List
+
 from ..exceptions import InvalidPosition, InvalidStream, RecordsExpired
 from .buffer import RecordBuffer
-from .shard import unpack_shards
+from .shard import Shard, unpack_shards
 
 
 logger = logging.getLogger("bloop.stream")
@@ -29,7 +31,11 @@ class Coordinator:
         self.roots = []
 
         # Shards being iterated right now
-        self.active = []
+        self.active: List[Shard] = []
+
+        # Closed shards that still have buffered records
+        # shard -> buffered count
+        self.closed: Dict[Shard, int] = {}
 
         # Single buffer for the lifetime of the Coordinator, but mutates frequently
         # Records in the buffer aren't considered read.  When a Record popped from the buffer is
@@ -59,6 +65,11 @@ class Coordinator:
             # Now that the record is "consumed", advance the shard's checkpoint
             shard.sequence_number = record["meta"]["sequence_number"]
             shard.iterator_type = "after_sequence"
+
+            if shard in self.closed:
+                self.closed[shard] -= 1
+                if self.closed[shard] == 0:
+                    self.closed.pop(shard)
             return record
 
         # No records :(
@@ -81,7 +92,7 @@ class Coordinator:
                 record_shard_pairs.extend((record, shard) for record in records)
         self.buffer.push_all(record_shard_pairs)
 
-        self._handle_exhausted()
+        self.migrate_closed_shards()
 
     def heartbeat(self):
         """Keep active shards with "trim_horizon", "latest" iterators alive by advancing their iterators."""
@@ -91,17 +102,31 @@ class Coordinator:
                 # Success!  This shard now has an ``at_sequence`` iterator
                 if records:
                     self.buffer.push_all((record, shard) for record in records)
-        self._handle_exhausted()
+        self.migrate_closed_shards()
 
-    def _handle_exhausted(self):
+    def migrate_closed_shards(self):
         # 1) Clean up exhausted Shards.  Can't modify the active list while iterating it.
-        to_remove = [shard for shard in self.active if shard.exhausted]
-        for shard in to_remove:
+        to_migrate = {shard for shard in self.active if shard.exhausted}
+
+        # Early exit since this method will iterate the entire buffer.
+        if not to_migrate:
+            return
+
+        # Build the count once, rather than look for each shard as we process it below.
+        buffered_count = {}
+        for *_, shard in self.buffer.heap:
+            buffered_count.setdefault(shard, 0)
+            buffered_count[shard] += 1
+
+        for shard in to_migrate:
             shard.load_children()
-            # Also promotes children to the shard's previous roles
+            # This call also promotes children to the shard's previous roles
             self.remove_shard(shard)
             for child in shard.children:
                 child.jump_to(iterator_type="trim_horizon")
+            # May still need to track this shard
+            if shard in buffered_count:
+                self.closed[shard] = buffered_count[shard]
 
     @property
     def token(self):
@@ -113,24 +138,38 @@ class Coordinator:
         :returns: Stream state as a json-friendly dict
         :rtype: dict
         """
+        # 0) Trace roots and active shards
+        active_ids = []
         shard_tokens = []
         for root in self.roots:
             for shard in root.walk_tree():
                 shard_tokens.append(shard.token)
+                # dedupe, stream_arn will be in the root token
                 shard_tokens[-1].pop("stream_arn")
+        active_ids.extend((shard.shard_id for shard in self.active))
+
+        # 1) Inject closed shards
+        for shard in self.closed.keys():
+            active_ids.append(shard.shard_id)
+            shard_tokens.append(shard.token)
+            shard_tokens[-1].pop("stream_arn")
+
         return {
             "stream_arn": self.stream_arn,
-            "active": [shard.shard_id for shard in self.active],
+            "active": active_ids,
             "shards": shard_tokens
         }
 
-    def remove_shard(self, shard):
+    def remove_shard(self, shard, drop_buffered_records=False):
         """Remove a Shard from the Coordinator.  Drops all buffered records from the Shard.
 
         If the Shard is active or a root, it is removed and any children promoted to those roles.
 
         :param shard: The shard to remove
          :type shard: :class:`~bloop.stream.shard.Shard`
+        :param bool drop_buffered_records:
+            Whether records from this shard should be removed.
+            Default is False.
         """
         try:
             self.roots.remove(shard)
@@ -148,12 +187,13 @@ class Coordinator:
         else:
             self.active.extend(shard.children)
 
-        # TODO can this be improved?  Gets expensive for high-volume streams with large buffers
-        heap = self.buffer.heap
-        # Clear buffered records from the shard.  Each record is (ordering, record, shard)
-        to_remove = [x for x in heap if x[2] is shard]
-        for x in to_remove:
-            heap.remove(x)
+        if drop_buffered_records:
+            # TODO can this be improved?  Gets expensive for high-volume streams with large buffers
+            heap = self.buffer.heap
+            # Clear buffered records from the shard.  Each record is (ordering, record, shard)
+            to_remove = [x for x in heap if x[2] is shard]
+            for x in to_remove:
+                heap.remove(x)
 
     def move_to(self, position):
         """Set the Coordinator to a specific endpoint or time, or load state from a token.
@@ -228,7 +268,7 @@ def _move_stream_time(coordinator, time):
 
         # Closed shard, keep searching its children.
         elif shard.exhausted:
-            coordinator.remove_shard(shard)
+            coordinator.remove_shard(shard, drop_buffered_records=True)
             shard_trees.extend(shard.children)
 
 
@@ -246,6 +286,7 @@ def _move_stream_token(coordinator, token):
     # 0) Everything will be rebuilt from the DescribeStream masked by the token.
     coordinator.roots.clear()
     coordinator.active.clear()
+    coordinator.closed.clear()
     coordinator.buffer.clear()
 
     # Injecting the token gives us access to the standard shard management functions
@@ -265,7 +306,7 @@ def _move_stream_token(coordinator, token):
         shard = unverified.popleft()
         if shard.shard_id not in current_shards:
             logger.info("Unknown or expired shard \"{}\" - pruning from stream token".format(shard.shard_id))
-            coordinator.remove_shard(shard)
+            coordinator.remove_shard(shard, drop_buffered_records=True)
             unverified.extend(shard.children)
 
     # 3) Everything was pruned, so the token describes an unknown stream.

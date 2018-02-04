@@ -90,6 +90,9 @@ class Shard:
             details += ", "
         return "<{}[{}id={!r}]>".format(self.__class__.__name__, details, self.shard_id)
 
+    def __iter__(self):
+        return self
+
     def __next__(self):
         try:
             return self.get_records()
@@ -112,6 +115,8 @@ class Shard:
             )
         except (AttributeError, TypeError):
             return False
+
+    __hash__ = object.__hash__
 
     @property
     def exhausted(self):

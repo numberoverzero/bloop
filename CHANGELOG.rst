@@ -16,6 +16,21 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 *(no unreleased changes)*
 
 --------------------
+ 2.0.1 - 2018-02-03
+--------------------
+
+Fix a bug where the last records in a closed shard in a Stream were dropped.  See `Issue #87`_ and
+`PR #112`_.
+
+.. _Issue #111: https://github.com/numberoverzero/bloop/issues/111
+.. _PR #112: https://github.com/numberoverzero/bloop/pull/112
+
+[Fixed]
+=======
+
+* ``Stream`` no longer drops the last records from a closed Shard when moving to the child shard.
+
+--------------------
  2.0.0 - 2017-11-27
 --------------------
 

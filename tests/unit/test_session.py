@@ -1140,15 +1140,27 @@ def test_create_table_with_stream(include, view_type):
     """A table that streams only new images"""
     class Model(BaseModel):
         class Meta:
-            stream = {
-                "include": include
-            }
+            stream = {"include": include}
         id = Column(String, hash_key=True)
 
     table = create_table_request("Model", Model)
     assert table["StreamSpecification"] == {
         "StreamEnabled": True,
         "StreamViewType": view_type
+    }
+
+
+@pytest.mark.parametrize("sse_encryption", [True, False])
+def test_create_table_with_encryption(sse_encryption):
+    """A table that specifies encryption settings"""
+    class Model(BaseModel):
+        class Meta:
+            encryption = {"enabled": sse_encryption}
+        id = Column(String, hash_key=True)
+
+    table = create_table_request("Model", Model)
+    assert table["SSESpecification"] == {
+        "Enabled": bool(sse_encryption)
     }
 
 

@@ -593,6 +593,8 @@ def create_table_request(table_name, model):
             "StreamEnabled": True,
             "StreamViewType": view
         }
+    if model.Meta.encryption:
+        table["SSESpecification"] = {"Enabled": bool(model.Meta.encryption["enabled"])}
     return table
 
 

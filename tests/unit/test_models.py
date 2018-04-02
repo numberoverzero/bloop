@@ -334,6 +334,20 @@ def test_meta_default_ttl():
     assert Other.Meta.ttl is None
 
 
+def test_meta_default_encryption():
+    """By default, sse encryption is None"""
+    class Model(BaseModel):
+        id = Column(UUID, hash_key=True)
+    assert Model.Meta.encryption is None
+
+    class Other(BaseModel):
+        class Meta:
+            encryption = None
+
+        id = Column(UUID, hash_key=True)
+    assert Other.Meta.encryption is None
+
+
 def test_abstract_not_inherited():
     """Meta.abstract isn't inherited, and by default subclasses are not abstract"""
     class Concrete(BaseModel):
@@ -462,6 +476,15 @@ def test_ttl_by_name():
     assert Model.Meta.ttl["column"] is my_column
 
 
+@pytest.mark.parametrize("invalid_encryption", [False, True, {}, User.age])
+def test_invalid_encryption(invalid_encryption):
+    with pytest.raises(InvalidModel):
+        class Model(BaseModel):
+            class Meta:
+                encryption = invalid_encryption
+            id = Column(Integer, hash_key=True)
+
+
 @pytest.mark.parametrize("valid_stream", [
     {"include": ["new"]},
     {"include": ["old"]},
@@ -475,6 +498,20 @@ def test_valid_stream(valid_stream):
 
         id = Column(Integer, hash_key=True)
     assert Model.Meta.stream["include"] == set(valid_stream["include"])
+
+
+@pytest.mark.parametrize("valid_encryption", [
+    {"enabled": True},
+    {"enabled": False},
+    {"enabled": True, "unused": object()}
+])
+def test_valid_encryption(valid_encryption):
+    class Model(BaseModel):
+        class Meta:
+            encryption = valid_encryption
+
+        id = Column(Integer, hash_key=True)
+    assert Model.Meta.encryption is valid_encryption
 
 
 def test_require_hash():

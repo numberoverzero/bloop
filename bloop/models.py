@@ -50,6 +50,7 @@ class IMeta:
     write_units: Optional[int]
     stream: Optional[Dict]
     ttl: Optional[Dict]
+    encryption: Optional[Dict]
 
     model: "BaseModel"
 
@@ -189,6 +190,7 @@ class BaseModel:
 
         validate_stream(meta)
         validate_ttl(meta)
+        validate_encryption(meta)
 
         # 3.0 Fire model_created for customizing the class after creation
         model_created.send(None, model=cls)
@@ -658,6 +660,17 @@ def validate_stream(meta):
     stream.setdefault("arn", None)
 
 
+def validate_encryption(meta):
+    encryption = meta.encryption
+    if encryption is None:
+        return
+
+    if not isinstance(encryption, collections.abc.MutableMapping):
+        raise InvalidModel("Encryption must be None or a dict.")
+    if "enabled" not in encryption:
+        raise InvalidModel("Encryption must specify whether it is enabled with the 'enabled' key.")
+
+
 def validate_ttl(meta):
     ttl = meta.ttl
     if ttl is None:
@@ -745,6 +758,7 @@ def initialize_meta(cls: type):
     setdefault(meta, "read_units", None)
     setdefault(meta, "stream", None)
     setdefault(meta, "ttl", None)
+    setdefault(meta, "encryption", None)
 
     setdefault(meta, "hash_key", None)
     setdefault(meta, "range_key", None)

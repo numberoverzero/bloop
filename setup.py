@@ -12,8 +12,8 @@ for line in (HERE / "bloop" / "__init__.py").read_text().split("\n"):
 
 REQUIREMENTS = [
     "blinker==1.4",
-    "boto3==1.4.8",
-    "botocore"  # no version because we'll take what boto3 uses
+    "boto3>=1.7.1,<=1.8.0",
+    "botocore>=1.10.1"  # no upper bound because we'll take what boto3 uses
 ]
 
 if __name__ == "__main__":

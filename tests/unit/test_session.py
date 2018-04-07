@@ -443,6 +443,64 @@ def test_create_already_exists(session, dynamodb):
 # END CREATE TABLE ================================================================================== END CREATE TABLE
 
 
+# DESCRIBE TABLE ====================================================================================== DESCRIBE TABLE
+
+
+def test_describe_table_raises_unknown(session, dynamodb):
+    cause = dynamodb.describe_table.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.describe_table("User")
+    assert excinfo.value.__cause__ is cause
+    assert dynamodb.describe_table.call_count == 1
+    assert dynamodb.describe_time_to_live.call_count == 0
+
+
+def test_describe_ttl_raises_unknown(session, dynamodb):
+    dynamodb.describe_table.return_value = {"Table": minimal_description(True)}
+    cause = dynamodb.describe_time_to_live.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.describe_table("User")
+    assert excinfo.value.__cause__ is cause
+    assert dynamodb.describe_table.call_count == 1
+    assert dynamodb.describe_time_to_live.call_count == 1
+
+
+def test_describe_table_polls_status(session, dynamodb):
+    dynamodb.describe_table.side_effect = [
+        {"Table": minimal_description(False)},
+        {"Table": minimal_description(True)}
+    ]
+    dynamodb.describe_time_to_live.return_value = {"TimeToLiveDescription": {}}
+    description = session.describe_table("User")
+    # table status is filtered out
+    assert "TableStatus" not in description
+    assert dynamodb.describe_table.call_count == 2
+    assert dynamodb.describe_time_to_live.call_count == 1
+
+
+def test_describe_table_sanitizes(session, dynamodb, caplog):
+    responses = dynamodb.describe_table.side_effect = [
+        {"Table": minimal_description(False)},
+        {"Table": minimal_description(True)}
+    ]
+    # New/unknown fields are filtered out
+    responses[-1]["Table"]["UnknownField"] = "Something"
+    # Missing fields are added
+    responses[-1]["Table"].pop("GlobalSecondaryIndexes")
+
+    dynamodb.describe_time_to_live.return_value = {"TimeToLiveDescription": {}}
+    description = session.describe_table("User")
+    assert "UnknownField" not in description
+    assert description["GlobalSecondaryIndexes"] == []
+    assert caplog.record_tuples == [
+        ("bloop.session", logging.DEBUG,
+         "describe_table: table \"User\" was in ACTIVE state after 2 calls"),
+    ]
+
+
+# END DESCRIBE TABLE ============================================================================== END DESCRIBE TABLE
+
+
 def test_enable_ttl(session, dynamodb):
     class Model(BaseModel):
         class Meta:

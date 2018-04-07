@@ -645,7 +645,7 @@ def sanitize_table_description(description):
         "TimeToLiveStatus": read_field("DISABLED", "TimeToLiveDescription", "TimeToLiveStatus"),
     }
 
-    table = {
+    return {
         "AttributeDefinitions": [
             {"AttributeName": attr_definition["AttributeName"], "AttributeType": attr_definition["AttributeType"]}
             for attr_definition in description.get("AttributeDefinitions", [])
@@ -686,7 +686,6 @@ def sanitize_table_description(description):
         "TableName": read_field(None, "TableName"),
         "TimeToLiveDescription": ttl_spec,
     }
-    return table
 
 
 def simple_table_status(description):

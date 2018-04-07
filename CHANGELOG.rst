@@ -16,6 +16,28 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 *(no unreleased changes)*
 
 --------------------
+ 2.1.0 - 2018-04-07
+--------------------
+
+Added support for `Server-Side Encryption`_.  This uses an AWS-managed Customer Master Key (CMK) stored in `KMS`_
+which is `managed for free`_: "You are not charged for the following: AWS-managed CMKs, which are automatically
+created on your behalf when you first attempt to encrypt a resource in a supported AWS service."
+
+[Added]
+=======
+
+* ``Meta`` supports Server Side Encryption::
+
+    class MyModel(BaseModel):
+        id = Column(String, hash_key=True)
+        class Meta:
+            encryption = {"enabled": True}
+
+.. _Server-Side Encryption: https://aws.amazon.com/blogs/aws/new-encryption-at-rest-for-dynamodb/
+.. _KMS: https://console.aws.amazon.com/iam/#/encryptionKeys
+.. _managed for free: https://aws.amazon.com/kms/pricing/
+
+--------------------
  2.0.1 - 2018-02-03
 --------------------
 

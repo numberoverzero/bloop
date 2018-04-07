@@ -1,5 +1,5 @@
 from unittest.mock import Mock
-
+import logging
 import pytest
 
 from bloop import BaseModel, Engine
@@ -10,6 +10,12 @@ from bloop.signals import (
     object_modified,
     object_saved,
 )
+
+
+@pytest.fixture(autouse=True)
+def __set_log_level(caplog):
+    """Always set caplog to capture DEBUG"""
+    caplog.set_level(logging.DEBUG)
 
 
 @pytest.fixture

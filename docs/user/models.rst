@@ -94,13 +94,9 @@ A local object's hash and range keys don't need values until you're ready to int
 
 .. _user-model-meta:
 
-==========
- Metadata
-==========
-
----------------------
- Table Configuration
----------------------
+===============================
+ Metadata: Table Configuration
+===============================
 
 You can provide an inner ``Meta`` class to configure the model's DynamoDB table:
 
@@ -130,10 +126,20 @@ Table configuration defaults are:
             write_units = None  # uses DynamoDB value, or 1 for new tables
             stream = None
             ttl = None
+            encryption = None
+
+
+----------
+ abstract
+----------
 
 If ``abstract`` is true, no backing table will be created in DynamoDB.  Instances of abstract models can't be saved
 or loaded.  You can use abstract models, or even plain classes with Columns and Indexes, as mixins.  Derived models
 never copy their parents' Meta value.  For more information, see the :ref:`user-models-inheritance` section.
+
+------------
+ table_name
+------------
 
 The default ``table_name`` is simply the model's ``__name__``.  This property is useful for mapping a model
 to an existing table, or mapping multiple models to the same table:
@@ -151,6 +157,9 @@ to an existing table, or mapping multiple models to the same table:
     ``Meta.table_name``.  For example, the template "dev-{table_name}" would cause the ``Employee`` model
     above to use the table "dev-employees-uk"
 
+-------------------------
+ read_units, write_units
+-------------------------
 
 Default ``read_units`` and ``write_units`` are None.  These do not include provisioned throughput for any
 :class:`~bloop.models.GlobalSecondaryIndex`, which has its own read and write units.
@@ -162,6 +171,10 @@ the table or GSI does not exist, they fall back to 1.
 
     Previously, ``read_units`` and ``write_units`` defaulted to ``1``.  This was inconvenient when throughput
     is controlled by an external script, and totally broken with the new auto-scaling features.
+
+---------
+ stream
+---------
 
 You can use ``stream`` to enable DynamoDBStreams on the table.  By default streaming is not enabled, and this
 is ``None``.  To enable a stream with both new and old images, use:
@@ -175,7 +188,11 @@ is ``None``.  To enable a stream with both new and old images, use:
 
 See the :ref:`user-streams` section of the user guide to get started.  Streams are awesome.
 
-Finally, you can use ``ttl`` to enable the TTL feature on the table.  By default a TTL attribute is not set, and this
+-----
+ ttl
+-----
+
+You can use ``ttl`` to enable the TTL feature on the table.  By default a TTL attribute is not set, and this
 is ``None``.  To enable a ttl on the attribute ``"delete_after"``, use:
 
 .. code-block:: python
@@ -202,9 +219,25 @@ for your convenience, and is used as a class:`datetime.datetime`:
 Like :class:`~bloop.types.DateTime`, ``bloop.ext`` exposes drop-in replacements for ``Timestamp`` for each of three
 popular python datetime libraries: arrow, delorean, and pendulum.
 
----------------------
- Model Introspection
----------------------
+------------
+ encryption
+------------
+
+Finally, you can use ``encryption`` to enable `Server-Side Encryption`__.  By default encryption is not enabled, and
+this is ``None``.  To enable server-side encryption, use:
+
+.. code-block:: python
+
+    class Meta:
+        encryption = {
+            "enabled": True
+        }
+
+__ https://aws.amazon.com/blogs/aws/new-encryption-at-rest-for-dynamodb/
+
+===============================
+ Metadata: Model Introspection
+===============================
 
 When a new model is created, a number of attributes are computed and stored in ``Meta``.  These can be used to
 generalize conditions for any model, or find columns by their name in DynamoDB.
@@ -243,12 +276,12 @@ Here's the User model we just defined:
      <Column[User.version=range]>,
      <Column[User.email]>}
 
-----------------------
- Using Generic Models
-----------------------
+================================
+ Metadata: Using Generic Models
+================================
 
 A common pattern involves saving an item only if it doesn't exist.  Instead of creating a specific
-condition for every model, we can use ``keys`` to make a function for any model:
+condition for every model, we can use ``Meta.keys`` to make a function for any model:
 
 .. code-block:: python
 
@@ -266,7 +299,7 @@ Now, saving only when an object doesn't exist is as simple as:
 
     engine.save(some_obj, condition=if_not_exist(some_obj))
 
-(This is also available in the :ref:`patterns section <patterns-if-not-exist>` of the user guide).
+(This is also available in the :ref:`patterns section <patterns-if-not-exist>` of the user guide)
 
 .. _user-models-columns:
 

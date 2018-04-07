@@ -404,17 +404,17 @@ def compare_tables(model, actual):
 
     if model.Meta.stream:
         if not actual["StreamSpecification"]["StreamEnabled"]:
-            logger.debug("Model expects stream but streaming is not enabled")
+            logger.debug("Model expects streaming but streaming is not enabled")
             matches = False
         actual_stream = actual["StreamSpecification"]["StreamViewType"]
         expected_stream = {
-            {"new"}: "NEW_IMAGE",
-            {"old"}: "OLD_IMAGE",
-            {"new", "old"}: "NEW_AND_OLD_IMAGES",
-            {"keys"}: "KEYS_ONLY"
-        }[set(model.Meta.stream["include"])]
+            ("new",): "NEW_IMAGE",
+            ("old",): "OLD_IMAGE",
+            ("new", "old"): "NEW_AND_OLD_IMAGES",
+            ("keys",): "KEYS_ONLY"
+        }[tuple(ordered(model.Meta.stream["include"]))]
         if actual_stream != expected_stream:
-            logger.debug(f"Model expects view type {expected_stream} but was {actual_stream}")
+            logger.debug(f"Model expects StreamViewType '{expected_stream}' but was '{actual_stream}'")
             matches = False
 
     if model.Meta.ttl:
@@ -424,7 +424,7 @@ def compare_tables(model, actual):
         actual_ttl = actual["TimeToLiveDescription"]["AttributeName"]
         expected_ttl = model.Meta.ttl["column"].dynamo_name
         if actual_ttl != expected_ttl:
-            logger.debug(f"Model expects ttl to be {expected_ttl} but was {actual_ttl}")
+            logger.debug(f"Model expects ttl column to be '{expected_ttl}' but was '{actual_ttl}'")
             matches = False
 
     read_units = model.Meta.read_units
@@ -451,21 +451,22 @@ def compare_tables(model, actual):
             logger.debug(f"GSI KeySchema mismatch: expected '{expected_schema}' but was '{actual_schema}'")
             matches = False
         expected_projection = index_projection(index)
+        expected_projection.setdefault("NonKeyAttributes", [])
         actual_projection = actual_gsi["Projection"]
         if ordered(expected_projection) != ordered(actual_projection):
             logger.debug(f"GSI Projection mismatch: expected '{expected_projection}' but was '{actual_projection}'")
             matches = False
         expected_wu = index.write_units
-        actual_wu = actual_gsi["ProvisionedThroughput"]["WriteUnits"]
+        actual_wu = actual_gsi["ProvisionedThroughput"]["WriteCapacityUnits"]
         if expected_wu is not None and actual_wu != expected_wu:
             logger.debug(
-                f"GSI ProvisionedThroughput.WriteUnits mismatch: expected '{expected_wu}' but was '{actual_wu}'")
+                f"GSI ProvisionedThroughput.WCU mismatch: expected '{expected_wu}' but was '{actual_wu}'")
             matches = False
         expected_ru = index.read_units
-        actual_ru = actual_gsi["ProvisionedThroughput"]["ReadUnits"]
+        actual_ru = actual_gsi["ProvisionedThroughput"]["ReadCapacityUnits"]
         if expected_ru is not None and actual_ru != expected_ru:
             logger.debug(
-                f"GSI ProvisionedThroughput.ReadUnits mismatch: expected '{expected_ru}' but was '{actual_ru}'")
+                f"GSI ProvisionedThroughput.RCU mismatch: expected '{expected_ru}' but was '{actual_ru}'")
             matches = False
 
     actual_lsis = {index["IndexName"]: index for index in actual["LocalSecondaryIndexes"]}
@@ -480,6 +481,7 @@ def compare_tables(model, actual):
             logger.debug(f"LSI KeySchema mismatch: expected '{expected_schema}' but was '{actual_schema}'")
             matches = False
         expected_projection = index_projection(index)
+        expected_projection.setdefault("NonKeyAttributes", [])
         actual_projection = actual_lsi["Projection"]
         if ordered(expected_projection) != ordered(actual_projection):
             logger.debug(f"LSI Projection mismatch: expected '{expected_projection}' but was '{actual_projection}'")

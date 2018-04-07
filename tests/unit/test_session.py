@@ -14,10 +14,11 @@ from bloop.exceptions import (
     ShardIteratorExpired,
     TableMismatch,
 )
-from bloop.models import BaseModel, Column, GlobalSecondaryIndex
+from bloop.models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,
     SessionWrapper,
+    compare_tables,
     create_table_request,
     ready,
     sanitize_table_description,
@@ -49,6 +50,61 @@ def dynamodbstreams():
 @pytest.fixture
 def session(dynamodb, dynamodbstreams):
     return SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+
+
+@pytest.fixture
+def model():
+    """Return a clean model so each test can mutate the model's Meta"""
+    class Model(BaseModel):
+        class Meta:
+            encryption = {"enabled": True}
+            stream = {"include": {"old", "new"}}
+            ttl = {"column": "expiry"}
+            read_units = 3
+            write_units = 7
+
+        id = Column(String, hash_key=True)
+        range = Column(String, range_key=True)
+        expiry = Column(Timestamp)
+        email = Column(String)
+
+        gsi_email_keys = GlobalSecondaryIndex(projection="keys", hash_key=email)
+        gsi_email_specific = GlobalSecondaryIndex(projection=["expiry"], hash_key=email)
+        lsi_email_keys = LocalSecondaryIndex(projection="keys", range_key=email)
+        lsi_email_specific = LocalSecondaryIndex(projection=["expiry"], range_key=email)
+
+    return Model
+
+
+@pytest.fixture
+def logger(caplog):
+    class CaplogWrapper:
+        def __init__(self):
+            self.caplog = caplog
+
+        def assert_logged(self, msg):
+            assert ("bloop.session", logging.DEBUG, msg) in self.caplog.record_tuples
+
+        def assert_only_logged(self, msg):
+            self.assert_logged(msg)
+            assert len(self.caplog.record_tuples) == 1
+
+    return CaplogWrapper()
+
+
+def description_for(cls):
+    """Returns an exact description for the model"""
+    description = create_table_request(cls.Meta.table_name, cls)
+    if cls.Meta.encryption:
+        description.pop("SSESpecification")
+        description["SSEDescription"] = {"Status": "ENABLED"}
+    if cls.Meta.ttl:
+        description["TimeToLiveDescription"] = {
+            "AttributeName": cls.Meta.ttl["column"].dynamo_name,
+            "TimeToLiveStatus": "ENABLED",
+        }
+    description["LatestStreamArn"] = "not-a-real-arn"
+    return sanitize_table_description(description)
 
 
 def build_describe_stream_response(shards=missing, next_id=missing):
@@ -706,7 +762,59 @@ def test_get_records(dynamodbstreams, session):
 # END GET STREAM RECORDS ====================================================================== END GET STREAM RECORDS
 
 
-# TABLE HELPERS ======================================================================================== TABLE HELPERS
+# COMPARE TABLES ====================================================================================== COMPARE TABLES
+
+
+def test_compare_table_sanity_check(model, logger):
+    """By default the test setup should provide a fully-valid description of the table.
+
+    Without this sanity check, any test that makes the description slightly invalid wouldn't actually
+    verify the compare_table method is failing as expected.
+    """
+    description = description_for(model)
+    assert compare_tables(model, description)
+    assert not logger.caplog.record_tuples
+
+
+def test_compare_table_missing_sse(model, logger):
+    description = description_for(model)
+    description["SSEDescription"]["Status"] = "DISABLED"
+    assert not compare_tables(model, description)
+    logger.assert_only_logged("Model expects SSE to be 'ENABLED' but was 'DISABLED'")
+
+
+def test_compare_table_missing_stream(model, logger):
+    description = description_for(model)
+    description["StreamSpecification"]["StreamEnabled"] = False
+    assert not compare_tables(model, description)
+    logger.assert_only_logged("Model expects streaming but streaming is not enabled")
+
+
+def test_compare_table_wrong_stream_type(model, logger):
+    description = description_for(model)
+    description["StreamSpecification"]["StreamViewType"] = "UNKNOWN"
+    assert not compare_tables(model, description)
+    logger.assert_only_logged("Model expects StreamViewType 'NEW_AND_OLD_IMAGES' but was 'UNKNOWN'")
+
+
+def test_compare_table_missing_ttl(model, logger):
+    description = description_for(model)
+    description["TimeToLiveDescription"]["TimeToLiveStatus"] = "DISABLED"
+    assert not compare_tables(model, description)
+    logger.assert_only_logged("Model expects ttl but ttl is not enabled")
+
+
+def test_compare_table_wrong_ttl_column(model, logger):
+    description = description_for(model)
+    description["TimeToLiveDescription"]["AttributeName"] = "wrong_column"
+    assert not compare_tables(model, description)
+    logger.assert_only_logged("Model expects ttl column to be 'expiry' but was 'wrong_column'")
+
+
+# END COMPARE TABLES ============================================================================== END COMPARE TABLES
+
+
+# OTHER TABLE HELPERS ============================================================================ OTHER TABLE HELPERS
 
 
 def assert_unordered(obj, other):
@@ -806,4 +914,4 @@ def test_simple_status(table_status, gsi_status, expected_status):
     assert simple_table_status(description) == expected_status
 
 
-# END TABLE HELPERS ================================================================================ END TABLE HELPERS
+# END OTHER TABLE HELPERS ==================================================================== END OTHER TABLE HELPERS

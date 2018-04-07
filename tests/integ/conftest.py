@@ -22,6 +22,17 @@ LATEST_DYNAMODB_LOCAL_SHA = "70d9a92529782ac93713258fe69feb4ff6e007ae2c3319c7ffa
 DYNAMODB_LOCAL_SINGLETON = None
 
 
+class PatchedDynamoDBClient:
+    def __init__(self, real_client):
+        self.__client = real_client
+
+    def describe_time_to_live(self, **_):
+        return {"TimeToLiveDescription": {"TimeToLiveStatus": "DISABLED"}}
+
+    def __getattr__(self, name):
+        return getattr(self.__client, name)
+
+
 class DynamoDBLocal:
     def __init__(self, localdir: str) -> None:
         self.localdir = localdir
@@ -51,7 +62,10 @@ class DynamoDBLocal:
         session = self.session
         endpoint = self.endpoint
         return (
-            session.client("dynamodb", endpoint_url=endpoint),
+            # TODO | have to patch dynamodb until DynamoDBLocal supports DescribeTimeToLive
+            # TODO | otherwise, SessionWrapper.describe_table throws UnknownOperationException
+            PatchedDynamoDBClient(session.client("dynamodb", endpoint_url=endpoint)),
+
             session.client("dynamodbstreams", endpoint_url=endpoint)
         )
 

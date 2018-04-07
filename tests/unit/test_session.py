@@ -74,10 +74,21 @@ def model():
         gsi_email_specific = GlobalSecondaryIndex(
             projection=["expiry"], hash_key=email,
             read_units=23, write_units=27)
+        gsi_email_all = GlobalSecondaryIndex(
+            projection="all", hash_key=email,
+            read_units=23, write_units=27)
         lsi_email_keys = LocalSecondaryIndex(projection="keys", range_key=email)
         lsi_email_specific = LocalSecondaryIndex(projection=["expiry"], range_key=email)
+        lsi_email_all = LocalSecondaryIndex(projection="all", range_key=email)
 
     return Model
+
+
+@pytest.fixture
+def basic_model():
+    class BasicModel(BaseModel):
+        id = Column(String, hash_key=True)
+    return BasicModel
 
 
 @pytest.fixture
@@ -86,11 +97,11 @@ def logger(caplog):
         def __init__(self):
             self.caplog = caplog
 
-        def assert_logged(self, msg):
-            assert ("bloop.session", logging.DEBUG, msg) in self.caplog.record_tuples
+        def assert_logged(self, msg, level=logging.DEBUG):
+            assert ("bloop.session", level, msg) in self.caplog.record_tuples
 
-        def assert_only_logged(self, msg):
-            self.assert_logged(msg)
+        def assert_only_logged(self, msg, level=logging.DEBUG):
+            self.assert_logged(msg, level=level)
             assert len(self.caplog.record_tuples) == 1
 
     return CaplogWrapper()
@@ -805,12 +816,10 @@ def test_compare_table_sanity_check(model, logger):
     assert not logger.caplog.record_tuples
 
 
-def test_compare_table_simple():
+def test_compare_table_simple(basic_model):
     """A minimal model that doesn't care about streaming, ttl, or encryption and has no indexes"""
-    class BasicModel(BaseModel):
-        id = Column(String, hash_key=True)
-    description = description_for(BasicModel)
-    assert compare_tables(BasicModel, description)
+    description = description_for(basic_model)
+    assert compare_tables(basic_model, description)
 
 
 def test_compare_table_missing_sse(model, logger):
@@ -881,20 +890,23 @@ def test_compare_table_wrong_index_key_schema(index_type, model, logger):
 def test_compare_table_wrong_index_projection_type(index_type, model, logger):
     index = any_index(model, index_type)
     description = description_for(model)
-    # drop the last entry in the key schema to ensure it's invalid
     index_description = find_index(description, index.dynamo_name)
     index_description["Projection"]["ProjectionType"] = "UnknownProjectionType"
     assert not compare_tables(model, description)
-    logger.assert_only_logged(f"Projection mismatch for index '{index.dynamo_name}'")
+    logger.assert_logged(f"Projection mismatch for index '{index.dynamo_name}'")
+    logger.assert_logged(f"unexpected index ProjectionType 'UnknownProjectionType'", level=logging.INFO)
 
 
 @pytest.mark.parametrize("index_type", ["gsis", "lsis"])
 def test_compare_table_missing_index_projection_attributes(index_type, model, logger):
     index = any_index(model, index_type, require_attributes=True)
     description = description_for(model)
-    # drop the last entry in the key schema to ensure it's invalid
     index_description = find_index(description, index.dynamo_name)
     index_description["Projection"]["NonKeyAttributes"] = []
+    # Since an index projecting "ALL" short-circuits the superset check, we need to advertise
+    # a different valid but insufficient projection type
+    if index_description["Projection"]["ProjectionType"] == "ALL":
+        index_description["Projection"]["ProjectionType"] = "INCLUDE"
     assert not compare_tables(model, description)
     logger.assert_only_logged(f"Projection mismatch for index '{index.dynamo_name}'")
 
@@ -925,6 +937,31 @@ def test_compare_table_wrong_attribute_type(model, logger):
     name = attribute["AttributeName"]
     assert not compare_tables(model, description)
     logger.assert_only_logged(f"AttributeDefinition mismatch for attribute '{name}'")
+
+
+def test_compare_table_extra_indexes(basic_model, model):
+    description = description_for(basic_model)
+    extended = description_for(model)
+    description["GlobalSecondaryIndexes"] = extended["GlobalSecondaryIndexes"]
+    description["LocalSecondaryIndexes"] = extended["LocalSecondaryIndexes"]
+    assert compare_tables(basic_model, description)
+
+
+@pytest.mark.parametrize("index_type", ["gsis", "lsis"])
+def test_compare_table_index_superset(index_type, model, capsys):
+    index = any_index(model, index_type)
+    description = description_for(model)
+    index_description = find_index(description, index.dynamo_name)
+    index_description["Projection"]["NonKeyAttributes"].append("AdditionalAttribute")
+    with capsys.disabled():
+        assert compare_tables(model, description)
+
+
+def test_compare_table_extra_attribute(basic_model, model):
+    description = description_for(basic_model)
+    extended = description_for(model)
+    description["AttributeDefinitions"].extend(extended["AttributeDefinitions"])
+    assert compare_tables(basic_model, description)
 
 # END COMPARE TABLES ============================================================================== END COMPARE TABLES
 

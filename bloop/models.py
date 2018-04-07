@@ -1024,7 +1024,6 @@ def refresh_index(meta, index) -> None:
 
     proj = index.projection
     mode = proj["mode"]
-    strict = proj["strict"]
 
     if mode == "keys":
         proj["included"] = projection_keys
@@ -1032,13 +1031,12 @@ def refresh_index(meta, index) -> None:
         proj["included"] = meta.columns
     elif mode == "include":  # pragma: no branch
         if all(isinstance(p, str) for p in proj["included"]):
-            projection = set(meta.columns_by_name[n] for n in proj["included"])
+            proj["included"] = set(meta.columns_by_name[n] for n in proj["included"])
         else:
-            projection = set(proj["included"])
-        projection.update(projection_keys)
-        proj["included"] = projection
+            proj["included"] = set(proj["included"])
+        proj["included"].update(projection_keys)
 
-    if strict:
+    if proj["strict"]:
         proj["available"] = proj["included"]
     else:
         proj["available"] = meta.columns

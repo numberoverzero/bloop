@@ -268,7 +268,7 @@ def test_load_shared_table(engine, session, caplog):
     first = FirstModel(id=id, range=range)
     second = SecondModel(id=id, range=range)
 
-    caplog.handler.records.clear()
+    caplog.clear()
     engine.load(first, second)
 
     expected_first = FirstModel(id=id, range=range, first="first", as_date=now)
@@ -651,7 +651,7 @@ def test_bind_skip_abstract_models(engine, session, caplog):
     class AlsoConcrete(AlsoAbstract):
         id = Column(Integer, hash_key=True)
 
-    caplog.handler.records.clear()
+    caplog.clear()
     engine.bind(Abstract)
 
     session.create_table.assert_any_call("Concrete", Concrete)
@@ -704,7 +704,7 @@ def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):
     class MyUser(BaseModel):
         id = Column(Integer, hash_key=True)
 
-    caplog.handler.records.clear()
+    caplog.clear()
 
     engine.bind(MyUser, skip_table_setup=True)
     engine.session.create_table.assert_not_called()

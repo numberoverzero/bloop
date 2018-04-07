@@ -27,7 +27,7 @@ from bloop.session import (
 from bloop.types import String, Timestamp
 from bloop.util import Sentinel, ordered
 
-from ..helpers.models import ComplexModel, ProjectedIndexes, SimpleModel, User
+from ..helpers.models import ComplexModel, SimpleModel, User
 
 
 missing = Sentinel("missing")
@@ -55,7 +55,7 @@ def session(dynamodb, dynamodbstreams):
 @pytest.fixture
 def model():
     """Return a clean model so each test can mutate the model's Meta"""
-    class Model(BaseModel):
+    class MyModel(BaseModel):
         class Meta:
             encryption = {"enabled": True}
             stream = {"include": {"old", "new"}}
@@ -81,7 +81,7 @@ def model():
         lsi_email_specific = LocalSecondaryIndex(projection=["expiry"], range_key=email)
         lsi_email_all = LocalSecondaryIndex(projection="all", range_key=email)
 
-    return Model
+    return MyModel
 
 
 @pytest.fixture
@@ -107,7 +107,7 @@ def logger(caplog):
     return CaplogWrapper()
 
 
-def description_for(cls):
+def description_for(cls, active=None):
     """Returns an exact description for the model"""
     description = create_table_request(cls.Meta.table_name, cls)
     if cls.Meta.encryption:
@@ -119,7 +119,13 @@ def description_for(cls):
             "TimeToLiveStatus": "ENABLED",
         }
     description["LatestStreamArn"] = "not-a-real-arn"
-    return sanitize_table_description(description)
+    description = sanitize_table_description(description)
+    # post-sanitize because it strips TableStatus
+    if active is not None:
+        description["TableStatus"] = "ACTIVE" if active else "TEST-NOT-ACTIVE"
+        for gsi in description["GlobalSecondaryIndexes"]:
+            gsi["IndexStatus"] = "ACTIVE" if active else "TEST-NOT-ACTIVE"
+    return description
 
 
 def build_describe_stream_response(shards=missing, next_id=missing):
@@ -602,6 +608,92 @@ def test_enable_ttl_wraps_exception(session, dynamodb):
 
 # VALIDATE TABLE ====================================================================================== VALIDATE TABLE
 
+
+def test_validate_table_mismatch(basic_model, session, dynamodb, logger):
+    description = description_for(basic_model, active=True)
+    description["AttributeDefinitions"] = []
+    dynamodb.describe_table.return_value = {"Table": description}
+    dynamodb.describe_time_to_live.return_value = {}
+    with pytest.raises(TableMismatch) as excinfo:
+        session.validate_table(basic_model.Meta.table_name, basic_model)
+    assert str(excinfo.value) == "The expected and actual tables for 'BasicModel' do not match."
+    logger.assert_logged("Table is missing expected attribute 'id'")
+
+
+def test_validate_table_sets_stream_arn(model, session, dynamodb, logger):
+    # isolate the Meta component we're trying to observe
+    model.Meta.ttl = None
+    model.Meta.encryption = None
+
+    description = description_for(model, active=True)
+    dynamodb.describe_table.return_value = {"Table": description}
+    dynamodb.describe_time_to_live.return_value = {}
+    session.validate_table(model.Meta.table_name, model)
+    assert model.Meta.stream["arn"] == "not-a-real-arn"
+    logger.assert_logged("Set MyModel.Meta.stream['arn'] to 'not-a-real-arn' from DescribeTable response")
+
+
+def test_validate_table_sets_ttl(model, session, dynamodb, logger):
+    # isolate the Meta component we're trying to observe
+    model.Meta.stream = None
+    model.Meta.encryption = None
+
+    description = description_for(model, active=True)
+    dynamodb.describe_table.return_value = {"Table": description}
+    dynamodb.describe_time_to_live.return_value = {
+        "TimeToLiveDescription": {
+            "AttributeName": model.Meta.ttl["column"].dynamo_name,
+            "TimeToLiveStatus": "ENABLED"
+        }
+    }
+    session.validate_table(model.Meta.table_name, model)
+    assert model.Meta.ttl["enabled"] == "enabled"
+    logger.assert_logged("Set MyModel.Meta.ttl['enabled'] to 'enabled' from DescribeTable response")
+
+
+def test_validate_table_sets_table_throughput(model, session, dynamodb, logger):
+    # isolate the Meta components we're trying to observe
+    model.Meta.stream = None
+    model.Meta.ttl = None
+    model.Meta.encryption = None
+
+    description = description_for(model, active=True)
+    dynamodb.describe_table.return_value = {"Table": description}
+    dynamodb.describe_time_to_live.return_value = {}
+
+    # tell the model to stop tracking read/write units so that we can see it's added back
+    expected_read_units = model.Meta.read_units
+    expected_write_units = model.Meta.write_units
+    model.Meta.read_units = model.Meta.write_units = None
+
+    session.validate_table(model.Meta.table_name, model)
+    assert model.Meta.read_units == expected_read_units
+    assert model.Meta.write_units == expected_write_units
+    logger.assert_logged("Set MyModel.Meta.read_units to 3 from DescribeTable response")
+    logger.assert_logged("Set MyModel.Meta.write_units to 7 from DescribeTable response")
+
+
+def test_validate_table_sets_gsi_throughput(model, session, dynamodb, logger):
+    # isolate the Meta components we're trying to observe
+    model.Meta.stream = None
+    model.Meta.ttl = None
+    model.Meta.encryption = None
+
+    description = description_for(model, active=True)
+    dynamodb.describe_table.return_value = {"Table": description}
+    dynamodb.describe_time_to_live.return_value = {}
+
+    # tell the model to stop tracking read/write units so that we can see it's added back
+    index = any_index(model, "gsis")
+    expected_read_units = index.read_units
+    expected_write_units = index.write_units
+    index.read_units = index.write_units = None
+
+    session.validate_table(model.Meta.table_name, model)
+    assert index.read_units == expected_read_units
+    assert index.write_units == expected_write_units
+    logger.assert_logged(f"Set MyModel.{index.name}.read_units to {expected_read_units} from DescribeTable response")
+    logger.assert_logged(f"Set MyModel.{index.name}.write_units to {expected_write_units} from DescribeTable response")
 
 # END VALIDATE TABLE ============================================================================== END VALIDATE TABLE
 

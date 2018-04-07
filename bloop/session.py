@@ -1,4 +1,5 @@
 import collections
+import functools
 import logging
 
 import boto3
@@ -175,7 +176,10 @@ class SessionWrapper:
             ttl = self.dynamodb_client.describe_time_to_live(TableName=table_name)
         except botocore.exceptions.ClientError as error:
             raise BloopException("Unexpected error while describing ttl.") from error
-        description["TimeToLiveDescription"] = ttl["TimeToLiveDescription"]
+        description["TimeToLiveDescription"] = {
+            "AttributeName": _read_field(ttl, None, "TimeToLiveDescription", "AttributeName"),
+            "TimeToLiveStatus": _read_field(ttl, None, "TimeToLiveDescription", "TimeToLiveStatus"),
+        }
         return sanitize_table_description(description)
 
     def validate_table(self, table_name, model):
@@ -196,21 +200,19 @@ class SessionWrapper:
         # In the following blocks, insert values/arns that the model didn't specify or can't know ahead of time.
         if model.Meta.stream:
             stream_arn = model.Meta.stream["arn"] = actual["LatestStreamArn"]
-            logger.debug(
-                "Set {}.Meta.stream[\"arn\"] to \"{}\" from DescribeTable response".format(
-                    model.__name__, stream_arn))
+            logger.debug(f"Set {model.__name__}.Meta.stream['arn'] to '{stream_arn}' from DescribeTable response")
         if model.Meta.ttl:
-            model.Meta.ttl["enabled"] = actual["TimeToLiveDescription"]["TimeToLiveStatus"].lower()
+            ttl_enabled = actual["TimeToLiveDescription"]["TimeToLiveStatus"].lower()
+            model.Meta.ttl["enabled"] = ttl_enabled
+            logger.debug(f"Set {model.__name__}.Meta.ttl['enabled'] to '{ttl_enabled}' from DescribeTable response")
         if model.Meta.read_units is None:
             read_units = model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
             logger.debug(
-                "{}.Meta does not specify read_units, set to {} from DescribeTable response".format(
-                    model.__name__, read_units))
+                f"Set {model.__name__}.Meta.read_units to {read_units} from DescribeTable response")
         if model.Meta.write_units is None:
             write_units = model.Meta.write_units = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
             logger.debug(
-                "{}.Meta does not specify write_units, set to {} from DescribeTable response".format(
-                    model.__name__, write_units))
+                f"Set {model.__name__}.Meta.write_units to {write_units} from DescribeTable response")
 
         # Replace any ``None`` values for read_units, write_units in GSIs with their actual values
         gsis = {index["IndexName"]: index for index in actual["GlobalSecondaryIndexes"]}
@@ -220,13 +222,11 @@ class SessionWrapper:
             if index.read_units is None:
                 index.read_units = read_units
                 logger.debug(
-                    "{}.{} does not specify read_units, set to {} from DescribeTable response".format(
-                        model.__name__, index.name, read_units))
+                    f"Set {model.__name__}.{index.name}.read_units to {read_units} from DescribeTable response")
             if index.write_units is None:
                 index.write_units = write_units
                 logger.debug(
-                    "{}.{} does not specify write_units, set to {} from DescribeTable response".format(
-                        model.__name__, index.name, write_units))
+                    f"Set {model.__name__}.{index.name}.write_units to {write_units} from DescribeTable response")
 
     def enable_ttl(self, table_name, model):
         """Calls UpdateTimeToLive on the table according to model.Meta["ttl"]
@@ -264,7 +264,7 @@ class SessionWrapper:
                 response = self.stream_client.describe_stream(**request)["StreamDescription"]
             except botocore.exceptions.ClientError as error:
                 if error.response["Error"]["Code"] == "ResourceNotFoundException":
-                    raise InvalidStream("The stream arn {!r} does not exist.".format(stream_arn)) from error
+                    raise InvalidStream(f"The stream arn {stream_arn!r} does not exist.") from error
                 raise BloopException("Unexpected error while describing stream.") from error
             # Docs aren't clear if the terminal value is null, or won't exist.
             # Since we don't terminate the loop on None, the "or missing" here
@@ -323,14 +323,14 @@ class SessionWrapper:
 
 def validate_search_mode(mode):
     if mode not in {"query", "scan"}:
-        raise InvalidSearch("{!r} is not a valid search mode.".format(mode))
+        raise InvalidSearch(f"{mode!r} is not a valid search mode.")
 
 
 def validate_stream_iterator_type(iterator_type):
     try:
         return SHARD_ITERATOR_TYPES[iterator_type]
     except KeyError:
-        raise InvalidShardIterator("Unknown iterator type {!r}".format(iterator_type))
+        raise InvalidShardIterator(f"Unknown iterator type {iterator_type!r}")
 
 
 def handle_constraint_violation(error):
@@ -344,7 +344,7 @@ def handle_constraint_violation(error):
 def handle_table_exists(error, model):
     error_code = error.response["Error"]["Code"]
     if error_code != "ResourceInUseException":
-        raise BloopException("Unexpected error while creating table {!r}.".format(model.__name__)) from error
+        raise BloopException(f"Unexpected error while creating table {model.__name__!r}.") from error
     # Don't raise if the table already exists
 
 
@@ -654,13 +654,7 @@ def sanitize_table_description(description):
     # This also simplifies the post-processing logic by inserting empty lists
     # for missing values from the wire.
 
-    def read_field(default, *path):
-        node = description
-        for segment in path:
-            if segment not in node:
-                return default
-            node = node[segment]
-        return node
+    read_field = functools.partial(_read_field, description)
 
     provisioned_throughput = {
         "ReadCapacityUnits": read_field(None, "ProvisionedThroughput", "ReadCapacityUnits"),
@@ -729,3 +723,12 @@ def simple_table_status(description):
         if index.get("IndexStatus") != "ACTIVE":
             status = None
     return status
+
+
+def _read_field(root, default, *path):
+    node = root
+    for segment in path:
+        if segment not in node:
+            return default
+        node = node[segment]
+    return node

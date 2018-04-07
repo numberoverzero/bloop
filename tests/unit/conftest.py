@@ -17,6 +17,7 @@ def __set_log_level(caplog):
     """Always set caplog to capture DEBUG"""
     caplog.set_level(logging.DEBUG)
 
+
 @pytest.fixture
 def dynamodb():
     return Mock()

@@ -68,8 +68,12 @@ def model():
         expiry = Column(Timestamp)
         email = Column(String)
 
-        gsi_email_keys = GlobalSecondaryIndex(projection="keys", hash_key=email)
-        gsi_email_specific = GlobalSecondaryIndex(projection=["expiry"], hash_key=email)
+        gsi_email_keys = GlobalSecondaryIndex(
+            projection="keys", hash_key=email,
+            read_units=13, write_units=17)
+        gsi_email_specific = GlobalSecondaryIndex(
+            projection=["expiry"], hash_key=email,
+            read_units=23, write_units=27)
         lsi_email_keys = LocalSecondaryIndex(projection="keys", range_key=email)
         lsi_email_specific = LocalSecondaryIndex(projection=["expiry"], range_key=email)
 
@@ -765,6 +769,31 @@ def test_get_records(dynamodbstreams, session):
 # COMPARE TABLES ====================================================================================== COMPARE TABLES
 
 
+def remove_index_by_name(description, to_remove):
+    for index_type in ["GlobalSecondaryIndexes", "LocalSecondaryIndexes"]:
+        description[index_type] = [
+            index
+            for index in description[index_type]
+            if index["IndexName"] != to_remove
+        ]
+
+
+def find_index(description, index_name):
+    for index_type in ["GlobalSecondaryIndexes", "LocalSecondaryIndexes"]:
+        for index in description[index_type]:
+            if index["IndexName"] == index_name:
+                return index
+    raise RuntimeError("test setup failed to find expected index by name")
+
+
+def any_index(model, index_type, require_attributes=False):
+    indexes = getattr(model.Meta, index_type)
+    for index in indexes:
+        if index.projection["mode"] != "keys" or not require_attributes:
+            return index
+    raise RuntimeError("test setup failed to find a usable index")
+
+
 def test_compare_table_sanity_check(model, logger):
     """By default the test setup should provide a fully-valid description of the table.
 
@@ -774,6 +803,14 @@ def test_compare_table_sanity_check(model, logger):
     description = description_for(model)
     assert compare_tables(model, description)
     assert not logger.caplog.record_tuples
+
+
+def test_compare_table_simple():
+    """A minimal model that doesn't care about streaming, ttl, or encryption and has no indexes"""
+    class BasicModel(BaseModel):
+        id = Column(String, hash_key=True)
+    description = description_for(BasicModel)
+    assert compare_tables(BasicModel, description)
 
 
 def test_compare_table_missing_sse(model, logger):
@@ -810,6 +847,84 @@ def test_compare_table_wrong_ttl_column(model, logger):
     assert not compare_tables(model, description)
     logger.assert_only_logged("Model expects ttl column to be 'expiry' but was 'wrong_column'")
 
+
+def test_compare_table_wrong_provisioned_throughput(model, logger):
+    description = description_for(model)
+    description["ProvisionedThroughput"]["ReadCapacityUnits"] = 200
+    description["ProvisionedThroughput"]["WriteCapacityUnits"] = -100
+    assert not compare_tables(model, description)
+    logger.assert_logged("Model expects 3 read units but was 200")
+    logger.assert_logged("Model expects 7 write units but was -100")
+
+
+@pytest.mark.parametrize("index_type", ["gsis", "lsis"])
+def test_compare_table_missing_index(index_type, model, logger):
+    index_name = any_index(model, index_type).dynamo_name
+    description = description_for(model)
+    remove_index_by_name(description, index_name)
+    assert not compare_tables(model, description)
+    logger.assert_only_logged(f"Table is missing expected index '{index_name}'")
+
+
+@pytest.mark.parametrize("index_type", ["gsis", "lsis"])
+def test_compare_table_wrong_index_key_schema(index_type, model, logger):
+    index = any_index(model, index_type)
+    description = description_for(model)
+    # drop the last entry in the key schema to ensure it's invalid
+    index_description = find_index(description, index.dynamo_name)
+    index_description["KeySchema"] = index_description["KeySchema"][:-1]
+    assert not compare_tables(model, description)
+    logger.assert_only_logged(f"KeySchema mismatch for index '{index.dynamo_name}'")
+
+
+@pytest.mark.parametrize("index_type", ["gsis", "lsis"])
+def test_compare_table_wrong_index_projection_type(index_type, model, logger):
+    index = any_index(model, index_type)
+    description = description_for(model)
+    # drop the last entry in the key schema to ensure it's invalid
+    index_description = find_index(description, index.dynamo_name)
+    index_description["Projection"]["ProjectionType"] = "UnknownProjectionType"
+    assert not compare_tables(model, description)
+    logger.assert_only_logged(f"Projection mismatch for index '{index.dynamo_name}'")
+
+
+@pytest.mark.parametrize("index_type", ["gsis", "lsis"])
+def test_compare_table_missing_index_projection_attributes(index_type, model, logger):
+    index = any_index(model, index_type, require_attributes=True)
+    description = description_for(model)
+    # drop the last entry in the key schema to ensure it's invalid
+    index_description = find_index(description, index.dynamo_name)
+    index_description["Projection"]["NonKeyAttributes"] = []
+    assert not compare_tables(model, description)
+    logger.assert_only_logged(f"Projection mismatch for index '{index.dynamo_name}'")
+
+
+@pytest.mark.parametrize("unit_type", ["ReadCapacityUnits", "WriteCapacityUnits"])
+def test_compare_table_wrong_gsi_throughput(unit_type, model, logger):
+    index = any_index(model, "gsis")
+    description = description_for(model)
+    # set the capacity units to an impossible value
+    index_description = find_index(description, index.dynamo_name)
+    index_description["ProvisionedThroughput"][unit_type] = -1
+    assert not compare_tables(model, description)
+    logger.assert_only_logged(f"ProvisionedThroughput.{unit_type} mismatch for index '{index.dynamo_name}'")
+
+
+def test_compare_table_missing_attribute(model, logger):
+    description = description_for(model)
+    attribute = description["AttributeDefinitions"].pop(-1)
+    name = attribute["AttributeName"]
+    assert not compare_tables(model, description)
+    logger.assert_only_logged(f"Table is missing expected attribute '{name}'")
+
+
+def test_compare_table_wrong_attribute_type(model, logger):
+    description = description_for(model)
+    attribute = description["AttributeDefinitions"][-1]
+    attribute["AttributeType"] = "B"
+    name = attribute["AttributeName"]
+    assert not compare_tables(model, description)
+    logger.assert_only_logged(f"AttributeDefinition mismatch for attribute '{name}'")
 
 # END COMPARE TABLES ============================================================================== END COMPARE TABLES
 

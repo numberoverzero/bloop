@@ -430,13 +430,13 @@ def compare_tables(model, actual):
     read_units = model.Meta.read_units
     actual_ru = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
     if read_units is not None and read_units != actual_ru:
-        logger.debug(f"Model expects {read_units} read units but is actually {actual_ru}")
+        logger.debug(f"Model expects {read_units} read units but was {actual_ru}")
         matches = False
 
     write_units = model.Meta.write_units
     actual_wu = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
     if write_units is not None and write_units != actual_wu:
-        logger.debug(f"Model expects {write_units} write units but is actually {actual_wu}")
+        logger.debug(f"Model expects {write_units} write units but was {actual_wu}")
         matches = False
 
     actual_gsis = {index["IndexName"]: index for index in actual["GlobalSecondaryIndexes"]}
@@ -445,28 +445,29 @@ def compare_tables(model, actual):
         if actual_gsi is None:
             logger.debug(f"Table is missing expected index '{index.dynamo_name}'")
             matches = False
+            continue
         expected_schema = key_schema(index=index)
         actual_schema = actual_gsi["KeySchema"]
         if ordered(expected_schema) != ordered(actual_schema):
-            logger.debug(f"GSI KeySchema mismatch: expected '{expected_schema}' but was '{actual_schema}'")
+            logger.debug(f"KeySchema mismatch for index '{index.dynamo_name}'")
             matches = False
         expected_projection = index_projection(index)
         expected_projection.setdefault("NonKeyAttributes", [])
         actual_projection = actual_gsi["Projection"]
         if ordered(expected_projection) != ordered(actual_projection):
-            logger.debug(f"GSI Projection mismatch: expected '{expected_projection}' but was '{actual_projection}'")
+            logger.debug(f"Projection mismatch for index '{index.dynamo_name}'")
             matches = False
         expected_wu = index.write_units
         actual_wu = actual_gsi["ProvisionedThroughput"]["WriteCapacityUnits"]
         if expected_wu is not None and actual_wu != expected_wu:
             logger.debug(
-                f"GSI ProvisionedThroughput.WCU mismatch: expected '{expected_wu}' but was '{actual_wu}'")
+                f"ProvisionedThroughput.WriteCapacityUnits mismatch for index '{index.dynamo_name}'")
             matches = False
         expected_ru = index.read_units
         actual_ru = actual_gsi["ProvisionedThroughput"]["ReadCapacityUnits"]
         if expected_ru is not None and actual_ru != expected_ru:
             logger.debug(
-                f"GSI ProvisionedThroughput.RCU mismatch: expected '{expected_ru}' but was '{actual_ru}'")
+                f"ProvisionedThroughput.ReadCapacityUnits mismatch for index '{index.dynamo_name}'")
             matches = False
 
     actual_lsis = {index["IndexName"]: index for index in actual["LocalSecondaryIndexes"]}
@@ -475,24 +476,30 @@ def compare_tables(model, actual):
         if actual_lsi is None:
             logger.debug(f"Table is missing expected index '{index.dynamo_name}'")
             matches = False
+            continue
         expected_schema = key_schema(index=index)
         actual_schema = actual_lsi["KeySchema"]
         if ordered(expected_schema) != ordered(actual_schema):
-            logger.debug(f"LSI KeySchema mismatch: expected '{expected_schema}' but was '{actual_schema}'")
+            logger.debug(f"KeySchema mismatch for index '{index.dynamo_name}'")
             matches = False
         expected_projection = index_projection(index)
         expected_projection.setdefault("NonKeyAttributes", [])
         actual_projection = actual_lsi["Projection"]
         if ordered(expected_projection) != ordered(actual_projection):
-            logger.debug(f"LSI Projection mismatch: expected '{expected_projection}' but was '{actual_projection}'")
+            logger.debug(f"Projection mismatch for index '{index.dynamo_name}'")
             matches = False
 
     attrs_by_name = {attr["AttributeName"]: attr for attr in actual["AttributeDefinitions"]}
     expected_attrs = attribute_definitions(model)
     for attr in expected_attrs:
-        actual_attr = attrs_by_name.get(attr["AttributeName"])
-        if actual_attr is None or attr != actual_attr:
-            logger.debug(f"AttributeDefinition mismatch: expected '{attr}' but was '{actual_attr}'")
+        name = attr["AttributeName"]
+        actual_attr = attrs_by_name.get(name)
+        if actual_attr is None:
+            logger.debug(f"Table is missing expected attribute '{name}'")
+            matches = False
+            continue
+        if attr != actual_attr:
+            logger.debug(f"AttributeDefinition mismatch for attribute '{name}'")
             matches = False
 
     return matches

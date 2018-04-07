@@ -1,6 +1,5 @@
+build:
+  image: latest
 python:
   setup_py_install: true
-  version: 3
-conda:
-  file: .rtd.environment.yml
-requirements_file: requirements.txt
+  version: 3.6

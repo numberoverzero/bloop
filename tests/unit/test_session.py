@@ -19,7 +19,6 @@ from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,
     SessionWrapper,
     create_table_request,
-    expected_table_description,
     ready,
     sanitize_table_description,
     simple_table_status,
@@ -82,6 +81,12 @@ def client_error(code):
     return botocore.exceptions.ClientError(error_response, operation_name)
 
 
+def minimal_description(active=True):
+    description = sanitize_table_description({})
+    description["TableStatus"] = "ACTIVE" if active else "TEST-NOT-ACTIVE"
+    return description
+
+
 # SAVE ITEM ================================================================================================ SAVE ITEM
 
 
@@ -94,7 +99,6 @@ def test_save_item(session, dynamodb):
 def test_save_item_unknown_error(session, dynamodb):
     request = {"foo": "bar"}
     cause = dynamodb.update_item.side_effect = client_error("FooError")
-
     with pytest.raises(BloopException) as excinfo:
         session.save_item(request)
     assert excinfo.value.__cause__ is cause
@@ -104,7 +108,6 @@ def test_save_item_unknown_error(session, dynamodb):
 def test_save_item_condition_failed(session, dynamodb):
     request = {"foo": "bar"}
     dynamodb.update_item.side_effect = client_error("ConditionalCheckFailedException")
-
     with pytest.raises(ConstraintViolation):
         session.save_item(request)
     dynamodb.update_item.assert_called_once_with(**request)
@@ -125,7 +128,6 @@ def test_delete_item(session, dynamodb):
 def test_delete_item_unknown_error(session, dynamodb):
     request = {"foo": "bar"}
     cause = dynamodb.delete_item.side_effect = client_error("FooError")
-
     with pytest.raises(BloopException) as excinfo:
         session.delete_item(request)
     assert excinfo.value.__cause__ is cause
@@ -135,7 +137,6 @@ def test_delete_item_unknown_error(session, dynamodb):
 def test_delete_item_condition_failed(session, dynamodb):
     request = {"foo": "bar"}
     dynamodb.delete_item.side_effect = client_error("ConditionalCheckFailedException")
-
     with pytest.raises(ConstraintViolation):
         session.delete_item(request)
     dynamodb.delete_item.assert_called_once_with(**request)
@@ -333,7 +334,6 @@ def test_batch_get_unprocessed(session, dynamodb):
 def test_query_scan(session, dynamodb, response, expected):
     dynamodb.query.return_value = response
     dynamodb.scan.return_value = response
-
     expected = {"Count": expected[0], "ScannedCount": expected[1]}
     assert session.query_items({}) == expected
     assert session.scan_items({}) == expected
@@ -428,7 +428,6 @@ def test_create_subclass(session, dynamodb):
 
 def test_create_raises_unknown(session, dynamodb):
     cause = dynamodb.create_table.side_effect = client_error("FooError")
-
     with pytest.raises(BloopException) as excinfo:
         session.create_table("User", User)
     assert excinfo.value.__cause__ is cause
@@ -437,7 +436,6 @@ def test_create_raises_unknown(session, dynamodb):
 
 def test_create_already_exists(session, dynamodb):
     dynamodb.create_table.side_effect = client_error("ResourceInUseException")
-
     session.create_table("User", User)
     assert dynamodb.create_table.call_count == 1
 
@@ -452,7 +450,6 @@ def test_enable_ttl(session, dynamodb):
         id = Column(String, hash_key=True)
         expiry = Column(Timestamp, dynamo_name="e!!")
     session.enable_ttl("LocalTableName", Model)
-
     expected = {
         "TableName": "LocalTableName",
         "TimeToLiveSpecification": {
@@ -470,426 +467,11 @@ def test_enable_ttl_wraps_exception(session, dynamodb):
         id = Column(String, hash_key=True)
         expiry = Column(Timestamp, dynamo_name="e!!")
     dynamodb.update_time_to_live.side_effect = expected = client_error("FooError")
-
     with pytest.raises(BloopException) as excinfo:
         session.enable_ttl("LocalTableName", Model)
     assert excinfo.value.__cause__ is expected
 
 # VALIDATE TABLE ====================================================================================== VALIDATE TABLE
-
-
-def test_validate_compares_tables(session, dynamodb):
-    description = expected_table_description("User", User)
-    description["TableStatus"] = "ACTIVE"
-    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
-
-    dynamodb.describe_table.return_value = {"Table": description}
-    session.validate_table("User", User)
-    dynamodb.describe_table.assert_called_once_with(TableName="User")
-
-
-def test_describe_checks_status(session, dynamodb):
-    full = expected_table_description("ProjectedIndexes", ProjectedIndexes)
-    full["TableStatus"] = "ACTIVE"
-    full["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
-
-    dynamodb.describe_table.side_effect = [
-        {"Table": {"TableStatus": "CREATING"}},
-        {"Table": {"TableStatus": "ACTIVE",
-                   "GlobalSecondaryIndexes": [
-                       {"IndexStatus": "CREATING"}]}},
-        {"Table": full}
-    ]
-    session.describe_table("ProjectedIndexes")
-    dynamodb.describe_table.assert_called_with(TableName="ProjectedIndexes")
-    assert dynamodb.describe_table.call_count == 3
-
-
-def test_validate_invalid_table(session, dynamodb, caplog):
-    """DynamoDB returns an invalid json document"""
-    dynamodb.describe_table.return_value = \
-        {"Table": {"TableStatus": "ACTIVE"}}
-    with pytest.raises(TableMismatch):
-        session.validate_table("Simple", SimpleModel)
-
-    assert "the following attributes are missing for model \"SimpleModel\"" in caplog.text
-
-
-def test_validate_simple_model(session, dynamodb):
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeName": "id", "AttributeType": "S"}],
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-        "TableName": "Simple",
-        "TableStatus": "ACTIVE"}
-    dynamodb.describe_table.return_value = {"Table": full}
-    session.validate_table("Simple", SimpleModel)
-    dynamodb.describe_table.assert_called_once_with(
-        TableName="Simple")
-
-
-def test_validate_unspecified_throughput(session, dynamodb, caplog):
-    """Model doesn't care what table read/write units are"""
-    class MyModel(BaseModel):
-        class Meta:
-            pass
-        id = Column(String, hash_key=True)
-
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeName": "id", "AttributeType": "S"}],
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits": 15, "WriteCapacityUnits": 20},
-        "TableName": "MyModel",
-        "TableStatus": "ACTIVE"}
-    dynamodb.describe_table.return_value = {"Table": full}
-
-    assert MyModel.Meta.read_units is None
-    assert MyModel.Meta.write_units is None
-    caplog.handler.records.clear()
-    session.validate_table("MyModel", MyModel)
-    assert MyModel.Meta.read_units == 15
-    assert MyModel.Meta.write_units == 20
-
-    assert caplog.record_tuples == [
-        ("bloop.session", logging.DEBUG,
-         "describe_table: table \"MyModel\" was in ACTIVE state after 1 calls"),
-        ("bloop.session", logging.DEBUG,
-         "MyModel.Meta does not specify read_units, set to 15 from DescribeTable response"),
-        ("bloop.session", logging.DEBUG,
-         "MyModel.Meta does not specify write_units, set to 20 from DescribeTable response")
-    ]
-
-
-def test_validate_unspecified_gsi_throughput(session, dynamodb, caplog):
-    """Model doesn't care what GSI read/write units are"""
-    class MyModel(BaseModel):
-        class Meta:
-            read_units = 1
-            write_units = 1
-        id = Column(String, hash_key=True)
-        other = Column(String)
-        by_other = GlobalSecondaryIndex(projection="keys", hash_key=other)
-
-    description = expected_table_description("MyModel", MyModel)
-    description["TableStatus"] = "ACTIVE"
-    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
-    throughput = description["GlobalSecondaryIndexes"][0]["ProvisionedThroughput"]
-    throughput["ReadCapacityUnits"] = 15
-    throughput["WriteCapacityUnits"] = 20
-
-    dynamodb.describe_table.return_value = {"Table": description}
-
-    assert MyModel.by_other.read_units is None
-    assert MyModel.by_other.write_units is None
-    caplog.handler.records.clear()
-    session.validate_table("MyModel", MyModel)
-    assert MyModel.by_other.read_units == 15
-    assert MyModel.by_other.write_units == 20
-
-    assert caplog.record_tuples == [
-        ("bloop.session", logging.DEBUG,
-         "describe_table: table \"MyModel\" was in ACTIVE state after 1 calls"),
-        ("bloop.session", logging.DEBUG,
-         "MyModel.by_other does not specify read_units, set to 15 from DescribeTable response"),
-        ("bloop.session", logging.DEBUG,
-         "MyModel.by_other does not specify write_units, set to 20 from DescribeTable response")
-    ]
-
-
-def test_validate_stream_exists(session, dynamodb, caplog):
-    """Model expects a stream that exists and matches"""
-    class MyModel(BaseModel):
-        class Meta:
-            read_units = 1
-            write_units = 1
-            stream = {
-                "include": ["keys"]
-            }
-        id = Column(String, hash_key=True)
-
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeName": "id", "AttributeType": "S"}],
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        "LatestStreamArn": "table/stream_both/stream/2016-08-29T03:30:15.582",
-        "LatestStreamLabel": "2016-08-29T03:30:15.582",
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-        "StreamSpecification": {
-            "StreamEnabled": True,
-            "StreamViewType": "KEYS_ONLY"},
-        "TableName": "LocalTableName",
-        "TableStatus": "ACTIVE"}
-    dynamodb.describe_table.return_value = {"Table": full}
-    caplog.handler.records.clear()
-    session.validate_table("LocalTableName", MyModel)
-    assert MyModel.Meta.stream["arn"] == "table/stream_both/stream/2016-08-29T03:30:15.582"
-
-    assert caplog.record_tuples == [
-        ("bloop.session", logging.DEBUG,
-         "describe_table: table \"LocalTableName\" was in ACTIVE state after 1 calls"),
-        ("bloop.session", logging.DEBUG,
-         ("Set MyModel.Meta.stream[\"arn\"] to "
-          "\"table/stream_both/stream/2016-08-29T03:30:15.582\" from DescribeTable response"))
-    ]
-
-
-def test_validate_stream_wrong_view_type(session, dynamodb):
-    """Model expects a stream that doesn't exist"""
-    class Model(BaseModel):
-        class Meta:
-            stream = {
-                "include": ["keys"]
-            }
-        id = Column(String, hash_key=True)
-
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeName": "id", "AttributeType": "S"}],
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-        "StreamSpecification": {
-            "StreamEnabled": True,
-            "StreamViewType": "NEW_IMAGE"},
-        "TableName": "LocalTableName",
-        "TableStatus": "ACTIVE"}
-    dynamodb.describe_table.return_value = {"Table": full}
-    with pytest.raises(TableMismatch):
-        session.validate_table("LocalTableName", Model)
-
-
-def test_validate_stream_missing(session, dynamodb, caplog):
-    """Model expects a stream that doesn't exist"""
-    class Model(BaseModel):
-        class Meta:
-            stream = {
-                "include": ["keys"]
-            }
-        id = Column(String, hash_key=True)
-
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeName": "id", "AttributeType": "S"}],
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-        "TableName": "LocalTableName",
-        "TableStatus": "ACTIVE"}
-    dynamodb.describe_table.return_value = {"Table": full}
-    with pytest.raises(TableMismatch):
-        session.validate_table("LocalTableName", Model)
-
-    assert "expected and actual table descriptions for model \"Model\" do not match" in caplog.text
-
-
-def test_validate_stream_unexpected(session, dynamodb):
-    """It's ok if the model doesn't expect a stream that exists"""
-    class Model(BaseModel):
-        class Meta:
-            stream = None
-        id = Column(String, hash_key=True)
-
-    full = {
-        "AttributeDefinitions": [
-            {"AttributeName": "id", "AttributeType": "S"}],
-        "KeySchema": [{"AttributeName": "id", "KeyType": "HASH"}],
-        "LatestStreamArn": "table/stream_both/stream/2016-08-29T03:30:15.582",
-        "LatestStreamLabel": "2016-08-29T03:30:15.582",
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits": 1, "WriteCapacityUnits": 1},
-        "StreamSpecification": {
-            "StreamEnabled": True,
-            "StreamViewType": "KEYS_ONLY"},
-        "TableName": "LocalTableName",
-        "TableStatus": "ACTIVE"}
-    dynamodb.describe_table.return_value = {"Table": full}
-    session.validate_table("LocalTableName", Model)
-
-
-def test_validate_wrong_table(session, dynamodb):
-    """dynamo returns a valid document but it doesn't match"""
-    full = expected_table_description("Simple", SimpleModel)
-    full["TableStatus"] = "ACTIVE"
-
-    full["TableName"] = "wrong table name"
-
-    dynamodb.describe_table.return_value = {"Table": full}
-    with pytest.raises(TableMismatch):
-        session.validate_table("Simple", SimpleModel)
-
-
-def test_validate_raises(session, dynamodb):
-    cause = dynamodb.describe_table.side_effect = client_error("FooError")
-
-    with pytest.raises(BloopException) as excinfo:
-        session.validate_table("User", User)
-    assert excinfo.value.__cause__ is cause
-
-
-def test_validate_unexpected_index(session, dynamodb):
-    """Validation doesn't fail when the backing table has an extra GSI"""
-    full = expected_table_description("CustomTableName", ComplexModel)
-    full["GlobalSecondaryIndexes"].append({
-        "IndexName": "extra_gsi",
-        "Projection": {"ProjectionType": "KEYS_ONLY"},
-        "KeySchema": [{"KeyType": "HASH", "AttributeName": "date"}],
-        "ProvisionedThroughput": {"WriteCapacityUnits": 1, "ReadCapacityUnits": 1},
-    })
-
-    full["LocalSecondaryIndexes"].append({
-        "IndexName": "extra_lsi",
-        "Projection": {"ProjectionType": "KEYS_ONLY"},
-        "KeySchema": [{"KeyType": "RANGE", "AttributeName": "date"}],
-        "ProvisionedThroughput": {"WriteCapacityUnits": 1, "ReadCapacityUnits": 1}
-    })
-    dynamodb.describe_table.return_value = {"Table": full}
-
-    full["TableStatus"] = "ACTIVE"
-    for gsi in full["GlobalSecondaryIndexes"]:
-        gsi["IndexStatus"] = "ACTIVE"
-    # Validation passes even though there are extra Indexes and AttributeDefinitions
-    session.validate_table("CustomTableName", ComplexModel)
-
-
-def test_validate_superset_index(session, dynamodb):
-    """Validation passes if an Index's projection is a superset of the required projection"""
-    description = expected_table_description("ProjectedIndexes", ProjectedIndexes)
-    description["TableStatus"] = "ACTIVE"
-    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
-
-    # projection is ALL in DynamoDB, not the exact ["both", "gsi_only"] from the model
-    description["GlobalSecondaryIndexes"][0]["Projection"] = {"ProjectionType": "ALL"}
-
-    dynamodb.describe_table.return_value = {"Table": description}
-    session.validate_table("ProjectedIndexes", ProjectedIndexes)
-    dynamodb.describe_table.assert_called_once_with(TableName="ProjectedIndexes")
-
-
-def test_validate_missing_index(session, dynamodb, caplog):
-    """Required GSI is missing"""
-    description = expected_table_description("ProjectedIndexes", ProjectedIndexes)
-    description["TableStatus"] = "ACTIVE"
-    dynamodb.describe_table.return_value = {"Table": description}
-
-    del description["GlobalSecondaryIndexes"]
-    with pytest.raises(TableMismatch):
-        session.validate_table("ProjectedIndexes", ProjectedIndexes)
-
-    assert "table is missing expected index \"by_gsi\"" in caplog.text
-
-
-def test_validate_bad_index_projection_type(session, dynamodb, caplog):
-    """Required GSI is missing"""
-    description = expected_table_description("ProjectedIndexes", ProjectedIndexes)
-    description["TableStatus"] = "ACTIVE"
-    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
-    dynamodb.describe_table.return_value = {"Table": description}
-
-    description["GlobalSecondaryIndexes"][0]["Projection"] = {"ProjectionType": "KEYS_ONLY"}
-    with pytest.raises(TableMismatch):
-        session.validate_table("ProjectedIndexes", ProjectedIndexes)
-
-    assert "actual projection for index \"by_gsi\" is missing expected columns" in caplog.text
-
-
-def test_validate_bad_index_key_schema(session, dynamodb, caplog):
-    """KeySchema doesn't match"""
-    description = expected_table_description("ProjectedIndexes", ProjectedIndexes)
-    description["TableStatus"] = "ACTIVE"
-    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
-    dynamodb.describe_table.return_value = {"Table": description}
-
-    description["GlobalSecondaryIndexes"][0]["KeySchema"] = [{"KeyType": "HASH", "AttributeName": "unknown"}]
-    with pytest.raises(TableMismatch):
-        session.validate_table("ProjectedIndexes", ProjectedIndexes)
-
-    assert "key schema mismatch for \"by_gsi\"" in caplog.text
-
-
-def test_validate_bad_index_provisioned_throughput(session, dynamodb, caplog):
-    """KeySchema doesn't match"""
-    description = expected_table_description("ProjectedIndexes", ProjectedIndexes)
-    description["TableStatus"] = "ACTIVE"
-    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
-    dynamodb.describe_table.return_value = {"Table": description}
-
-    description["GlobalSecondaryIndexes"][0]["ProvisionedThroughput"]["WriteCapacityUnits"] = -2
-    with pytest.raises(TableMismatch):
-        session.validate_table("ProjectedIndexes", ProjectedIndexes)
-
-    assert "GSI ProvisionedThroughput mismatch" in caplog.text
-
-
-def test_validate_unknown_projection_type(session, dynamodb, caplog):
-    """DynamoDB starts returning a new projection type"""
-    description = expected_table_description("ProjectedIndexes", ProjectedIndexes)
-    description["TableStatus"] = "ACTIVE"
-    description["GlobalSecondaryIndexes"][0]["IndexStatus"] = "ACTIVE"
-    dynamodb.describe_table.return_value = {"Table": description}
-
-    description["GlobalSecondaryIndexes"][0]["Projection"]["ProjectionType"] = "NewProjectionType"
-    with pytest.raises(TableMismatch):
-        session.validate_table("ProjectedIndexes", ProjectedIndexes)
-
-    assert "unknown index projection type \"NewProjectionType\"" in caplog.text
-
-
-def test_validate_ttl(session, dynamodb):
-    class Model(BaseModel):
-        class Meta:
-            ttl = {"column": "expiry"}
-        id = Column(String, hash_key=True)
-        expiry = Column(Timestamp, dynamo_name="e!!")
-    description = create_table_request("LocalTableName", Model)
-    description["TableStatus"] = "ACTIVE"
-
-    dynamodb.describe_table.return_value = {"Table": description}
-    dynamodb.describe_time_to_live.return_value = {
-        "TimeToLiveDescription": {
-            "AttributeName": "e!!",
-            "TimeToLiveStatus": "ENABLING",
-            "UnexpectedAttributeHere": 13  # this should be stripped out by the sanitize step
-        }
-    }
-
-    session.validate_table("LocalTableName", Model)
-    dynamodb.describe_table.assert_called_once_with(TableName="LocalTableName")
-    dynamodb.describe_time_to_live.assert_called_once_with(TableName="LocalTableName")
-
-    assert Model.Meta.ttl["enabled"] == "enabling"
-
-
-def test_validate_ttl_mismatch(session, dynamodb):
-    class Model(BaseModel):
-        class Meta:
-            ttl = {"column": "expiry"}
-        id = Column(String, hash_key=True)
-        expiry = Column(Timestamp, dynamo_name="e!!")
-    description = create_table_request("LocalTableName", Model)
-    description["TableStatus"] = "ACTIVE"
-
-    dynamodb.describe_table.return_value = {"Table": description}
-    dynamodb.describe_time_to_live.return_value = {
-        "TimeToLiveDescription": {
-            "AttributeName": "wrong-name-here",  # <-- someone bound the table's ttl to a different attribute
-            "TimeToLiveStatus": "ENABLING",
-            "UnexpectedAttributeHere": 13  # this should be stripped out by the sanitize step
-        }
-    }
-
-    with pytest.raises(TableMismatch):
-        session.validate_table("LocalTableName", Model)
-
-    dynamodb.describe_table.assert_called_once_with(TableName="LocalTableName")
-    dynamodb.describe_time_to_live.assert_called_once_with(TableName="LocalTableName")
-
-    # status isn't changed because there's no match
-    assert Model.Meta.ttl["enabled"] == "disabled"
 
 
 # END VALIDATE TABLE ============================================================================== END VALIDATE TABLE
@@ -901,7 +483,6 @@ def test_validate_ttl_mismatch(session, dynamodb):
 def test_describe_stream_unknown_error(session, dynamodbstreams):
     request = {"StreamArn": "arn", "ExclusiveStartShardId": "shard id"}
     cause = dynamodbstreams.describe_stream.side_effect = client_error("FooError")
-
     with pytest.raises(BloopException) as excinfo:
         session.describe_stream("arn", "shard id")
     assert excinfo.value.__cause__ is cause
@@ -911,7 +492,6 @@ def test_describe_stream_unknown_error(session, dynamodbstreams):
 def test_describe_stream_not_found(session, dynamodbstreams):
     request = {"StreamArn": "arn", "ExclusiveStartShardId": "shard id"}
     cause = dynamodbstreams.describe_stream.side_effect = client_error("ResourceNotFoundException")
-
     with pytest.raises(InvalidStream) as excinfo:
         session.describe_stream("arn", "shard id")
     assert excinfo.value.__cause__ is cause
@@ -1008,7 +588,6 @@ def test_get_shard_iterator_after_sequence(dynamodbstreams, session):
         sequence_number="sequence-123"
     )
     assert shard_iterator == "return value"
-
     dynamodbstreams.get_shard_iterator.assert_called_once_with(
         StreamArn="arn",
         ShardId="shard_id",
@@ -1026,7 +605,6 @@ def test_get_shard_iterator_latest(dynamodbstreams, session):
         iterator_type="latest"
     )
     assert shard_iterator == "return value"
-
     dynamodbstreams.get_shard_iterator.assert_called_once_with(
         StreamArn="arn",
         ShardId="shard_id",
@@ -1062,10 +640,8 @@ def test_get_shard_records_unknown_error(dynamodbstreams, session):
 def test_get_records(dynamodbstreams, session):
     # Return structure isn't important, since it's just a passthrough
     response = dynamodbstreams.get_records.return_value = {"return": "value"}
-
     records = session.get_stream_records(iterator_id="some-iterator")
     assert records is response
-
     dynamodbstreams.get_records.assert_called_once_with(ShardIterator="some-iterator")
 
 
@@ -1142,12 +718,8 @@ def test_create_table_with_stream(include, view_type):
         class Meta:
             stream = {"include": include}
         id = Column(String, hash_key=True)
-
     table = create_table_request("Model", Model)
-    assert table["StreamSpecification"] == {
-        "StreamEnabled": True,
-        "StreamViewType": view_type
-    }
+    assert table["StreamSpecification"] == {"StreamEnabled": True, "StreamViewType": view_type}
 
 
 @pytest.mark.parametrize("sse_encryption", [True, False])
@@ -1157,85 +729,8 @@ def test_create_table_with_encryption(sse_encryption):
         class Meta:
             encryption = {"enabled": sse_encryption}
         id = Column(String, hash_key=True)
-
     table = create_table_request("Model", Model)
-    assert table["SSESpecification"] == {
-        "Enabled": bool(sse_encryption)
-    }
-
-
-def test_expected_description():
-    create = create_table_request("LocalTableName", ComplexModel)
-    expected = expected_table_description("LocalTableName", ComplexModel)
-    assert_unordered(create, expected)
-
-
-def test_expected_description_with_ttl():
-    """when the model has a TTL, the column's dynamo_name is injected into the expected description"""
-    class Model(BaseModel):
-        class Meta:
-            ttl = {"column": "expiry"}
-        id = Column(String, hash_key=True)
-        expiry = Column(Timestamp, dynamo_name="e!!")
-    expected = create_table_request("LocalTableName", Model)
-    expected["TimeToLiveDescription"] = {"AttributeName": "e!!"}
-
-    actual = expected_table_description("LocalTableName", Model)
-    assert_unordered(expected, actual)
-
-
-def test_sanitize_drop_empty_lists():
-    expected = expected_table_description("LocalTableName", ComplexModel)
-    # Start from the same base, but inject an unnecessary NonKeyAttributes
-    description = expected_table_description("LocalTableName", ComplexModel)
-    index = description["GlobalSecondaryIndexes"][0]
-    index["Projection"]["NonKeyAttributes"] = []
-
-    assert_unordered(expected, sanitize_table_description(description))
-
-
-def test_sanitize_drop_empty_indexes():
-    expected = expected_table_description("LocalTableName", SimpleModel)
-    # Start from the same base, but inject an unnecessary NonKeyAttributes
-    description = expected_table_description("LocalTableName", SimpleModel)
-    description["GlobalSecondaryIndexes"] = []
-
-    assert_unordered(expected, sanitize_table_description(description))
-
-
-def test_sanitize_expected():
-    expected = expected_table_description("LocalTableName", User)
-    # Add some extra fields
-    description = {
-        'AttributeDefinitions': [
-            {'AttributeType': 'S', 'AttributeName': 'email'},
-            {'AttributeType': 'S', 'AttributeName': 'id'}],
-        'CreationDateTime': 'EXTRA_FIELD',
-        'ItemCount': 'EXTRA_FIELD',
-        'KeySchema': [{'AttributeName': 'id', 'KeyType': 'HASH'}],
-        'GlobalSecondaryIndexes': [{
-            'IndexArn': 'EXTRA_FIELD',
-            'IndexName': 'by_email',
-            'IndexSizeBytes': 'EXTRA_FIELD',
-            'IndexStatus': 'EXTRA_FIELD',
-            'KeySchema': [{'AttributeName': 'email', 'KeyType': 'HASH'}],
-            'Projection': {'ProjectionType': 'ALL'},
-            'ProvisionedThroughput': {
-                'NumberOfDecreasesToday': 'EXTRA_FIELD',
-                'ReadCapacityUnits': 1,
-                'WriteCapacityUnits': 1}}],
-        'ProvisionedThroughput': {
-            'LastDecreaseDateTime': 'EXTRA_FIELD',
-            'LastIncreaseDateTime': 'EXTRA_FIELD',
-            'NumberOfDecreasesToday': 'EXTRA_FIELD',
-            'ReadCapacityUnits': 1,
-            'WriteCapacityUnits': 1},
-        'TableArn': 'EXTRA_FIELD',
-        'TableName': 'LocalTableName',
-        'TableSizeBytes': 'EXTRA_FIELD',
-        'TableStatus': 'EXTRA_FIELD'}
-    sanitized = sanitize_table_description(description)
-    assert_unordered(expected, sanitized)
+    assert table["SSESpecification"] == {"Enabled": bool(sse_encryption)}
 
 
 @pytest.mark.parametrize("table_status, gsi_status, expected_status", [

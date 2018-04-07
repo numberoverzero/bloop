@@ -1,5 +1,4 @@
 import collections
-import json
 import logging
 
 import boto3
@@ -153,8 +152,13 @@ class SessionWrapper:
     def describe_table(self, table_name):
         """
         Polls until the table is ready, then returns the first result when the table was ready.
+
+        The returned dict is standardized to ensure all fields are present, even when empty or across different
+        DynamoDB API versions.
+        TTL information is also inserted.
+
         :param table_name: The name of the table to describe
-        :return: The result of DescribeTable["Table"]
+        :return: The (sanitized) result of DescribeTable["Table"]
         :rtype: dict
         """
         status, description = None, {}
@@ -167,7 +171,12 @@ class SessionWrapper:
                 raise BloopException("Unexpected error while describing table.") from error
             status = simple_table_status(description)
         logger.debug("describe_table: table \"{}\" was in ACTIVE state after {} calls".format(table_name, calls))
-        return description
+        try:
+            ttl = self.dynamodb_client.describe_time_to_live(TableName=table_name)
+        except botocore.exceptions.ClientError as error:
+            raise BloopException("Unexpected error while describing ttl.") from error
+        description["TimeToLiveDescription"] = ttl["TimeToLiveDescription"]
+        return sanitize_table_description(description)
 
     def validate_table(self, table_name, model):
         """Polls until a creating table is ready, then verifies the description against the model's requirements.
@@ -181,35 +190,30 @@ class SessionWrapper:
         :raises bloop.exceptions.TableMismatch: When the table does not meet the constraints of the model.
         """
         actual = self.describe_table(table_name)
-        if model.Meta.ttl:
-            ttl = self.dynamodb_client.describe_time_to_live(TableName=table_name)
-            actual["TimeToLiveDescription"] = ttl["TimeToLiveDescription"]
-        expected = expected_table_description(table_name, model)
-        if not compare_tables(model, actual, expected):
+        if not compare_tables(model, actual):
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
+
+        # In the following blocks, insert values/arns that the model didn't specify or can't know ahead of time.
         if model.Meta.stream:
             stream_arn = model.Meta.stream["arn"] = actual["LatestStreamArn"]
             logger.debug(
                 "Set {}.Meta.stream[\"arn\"] to \"{}\" from DescribeTable response".format(
-                    model.__name__, stream_arn
-                )
-            )
+                    model.__name__, stream_arn))
         if model.Meta.ttl:
             model.Meta.ttl["enabled"] = actual["TimeToLiveDescription"]["TimeToLiveStatus"].lower()
         if model.Meta.read_units is None:
             read_units = model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
             logger.debug(
                 "{}.Meta does not specify read_units, set to {} from DescribeTable response".format(
-                    model.__name__, read_units)
-            )
+                    model.__name__, read_units))
         if model.Meta.write_units is None:
             write_units = model.Meta.write_units = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
             logger.debug(
                 "{}.Meta does not specify write_units, set to {} from DescribeTable response".format(
-                    model.__name__, write_units)
-            )
+                    model.__name__, write_units))
+
         # Replace any ``None`` values for read_units, write_units in GSIs with their actual values
-        gsis = {index["IndexName"]: index for index in actual.pop("GlobalSecondaryIndexes", [])}
+        gsis = {index["IndexName"]: index for index in actual["GlobalSecondaryIndexes"]}
         for index in model.Meta.gsis:
             read_units = gsis[index.dynamo_name]["ProvisionedThroughput"]["ReadCapacityUnits"]
             write_units = gsis[index.dynamo_name]["ProvisionedThroughput"]["WriteCapacityUnits"]
@@ -217,14 +221,12 @@ class SessionWrapper:
                 index.read_units = read_units
                 logger.debug(
                     "{}.{} does not specify read_units, set to {} from DescribeTable response".format(
-                        model.__name__, index.name, read_units)
-                )
+                        model.__name__, index.name, read_units))
             if index.write_units is None:
                 index.write_units = write_units
                 logger.debug(
                     "{}.{} does not specify write_units, set to {} from DescribeTable response".format(
-                        model.__name__, index.name, write_units)
-                )
+                        model.__name__, index.name, write_units))
 
     def enable_ttl(self, table_name, model):
         """Calls UpdateTimeToLive on the table according to model.Meta["ttl"]
@@ -235,10 +237,7 @@ class SessionWrapper:
         ttl_name = model.Meta.ttl["column"].dynamo_name
         request = {
             "TableName": table_name,
-            "TimeToLiveSpecification": {
-                "AttributeName": ttl_name,
-                "Enabled": True
-            }
+            "TimeToLiveSpecification": {"AttributeName": ttl_name, "Enabled": True}
         }
         try:
             self.dynamodb_client.update_time_to_live(**request)
@@ -382,103 +381,118 @@ def create_batch_get_chunks(items):
 # TABLE HELPERS ======================================================================================== TABLE HELPERS
 
 
-def compare_tables(model, actual, expected):
-    # returns a new dict so we can safely modify before using ordered(..) == ordered(..)
-    # without losing access to attributes in the table that we'll apply back to the model
-    # (eg. ignoring the stream arn if stream is None for validation but then preserving the
-    # value in the model post-validation)
-    actual = sanitize_table_description(actual)
+def compare_tables(model, actual):
+    # Validation order:
+    # SSE (ignored unless declared)
+    # Stream (ignored unless declared)
+    # TTL (ignored unless declared)
+    # ProvisionedThroughput (ignored unless declared)
+    # GSIs (only declared indexes)
+    # LSIs (only declared indexes)
+    # AttributeDefinitions
+    matches = True
 
-    # 1. If the table doesn't specify an expected stream type or ttl,
-    #    don't inspect the StreamSpecification or TimeToLiveDescription at all.
-    if not model.Meta.stream:
-        actual.pop("StreamSpecification", None)
-    if not model.Meta.ttl:
-        actual.pop("TimeToLiveDescription", None)
-    if model.Meta.read_units is None:
-        actual["ProvisionedThroughput"].pop("ReadCapacityUnits")
-        expected["ProvisionedThroughput"].pop("ReadCapacityUnits")
-    if model.Meta.write_units is None:
-        actual["ProvisionedThroughput"].pop("WriteCapacityUnits")
-        expected["ProvisionedThroughput"].pop("WriteCapacityUnits")
+    if model.Meta.encryption:
+        actual_sse = actual["SSEDescription"]["Status"]
+        expected_sse = {
+            True: "ENABLED",
+            False: "DISABLED"
+        }[model.Meta.encryption["enabled"]]
+        if actual_sse != expected_sse:
+            logger.debug(f"Model expects SSE to be '{expected_sse}' but was '{actual_sse}'")
+            matches = False
 
-    # 2. Check indexes.  Actual projections must be a superset of the expected,
-    #    and additional indexes are allowed.
-    #    GSIs/LSIs are popped so that ordered comparison succeeds with projection supersets.
-    for model_indexes, index_type in zip(
-            (model.Meta.gsis, model.Meta.lsis),
-            ("GlobalSecondaryIndexes", "LocalSecondaryIndexes")):
-        if not model_indexes:
-            continue
-        actual_indexes = {index["IndexName"]: index for index in actual.pop(index_type, [])}
-        expected_indexes = {index["IndexName"]: index for index in expected.pop(index_type, [])}
-        for index in model_indexes:
-            actual_index = actual_indexes.get(index.dynamo_name, None)
-            expected_index = expected_indexes[index.dynamo_name]
-            if not actual_index:
-                logger.debug("compare_tables: table is missing expected index \"{}\"".format(index.name))
-                return False
-            index_type = actual_index["Projection"]["ProjectionType"]
-            # "ALL" will always include the model's projection
-            if index_type == "ALL":
-                continue
-            elif index_type == "KEYS_ONLY":
-                projected = {
-                    *[k.dynamo_name for k in model.Meta.keys],
-                    *[k.dynamo_name for k in index.keys]
-                }
-            elif index_type == "INCLUDE":
-                projected = set(actual_index["Projection"]["NonKeyAttributes"])
-            else:
-                logger.debug("compare_tables: unknown index projection type \"{}\"".format(index_type))
-                return False
-            index_includes = {column.dynamo_name for column in index.projection["included"]}
-            missing = index_includes - projected
-            if missing:
-                logger.debug(
-                    "compare_tables: actual projection for index \"{}\" is missing expected columns {}".format(
-                        index.name, missing))
-                return False
-            if ordered(expected_index["KeySchema"]) != ordered(actual_index["KeySchema"]):
-                logger.debug("compare_tables: key schema mismatch for \"{}\": {} != {}".format(
-                    index.name,
-                    json.dumps(ordered(actual_index["KeySchema"]), sort_keys=True),
-                    json.dumps(ordered(expected_index["KeySchema"]), sort_keys=True),
-                ))
-                return False
-            if "ProvisionedThroughput" not in expected_index:
-                # LSI
-                continue
-            if index.read_units is None:
-                actual_index["ProvisionedThroughput"].pop("ReadCapacityUnits")
-                expected_index["ProvisionedThroughput"].pop("ReadCapacityUnits")
-            if index.write_units is None:
-                actual_index["ProvisionedThroughput"].pop("WriteCapacityUnits")
-                expected_index["ProvisionedThroughput"].pop("WriteCapacityUnits")
-            if ordered(expected_index["ProvisionedThroughput"]) != ordered(actual_index["ProvisionedThroughput"]):
-                logger.debug("compare_tables: GSI ProvisionedThroughput mismatch: {} != {}".format(
-                    json.dumps(ordered(actual_index["ProvisionedThroughput"]), sort_keys=True),
-                    json.dumps(ordered(expected_index["ProvisionedThroughput"]), sort_keys=True),
-                ))
-                return False
-    # 3. AttributeNames expected are a subset of actual (ie. an unknown index's hash key)
-    # Ignore order for inner lists
-    all_attributes = ordered(actual.pop("AttributeDefinitions"))
-    required_attributes = ordered(expected.pop("AttributeDefinitions"))
-    missing_attributes = [x for x in required_attributes if x not in all_attributes]
-    if missing_attributes:
-        logger.debug(
-            "compare_tables: the following attributes are missing for model \"{}\": {}".format(
-                model.__name__, missing_attributes))
-        return False
-    matches = ordered(actual) == ordered(expected)
-    if not matches:
-        logger.debug(
-            "compare_tables: expected and actual table descriptions for model \"{}\" do not match: {} != {}".format(
-                model.__name__,
-                json.dumps(ordered(actual), sort_keys=True),
-                json.dumps(ordered(expected), sort_keys=True))
-        )
+    if model.Meta.stream:
+        if not actual["StreamSpecification"]["StreamEnabled"]:
+            logger.debug("Model expects stream but streaming is not enabled")
+            matches = False
+        actual_stream = actual["StreamSpecification"]["StreamViewType"]
+        expected_stream = {
+            {"new"}: "NEW_IMAGE",
+            {"old"}: "OLD_IMAGE",
+            {"new", "old"}: "NEW_AND_OLD_IMAGES",
+            {"keys"}: "KEYS_ONLY"
+        }[set(model.Meta.stream["include"])]
+        if actual_stream != expected_stream:
+            logger.debug(f"Model expects view type {expected_stream} but was {actual_stream}")
+            matches = False
+
+    if model.Meta.ttl:
+        if actual["TimeToLiveDescription"]["TimeToLiveStatus"] == "DISABLED":
+            logger.debug("Model expects ttl but ttl is not enabled")
+            matches = False
+        actual_ttl = actual["TimeToLiveDescription"]["AttributeName"]
+        expected_ttl = model.Meta.ttl["column"].dynamo_name
+        if actual_ttl != expected_ttl:
+            logger.debug(f"Model expects ttl to be {expected_ttl} but was {actual_ttl}")
+            matches = False
+
+    read_units = model.Meta.read_units
+    actual_ru = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
+    if read_units is not None and read_units != actual_ru:
+        logger.debug(f"Model expects {read_units} read units but is actually {actual_ru}")
+        matches = False
+
+    write_units = model.Meta.write_units
+    actual_wu = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
+    if write_units is not None and write_units != actual_wu:
+        logger.debug(f"Model expects {write_units} write units but is actually {actual_wu}")
+        matches = False
+
+    actual_gsis = {index["IndexName"]: index for index in actual["GlobalSecondaryIndexes"]}
+    for index in model.Meta.gsis:
+        actual_gsi = actual_gsis.get(index.dynamo_name)
+        if actual_gsi is None:
+            logger.debug(f"Table is missing expected index '{index.dynamo_name}'")
+            matches = False
+        expected_schema = key_schema(index=index)
+        actual_schema = actual_gsi["KeySchema"]
+        if ordered(expected_schema) != ordered(actual_schema):
+            logger.debug(f"GSI KeySchema mismatch: expected '{expected_schema}' but was '{actual_schema}'")
+            matches = False
+        expected_projection = index_projection(index)
+        actual_projection = actual_gsi["Projection"]
+        if ordered(expected_projection) != ordered(actual_projection):
+            logger.debug(f"GSI Projection mismatch: expected '{expected_projection}' but was '{actual_projection}'")
+            matches = False
+        expected_wu = index.write_units
+        actual_wu = actual_gsi["ProvisionedThroughput"]["WriteUnits"]
+        if expected_wu is not None and actual_wu != expected_wu:
+            logger.debug(
+                f"GSI ProvisionedThroughput.WriteUnits mismatch: expected '{expected_wu}' but was '{actual_wu}'")
+            matches = False
+        expected_ru = index.read_units
+        actual_ru = actual_gsi["ProvisionedThroughput"]["ReadUnits"]
+        if expected_ru is not None and actual_ru != expected_ru:
+            logger.debug(
+                f"GSI ProvisionedThroughput.ReadUnits mismatch: expected '{expected_ru}' but was '{actual_ru}'")
+            matches = False
+
+    actual_lsis = {index["IndexName"]: index for index in actual["LocalSecondaryIndexes"]}
+    for index in model.Meta.lsis:
+        actual_lsi = actual_lsis.get(index.dynamo_name)
+        if actual_lsi is None:
+            logger.debug(f"Table is missing expected index '{index.dynamo_name}'")
+            matches = False
+        expected_schema = key_schema(index=index)
+        actual_schema = actual_lsi["KeySchema"]
+        if ordered(expected_schema) != ordered(actual_schema):
+            logger.debug(f"LSI KeySchema mismatch: expected '{expected_schema}' but was '{actual_schema}'")
+            matches = False
+        expected_projection = index_projection(index)
+        actual_projection = actual_lsi["Projection"]
+        if ordered(expected_projection) != ordered(actual_projection):
+            logger.debug(f"LSI Projection mismatch: expected '{expected_projection}' but was '{actual_projection}'")
+            matches = False
+
+    attrs_by_name = {attr["AttributeName"]: attr for attr in actual["AttributeDefinitions"]}
+    expected_attrs = attribute_definitions(model)
+    for attr in expected_attrs:
+        actual_attr = attrs_by_name.get(attr["AttributeName"])
+        if actual_attr is None or attr != actual_attr:
+            logger.debug(f"AttributeDefinition mismatch: expected '{attr}' but was '{actual_attr}'")
+            matches = False
+
     return matches
 
 
@@ -541,27 +555,6 @@ def key_schema(*, index=None, model=None):
     return schema
 
 
-def global_secondary_index(index):
-    return {
-        "IndexName": index.dynamo_name,
-        "KeySchema": key_schema(index=index),
-        "Projection": index_projection(index),
-        "ProvisionedThroughput": {
-            # On create when not specified, use minimum values instead of None
-            "WriteCapacityUnits": index.write_units or 1,
-            "ReadCapacityUnits": index.read_units or 1
-        },
-    }
-
-
-def local_secondary_index(index):
-    return {
-        "IndexName": index.dynamo_name,
-        "KeySchema": key_schema(index=index),
-        "Projection": index_projection(index),
-    }
-
-
 def create_table_request(table_name, model):
     table = {
         "AttributeDefinitions": attribute_definitions(model),
@@ -575,10 +568,27 @@ def create_table_request(table_name, model):
     }
     if model.Meta.gsis:
         table["GlobalSecondaryIndexes"] = [
-            global_secondary_index(index) for index in model.Meta.gsis]
+            {
+                "IndexName": index.dynamo_name,
+                "KeySchema": key_schema(index=index),
+                "Projection": index_projection(index),
+                "ProvisionedThroughput": {
+                    # On create when not specified, use minimum values instead of None
+                    "WriteCapacityUnits": index.write_units or 1,
+                    "ReadCapacityUnits": index.read_units or 1
+                },
+            }
+            for index in model.Meta.gsis
+        ]
     if model.Meta.lsis:
         table["LocalSecondaryIndexes"] = [
-            local_secondary_index(index) for index in model.Meta.lsis]
+            {
+                "IndexName": index.dynamo_name,
+                "KeySchema": key_schema(index=index),
+                "Projection": index_projection(index),
+            }
+            for index in model.Meta.lsis
+        ]
     if model.Meta.stream:
         include = model.Meta.stream["include"]
         # noinspection PyTypeChecker
@@ -598,17 +608,6 @@ def create_table_request(table_name, model):
     return table
 
 
-def expected_table_description(table_name, model):
-    table = create_table_request(table_name, model)
-    if model.Meta.ttl:
-        table["TimeToLiveDescription"] = {
-            # For now we ignore TimeToLiveStatus because enabling can take up to an hour;
-            # we don't really care if it's on, so long as it's specified.
-            "AttributeName": model.Meta.ttl["column"].dynamo_name
-        }
-    return table
-
-
 def sanitize_table_description(description):
     # We don't need to match most of what comes back from describe_table
     # This monster structure carefully extracts the exact fields that bloop
@@ -621,6 +620,31 @@ def sanitize_table_description(description):
 
     # This also simplifies the post-processing logic by inserting empty lists
     # for missing values from the wire.
+
+    def read_field(default, *path):
+        node = description
+        for segment in path:
+            if segment not in node:
+                return default
+            node = node[segment]
+        return node
+
+    provisioned_throughput = {
+        "ReadCapacityUnits": read_field(None, "ProvisionedThroughput", "ReadCapacityUnits"),
+        "WriteCapacityUnits": read_field(None, "ProvisionedThroughput", "WriteCapacityUnits"),
+    }
+    sse_spec = {
+        "Status": read_field("DISABLED", "SSEDescription", "Status"),
+    }
+    stream_spec = {
+        "StreamEnabled": read_field(False, "StreamSpecification", "StreamEnabled"),
+        "StreamViewType": read_field(None, "StreamSpecification", "StreamViewType"),
+    }
+    ttl_spec = {
+        "AttributeName": read_field(None, "TimeToLiveDescription", "AttributeName"),
+        "TimeToLiveStatus": read_field("DISABLED", "TimeToLiveDescription", "TimeToLiveStatus"),
+    }
+
     table = {
         "AttributeDefinitions": [
             {"AttributeName": attr_definition["AttributeName"], "AttributeType": attr_definition["AttributeType"]}
@@ -644,6 +668,7 @@ def sanitize_table_description(description):
             {"AttributeName": table_key["AttributeName"], "KeyType": table_key["KeyType"]}
             for table_key in description.get("KeySchema", [])
         ],
+        "LatestStreamArn": read_field(None, "LatestStreamArn"),
         "LocalSecondaryIndexes": [
             {
                 "IndexName": lsi["IndexName"],
@@ -655,30 +680,12 @@ def sanitize_table_description(description):
                     "ProjectionType": lsi["Projection"]["ProjectionType"]}}
                 for lsi in description.get("LocalSecondaryIndexes", [])
         ],
-        "ProvisionedThroughput": {
-            "ReadCapacityUnits":
-                description.get("ProvisionedThroughput", {"ReadCapacityUnits": None})["ReadCapacityUnits"],
-            "WriteCapacityUnits":
-                description.get("ProvisionedThroughput", {"WriteCapacityUnits": None})["WriteCapacityUnits"]
-        },
-        "StreamSpecification": description.get("StreamSpecification", None),
-        "TableName": description.get("TableName", None),
-        "TimeToLiveDescription": {
-            "AttributeName": description.get("TimeToLiveDescription", {"AttributeName": None})["AttributeName"],
-        },
+        "ProvisionedThroughput": provisioned_throughput,
+        "SSEDescription": sse_spec,
+        "StreamSpecification": stream_spec,
+        "TableName": read_field(None, "TableName"),
+        "TimeToLiveDescription": ttl_spec,
     }
-
-    indexes = table["GlobalSecondaryIndexes"] + table["LocalSecondaryIndexes"]
-    for index in indexes:
-        if not index["Projection"]["NonKeyAttributes"]:
-            index["Projection"].pop("NonKeyAttributes")
-    if not table["TimeToLiveDescription"]["AttributeName"]:
-        table.pop("TimeToLiveDescription")
-    allowed_empty = ["GlobalSecondaryIndexes", "LocalSecondaryIndexes", "StreamSpecification"]
-    for possibly_empty in allowed_empty:
-        if not table[possibly_empty]:
-            table.pop(possibly_empty)
-
     return table
 
 

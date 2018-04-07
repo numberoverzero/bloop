@@ -4,7 +4,7 @@ import weakref
 import blinker
 
 
-__all__ = ["signal"]
+__all__ = ["Sentinel", "ordered", "signal"]
 
 # De-dupe dict for Sentinel
 _symbols = {}

@@ -13,12 +13,15 @@ Features
 ========
 
 * Simple declarative modeling
+* Stream interface that makes sense
 * Extensible type system, useful built-in types
-* DynamoDBStreams interface that makes sense
 * Secure expression-based wire format
 * Simple atomic operations
 * Expressive conditions
+* Model composition
 * Diff-based saves
+* Server side encryption
+* Time to live
 
 ==========
 Ergonomics

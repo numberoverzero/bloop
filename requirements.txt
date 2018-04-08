@@ -9,8 +9,8 @@ pendulum==1.3.2
 pytest==3.5.0
 pytz==2017.3
 requests==2.18.4
-sphinx==1.6.5
-sphinx-rtd-theme==0.2.4
+sphinx==1.7.2
+sphinx-rtd-theme==0.3.0
 tox==2.9.1
 twine==1.9.1
 wheel==0.30.0

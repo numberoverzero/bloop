@@ -118,6 +118,10 @@ def description_for(cls, active=None):
             "AttributeName": cls.Meta.ttl["column"].dynamo_name,
             "TimeToLiveStatus": "ENABLED",
         }
+    if cls.Meta.backups:
+        description["ContinuousBackupsDescription"] = {
+            "ContinuousBackupsStatus": "ENABLED"
+        }
     description["LatestStreamArn"] = "not-a-real-arn"
     description = sanitize_table_description(description)
     # post-sanitize because it strips TableStatus
@@ -542,12 +546,25 @@ def test_describe_ttl_raises_unknown(session, dynamodb):
     assert dynamodb.describe_time_to_live.call_count == 1
 
 
+def test_describe_backups_raises_unknown(session, dynamodb):
+    dynamodb.describe_table.return_value = {"Table": minimal_description(True)}
+    dynamodb.describe_time_to_live.return_value = {}
+    cause = dynamodb.describe_continuous_backups.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.describe_table("User")
+    assert excinfo.value.__cause__ is cause
+    assert dynamodb.describe_table.call_count == 1
+    assert dynamodb.describe_time_to_live.call_count == 1
+    assert dynamodb.describe_continuous_backups.call_count == 1
+
+
 def test_describe_table_polls_status(session, dynamodb):
     dynamodb.describe_table.side_effect = [
         {"Table": minimal_description(False)},
         {"Table": minimal_description(True)}
     ]
     dynamodb.describe_time_to_live.return_value = {"TimeToLiveDescription": {}}
+    dynamodb.describe_continuous_backups.return_value = {"ContinuousBackupsDescription": {}}
     description = session.describe_table("User")
     # table status is filtered out
     assert "TableStatus" not in description
@@ -566,6 +583,7 @@ def test_describe_table_sanitizes(session, dynamodb, caplog):
     responses[-1]["Table"].pop("GlobalSecondaryIndexes")
 
     dynamodb.describe_time_to_live.return_value = {"TimeToLiveDescription": {}}
+    dynamodb.describe_continuous_backups.return_value = {"ContinuousBackupsDescription": {}}
     description = session.describe_table("User")
     assert "UnknownField" not in description
     assert description["GlobalSecondaryIndexes"] == []
@@ -614,6 +632,7 @@ def test_validate_table_mismatch(basic_model, session, dynamodb, logger):
     description["AttributeDefinitions"] = []
     dynamodb.describe_table.return_value = {"Table": description}
     dynamodb.describe_time_to_live.return_value = {}
+    dynamodb.describe_continuous_backups.return_value = {}
     with pytest.raises(TableMismatch) as excinfo:
         session.validate_table(basic_model.Meta.table_name, basic_model)
     assert str(excinfo.value) == "The expected and actual tables for 'BasicModel' do not match."
@@ -628,6 +647,7 @@ def test_validate_table_sets_stream_arn(model, session, dynamodb, logger):
     description = description_for(model, active=True)
     dynamodb.describe_table.return_value = {"Table": description}
     dynamodb.describe_time_to_live.return_value = {}
+    dynamodb.describe_continuous_backups.return_value = {}
     session.validate_table(model.Meta.table_name, model)
     assert model.Meta.stream["arn"] == "not-a-real-arn"
     logger.assert_logged("Set MyModel.Meta.stream['arn'] to 'not-a-real-arn' from DescribeTable response")
@@ -646,6 +666,8 @@ def test_validate_table_sets_ttl(model, session, dynamodb, logger):
             "TimeToLiveStatus": "ENABLED"
         }
     }
+    dynamodb.describe_continuous_backups.return_value = {}
+
     session.validate_table(model.Meta.table_name, model)
     assert model.Meta.ttl["enabled"] == "enabled"
     logger.assert_logged("Set MyModel.Meta.ttl['enabled'] to 'enabled' from DescribeTable response")
@@ -660,6 +682,7 @@ def test_validate_table_sets_table_throughput(model, session, dynamodb, logger):
     description = description_for(model, active=True)
     dynamodb.describe_table.return_value = {"Table": description}
     dynamodb.describe_time_to_live.return_value = {}
+    dynamodb.describe_continuous_backups.return_value = {}
 
     # tell the model to stop tracking read/write units so that we can see it's added back
     expected_read_units = model.Meta.read_units
@@ -682,6 +705,7 @@ def test_validate_table_sets_gsi_throughput(model, session, dynamodb, logger):
     description = description_for(model, active=True)
     dynamodb.describe_table.return_value = {"Table": description}
     dynamodb.describe_time_to_live.return_value = {}
+    dynamodb.describe_continuous_backups.return_value = {}
 
     # tell the model to stop tracking read/write units so that we can see it's added back
     index = any_index(model, "gsis")

@@ -176,10 +176,20 @@ class SessionWrapper:
             ttl = self.dynamodb_client.describe_time_to_live(TableName=table_name)
         except botocore.exceptions.ClientError as error:
             raise BloopException("Unexpected error while describing ttl.") from error
+        try:
+            backups = self.dynamodb_client.describe_continuous_backups(TableName=table_name)
+        except botocore.exceptions.ClientError as error:
+            raise BloopException("Unexpected error while describing continuous backups.") from error
+
         description["TimeToLiveDescription"] = {
             "AttributeName": _read_field(ttl, None, "TimeToLiveDescription", "AttributeName"),
             "TimeToLiveStatus": _read_field(ttl, None, "TimeToLiveDescription", "TimeToLiveStatus"),
         }
+        description["ContinuousBackupsDescription"] = {
+            "ContinuousBackupsStatus": _read_field(
+                backups, None, "ContinuousBackupsDescription", "ContinuousBackupsStatus"),
+        }
+
         return sanitize_table_description(description)
 
     def validate_table(self, table_name, model):
@@ -250,7 +260,6 @@ class SessionWrapper:
         :param table_name: The name of the table to enable Continuous Backups on
         :param model: The model to get Continuous Backups settings from
         """
-        assert model.Meta.backups["enabled"]
         request = {
             "TableName": table_name,
             " PointInTimeRecoverySpecification ": {"PointInTimeRecoveryEnabled": True}
@@ -687,12 +696,17 @@ def sanitize_table_description(description):
         "AttributeName": read_field(None, "TimeToLiveDescription", "AttributeName"),
         "TimeToLiveStatus": read_field("DISABLED", "TimeToLiveDescription", "TimeToLiveStatus"),
     }
+    backups_spec = {
+        "ContinuousBackupsStatus": read_field(
+            "DISABLED", "ContinuousBackupsDescription", "ContinuousBackupsStatus"),
+    }
 
     return {
         "AttributeDefinitions": [
             {"AttributeName": attr_definition["AttributeName"], "AttributeType": attr_definition["AttributeType"]}
             for attr_definition in description.get("AttributeDefinitions", [])
         ],
+        "ContinuousBackupsDescription": backups_spec,
         "GlobalSecondaryIndexes": [
             {
                 "IndexName": gsi["IndexName"],

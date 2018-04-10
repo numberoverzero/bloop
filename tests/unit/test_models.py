@@ -485,6 +485,15 @@ def test_invalid_encryption(invalid_encryption):
             id = Column(Integer, hash_key=True)
 
 
+@pytest.mark.parametrize("invalid_backups", [False, True, {}, User.age])
+def test_invalid_backups(invalid_backups):
+    with pytest.raises(InvalidModel):
+        class Model(BaseModel):
+            class Meta:
+                backups = invalid_backups
+            id = Column(Integer, hash_key=True)
+
+
 @pytest.mark.parametrize("valid_stream", [
     {"include": ["new"]},
     {"include": ["old"]},
@@ -512,6 +521,20 @@ def test_valid_encryption(valid_encryption):
 
         id = Column(Integer, hash_key=True)
     assert Model.Meta.encryption is valid_encryption
+
+
+@pytest.mark.parametrize("valid_backups", [
+    {"enabled": True},
+    {"enabled": False},
+    {"enabled": True, "unused": object()}
+])
+def test_valid_backups(valid_backups):
+    class Model(BaseModel):
+        class Meta:
+            backups = valid_backups
+
+        id = Column(Integer, hash_key=True)
+    assert Model.Meta.backups is valid_backups
 
 
 def test_require_hash():

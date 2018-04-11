@@ -57,6 +57,7 @@ def model():
     """Return a clean model so each test can mutate the model's Meta"""
     class MyModel(BaseModel):
         class Meta:
+            backups = {"enabled": True}
             encryption = {"enabled": True}
             stream = {"include": {"old", "new"}}
             ttl = {"column": "expiry"}
@@ -667,6 +668,7 @@ def test_validate_table_sets_stream_arn(model, session, dynamodb, logger):
     # isolate the Meta component we're trying to observe
     model.Meta.ttl = None
     model.Meta.encryption = None
+    model.Meta.backups = None
 
     description = description_for(model, active=True)
     dynamodb.describe_table.return_value = {"Table": description}
@@ -681,6 +683,7 @@ def test_validate_table_sets_ttl(model, session, dynamodb, logger):
     # isolate the Meta component we're trying to observe
     model.Meta.stream = None
     model.Meta.encryption = None
+    model.Meta.backups = None
 
     description = description_for(model, active=True)
     dynamodb.describe_table.return_value = {"Table": description}
@@ -702,6 +705,7 @@ def test_validate_table_sets_table_throughput(model, session, dynamodb, logger):
     model.Meta.stream = None
     model.Meta.ttl = None
     model.Meta.encryption = None
+    model.Meta.backups = None
 
     description = description_for(model, active=True)
     dynamodb.describe_table.return_value = {"Table": description}
@@ -725,6 +729,7 @@ def test_validate_table_sets_gsi_throughput(model, session, dynamodb, logger):
     model.Meta.stream = None
     model.Meta.ttl = None
     model.Meta.encryption = None
+    model.Meta.backups = None
 
     description = description_for(model, active=True)
     dynamodb.describe_table.return_value = {"Table": description}
@@ -967,6 +972,13 @@ def test_compare_table_missing_sse(model, logger):
     description["SSEDescription"]["Status"] = "DISABLED"
     assert not compare_tables(model, description)
     logger.assert_only_logged("Model expects SSE to be 'ENABLED' but was 'DISABLED'")
+
+
+def test_compare_table_missing_backups(model, logger):
+    description = description_for(model)
+    description["ContinuousBackupsDescription"]["ContinuousBackupsStatus"] = "DISABLED"
+    assert not compare_tables(model, description)
+    logger.assert_only_logged("Model expects backups to be 'ENABLED' but was 'DISABLED'")
 
 
 def test_compare_table_missing_stream(model, logger):

@@ -427,6 +427,16 @@ def compare_tables(model, actual):
             logger.debug(f"Model expects SSE to be '{expected_sse}' but was '{actual_sse}'")
             matches = False
 
+    if model.Meta.backups:
+        actual_backups = actual["ContinuousBackupsDescription"]["ContinuousBackupsStatus"]
+        expected_backups = {
+            True: "ENABLED",
+            False: "DISABLED"
+        }[model.Meta.backups["enabled"]]
+        if actual_backups != expected_backups:
+            logger.debug(f"Model expects backups to be '{expected_backups}' but was '{actual_backups}'")
+            matches = False
+
     if model.Meta.stream:
         if not actual["StreamSpecification"]["StreamEnabled"]:
             logger.debug("Model expects streaming but streaming is not enabled")

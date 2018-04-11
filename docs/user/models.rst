@@ -174,6 +174,38 @@ the table or GSI does not exist, they fall back to 1.
     is controlled by an external script, and totally broken with the new auto-scaling features.
 
 ---------
+ backups
+---------
+
+You can use ``backups`` to enable `Continuous Backups`_ and Point-in-Time Recovery.  By default continuous backups
+are not enabled, and this is ``None``.  To enable continuous backups, use:
+
+.. code-block:: python
+
+    class Meta:
+        backups = {
+            "enabled": True
+        }
+
+.. _Continuous Backups: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/BackupRestore.html
+
+------------
+ encryption
+------------
+
+You can use ``encryption`` to enable `Server-Side Encryption`_.  By default encryption is not enabled, and
+this is ``None``.  To enable server-side encryption, use:
+
+.. code-block:: python
+
+    class Meta:
+        encryption = {
+            "enabled": True
+        }
+
+.. _Server-Side Encryption: https://aws.amazon.com/blogs/aws/new-encryption-at-rest-for-dynamodb/
+
+---------
  stream
 ---------
 
@@ -220,37 +252,6 @@ for your convenience, and is used as a class:`datetime.datetime`:
 Like :class:`~bloop.types.DateTime`, ``bloop.ext`` exposes drop-in replacements for ``Timestamp`` for each of three
 popular python datetime libraries: arrow, delorean, and pendulum.
 
-------------
- encryption
-------------
-
-You can use ``encryption`` to enable `Server-Side Encryption`_.  By default encryption is not enabled, and
-this is ``None``.  To enable server-side encryption, use:
-
-.. code-block:: python
-
-    class Meta:
-        encryption = {
-            "enabled": True
-        }
-
-.. _Server-Side Encryption: https://aws.amazon.com/blogs/aws/new-encryption-at-rest-for-dynamodb/
-
----------
- backups
----------
-
-You can use ``backups`` to enable `Continuous Backups`_ and Point-in-Time Recovery.  By default continuous backups
-are not enabled, and this is ``None``.  To enable continuous backups, use:
-
-.. code-block:: python
-
-    class Meta:
-        backups = {
-            "enabled": True
-        }
-
-.. _Continuous Backups: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/BackupRestore.html
 
 ===============================
  Metadata: Model Introspection

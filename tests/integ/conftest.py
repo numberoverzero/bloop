@@ -29,6 +29,9 @@ class PatchedDynamoDBClient:
     def describe_time_to_live(self, **_):
         return {"TimeToLiveDescription": {"TimeToLiveStatus": "DISABLED"}}
 
+    def describe_continuous_backups(self, **_):
+        return {"ContinuousBackupsDescription": {"ContinuousBackupsStatus": "DISABLED"}}
+
     def __getattr__(self, name):
         return getattr(self.__client, name)
 

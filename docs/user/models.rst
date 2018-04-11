@@ -127,6 +127,7 @@ Table configuration defaults are:
             stream = None
             ttl = None
             encryption = None
+            backups = None
 
 
 ----------
@@ -223,7 +224,7 @@ popular python datetime libraries: arrow, delorean, and pendulum.
  encryption
 ------------
 
-Finally, you can use ``encryption`` to enable `Server-Side Encryption`__.  By default encryption is not enabled, and
+You can use ``encryption`` to enable `Server-Side Encryption`_.  By default encryption is not enabled, and
 this is ``None``.  To enable server-side encryption, use:
 
 .. code-block:: python
@@ -233,7 +234,23 @@ this is ``None``.  To enable server-side encryption, use:
             "enabled": True
         }
 
-__ https://aws.amazon.com/blogs/aws/new-encryption-at-rest-for-dynamodb/
+.. _Server-Side Encryption: https://aws.amazon.com/blogs/aws/new-encryption-at-rest-for-dynamodb/
+
+---------
+ backups
+---------
+
+You can use ``backups`` to enable `Continuous Backups`_ and Point-in-Time Recovery.  By default continuous backups
+are not enabled, and this is ``None``.  To enable continuous backups, use:
+
+.. code-block:: python
+
+    class Meta:
+        backups = {
+            "enabled": True
+        }
+
+.. _Continuous Backups: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/BackupRestore.html
 
 ===============================
  Metadata: Model Introspection

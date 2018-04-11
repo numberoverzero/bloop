@@ -20,8 +20,9 @@ Features
 * Expressive conditions
 * Model composition
 * Diff-based saves
-* Server side encryption
-* Time to live
+* Server-Side-Encryption
+* Time-To-Live
+* Continuous Backups
 
 ==========
 Ergonomics

@@ -624,6 +624,30 @@ def test_enable_ttl_wraps_exception(session, dynamodb):
         session.enable_ttl("LocalTableName", Model)
     assert excinfo.value.__cause__ is expected
 
+
+def test_enable_backups(session, dynamodb):
+    class Model(BaseModel):
+        class Meta:
+            backups = {"enabled": True}
+        id = Column(String, hash_key=True)
+    session.enable_backups("LocalTableName", Model)
+    expected = {
+        "TableName": "LocalTableName",
+        "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": True}
+    }
+    dynamodb.update_continuous_backups.assert_called_once_with(**expected)
+
+
+def test_enable_backups_wraps_exception(session, dynamodb):
+    class Model(BaseModel):
+        class Meta:
+            backups = {"enabled": True}
+        id = Column(String, hash_key=True)
+    dynamodb.update_continuous_backups.side_effect = expected = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.enable_backups("LocalTableName", Model)
+    assert excinfo.value.__cause__ is expected
+
 # VALIDATE TABLE ====================================================================================== VALIDATE TABLE
 
 

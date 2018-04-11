@@ -262,7 +262,7 @@ class SessionWrapper:
         """
         request = {
             "TableName": table_name,
-            " PointInTimeRecoverySpecification ": {"PointInTimeRecoveryEnabled": True}
+            "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": True}
         }
         try:
             self.dynamodb_client.update_continuous_backups(**request)

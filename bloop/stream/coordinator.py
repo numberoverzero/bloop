@@ -2,7 +2,6 @@ import collections
 import collections.abc
 import datetime
 import logging
-
 from typing import Dict, List
 
 from ..exceptions import InvalidPosition, InvalidStream, RecordsExpired

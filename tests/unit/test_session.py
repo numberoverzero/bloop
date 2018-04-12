@@ -14,7 +14,12 @@ from bloop.exceptions import (
     ShardIteratorExpired,
     TableMismatch,
 )
-from bloop.models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
+from bloop.models import (
+    BaseModel,
+    Column,
+    GlobalSecondaryIndex,
+    LocalSecondaryIndex,
+)
 from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,
     SessionWrapper,

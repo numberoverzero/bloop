@@ -4,6 +4,7 @@ import uuid
 from unittest.mock import Mock
 
 import pytest
+from tests.helpers.models import ComplexModel, User, VectorModel
 
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
@@ -19,8 +20,6 @@ from bloop.session import SessionWrapper
 from bloop.signals import object_saved
 from bloop.types import DateTime, Integer, String, Timestamp
 from bloop.util import ordered
-
-from tests.helpers.models import ComplexModel, User, VectorModel
 
 
 def test_default_table_name_template(dynamodb, dynamodbstreams, session):
@@ -740,11 +739,12 @@ def test_bind_configures_backups(engine, session):
 def test_bind_existing_table(engine, session):
     """Even though backups/ttl are specified, no UpdateTTL/etc calls made because the table exists"""
     class MyUser(BaseModel):
-        id = Column(Integer, hash_key=True)
-        expiry = Column(Timestamp)
         class Meta:
             backups = {"enabled": True}
             ttl = {"column": "expiry"}
+
+        id = Column(Integer, hash_key=True)
+        expiry = Column(Timestamp)
 
     session.create_table.return_value = False
     engine.bind(MyUser)

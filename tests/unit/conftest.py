@@ -1,5 +1,6 @@
-from unittest.mock import Mock
 import logging
+from unittest.mock import Mock
+
 import pytest
 
 from bloop import Engine

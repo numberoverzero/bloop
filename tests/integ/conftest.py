@@ -18,7 +18,7 @@ from bloop.session import SessionWrapper
 from bloop.util import walk_subclasses
 
 
-LATEST_DYNAMODB_LOCAL_SHA = "70d9a92529782ac93713258fe69feb4ff6e007ae2c3319c7ffae7da38b698a61"
+LATEST_DYNAMODB_LOCAL_SHA = "32a5a672262a6d37fca76d479ce7c0652703d82b617813bc0fb9a2dcff5f6ea6"
 DYNAMODB_LOCAL_SINGLETON = None
 
 
@@ -135,10 +135,18 @@ class DynamoDBLocal:
             self.port = s.getsockname()[1]
 
     def _run(self) -> subprocess.Popen:
-        return subprocess.Popen([
-            "java", "-Djava.library.path=./DynamoDBLocal_lib",
-            "-jar", "DynamoDBLocal.jar", "-inMemory",
-            "-port", str(self.port)],
+        return subprocess.Popen(
+            [
+                "java", "-Djava.library.path=./DynamoDBLocal_lib",
+
+                # --add-modules java.xml.bind from https://stackoverflow.com/a/43574427
+                # even though the DynamoDbLocal page suggests any JRE 6.x+ should work,
+                # this will work for JDK 9/10 but as soon as we hit 11... shit.
+                "--add-modules", "java.xml.bind",
+
+                "-jar", "DynamoDBLocal.jar", "-inMemory",
+                "-port", str(self.port),
+            ],
             cwd=self.localdir
         )
 

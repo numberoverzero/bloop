@@ -137,22 +137,21 @@ class DynamoDBLocal:
         print(f"\nDynamoDBLocal port is {self.port}")
 
     def _run(self) -> subprocess.Popen:
-        proc = subprocess.Popen(
-            [
-                "$JAVA_HOME/bin/java", "-Djava.library.path=./DynamoDBLocal_lib",
+        java_home = os.environ.get('JAVA_HOME', '/usr')
+        args = [
+            f"{java_home}/bin/java",
+            "-Djava.library.path=./DynamoDBLocal_lib",
 
-                # --add-modules java.xml.bind from https://stackoverflow.com/a/43574427
-                # even though the DynamoDbLocal page suggests any JRE 6.x+ should work,
-                # this will work for JDK 9/10 but as soon as we hit 11... shit.
-                "--add-modules", "java.xml.bind",
+            # --add-modules java.xml.bind from https://stackoverflow.com/a/43574427
+            # even though the DynamoDbLocal page suggests any JRE 6.x+ should work,
+            # this will work for JDK 9/10 but as soon as we hit 11... shit.
+            "--add-modules", "java.xml.bind",
 
-                "-jar", "DynamoDBLocal.jar", "-inMemory",
-                "-port", str(self.port),
-            ],
-            cwd=self.localdir,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.PIPE
-        )
+            "-jar", "DynamoDBLocal.jar", "-inMemory",
+            "-port", str(self.port),
+        ]
+        print(f"Starting DynamoDBLocal with:\n    {' '.join(args)}")
+        proc = subprocess.Popen(args, cwd=self.localdir, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
         try:
             _, e = proc.communicate(timeout=2)
             if e:

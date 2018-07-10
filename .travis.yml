@@ -10,7 +10,7 @@ env:
 before_install:
   - jdk_switcher use oraclejdk9
 install: pip install tox codecov
-script: tox -e $TOXENV -s
+script: tox -e $TOXENV -- -s
 
 notifications:
   slack:

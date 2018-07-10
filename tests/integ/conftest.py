@@ -84,6 +84,7 @@ class DynamoDBLocal:
 
     def _download(self) -> None:
         if os.path.exists(self.localdir):
+            print("\nDynamoDBLocal exists, skipping download")
             return
         print("\n".join((
             "*" * 79,
@@ -133,7 +134,7 @@ class DynamoDBLocal:
             s.bind(("", 0))
             s.listen(1)
             self.port = s.getsockname()[1]
-        print("DynamoDBLocal port is " + str(self.port))
+        print(f"\nDynamoDBLocal port is {self.port}")
 
     def _run(self) -> subprocess.Popen:
         proc = subprocess.Popen(
@@ -152,9 +153,13 @@ class DynamoDBLocal:
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE
         )
-        o, e = proc.communicate()
-        if e:
-            raise RuntimeError("Error while starting DynamoDbLocal: " + e)
+        try:
+            _, e = proc.communicate(timeout=2)
+            if e:
+                raise RuntimeError("Error while starting DynamoDbLocal: " + e.decode())
+        except subprocess.TimeoutExpired:
+            # Running successfully
+            pass
         return proc
 
 
@@ -187,9 +192,9 @@ def dynamodb_local(request):
 
     try:
         if skip_cleanup:
-            print("Skipping cleanup")
+            print("\nSkipping cleanup")
         else:
-            print("Cleaning up tables with nonce '{}'".format(nonce))
+            print("\nCleaning up tables with nonce '{}'".format(nonce))
             dynamodb, _ = dynamodb_local.clients
             tables = get_tables(dynamodb)
             for table in tables:
@@ -200,7 +205,7 @@ def dynamodb_local(request):
                     print("Removing table: {}".format(table))
                     dynamodb.delete_table(TableName=table)
                 except Exception:
-                    print("Failed to clean up table '{}'".format(table))
+                    print("\nFailed to clean up table '{}'".format(table))
     finally:
         dynamodb_local.stop()
 

@@ -139,7 +139,7 @@ class DynamoDBLocal:
     def _run(self) -> subprocess.Popen:
         proc = subprocess.Popen(
             [
-                "java", "-Djava.library.path=./DynamoDBLocal_lib",
+                "$JAVA_HOME/bin/java", "-Djava.library.path=./DynamoDBLocal_lib",
 
                 # --add-modules java.xml.bind from https://stackoverflow.com/a/43574427
                 # even though the DynamoDbLocal page suggests any JRE 6.x+ should work,

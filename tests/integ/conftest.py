@@ -135,7 +135,7 @@ class DynamoDBLocal:
             self.port = s.getsockname()[1]
 
     def _run(self) -> subprocess.Popen:
-        return subprocess.Popen(
+        proc = subprocess.Popen(
             [
                 "java", "-Djava.library.path=./DynamoDBLocal_lib",
 
@@ -147,8 +147,14 @@ class DynamoDBLocal:
                 "-jar", "DynamoDBLocal.jar", "-inMemory",
                 "-port", str(self.port),
             ],
-            cwd=self.localdir
+            cwd=self.localdir,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE
         )
+        o, e = proc.communicate()
+        if e:
+            raise RuntimeError("Error while starting DynamoDbLocal: " + e)
+        return proc
 
 
 def pytest_addoption(parser):

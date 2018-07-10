@@ -8,7 +8,7 @@ env:
   - TOXENV=integ
   - TOXENV=docs
 before_install:
-  - jdk_switcher use oraclejdk10
+  - jdk_switcher use oraclejdk9
 install: pip install tox codecov
 script: tox -e $TOXENV
 

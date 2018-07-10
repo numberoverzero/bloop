@@ -133,6 +133,7 @@ class DynamoDBLocal:
             s.bind(("", 0))
             s.listen(1)
             self.port = s.getsockname()[1]
+        print("DynamoDBLocal port is " + str(self.port))
 
     def _run(self) -> subprocess.Popen:
         proc = subprocess.Popen(

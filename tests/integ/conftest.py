@@ -145,7 +145,7 @@ class DynamoDBLocal:
             # --add-modules java.xml.bind from https://stackoverflow.com/a/43574427
             # even though the DynamoDbLocal page suggests any JRE 6.x+ should work,
             # this will work for JDK 9/10 but as soon as we hit 11... shit.
-            "--add-modules", "java.xml.bind",
+            # "--add-modules", "java.xml.bind",
 
             "-jar", "DynamoDBLocal.jar", "-inMemory",
             "-port", str(self.port),
@@ -156,9 +156,12 @@ class DynamoDBLocal:
             _, e = proc.communicate(timeout=2)
             if e:
                 raise RuntimeError("Error while starting DynamoDbLocal: " + e.decode())
+            elif proc.returncode:
+                raise RuntimeError(f"process exited with {proc.returncode}")
         except subprocess.TimeoutExpired:
             # Running successfully
             pass
+        print(f"Started DynamoDBLocal on port {self.port}")
         return proc
 
 

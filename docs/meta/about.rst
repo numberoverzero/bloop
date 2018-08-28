@@ -18,12 +18,12 @@ To start developing Bloop first `create a fork`_, then clone and run the tests::
 
 .. note::
 
-    The integration tests use `DynamoDBLocal`_ which requires JRE >= 6.x.  The tests automatically download and unpack
-    the software into ``.dynamodb_local`` and start the process as follows, where the port is selected at runtime::
+    The integration tests use `docker`_ to run a `local instance of DynamoDB`_.  The tests automatically
+    start and tear down an image named ``"ddb-local"`` that uses port ``8000``.  You can use ``--skip-cleanup``
+    to leave the container running after tests finish.
 
-        java -Djava.library.path=./DynamoDBLocal_lib -jar DynamoDBLocal.jar -inMemory -port {PORT}
-
-.. _DynamoDBLocal: http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamoDBLocal.html
+.. _docker: https://www.docker.com/get-started
+.. _local instance of DynamoDB: https://hub.docker.com/r/amazon/dynamodb-local/
 
 .. _meta-versioning:
 

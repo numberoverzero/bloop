@@ -264,6 +264,7 @@ These top-level properties can be used to describe the model in broad terms:
 
 * ``model`` -- The model this Meta is attached to
 * ``columns`` -- The set of all columns in the model
+* ``columns_by_name`` -- Dictionary of model Column objects by their ``name`` attribute.
 * ``keys`` -- The set of all table keys in the model (hash key, or hash and range keys)
 * ``indexes`` -- The set of all indexes (gsis, lsis) in the model
 

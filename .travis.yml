@@ -1,6 +1,7 @@
 dist: trusty
 sudo: required
 language: python
+dist: trusty
 python: 3.6
 cache: pip
 services:
@@ -11,7 +12,7 @@ env:
   - TOXENV=integ
   - TOXENV=docs
 install: pip install tox codecov
-script: tox -e $TOXENV
+script: tox -e $TOXENV -- -s
 
 notifications:
   slack:

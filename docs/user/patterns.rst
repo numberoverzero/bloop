@@ -7,23 +7,72 @@ Bloop Patterns
  DynamoDB Local
 ================
 
-Connect to a local DynamoDB instance.
+Connect to a local DynamoDB instance.  As of 2018-08-29 DynamoDBLocal still does not support features like TTL or
+ContinuousBackups (even in a stubbed capacity) which means you will need to patch the client for local testing.
 
 .. code-block:: python
 
     import boto3
     import bloop
 
-    dynamodb = boto3.client("dynamodb", endpoint="http://127.0.0.1:8000")
-    dynamodbstreams = boto3.client("dynamodbstreams", endpoint="http://127.0.0.1:8000")
-
+    dynamodb = boto3.client("dynamodb", endpoint_url="http://127.0.0.1:8000")
+    dynamodbstreams = boto3.client("dynamodbstreams", endpoint_url="http://127.0.0.1:8000")
     engine = bloop.Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
-.. note::
+To resolve missing features in DynamoDBLocal, you can patch the client (see below) or use an alternative to
+DynamoDBLocal such as localstack.  Localstack isn't recommended until `Issue #728`_ is addressed.
 
-    DynamoDB Local has an issue with expressions and Global Secondary Indexes, and will throw errors about
-    ExpressionAttributeName when you query or scan against a GSI.  For example, see
-    `this issue <https://github.com/numberoverzero/bloop/issues/43>`_.
+The following code is designed to be easily copied and pasted.  When you set up your engine for local testing just
+import and call ``patch_engine`` to stub responses to missing methods.  Note that the patched response values are
+fixed and your model will fail to bind if you have enabled ttl or backups.
+
+The original patching code used by bloop's integration tests can be found `here`_ while historical context on
+using DynamoDBLocal with bloop can be found in `Issue #117`_.
+
+.. code-block:: python
+
+    # patch_local.py
+    import bloop
+
+
+    class PatchedDynamoDBClient:
+        def __init__(self, real_client):
+            self.__client = real_client
+
+        def describe_time_to_live(self, TableName, **_):
+            return {"TimeToLiveDescription": {"TimeToLiveStatus": "DISABLED"}}
+
+        def describe_continuous_backups(self, TableName, **_):
+            return {"ContinuousBackupsDescription": {"ContinuousBackupsStatus": "DISABLED"}}
+
+        # TODO override any other methods that DynamoDBLocal doesn't provide
+
+        def __getattr__(self, name):
+            # use the original client for everything else
+            return getattr(self.__client, name)
+
+
+    def patch_engine(engine):
+        engine.session.dynamodb_client = PatchedDynamoDBClient(engine.session.dynamodb_client)
+        return engine
+
+
+And its usage, assuming you've saved the file as patch_local.py:
+
+.. code-block:: python
+
+    from .patch_local import patch_engine
+
+    # same 3 lines from above
+    dynamodb = boto3.client("dynamodb", endpoint_url="http://127.0.0.1:8000")
+    dynamodbstreams = boto3.client("dynamodbstreams", endpoint_url="http://127.0.0.1:8000")
+    engine = bloop.Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
+
+    patch_engine(engine)
+
+.. _Issue #728: https://github.com/localstack/localstack/issues/728
+.. _here: https://github.com/numberoverzero/bloop/blob/4d2c967a8f74eb2b70a5ed9f90d5325449e56f8a/tests/integ/conftest.py#L18-L29
+.. _Issue #117: https://github.com/numberoverzero/bloop/issues/117
 
 .. _patterns-if-not-exist:
 

@@ -121,16 +121,15 @@ def test_load_dump_none(engine):
     assert engine._dump(User, user) is None
     assert engine._dump(User, None) is None
 
-    # Loaded instances have None attributes, unlike newly created instances
-    # which don't have those attributes.  That is, `not hasattr(user, "id")`
-    # whereas `getattr(loaded_user, "id") is None`
+    # Loaded instances have None or Falsey (in the case of String, Set, List, Map) attributes.
+    # This is unlike newly created instances which don't have those attributes.
     loaded_user = engine._load(User, None)
     for attr in (c.name for c in User.Meta.columns):
-        assert getattr(loaded_user, attr) is None
+        assert not getattr(loaded_user, attr)
 
     loaded_user = engine._load(User, {})
     for attr in (c.name for c in User.Meta.columns):
-        assert getattr(loaded_user, attr) is None
+        assert not getattr(loaded_user, attr)
 
 
 def test_meta_read_write_units():
@@ -373,7 +372,7 @@ def test_model_str(engine):
     # No values to show
     assert str(new_user) == "User()"
     # Values set to None
-    assert str(loaded_empty_user) == "User(age=None, email=None, id=None, joined=None, name=None)"
+    assert str(loaded_empty_user) == "User(age=None, email='', id='', joined=None, name='')"
 
 
 def test_created_signal():

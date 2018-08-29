@@ -57,7 +57,7 @@ def test_load_dump_best_effort(engine):
     assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={"engine": engine})
 
 
-@pytest.mark.parametrize("typedef", [String, UUID, DateTime, Timestamp, Number, Integer, Binary, Boolean])
+@pytest.mark.parametrize("typedef", [UUID, DateTime, Timestamp, Number, Integer, Boolean])
 def test_none_scalar_types(typedef):
     """single-value types without an explicit 'lack of value' sentinel should return None when given None"""
     type = typedef()
@@ -72,6 +72,8 @@ def test_none_scalar_types(typedef):
 
 
 @pytest.mark.parametrize("typedef, default", [
+    (String(), ""),
+    (Binary(), b""),
     (Set(String), set()),
     (Set(Integer), set()),
     (Set(Binary), set()),
@@ -79,7 +81,7 @@ def test_none_scalar_types(typedef):
     (DocumentType, {
         "Rating": None,
         "Stock": None,
-        "Description": {"Heading": None, "Body": None, "Specifications": None},
+        "Description": {"Heading": "", "Body": "", "Specifications": ""},
         "Id": None,
         "Updated": None})
 ])
@@ -309,7 +311,7 @@ def test_map_load(engine):
         'Description': {
             'Heading': "Head text",
             'Body': "Body text",
-            'Specifications': None
+            'Specifications': ""
         },
         'Id': uid,
         'Updated': None

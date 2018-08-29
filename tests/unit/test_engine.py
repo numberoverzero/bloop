@@ -299,7 +299,7 @@ def test_load_missing_attrs(engine, session):
     session.load_items.return_value = response
     engine.load(obj)
     assert obj.age == 5
-    assert obj.name is None
+    assert obj.name == ""
 
 
 def test_load_dump_unbound(engine):
@@ -805,9 +805,10 @@ def test_load_missing_vector_types(engine, session):
     assert obj.list_str == list()
     assert obj.set_str == set()
     assert obj.map_nested == {
-        "str": None,
+        "str": "",
+        "bytes": b"",
         "map": {
-            "str": None,
+            "str": "",
             "int": None
         }
     }

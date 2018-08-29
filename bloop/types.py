@@ -139,10 +139,12 @@ class String(Type):
     backing_type = STRING
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if not value:
+            return ""
         return value
 
     def dynamo_dump(self, value, *, context, **kwargs):
-        if value is None:
+        if not value:
             return None
         return value
 
@@ -351,11 +353,11 @@ class Binary(Type):
 
     def dynamo_load(self, value, *, context, **kwargs):
         if value is None:
-            return None
+            return b""
         return base64.b64decode(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
-        if value is None:
+        if not value:
             return None
         return base64.b64encode(value).decode("utf-8")
 

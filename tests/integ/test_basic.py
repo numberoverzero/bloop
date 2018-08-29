@@ -312,7 +312,7 @@ def test_partial_load_save(engine):
     partial = engine.query(
         User.by_username,
         key=User.username == "my-username").one()
-    assert getattr(partial, "profile", None) is None
+    assert not hasattr(partial, "profile")
 
     partial.data = "new-data"
     partial.extra = None
@@ -328,5 +328,5 @@ def test_partial_load_save(engine):
     assert same.profile == "original-profile"
     # modified from partial
     assert same.data == "new-data"
-    # deleted from partial
-    assert getattr(same, "extra", None) is None
+    # deleted from partial, missing value for String is ""
+    assert same.extra == ""

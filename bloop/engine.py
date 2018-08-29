@@ -181,9 +181,13 @@ class Engine:
         for model in concrete:
             if not skip_table_setup:
                 table_name = self._compute_table_name(model)
-                if is_creating[model] and model.Meta.ttl:
+                if is_creating[model]:
+                    # polls until table is active
                     self.session.describe_table(table_name)
-                    self.session.enable_ttl(table_name, model)
+                    if model.Meta.ttl:
+                        self.session.enable_ttl(table_name, model)
+                    if model.Meta.backups and model.Meta.backups["enabled"]:
+                        self.session.enable_backups(table_name, model)
                 self.session.validate_table(table_name, model)
 
             model_validated.send(self, engine=self, model=model)

@@ -1,8 +1,9 @@
-from unittest.mock import Mock
 import logging
+from unittest.mock import Mock
+
 import pytest
 
-from bloop import BaseModel, Engine
+from bloop import Engine
 from bloop.session import SessionWrapper
 from bloop.signals import (
     object_deleted,
@@ -39,7 +40,6 @@ def engine(session, dynamodb, dynamodbstreams):
     engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
     # Toss the clients above and hook up the mock session
     engine.session = session
-    engine.bind(BaseModel)
     return engine
 
 

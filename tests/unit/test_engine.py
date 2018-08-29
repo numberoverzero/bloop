@@ -4,6 +4,7 @@ import uuid
 from unittest.mock import Mock
 
 import pytest
+from tests.helpers.models import ComplexModel, User, VectorModel
 
 from bloop.engine import Engine, dump_key
 from bloop.exceptions import (
@@ -19,8 +20,6 @@ from bloop.session import SessionWrapper
 from bloop.signals import object_saved
 from bloop.types import DateTime, Integer, String, Timestamp
 from bloop.util import ordered
-
-from ..helpers.models import ComplexModel, User, VectorModel
 
 
 def test_default_table_name_template(dynamodb, dynamodbstreams, session):
@@ -696,19 +695,15 @@ def test_bind_different_engines(dynamodb, dynamodbstreams):
     second_engine.session.validate_table.assert_called_once_with("Concrete", Concrete)
 
 
-def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):
-    # Required so engine doesn't pass boto3 to the wrapper
-    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
-    engine.session = Mock(spec=SessionWrapper)
-
+def test_bind_skip_table_setup(engine, session, caplog):
     class MyUser(BaseModel):
         id = Column(Integer, hash_key=True)
 
     caplog.clear()
 
     engine.bind(MyUser, skip_table_setup=True)
-    engine.session.create_table.assert_not_called()
-    engine.session.validate_table.assert_not_called()
+    session.create_table.assert_not_called()
+    session.validate_table.assert_not_called()
 
     assert caplog.record_tuples == [
         ("bloop.engine", logging.DEBUG, "binding non-abstract models ['MyUser']"),
@@ -718,11 +713,7 @@ def test_bind_skip_table_setup(dynamodb, dynamodbstreams, caplog):
     ]
 
 
-def test_bind_configures_ttl(dynamodb, dynamodbstreams):
-    # Required so engine doesn't pass boto3 to the wrapper
-    engine = Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
-    engine.session = Mock(spec=SessionWrapper)
-
+def test_bind_configures_ttl(engine, session):
     class MyUser(BaseModel):
         class Meta:
             ttl = {"column": "expiry"}
@@ -730,8 +721,36 @@ def test_bind_configures_ttl(dynamodb, dynamodbstreams):
         expiry = Column(Timestamp)
 
     engine.bind(MyUser)
-    engine.session.describe_table.assert_called_once_with("MyUser")
-    engine.session.enable_ttl.assert_called_once_with("MyUser", MyUser)
+    session.describe_table.assert_called_once_with("MyUser")
+    session.enable_ttl.assert_called_once_with("MyUser", MyUser)
+
+
+def test_bind_configures_backups(engine, session):
+    class MyUser(BaseModel):
+        class Meta:
+            backups = {"enabled": True}
+        id = Column(Integer, hash_key=True)
+
+    engine.bind(MyUser)
+    session.describe_table.assert_called_once_with("MyUser")
+    session.enable_backups.assert_called_once_with("MyUser", MyUser)
+
+
+def test_bind_existing_table(engine, session):
+    """Even though backups/ttl are specified, no UpdateTTL/etc calls made because the table exists"""
+    class MyUser(BaseModel):
+        class Meta:
+            backups = {"enabled": True}
+            ttl = {"column": "expiry"}
+
+        id = Column(Integer, hash_key=True)
+        expiry = Column(Timestamp)
+
+    session.create_table.return_value = False
+    engine.bind(MyUser)
+    session.enable_ttl.assert_not_called()
+    session.enable_backups.assert_not_called()
+    session.validate_table.assert_called_once_with("MyUser", MyUser)
 
 
 @pytest.mark.parametrize("op_name, plural", [("save", True), ("load", True), ("delete", True)], ids=str)

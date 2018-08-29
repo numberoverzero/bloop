@@ -13,7 +13,20 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  Unreleased
 ------------
 
-*(no unreleased changes)*
+For release plans, see the `2.2 milestone`_
+
+[Added]
+=======
+
+* Meta supports `Continuous Backups`_ for Point-In-Time Recovery::
+
+    class MyModel(BaseModel):
+        id = Column(String, hash_key=True)
+        class Meta:
+            backups = {"enabled": True}
+
+.. _Continuous Backups: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/BackupRestore.html
+.. _2.2 milestone: https://github.com/numberoverzero/bloop/milestone/5
 
 --------------------
  2.1.0 - 2018-04-07

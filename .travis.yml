@@ -1,13 +1,18 @@
+dist: trusty
+sudo: required
 language: python
+dist: trusty
 python: 3.6
 cache: pip
+services:
+  - docker
 env:
   matrix:
   - TOXENV=unit
   - TOXENV=integ
   - TOXENV=docs
 install: pip install tox codecov
-script: tox -e $TOXENV
+script: tox -e $TOXENV -- -s
 
 notifications:
   slack:
@@ -18,8 +23,3 @@ notifications:
     on_success: change
     on_failure: always
     on_start: never
-
-# container-based for faster builds
-sudo: false
-# tls 1.2
-dist: trusty

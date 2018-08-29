@@ -51,6 +51,7 @@ class IMeta:
     stream: Optional[Dict]
     ttl: Optional[Dict]
     encryption: Optional[Dict]
+    backups: Optional[Dict]
 
     model: "BaseModel"
 
@@ -191,6 +192,7 @@ class BaseModel:
         validate_stream(meta)
         validate_ttl(meta)
         validate_encryption(meta)
+        validate_backups(meta)
 
         # 3.0 Fire model_created for customizing the class after creation
         model_created.send(None, model=cls)
@@ -671,6 +673,17 @@ def validate_encryption(meta):
         raise InvalidModel("Encryption must specify whether it is enabled with the 'enabled' key.")
 
 
+def validate_backups(meta):
+    backups = meta.backups
+    if backups is None:
+        return
+
+    if not isinstance(backups, collections.abc.MutableMapping):
+        raise InvalidModel("Backups must be None or a dict.")
+    if "enabled" not in backups:
+        raise InvalidModel("Backups must specify whether it is enabled with the 'enabled' key.")
+
+
 def validate_ttl(meta):
     ttl = meta.ttl
     if ttl is None:
@@ -759,6 +772,7 @@ def initialize_meta(cls: type):
     setdefault(meta, "stream", None)
     setdefault(meta, "ttl", None)
     setdefault(meta, "encryption", None)
+    setdefault(meta, "backups", None)
 
     setdefault(meta, "hash_key", None)
     setdefault(meta, "range_key", None)

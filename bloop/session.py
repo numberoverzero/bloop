@@ -176,10 +176,20 @@ class SessionWrapper:
             ttl = self.dynamodb_client.describe_time_to_live(TableName=table_name)
         except botocore.exceptions.ClientError as error:
             raise BloopException("Unexpected error while describing ttl.") from error
+        try:
+            backups = self.dynamodb_client.describe_continuous_backups(TableName=table_name)
+        except botocore.exceptions.ClientError as error:
+            raise BloopException("Unexpected error while describing continuous backups.") from error
+
         description["TimeToLiveDescription"] = {
             "AttributeName": _read_field(ttl, None, "TimeToLiveDescription", "AttributeName"),
             "TimeToLiveStatus": _read_field(ttl, None, "TimeToLiveDescription", "TimeToLiveStatus"),
         }
+        description["ContinuousBackupsDescription"] = {
+            "ContinuousBackupsStatus": _read_field(
+                backups, None, "ContinuousBackupsDescription", "ContinuousBackupsStatus"),
+        }
+
         return sanitize_table_description(description)
 
     def validate_table(self, table_name, model):
@@ -243,6 +253,21 @@ class SessionWrapper:
             self.dynamodb_client.update_time_to_live(**request)
         except botocore.exceptions.ClientError as error:
             raise BloopException("Unexpected error while setting TTL.") from error
+
+    def enable_backups(self, table_name, model):
+        """Calls UpdateContinuousBackups on the table according to model.Meta["continuous_backups"]
+
+        :param table_name: The name of the table to enable Continuous Backups on
+        :param model: The model to get Continuous Backups settings from
+        """
+        request = {
+            "TableName": table_name,
+            "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": True}
+        }
+        try:
+            self.dynamodb_client.update_continuous_backups(**request)
+        except botocore.exceptions.ClientError as error:
+            raise BloopException("Unexpected error while setting Continuous Backups.") from error
 
     def describe_stream(self, stream_arn, first_shard=None):
         """Wraps :func:`boto3.DynamoDBStreams.Client.describe_stream`, handling continuation tokens.
@@ -400,6 +425,16 @@ def compare_tables(model, actual):
         }[model.Meta.encryption["enabled"]]
         if actual_sse != expected_sse:
             logger.debug(f"Model expects SSE to be '{expected_sse}' but was '{actual_sse}'")
+            matches = False
+
+    if model.Meta.backups:
+        actual_backups = actual["ContinuousBackupsDescription"]["ContinuousBackupsStatus"]
+        expected_backups = {
+            True: "ENABLED",
+            False: "DISABLED"
+        }[model.Meta.backups["enabled"]]
+        if actual_backups != expected_backups:
+            logger.debug(f"Model expects backups to be '{expected_backups}' but was '{actual_backups}'")
             matches = False
 
     if model.Meta.stream:
@@ -671,12 +706,17 @@ def sanitize_table_description(description):
         "AttributeName": read_field(None, "TimeToLiveDescription", "AttributeName"),
         "TimeToLiveStatus": read_field("DISABLED", "TimeToLiveDescription", "TimeToLiveStatus"),
     }
+    backups_spec = {
+        "ContinuousBackupsStatus": read_field(
+            "DISABLED", "ContinuousBackupsDescription", "ContinuousBackupsStatus"),
+    }
 
     return {
         "AttributeDefinitions": [
             {"AttributeName": attr_definition["AttributeName"], "AttributeType": attr_definition["AttributeType"]}
             for attr_definition in description.get("AttributeDefinitions", [])
         ],
+        "ContinuousBackupsDescription": backups_spec,
         "GlobalSecondaryIndexes": [
             {
                 "IndexName": gsi["IndexName"],

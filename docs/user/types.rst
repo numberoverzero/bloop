@@ -349,9 +349,10 @@ instances of :class:`~PIL.Image.Image`:
 When there's no value for a :class:`~bloop.models.Column` that's being loaded, your type will need to handle None.
 For many types, None is the best sentinel to return for "this has no value" -- Most of the built-in types use None.
 
-:class:`~bloop.types.Set` returns an empty ``set``, so that you'll never need to check for None before adding and
-removing elements. :class:`~bloop.types.Map` will load None for the type associated with each of its keys,
-and insert those in the dict.
+Bloop will transparently map None to empty values for types.  For example, :class:`~bloop.types.Set` returns an empty
+``set``, so that you'll never need to check for None before adding and removing elements.
+:class:`~bloop.types.Map` will load None for the type associated with each of its keys, and insert those in the dict.
+``String`` and ``Binary`` will replace ``None`` with ``""`` and ``b""``, respectively.
 
 You will also need to handle ``None`` when dumping values to DynamoDB.  This can happen when a value is deleted
 from a Model instance, or it's explicitly set to None.  In almost all cases, your ``dynamo_dump`` function should

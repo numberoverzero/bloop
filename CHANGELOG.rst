@@ -25,6 +25,13 @@ For release plans, see the `2.2 milestone`_
         class Meta:
             backups = {"enabled": True}
 
+[Changed]
+=========
+
+* ``String`` and ``Binary`` types load ``None`` as ``""`` and ``b""`` respectively.
+* Saving an empty String or Binary (``""`` or ``b""``) will no longer throw a botocore exception, and will instead
+  be treated as ``None``.  This brings behavior in line with the Set, List, and Map types.
+
 .. _Continuous Backups: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/BackupRestore.html
 .. _2.2 milestone: https://github.com/numberoverzero/bloop/milestone/5
 

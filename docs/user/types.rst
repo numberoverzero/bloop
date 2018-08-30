@@ -12,6 +12,8 @@ Bloop provides corresponding types, as well as a handful of useful derived types
 
 For the full list of built-in types, see :ref:`the Public API Reference <public-types>`.
 
+.. _backing-types:
+
 ===============
  Backing Types
 ===============
@@ -184,21 +186,39 @@ The ``pallete.colors`` value would be persisted in DynamoDB as::
     {"SS": ["red", "green"]}
 
 
-===========
- Documents
-===========
+.. _structured-documents:
 
-DynamoDB's Map and List types can store arbitrarily-types values.  For example, a single attribute can hold a string,
-number, and a nested List::
+======================
+ Structured Documents
+======================
 
-    {"L": [{"S": {"foo"}}, {"N": {"3.4"}}, {"L": []}]}
+Bloop provides two types for each of DynamoDB's document types:  :class:`~bloop.types.List` and
+:class:`~bloop.types.DynamicList` for lists, and :class:`~bloop.types.Map` and
+:class:`~bloop.types.DynamicMap` for maps.
 
-Unfortunately, Bloop's built-in :class:`~bloop.types.Map` and :class:`~bloop.types.List` types can't provide the same
-generality.  List and Map must explicitly declare the Type to use when loading and dumping values.  Otherwise, Bloop
-can't know if the following should be loaded as a String or DateTime::
+When you know your document's types up front, Map and List are the best choice.  Use these when your document is
+highly structured but you still want to use a DynamoDB document.
+You will need to declare the types of each key (or the list's single type) when you create the type:
 
-    {"S": "2016-08-09T01:16:25.322849+00:00"}
+.. code-block:: python
 
+    MyDocument = Map(**{
+        "first": String,
+        "last": String,
+        "age": Integer,
+        "stuffed_animals": List(String),
+        "nested": Map(**{
+            "bs": Set(Binary),
+            "ns": Set(Timestamp)
+        })
+    })
+
+Modeling your documents up front provides earlier validation of condition arguments, especially when using paths::
+
+    MyDocument["nested"]["ns"].contains(3) | MyDocument["stuffed_animals"][2].begins_with("BoatyMc")
+
+
+If you want to store arbitrary lists and dicts without specifying types up front, see :ref:`dynamic-documents`.
 
 ------
  List
@@ -286,6 +306,42 @@ Only defined keys will be loaded or saved.  In the following, the impression's "
     __ https://github.com/numberoverzero/bloop/issues/28
     __ https://forums.aws.amazon.com/thread.jspa?threadID=162907
     __ https://forums.aws.amazon.com/message.jspa?messageID=576069#576069
+
+.. _dynamic-documents:
+
+===================
+ Dynamic Documents
+===================
+
+As an alternative to :ref:`structured-documents`, you can use a :class:`~bloop.types.DynamicList` or
+:class:`~bloop.types.DynamicMap` when your data is unstructured:
+
+.. code-block:: python
+
+    class User(BaseModel):
+        ...
+        bio = Column(DynamicMap)
+
+    user.bio = {
+        "foo": [1, True, {b"23", b"24"}],
+        "in": {"j": "k"}
+    }
+
+
+Unfortunately, ``DynamicMap`` and ``DynamicList`` can only store the direct types for each DynamoDB backing type.
+These are:
+
+* :class:`~bloop.types.String`, :class:`~bloop.types.Number`, :class:`~bloop.types.Binary`,
+  :class:`~bloop.types.Boolean`
+* :class:`~bloop.types.Set(String)`, :class:`~bloop.types.Set(Number)`, :class:`~bloop.types.Set(Binary)`
+* :class:`~bloop.types.DynamicList`, :class:`~bloop.types.DynamicMap`
+
+This is because Bloop uses the type information from DynamoDB to load a python value.  For example, when loading this
+value, it could be a String or a DateTime (or another custom type)::
+
+    {"S": "2016-08-09T01:16:25.322849+00:00"}
+
+Therefore dynamic types will only load the most direct corresponding type for each :ref:`backing type<backing-types>`.
 
 .. _user-types-custom:
 

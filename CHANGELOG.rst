@@ -13,7 +13,11 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  Unreleased
 ------------
 
-For release plans, see the `2.2 milestone`_
+(no unreleased changes)
+
+--------------------
+ 2.2.0 - 2018-08-30
+--------------------
 
 [Added]
 =======
@@ -44,7 +48,6 @@ For release plans, see the `2.2 milestone`_
   be treated as ``None``.  This brings behavior in line with the Set, List, and Map types.
 
 .. _Continuous Backups: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/BackupRestore.html
-.. _2.2 milestone: https://github.com/numberoverzero/bloop/milestone/5
 
 --------------------
  2.1.0 - 2018-04-07

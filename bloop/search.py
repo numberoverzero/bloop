@@ -379,9 +379,9 @@ class SearchIterator:
         return self._scanned
 
     def all(self):
-        """Eagerly load all results and return a single list.
+        """Eagerly load all results and return a single list.  If there are no results, the list is empty.
 
-        :return: A list of results.  The list may be empty.
+        :return: A list of results.
         """
         self.reset()
         return list(self)

@@ -143,6 +143,10 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
 
         True if there are no more results.
 
+    .. function:: all()
+
+        Eagerly load all results and return a single list.  If there are no results, the list is empty.
+
     .. function:: first()
 
         Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.

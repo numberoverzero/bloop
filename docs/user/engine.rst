@@ -273,6 +273,27 @@ This section defines a new model to demonstrate the various filtering and condit
     engine = Engine()
     engine.bind(Account)
 
+-----
+ All
+-----
+
+Bloop's query and scan iterators are lazy, fetching only as many pages as needed to advance when you call ``next()``.
+If you want to eagerly load all results, you can use :func:`all() <bloop.search.QueryIterator.all>` to load all
+results into a single list.  Note that calling ``all()`` will reset the query, and will return an empty list if there
+are no results.
+
+.. code-block:: pycon
+
+    >>> q = engine.query(Account,
+    ...     key=Account.name == "numberoverzero")
+    >>> q.all()
+    [Account(name='numberoverzero', number=21623]
+    >>> q.exhausted
+    True
+    >>> q.all()
+    [Account(name='numberoverzero', number=21623]
+
+
 -------
  First
 -------

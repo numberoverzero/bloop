@@ -33,6 +33,9 @@ For release plans, see the `2.2 milestone`_
         class Meta:
             backups = {"enabled": True}
 
+* ``SearchIterator`` exposes an ``all()`` method which eagerly loads all results and returns a single list.
+  Note that the query or scan is reset each time the method is called, discarding any previously buffered state.
+
 [Changed]
 =========
 

@@ -10,6 +10,7 @@ from bloop import BaseModel, BloopException, Engine
 from bloop.session import SessionWrapper
 from bloop.util import walk_subclasses
 
+
 DOCKER_START_COMMAND = ["docker", "run", "-d", "-p", "8000:8000", "--name", "ddb-local", "amazon/dynamodb-local"]
 DOCKER_STOP_COMMAND = ["docker", "stop", "ddb-local"]
 DOCKER_RM_COMMAND = ["docker", "rm", "ddb-local"]

@@ -26,6 +26,8 @@ from .types import (
     Binary,
     Boolean,
     DateTime,
+    DynamicList,
+    DynamicMap,
     Integer,
     List,
     Map,
@@ -52,6 +54,7 @@ __all__ = [
 
     # Types
     "UUID", "Binary", "Boolean", "DateTime", "Integer", "List", "Map", "Number", "Set", "String", "Timestamp",
+    "DynamicList", "DynamicMap",
 
     # Misc
     "Condition", "QueryIterator", "ScanIterator", "Stream", "missing"

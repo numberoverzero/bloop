@@ -465,7 +465,7 @@ class List(Type):
 
         class AnswerBook(BaseModel):
             ...
-            all_answers = List(SingleQuizAnswers)
+            all_answers = Column(List(SingleQuizAnswers))
 
     .. seealso::
 
@@ -516,7 +516,7 @@ class Map(Type):
 
         class ProductCatalog(BaseModel):
             ...
-            products = List(Product)
+            all_products = Column(List(Product))
 
     .. seealso::
 

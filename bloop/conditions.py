@@ -10,7 +10,6 @@ from .signals import (
     object_modified,
     object_saved,
 )
-from .types import supports_operation
 from .util import WeakDefaultDictionary, missing
 
 
@@ -856,7 +855,7 @@ def check_support(column: ComparisonMixin, operation):
     typedef = column.typedef
     for segment in path_of(column):
         typedef = typedef[segment]
-    if not supports_operation(operation, typedef):
+    if not typedef.supports_operation(operation):
         tpl = "Backing type {!r} for {}.{} does not support condition {!r}."
         raise InvalidCondition(tpl.format(
             column.typedef.backing_type,
@@ -937,7 +936,11 @@ def iter_conditions(condition):
 
 
 def iter_columns(condition):
-    """Yield all columns in the condition or its inner conditions."""
+    """
+    Yield all columns in the condition or its inner conditions.
+
+    Unwraps proxies when the condition's column (or any of its values) include paths.
+    """
     # Like iter_conditions, this can't live in each condition without going possibly infinite on the
     # recursion, or passing the visited set through every call.  That makes the signature ugly, so we
     # take care of it here.  Luckily, it's pretty easy to leverage iter_conditions and just unpack the
@@ -948,9 +951,12 @@ def iter_columns(condition):
             continue
         # Non-meta conditions always have a column, and each of values has the potential to be a column.
         # Comparison will only have a list of len 1, but it's simpler to just iterate values and check each
-        if condition.column not in visited:
-            visited.add(condition.column)
-            yield condition.column
+
+        # unwrap proxies created for paths
+        column = proxied(condition.column)
+        if column not in visited:
+            visited.add(column)
+            yield column
             for value in condition.values:
                 if isinstance(value, ComparisonMixin):
                     if value not in visited:

@@ -210,9 +210,10 @@ Use :data:`Stream.token <bloop.stream.Stream.token>` to save the current state a
 
 .. code-block:: pycon
 
-    >>> with open("/tmp/stream-token", "r" as f):
+    >>> with open("/tmp/stream-token", "w") as f:
+    ...     json.dump(stream.token, f, indent=2)
+    >>> with open("/tmp/stream-token", "r") as f:
     ...     token = json.load(f)
-    ...
     >>> stream = engine.stream(User, token)
 
 When reloading from a token, Bloop will automatically prune shards that have expired, and extend the

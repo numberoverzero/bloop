@@ -104,45 +104,15 @@ Create a condition for any model or object that fails the operation if the item 
  Float Type
 ============
 
-A number type with a :class:`decimal.Context` that doesn't trap :class:`decimal.Rounded` or :class:`decimal.Inexact`.
+A number type that loads values as floats but preserves the Decimal context recommended by DynamoDB when saving.
+While you could specify a relaxed :class:`decimal.Context` in the constructor, that is strongly discouraged
+as it will cause issues comparing values.
 
 .. code-block:: python
 
-    import decimal
-    from bloop import Number
-
     class Float(Number):
-        def __init__(self):
-            context = decimal.Context(
-                Emin=-128, Emax=126, rounding=None, prec=38,
-                traps=[decimal.Clamped, decimal.Overflow, decimal.Underflow])
-            super().__init__(context=context)
-
-        def dynamo_load(self, value, *, context, **kwargs):
-            value = super().dynamo_load(value, context=context, **kwargs)
-            # float goes in, float goes out.  You can't explain that!
-            return float(value)
-
-.. warning::
-
-    **Do not use this pattern if you care about the accuracy of your data.**
-    This will almost certainly cause duplicate and missing data.  You're probably here because dealing with
-    :class:`decimal.Decimal` `can be frustrating`__, and it `doesn't play nicely`__ with the standard library.
-
-    Think carefully before you throw away correctness guarantees in your data layer.  Before you copy and paste
-    this into your secure bitcoin trading app, a brief reminder about floats:
-
-    .. code-block:: pycon
-
-        >>> from decimal import Decimal
-        >>> d = Decimal("3.14")
-        >>> f = float(d)
-        >>> d2 = Decimal(f)
-        >>> d == d2
-        False
-
-    __ https://github.com/boto/boto3/issues/665
-    __ https://github.com/boto/boto3/issues/369
+        def dynamo_load(self, *args, **kwargs):
+            return float(super.dynamo_load(*args, **kwargs))
 
 ============================
  Sharing Tables and Indexes
@@ -268,12 +238,13 @@ a nullable constraint on columns.  Instead, these can be trivially added to the 
         def __init__(self, *args, nullable=True, check_type=True, **kwargs):
             super().__init__(*args, **kwargs)
             self.nullable = nullable
-            self.check_type = True
+            self.check_type = check_type
 
         def __set__(self, obj, value):
-            if not self.nullable and value is None:
-                msg = "Tried to set {} to None but column is not nullable"
-                raise ValueError(msg.format(self.name))
+            if value is None:
+                if self.nullable:
+                    return
+                raise ValueError(f"{self!r} does not allow None")
             elif self.check_type and not isinstance(value, self.typedef.python_type):
                 msg = "Tried to set {} with invalid type {} (expected {})"
                 raise TypeError(msg.format(
@@ -327,7 +298,7 @@ uses flask and marshmallow to expose get and list operations for a User class:
 
         email = Column(String, hash_key=True)
         password = Column(String)
-        date_created = Column(DateTime)
+        date_created = Column(DateTime, default=lambda: datetime.now())
 
     engine.bind(User)
 

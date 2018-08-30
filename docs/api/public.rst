@@ -252,7 +252,7 @@ In rare cases, complex types may need to implement :func:`~bloop.types.Type._dum
 ------
 
 .. autoclass:: bloop.types.Type
-    :members: dynamo_dump, dynamo_load, _dump, _load
+    :members: supports_operation, dynamo_dump, dynamo_load, _dump, _load
     :member-order: bysource
 
     .. attribute:: python_type
@@ -486,6 +486,31 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
                 "id": UUID(),
                 "rating": Number()
             }
+
+-------------
+ DynamicList
+-------------
+
+.. autoclass:: bloop.types.DynamicList
+
+    .. attribute:: backing_type
+        :annotation: = "L"
+
+    .. attribute:: python_type
+        :annotation: = list
+
+------------
+ DynamicMap
+------------
+
+.. autoclass:: bloop.types.DynamicMap
+
+    .. attribute:: backing_type
+        :annotation: = "M"
+
+    .. attribute:: python_type
+        :annotation: = dict
+
 
 =======
  Query

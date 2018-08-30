@@ -17,6 +17,14 @@ For release plans, see the `2.2 milestone`_
 
 [Added]
 =======
+* ``DynamicList`` and ``DynamicMap`` types can store arbitrary values, although they will only be loaded as their
+  primitive, direct mapping to DynamoDB backing types.  For example::
+
+    class MyModel(BaseModel):
+        id = Column(String, hash_key=True)
+        blob = Column(DynamicMap)
+    i = MyModel(id="i")
+    i.blob = {"foo": "bar", "inner": [True, {1, 2, 3}, b""]}
 
 * Meta supports `Continuous Backups`_ for Point-In-Time Recovery::
 

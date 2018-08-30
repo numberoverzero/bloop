@@ -81,6 +81,27 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
 
 .. automethod:: bloop.models.unbind
 
+
+=======
+ Types
+=======
+
+-------------
+ DynamicType
+-------------
+
+.. autoclass:: bloop.types.DynamicType
+
+    .. attribute:: i
+
+        Singleton instance of the class.
+
+    .. attribute:: backing_type
+        :annotation: = None
+
+    .. attribute:: python_type
+        :annotation: = None
+
 ===========
  Searching
 ===========

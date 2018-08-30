@@ -467,6 +467,10 @@ class List(Type):
             ...
             all_answers = List(SingleQuizAnswers)
 
+    .. seealso::
+
+        To store arbitrary lists, see :class:`~bloop.types.DynamicList`.
+
     :param typedef: The type to use when loading and saving values in this list.
     """
     python_type = collections.abc.Iterable
@@ -513,6 +517,10 @@ class Map(Type):
         class ProductCatalog(BaseModel):
             ...
             products = List(Product)
+
+    .. seealso::
+
+        To store arbitrary documents, see :class:`~bloop.types.DynamicMap`.
 
     :param types: *(Optional)* specifies the keys and their Types when loading and dumping the Map.
         Any keys that aren't specified in ``types`` are ignored when loading and dumping.
@@ -571,8 +579,21 @@ class DynamicType(Type):
         }
 
     The renderer must know a type for ``UserUpload.doc["foo"][1][0]`` before the value is provided.
-    An instance of this type will return itself for any value during __getitem__, and then inspects the value type
+    An instance of this type will return itself for any value during ``__getitem__``, and then inspects the value type
     during _dump to create the correct simple type.
+
+    Because ``DynamicType`` requires access to the DynamoDB type annotation, you must call ``_load`` and ``_dump``,
+    as ``dynamo_load`` and ``dynamo_dump`` can't be implemented.  For example:
+
+    .. code-block:: python
+
+        DynamicType.i._load({"S": "2016-08-09T01:16:25.322849+00:00"})
+            -> "2016-08-09T01:16:25.322849+00:00"
+        DynamicType.i._load({"N": "3.14"}) -> Decimal('3.14')
+
+        DynamicType.i._dump([1, True, "f"])
+            -> {"L": [{"N": "1"}, {"BOOL": true}, {"S": "f"}]}
+        DynamicType.i._dump({b"1", b"2"}) -> {"BS": ["MQ==", b"Mg=="]}
     """
     i: ClassVar["DynamicType"]
 
@@ -656,6 +677,22 @@ DynamicType.i = DynamicType()
 
 
 class DynamicList(Type):
+    """Holds a list of arbitrary values, including other DynamicLists and DynamicMaps.
+
+    Similar to :class:`~bloop.types.List` but is not constrained to a single type.
+
+    .. code-block:: python
+
+        value = [1, True, "f"]
+        DynamicList()._dump(value)
+            -> {"L": [{"N": "1"}, {"BOOL": true}, {"S": "f"}]}
+
+    .. note::
+
+        Values will only be loaded and dumped as their DynamoDB backing types.  This means datetimes and uuids are
+        stored and loaded as strings, and timestamps are stored and loaded as integers.  For more information, see
+        :ref:`dynamic-documents`.
+    """
     python_type = collections.abc.Iterable
     backing_type = LIST
 
@@ -678,6 +715,22 @@ class DynamicList(Type):
 
 
 class DynamicMap(Type):
+    """Holds a dictionary of arbitrary values, including other DynamicLists and DynamicMaps.
+
+        Similar to :class:`~bloop.types.Map` but is not constrained to a single type.
+
+        .. code-block:: python
+
+            value = {"f": 1, "in": [True]]
+            DynamicMap()._dump(value)
+                -> {"M": {"f": {"N": 1}, "in": {"L": [{"BOOL": true}]}}}
+
+        .. note::
+
+            Values will only be loaded and dumped as their DynamoDB backing types.  This means datetimes and uuids are
+            stored and loaded as strings, and timestamps are stored and loaded as integers.  For more information, see
+            :ref:`dynamic-documents`.
+        """
     python_type = collections.abc.Mapping
     backing_type = MAP
 

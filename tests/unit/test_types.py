@@ -56,9 +56,9 @@ def test_missing_abstract_methods():
 def test_type_paths_raise(type):
     """List, Map, DynamicList, and DynamicMap are the only types that support paths"""
     with pytest.raises(RuntimeError):
-        _ = type["string-key"]
+        _ = type["string-key"]  # noqa: F841
     with pytest.raises(RuntimeError):
-        _ = type[3]
+        _ = type[3]  # noqa: F841
 
 
 def test_load_dump_best_effort(engine):
@@ -99,7 +99,9 @@ def test_none_scalar_types(typedef):
         "Stock": None,
         "Description": {"Heading": "", "Body": "", "Specifications": ""},
         "Id": None,
-        "Updated": None})
+        "Updated": None}),
+    (DynamicList(), []),
+    (DynamicMap(), {}),
 ])
 def test_load_none_vector_types(engine, typedef, default):
     """multi-value types return empty containers when given None"""
@@ -114,7 +116,9 @@ def test_load_none_vector_types(engine, typedef, default):
     (Binary(), (None, b"")),
     (Set(String), ([None], [], None)),
     (List(String), ([None], [], None)),
-    (DocumentType, ({"Rating": None}, {}, None))
+    (DocumentType, ({"Rating": None}, {}, None)),
+    (DynamicList(), ([None], [], None)),
+    (DynamicMap(), ({"foo": None}, {}, None)),
 ])
 def test_dump_none_vector_types(engine, typedef, nones):
     context = {"engine": engine}
@@ -128,7 +132,9 @@ def test_dump_none_vector_types(engine, typedef, nones):
 @pytest.mark.parametrize("typedef, values, expected", [
     (Set(String), [None, "hello"], ["hello"]),
     (List(String), ["foo", None], [{"S": "foo"}]),
-    (DocumentType, {"Rating": 3.0, "Stock": None}, {"Rating": {"N": "3"}})
+    (DocumentType, {"Rating": 3.0, "Stock": None}, {"Rating": {"N": "3"}}),
+    (DynamicList(), ["foo", None], [{"S": "foo"}]),
+    (DynamicMap(), {"Rating": 3.0, "Stock": None}, {"Rating": {"N": "3"}}),
 ])
 def test_dump_partial_none(engine, typedef, values, expected):
     """vector types filter out inner Nones"""
@@ -468,3 +474,11 @@ def test_dynamic_unknown_backing_type(value):
 def test_dynamic_unknown_set_backing_type(value):
     with pytest.raises(ValueError):
         DynamicType.backing_type_for({value})
+
+
+def test_dynamic_path_uses_singleton():
+    """Dynamic* types should always point to DynamicType.i for __getitem__"""
+    dl = DynamicList()
+    dm = DynamicMap()
+    assert dl["foo"] is DynamicType.i
+    assert dm["bar"] is DynamicType.i

@@ -606,17 +606,21 @@ class DynamicType(Type):
         return self
 
     def _load(self, value, **kwargs):
+        if value is None:
+            return None
         vtype = DynamicType.extract_backing_type(value)
         return DYNAMIC_TYPES[vtype]._load(value, **kwargs)
 
     def _dump(self, value, **kwargs):
+        if value is None:
+            return None
         vtype = DynamicType.backing_type_for(value)
         return DYNAMIC_TYPES[vtype]._dump(value, **kwargs)
 
-    def dynamo_load(self, values, *, context, **kwargs):
+    def dynamo_load(self, value, *, context, **kwargs):
         raise NotImplementedError
 
-    def dynamo_dump(self, values, *, context, **kwargs):
+    def dynamo_dump(self, value, *, context, **kwargs):
         raise NotImplementedError
 
     @staticmethod
@@ -657,12 +661,11 @@ class DynamicType(Type):
                 vtype = "SS"  # doesn't matter, Set(x) should dump an empty set the same for all x
             else:
                 inner = next(iter(value))
-                it = type(inner)
-                if isinstance(it, str):
+                if isinstance(inner, str):
                     vtype = "SS"
-                elif isinstance(it, bytes):
+                elif isinstance(inner, bytes):
                     vtype = "BS"
-                elif isinstance(it, numbers.Number):
+                elif isinstance(inner, numbers.Number):
                     vtype = "NS"
                 else:
                     raise ValueError(f"Unknown set type for inner value {inner!r}")

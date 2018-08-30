@@ -5,10 +5,14 @@ import uuid
 import pytest
 
 from bloop.types import (
+    OPERATION_SUPPORT_BY_OP,
     UUID,
     Binary,
     Boolean,
     DateTime,
+    DynamicList,
+    DynamicMap,
+    DynamicType,
     Integer,
     List,
     Map,
@@ -43,6 +47,18 @@ def test_missing_abstract_methods():
 
     with pytest.raises(NotImplementedError):
         typedef._dump("value", context={})
+
+
+@pytest.mark.parametrize("type", [
+    Type(), String(), Binary(), Number(), Boolean(),
+    Set(String), Set(Binary), Set(Number),
+])
+def test_type_paths_raise(type):
+    """List, Map, DynamicList, and DynamicMap are the only types that support paths"""
+    with pytest.raises(RuntimeError):
+        _ = type["string-key"]
+    with pytest.raises(RuntimeError):
+        _ = type[3]
 
 
 def test_load_dump_best_effort(engine):
@@ -94,6 +110,8 @@ def test_load_none_vector_types(engine, typedef, default):
 
 
 @pytest.mark.parametrize("typedef, nones", [
+    (String(), (None, "")),
+    (Binary(), (None, b"")),
     (Set(String), ([None], [], None)),
     (List(String), ([None], [], None)),
     (DocumentType, ({"Rating": None}, {}, None))
@@ -348,3 +366,105 @@ def test_repr():
 
     set_typedef = Set(Integer)
     assert repr(set_typedef) == "<Set[NS:Set]>"
+
+
+def test_dynamic_supports_operation():
+    """DynamicType needs to support at least the build-in bloop operations"""
+    dt = DynamicType()
+    for operation in OPERATION_SUPPORT_BY_OP.keys():
+        assert dt.supports_operation(operation)
+
+
+def test_dynamic_path_returns_self():
+    """
+    Because the type of a dynamic map/list's type is unknown when building a condition,
+    the __getitem__ operation should always return the same DynamicType instance for
+    arbitrary nesting.
+    """
+    dt = DynamicType()
+    node = dt
+    for key in ["foo", "bar", 4, "baz", 2, 3]:
+        node = node[key]
+        assert node is dt
+
+
+def test_dynamic_dynamo_operations_raise():
+    """
+    DynamicType's dynamo_load, dynamo_dump operations can never work, since the outer
+    context is required to look up the correct type.  These should always raise."""
+    dt = DynamicType()
+
+    with pytest.raises(NotImplementedError):
+        dt.dynamo_load("foo", context=None)
+    with pytest.raises(NotImplementedError):
+        dt.dynamo_dump("foo", context=None)
+
+
+@pytest.mark.parametrize("wire, local", [
+    ({"S": "foo"}, "foo"),
+    ({"B": "MQ=="}, b"1"),
+    ({"N": "10"}, decimal.Decimal("10")),
+    ({"BOOL": True}, True), ({"BOOL": False}, False),
+    ({"SS": ["a"]}, {"a"}), ({"BS": ["Mg=="]}, {b"2"}), ({"NS": ["2"]}, {decimal.Decimal("2")}),
+    ({"L": [{"S": "a"}, {"BOOL": True}]}, ["a", True]),
+    ({"M": {"foo": {"S": "bar"}, "baz": {"N": "12"}}}, {"foo": "bar", "baz": decimal.Decimal("12")})
+])
+def test_dynamic_load_dump_symmetric(wire, local):
+    dt = DynamicType()
+    assert dt._dump(local, context=None) == wire
+    assert dt._load(wire, context=None) == local
+
+
+def test_dynamic_load_none():
+    """DynamicType doesn't delegate when loading None, since there isn't type information"""
+    dt = DynamicType()
+    assert dt._load(None) is None
+
+
+def test_dynamic_dump_none():
+    """DynamicType doesn't delegate when dumping None, since there isn't type information"""
+    dt = DynamicType()
+    assert dt._dump(None) is None
+
+
+def test_dynamic_extract_backing_type():
+    """DynamicType looks at the key of a dict"""
+    assert DynamicType.extract_backing_type({"foo": {"bar": "baz"}}) == "foo"
+
+
+@pytest.mark.parametrize("value, type", [
+    ("foo", "S"), ("", "S"),
+    (b"bar", "B"), (b"", "B"),
+    (True, "BOOL"), (False, "BOOL"),
+    (13, "N"), (14.5, "N"), (decimal.Decimal("14"), "N"),
+    ({"x": "y"}, "M"), (dict(), "M"),
+    ([True, "a", {}], "L"), ([], "L"),
+    ({"a", "b"}, "SS"), (set(), "SS"),
+    ({b"a", b"b"}, "BS"),
+    ({3.1, decimal.Decimal(3.4)}, "NS")
+
+])
+def test_dynamic_backing_types(value, type):
+    assert DynamicType.backing_type_for(value) == type
+
+
+@pytest.mark.parametrize("value", [
+    object(),
+    type,
+    datetime.datetime.now(),
+    uuid.uuid4()
+])
+def test_dynamic_unknown_backing_type(value):
+    with pytest.raises(ValueError):
+        DynamicType.backing_type_for(value)
+
+
+@pytest.mark.parametrize("value", [
+    object(),
+    type,
+    datetime.datetime.now(),
+    uuid.uuid4()
+])
+def test_dynamic_unknown_set_backing_type(value):
+    with pytest.raises(ValueError):
+        DynamicType.backing_type_for({value})

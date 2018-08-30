@@ -1,10 +1,10 @@
-from typing import ClassVar
 import base64
 import collections.abc
 import datetime
 import decimal
 import numbers
 import uuid
+from typing import ClassVar
 
 
 ENCODING = "utf-8"

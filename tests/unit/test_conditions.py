@@ -1492,7 +1492,6 @@ def test_proxy_repr():
 
 # ITERATORS ================================================================================================ ITERATORS
 
-
 @pytest.mark.parametrize("condition", non_meta_conditions())
 def test_iter_conditions_non_meta(condition):
     """These conditions aren't and/or/not, so they can't yield any inner conditions"""
@@ -1525,6 +1524,11 @@ def test_iter_conditions_cyclic():
     expected = {root, a, b, c}
     actual = set(iter_conditions(root))
     assert actual == expected
+
+
+def test_iter_columns_path():
+    path = Document.data["Description"]["Heading"]
+    assert set(iter_columns(path.begins_with("hello, world"))) == {Document.data}
 
 
 @pytest.mark.parametrize("condition", [*non_meta_conditions(column=User.age), *meta_conditions(column=User.age)])

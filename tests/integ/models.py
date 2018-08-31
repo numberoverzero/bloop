@@ -8,6 +8,7 @@ from bloop import (
     Boolean,
     Column,
     DateTime,
+    DynamicMap,
     GlobalSecondaryIndex,
     LocalSecondaryIndex,
     Set,
@@ -108,7 +109,7 @@ class User(BaseModel):
     by_username = GlobalSecondaryIndex(projection="keys", hash_key="username")
 
     profile = Column(String)
-    data = Column(String)
+    data = Column(DynamicMap)
     extra = Column(String)
 
 

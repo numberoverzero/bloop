@@ -378,6 +378,14 @@ class SearchIterator:
                 next(self, None)
         return self._scanned
 
+    def all(self):
+        """Eagerly load all results and return a single list.  If there are no results, the list is empty.
+
+        :return: A list of results.
+        """
+        self.reset()
+        return list(self)
+
     def first(self):
         """Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
 

@@ -81,6 +81,27 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
 
 .. automethod:: bloop.models.unbind
 
+
+=======
+ Types
+=======
+
+-------------
+ DynamicType
+-------------
+
+.. autoclass:: bloop.types.DynamicType
+
+    .. attribute:: i
+
+        Singleton instance of the class.
+
+    .. attribute:: backing_type
+        :annotation: = None
+
+    .. attribute:: python_type
+        :annotation: = None
+
 ===========
  Searching
 ===========
@@ -121,6 +142,10 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
     .. attribute:: exhausted
 
         True if there are no more results.
+
+    .. function:: all()
+
+        Eagerly load all results and return a single list.  If there are no results, the list is empty.
 
     .. function:: first()
 

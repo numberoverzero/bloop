@@ -143,13 +143,26 @@ specified on columns using the standard ``<, >=, ==, ...`` operators, as well as
       ...
     ConstraintViolation: The condition was not met.
 
-A common use for conditions is performing atomic updates.  Save provides a shorthand for this, ``atomic=True``.  By
-default saves are not atomic.  Bloop's specific definition of atomic is "only if the state in DynamoDB at time of
-save is the same as the local state was aware of".  If you create a new User and perform an atomic save, it will
-fail if there was any previous state for that hash/range key (since the expected state before the save was
-non-existent).  If you fetch an object from a query which doesn't project all columns, only the columns that are
-projected will be part of the atomic condition (not loading a column doesn't say whether we should expect it to have
-a value or not).
+A common use for conditions is performing atomic updates.  Often you only want to apply some changes if the local
+state matches the state in DynamoDB; if it has changed, you may need to reload the object before applying
+local changes.  Save provides a shorthand for this, ``atomic=True``.  By default saves are not atomic.
+
+.. warning::
+
+    The ``atomic`` keyword (and its resulting condition) are applied **per-object** being saved, not
+    **for all objects being saved at once**.  DynamoDB provides guarantees for atomic updates to a single row, and
+    does not expose a transaction primitive.  It is possible that ``engine.save(user, tweet, atomic=True)`` will
+    successfully update ``tweet`` but the ``user`` fails for some reason.
+    The changes to ``tweet`` will not be rolled back.
+
+    For more discussion about transactions and the ``atomic`` argument, see `Issue #120`_.
+
+.. _Issue #120: https://github.com/numberoverzero/bloop/issues/120
+
+If you create a new User and perform an atomic save, it will fail if there was any previous state for that hash/range
+key (since the expected state before the save was non-existent).  If you fetch an object from a query which doesn't
+project all columns, only the columns that are projected will be part of the atomic condition (not loading a column
+doesn't say whether we should expect it to have a value or not).
 
 .. seealso::
 
@@ -179,7 +192,8 @@ form a single ConditionExpression.
 :func:`Delete <bloop.engine.Engine.delete>` has the same signature as :func:`~bloop.engine.Engine.save`.  Both
 operations are mutations on an object that may or may not exist, and simply map to two different APIs (Delete calls
 `DeleteItem`_).  You can delete multiple objects at once, specify a ``condition``, and use the ``atomic=True``
-shorthand to only delete objects unchanged since you last loaded them from DynamoDB.
+shorthand to only delete objects unchanged since you last loaded them from DynamoDB.  See above for details on using
+the ``atomic`` shorthand and its limitations.
 
 .. code-block:: pycon
 
@@ -258,6 +272,27 @@ This section defines a new model to demonstrate the various filtering and condit
 
     engine = Engine()
     engine.bind(Account)
+
+-----
+ All
+-----
+
+Bloop's query and scan iterators are lazy, fetching only as many pages as needed to advance when you call ``next()``.
+If you want to eagerly load all results, you can use :func:`all() <bloop.search.QueryIterator.all>` to load all
+results into a single list.  Note that calling ``all()`` will reset the query, and will return an empty list if there
+are no results.
+
+.. code-block:: pycon
+
+    >>> q = engine.query(Account,
+    ...     key=Account.name == "numberoverzero")
+    >>> q.all()
+    [Account(name='numberoverzero', number=21623]
+    >>> q.exhausted
+    True
+    >>> q.all()
+    [Account(name='numberoverzero', number=21623]
+
 
 -------
  First

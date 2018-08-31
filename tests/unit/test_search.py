@@ -203,6 +203,8 @@ def next_non_zero_index(chain, start=0):
 def calls_for_current_steps(chain, current_steps):
     """The number of dynamodb calls that are required to iterate the given chain in the given number of steps.
 
+    Here, steps is the number of values returned from next(iterator).  In the table below, the first 3 next() calls
+    are all served by the first response from Dynamo, but the 4th next() requires two more calls (second call is empty)
     For example, the chain [3, 0, 1, 4] has the following table:
 
         +-------+---+---+---+---+---+---+---+---+---+---+
@@ -823,6 +825,27 @@ def test_model_iterator_unpacks(simple_iter, session, cls):
     assert obj.joined is None
     for attr in ["id", "age", "email"]:
         assert not hasattr(obj, attr)
+
+
+@pytest.mark.parametrize("chain", [[0], [0, 0], [2], [2, 0], [1, 1], [0, 2]])
+def test_all_resets(simple_iter, session, chain):
+    """calls to .all() will always re-execute the search, then return all results at once"""
+    iterator = simple_iter()
+    responses = build_responses(chain)
+    session.search_items.side_effect = responses
+
+    results = iterator.all()
+    assert len(results) == sum(chain)
+    assert session.search_items.call_count == len(chain)
+
+    # clear mock state, ensure there are 2 new calls
+    # https://stackoverflow.com/a/25826320
+    session.search_items.reset_mock()
+    session.search_items.side_effect = responses
+
+    results = iterator.all()
+    assert len(results) == sum(chain)
+    assert session.search_items.call_count == len(chain)
 
 
 # END ITERATOR TESTS =============================================================================== END ITERATOR TESTS

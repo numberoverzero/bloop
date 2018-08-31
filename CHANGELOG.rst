@@ -13,10 +13,22 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  Unreleased
 ------------
 
-For release plans, see the `2.2 milestone`_
+(no unreleased changes)
+
+--------------------
+ 2.2.0 - 2018-08-30
+--------------------
 
 [Added]
 =======
+* ``DynamicList`` and ``DynamicMap`` types can store arbitrary values, although they will only be loaded as their
+  primitive, direct mapping to DynamoDB backing types.  For example::
+
+    class MyModel(BaseModel):
+        id = Column(String, hash_key=True)
+        blob = Column(DynamicMap)
+    i = MyModel(id="i")
+    i.blob = {"foo": "bar", "inner": [True, {1, 2, 3}, b""]}
 
 * Meta supports `Continuous Backups`_ for Point-In-Time Recovery::
 
@@ -25,8 +37,17 @@ For release plans, see the `2.2 milestone`_
         class Meta:
             backups = {"enabled": True}
 
+* ``SearchIterator`` exposes an ``all()`` method which eagerly loads all results and returns a single list.
+  Note that the query or scan is reset each time the method is called, discarding any previously buffered state.
+
+[Changed]
+=========
+
+* ``String`` and ``Binary`` types load ``None`` as ``""`` and ``b""`` respectively.
+* Saving an empty String or Binary (``""`` or ``b""``) will no longer throw a botocore exception, and will instead
+  be treated as ``None``.  This brings behavior in line with the Set, List, and Map types.
+
 .. _Continuous Backups: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/BackupRestore.html
-.. _2.2 milestone: https://github.com/numberoverzero/bloop/milestone/5
 
 --------------------
  2.1.0 - 2018-04-07

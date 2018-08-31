@@ -47,6 +47,63 @@ specification.
 
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.SpecifyingConditions.html#ConditionExpressionReference
 
+==============================
+ Chained Conditions (AND, OR)
+==============================
+
+Bloop overloads the ``&`` and ``|`` operators for conditions, allowing you to more easily construct compound
+conditions.  Some libraries allow you to chain filters with ``.filter(c1).filter(c2)`` or pass a list of conditions
+``.filter([c1, c2])`` but both of these forms struggle to express nested conditions, especially when expressing an
+OR operation.
+
+For example, consider a query to find popular articles.  We want either new articles with more than 100 likes,
+recent articles with more than 500 likes, or older articles with more than 1000 likes.  We're running a spotlight on
+editor of the month "Nancy Stevens" so let's include those as well.
+
+.. code-block:: python
+
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    yesterday = now - timedelta(hours=12)
+    last_week = now - timedelta(days=7)
+    last_year = now - timedelta(weeks=52)
+
+    popular = (
+        ((Article.likes >= 100) & (Article.publish_date >= yesterday)) |
+        ((Article.likes >= 500) & (Article.publish_date >= last_week)) |
+        ((Article.likes >= 1000) & (Article.publish_date >= last_year))
+    )
+    spotlight = Article.editor == "nstevens"
+
+    articles = engine.scan(Article, filter=popular|spotlight)
+
+
+We can programmatically build conditions from a base of ``bloop.Condition``, which is an empty condition.  In the
+following example, ``editors`` may have come from a query param or form submission:
+
+.. code-block:: python
+
+    editors = ["nstevens", "jsmith", "bholly"]
+    condition = bloop.Condition()
+
+    for editor in editors:
+        condition |= Article.editor == editor
+
+    articles = engine.scan(Article, filter=condition)
+
+
+Although less frequently used, there is also the ``~`` operator to negate an existing condition.  This is useful to
+flip a compound condition, rather than trying to invert all the intermediate operators.  To find all the unpopular or
+non-spotlighted articles, we'll use the variables from the first example above:
+
+.. code-block:: python
+
+    popular = (...)  # see first example
+    spotlight = ...
+
+    popular_articles = engine.scan(Article, filter=popular|spotlight)
+    unpopular_articles = engine.scan(Article, filter=~(popular|spotlight))
+
 ================
  Document Paths
 ================

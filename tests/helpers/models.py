@@ -1,6 +1,7 @@
 from bloop import (
     UUID,
     BaseModel,
+    Binary,
     Column,
     Condition,
     DateTime,
@@ -73,6 +74,7 @@ class VectorModel(BaseModel):
     list_str = Column(List(String))
     set_str = Column(Set(String))
     map_nested = Column(Map(**{
+        "bytes": Binary,
         "str": String,
         "map": Map(**{
             "int": Integer,

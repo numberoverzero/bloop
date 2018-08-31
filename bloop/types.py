@@ -2,7 +2,9 @@ import base64
 import collections.abc
 import datetime
 import decimal
+import numbers
 import uuid
+from typing import ClassVar
 
 
 ENCODING = "utf-8"
@@ -27,7 +29,7 @@ DYNAMODB_CONTEXT = decimal.Context(
     ]
 )
 
-SUPPORTED_OPERATIONS = {
+OPERATION_SUPPORT_BY_OP = {
     "==": ALL,
     "!=": ALL,
     "<": PRIMITIVES,
@@ -39,10 +41,10 @@ SUPPORTED_OPERATIONS = {
     "contains": {*SETS, STRING, BINARY, LIST},
     "in": ALL
 }
-
-
-def supports_operation(operation, typedef):
-    return typedef.backing_type in SUPPORTED_OPERATIONS[operation]
+OPERATION_SUPPORT_BY_TYPE = {
+    t: {op for (op, supported) in OPERATION_SUPPORT_BY_OP.items() if t in supported}
+    for t in ALL
+}
 
 
 class Type:
@@ -51,10 +53,24 @@ class Type:
     python_type = None
     backing_type = None
 
+    def supports_operation(self, operation: str) -> bool:
+        """
+        Used to ensure a conditional operation is supported by this type.
+
+        By default, uses a hardcoded table of operations that maps to each backing DynamoDB type.
+
+        You can override this method to implement your own conditional operators, or to dynamically
+        adjust which operations your type supports.
+        """
+        return operation in OPERATION_SUPPORT_BY_TYPE[self.backing_type]
+
     def __init__(self):
         if not hasattr(self, "inner_typedef"):
             self.inner_typedef = self
         super().__init__()
+
+    def __getitem__(self, key):
+        raise RuntimeError(f"{self!r} does not support document paths")
 
     def dynamo_dump(self, value, *, context, **kwargs):
         """Converts a local value into a DynamoDB value.
@@ -139,10 +155,12 @@ class String(Type):
     backing_type = STRING
 
     def dynamo_load(self, value, *, context, **kwargs):
+        if not value:
+            return ""
         return value
 
     def dynamo_dump(self, value, *, context, **kwargs):
-        if value is None:
+        if not value:
             return None
         return value
 
@@ -351,11 +369,11 @@ class Binary(Type):
 
     def dynamo_load(self, value, *, context, **kwargs):
         if value is None:
-            return None
+            return b""
         return base64.b64decode(value)
 
     def dynamo_dump(self, value, *, context, **kwargs):
-        if value is None:
+        if not value:
             return None
         return base64.b64encode(value).decode("utf-8")
 
@@ -447,7 +465,11 @@ class List(Type):
 
         class AnswerBook(BaseModel):
             ...
-            all_answers = List(SingleQuizAnswers)
+            all_answers = Column(List(SingleQuizAnswers))
+
+    .. seealso::
+
+        To store arbitrary lists, see :class:`~bloop.types.DynamicList`.
 
     :param typedef: The type to use when loading and saving values in this list.
     """
@@ -494,7 +516,11 @@ class Map(Type):
 
         class ProductCatalog(BaseModel):
             ...
-            products = List(Product)
+            all_products = Column(List(Product))
+
+    .. seealso::
+
+        To store arbitrary documents, see :class:`~bloop.types.DynamicMap`.
 
     :param types: *(Optional)* specifies the keys and their Types when loading and dumping the Map.
         Any keys that aren't specified in ``types`` are ignored when loading and dumping.
@@ -528,3 +554,220 @@ class Map(Type):
             if value is not None:
                 dumped[key] = value
         return dumped or None
+
+
+class DynamicType(Type):
+    """
+    Dynamically dumps a value based on its python type.
+
+    This is used by DynamicList, DynamicMap to handle path resolution before the value for an arbitrary path is known.
+    For example, given the following model:
+
+    .. code-block:: python
+
+        class UserUpload(BaseModel):
+            id = Column(String, hash_key=True)
+            doc = Column(DynamicMap)
+
+    And an instance as follows:
+
+    .. code-block:: python
+
+        u = UserUpload(id="numberoverzero")
+        u.doc = {
+            "foo": ["bar", {0: "a", 1: "b"}, True]
+        }
+
+    The renderer must know a type for ``UserUpload.doc["foo"][1][0]`` before the value is provided.
+    An instance of this type will return itself for any value during ``__getitem__``, and then inspects the value type
+    during _dump to create the correct simple type.
+
+    Because ``DynamicType`` requires access to the DynamoDB type annotation, you must call ``_load`` and ``_dump``,
+    as ``dynamo_load`` and ``dynamo_dump`` can't be implemented.  For example:
+
+    .. code-block:: python
+
+        DynamicType.i._load({"S": "2016-08-09T01:16:25.322849+00:00"})
+            -> "2016-08-09T01:16:25.322849+00:00"
+        DynamicType.i._load({"N": "3.14"}) -> Decimal('3.14')
+
+        DynamicType.i._dump([1, True, "f"])
+            -> {"L": [{"N": "1"}, {"BOOL": true}, {"S": "f"}]}
+        DynamicType.i._dump({b"1", b"2"}) -> {"BS": ["MQ==", b"Mg=="]}
+    """
+    i: ClassVar["DynamicType"]
+
+    def supports_operation(self, operation: str) -> bool:
+        """Always True, because the type of the value passing through DynamicType is late bound"""
+        return True
+
+    def __getitem__(self, key):
+        """Overload allows easy nested access to types"""
+        return self
+
+    def _load(self, value, **kwargs):
+        if value is None:
+            return None
+        vtype = DynamicType.extract_backing_type(value)
+        return DYNAMIC_TYPES[vtype]._load(value, **kwargs)
+
+    def _dump(self, value, **kwargs):
+        if value is None:
+            return None
+        vtype = DynamicType.backing_type_for(value)
+        return DYNAMIC_TYPES[vtype]._dump(value, **kwargs)
+
+    def dynamo_load(self, value, *, context, **kwargs):
+        raise NotImplementedError
+
+    def dynamo_dump(self, value, *, context, **kwargs):
+        raise NotImplementedError
+
+    @staticmethod
+    def extract_backing_type(value: dict) -> str:
+        """Returns the DynamoDB backing type from a given wire dict
+
+        ::
+
+            {'S': 'foo'} -> 'S'
+        """
+        return next(iter(value.keys()))
+
+    @staticmethod
+    def backing_type_for(value):
+        """Returns the DynamoDB backing type for a given python value's type
+
+        ::
+
+            4 -> 'N'
+            ['x', 3] -> 'L'
+            {2, 4} -> 'SS
+        """
+        if isinstance(value, str):
+            vtype = "S"
+        elif isinstance(value, bytes):
+            vtype = "B"
+        # NOTE: numbers.Number check must come **AFTER** bool check since isinstance(True, numbers.Number)
+        elif isinstance(value, bool):
+            vtype = "BOOL"
+        elif isinstance(value, numbers.Number):
+            vtype = "N"
+        elif isinstance(value, dict):
+            vtype = "M"
+        elif isinstance(value, list):
+            vtype = "L"
+        elif isinstance(value, set):
+            if not value:
+                vtype = "SS"  # doesn't matter, Set(x) should dump an empty set the same for all x
+            else:
+                inner = next(iter(value))
+                if isinstance(inner, str):
+                    vtype = "SS"
+                elif isinstance(inner, bytes):
+                    vtype = "BS"
+                elif isinstance(inner, numbers.Number):
+                    vtype = "NS"
+                else:
+                    raise ValueError(f"Unknown set type for inner value {inner!r}")
+        else:
+            raise ValueError(f"Can't dump unexpected type {type(value)!r} for value {value!r}")
+        return vtype
+
+
+# Singleton instance for re-use.
+# It's unlikely we'll ever need more than one.
+DynamicType.i = DynamicType()
+
+
+class DynamicList(Type):
+    """Holds a list of arbitrary values, including other DynamicLists and DynamicMaps.
+
+    Similar to :class:`~bloop.types.List` but is not constrained to a single type.
+
+    .. code-block:: python
+
+        value = [1, True, "f"]
+        DynamicList()._dump(value)
+            -> {"L": [{"N": "1"}, {"BOOL": true}, {"S": "f"}]}
+
+    .. note::
+
+        Values will only be loaded and dumped as their DynamoDB backing types.  This means datetimes and uuids are
+        stored and loaded as strings, and timestamps are stored and loaded as integers.  For more information, see
+        :ref:`dynamic-documents`.
+    """
+    python_type = collections.abc.Iterable
+    backing_type = LIST
+
+    def __getitem__(self, key):
+        """Overload allows easy nested access to types"""
+        return DynamicType.i
+
+    def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            return []
+        return [
+            DynamicType.i._load(value, context=context, **kwargs)
+            for value in values]
+
+    def dynamo_dump(self, values, *, context, **kwargs):
+        if values is None:
+            return None
+        dumped = (DynamicType.i._dump(value, context=context, **kwargs) for value in values)
+        return [value for value in dumped if value is not None] or None
+
+
+class DynamicMap(Type):
+    """Holds a dictionary of arbitrary values, including other DynamicLists and DynamicMaps.
+
+        Similar to :class:`~bloop.types.Map` but is not constrained to a single type.
+
+        .. code-block:: python
+
+            value = {"f": 1, "in": [True]]
+            DynamicMap()._dump(value)
+                -> {"M": {"f": {"N": 1}, "in": {"L": [{"BOOL": true}]}}}
+
+        .. note::
+
+            Values will only be loaded and dumped as their DynamoDB backing types.  This means datetimes and uuids are
+            stored and loaded as strings, and timestamps are stored and loaded as integers.  For more information, see
+            :ref:`dynamic-documents`.
+        """
+    python_type = collections.abc.Mapping
+    backing_type = MAP
+
+    def __getitem__(self, key):
+        """Overload allows easy nested access to types"""
+        return DynamicType.i
+
+    def dynamo_load(self, values, *, context, **kwargs):
+        if values is None:
+            return {}
+        return {
+            key: DynamicType.i._load(value, context=context, **kwargs)
+            for (key, value) in values.items()
+        }
+
+    def dynamo_dump(self, values, *, context, **kwargs):
+        if values is None:
+            return None
+        dumped = {}
+        for key, value in values.items():
+            value = DynamicType.i._dump(value, context=context, **kwargs)
+            if value is not None:
+                dumped[key] = value
+        return dumped or None
+
+
+DYNAMIC_TYPES = {
+    "S": String(),
+    "N": Number(),
+    "B": Binary(),
+    "BOOL": Boolean(),
+    "SS": Set(String),
+    "NS": Set(Number),
+    "BS": Set(Binary),
+    "M": DynamicMap(),
+    "L": DynamicList()
+}

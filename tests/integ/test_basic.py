@@ -8,6 +8,7 @@ from bloop import (
     UUID,
     BaseModel,
     Column,
+    DynamicMap,
     GlobalSecondaryIndex,
     Integer,
     MissingObjects,
@@ -185,14 +186,14 @@ def test_stream_read(engine):
                 "include": ["new", "old"]
             }
         id = Column(Integer, hash_key=True)
-        data = Column(String)
+        data = Column(DynamicMap)
     engine.bind(MyStreamReadModel)
 
     stream = engine.stream(MyStreamReadModel, "trim_horizon")
     assert next(stream) is None
 
-    obj = MyStreamReadModel(id=3, data="hello, world")
-    another = MyStreamReadModel(id=5, data="foobar")
+    obj = MyStreamReadModel(id=3, data={"foo": "hello, world"})
+    another = MyStreamReadModel(id=5, data={"bar": 3})
     # Two calls to ensure ordering
     engine.save(obj)
     engine.save(another)
@@ -304,7 +305,7 @@ def test_partial_load_save(engine):
         email="my-email@",
         username="my-username",
         profile="original-profile",
-        data="original-data",
+        data={"original": "data"},
         extra="my-extra"
     )
     engine.save(obj)
@@ -312,9 +313,9 @@ def test_partial_load_save(engine):
     partial = engine.query(
         User.by_username,
         key=User.username == "my-username").one()
-    assert getattr(partial, "profile", None) is None
+    assert not hasattr(partial, "profile")
 
-    partial.data = "new-data"
+    partial.data = {"new": [1, 2, True]}
     partial.extra = None
     engine.save(partial)
 
@@ -327,6 +328,6 @@ def test_partial_load_save(engine):
     # never modified
     assert same.profile == "original-profile"
     # modified from partial
-    assert same.data == "new-data"
-    # deleted from partial
-    assert getattr(same, "extra", None) is None
+    assert same.data == {"new": [1, 2, True]}
+    # deleted from partial, missing value for String is ""
+    assert same.extra == ""

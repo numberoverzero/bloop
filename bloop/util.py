@@ -106,7 +106,7 @@ class Sentinel:
     ``Sentinel("some-value")`` and refer to the same object.  This is especially helpful where ``None`` is a possible
     value, and so can't be used to indicate omission of an optional parameter.
 
-    Implements \_\_repr\_\_ to render nicely in function signatures.  Standard object-based sentinels:
+    Implements ``__repr__`` to render nicely in function signatures.  Standard object-based sentinels:
 
     .. code-block:: pycon
 

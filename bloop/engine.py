@@ -124,7 +124,7 @@ class Engine:
     def __init__(
             self, *,
             dynamodb=None, dynamodbstreams=None,
-            table_name_template: Union[str, TableNameFormatter]="{table_name}"):
+            table_name_template: Union[str, TableNameFormatter] = "{table_name}"):
         self._compute_table_name = create_get_table_name_func(table_name_template)
         self.session = SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 

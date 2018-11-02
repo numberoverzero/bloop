@@ -72,7 +72,7 @@ class IMeta:
 class BaseModel:
     """Abstract base that all models derive from.
 
-    Provides a basic ``__init__`` method that takes \*\*kwargs whose
+    Provides a basic ``__init__`` method that takes ``**kwargs`` whose
     keys are columns names:
 
     .. code-block:: python
@@ -388,7 +388,7 @@ class GlobalSecondaryIndex(Index):
 class LocalSecondaryIndex(Index):
     """See `LocalSecondaryIndex`_ in the DynamoDB Developer Guide for details.
 
-    Unlike :class:`~bloop.models.GlobalSecondaryIndex`\, LSIs share their throughput with the table,
+    Unlike :class:`~bloop.models.GlobalSecondaryIndex` each LSI shares its throughput with the table
     and their hash key is always the table hash key.
 
     :param projection: Either "keys", "all", or a list of column name or objects.

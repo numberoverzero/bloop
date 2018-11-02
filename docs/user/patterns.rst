@@ -23,8 +23,10 @@ To resolve missing features in DynamoDBLocal, you can patch the client (see belo
 DynamoDBLocal such as localstack.  Localstack isn't recommended until `Issue #728`_ is addressed.
 
 The following code is designed to be easily copied and pasted.  When you set up your engine for local testing just
-import and call ``patch_engine`` to stub responses to missing methods.  Note that the patched response values are
-fixed and your model will fail to bind if you have enabled ttl or backups.
+import and call ``patch_engine`` to stub responses to missing methods.  By default describe ttl and describe
+backups will return "DISABLED" for every table.  You can use
+``client.mock_ttl["my-table-name"] = True`` or ``client.mock_backups["my-table-name"] = True`` to instead return
+"ENABLED".
 
 The original patching code used by bloop's integration tests can be found `here`_ while historical context on
 using DynamoDBLocal with bloop can be found in `Issue #117`_.
@@ -38,12 +40,16 @@ using DynamoDBLocal with bloop can be found in `Issue #117`_.
     class PatchedDynamoDBClient:
         def __init__(self, real_client):
             self.__client = real_client
+            self.mock_ttl = {}
+            self.mock_backups = {}
 
         def describe_time_to_live(self, TableName, **_):
-            return {"TimeToLiveDescription": {"TimeToLiveStatus": "DISABLED"}}
+            r = "ENABLED" if self.mock_ttl.get(TableName) else "DISABLED"
+            return {"TimeToLiveDescription": {"TimeToLiveStatus": r}}
 
         def describe_continuous_backups(self, TableName, **_):
-            return {"ContinuousBackupsDescription": {"ContinuousBackupsStatus": "DISABLED"}}
+            r = "ENABLED" if self.mock_backups.get(TableName) else "DISABLED"
+            return {"ContinuousBackupsDescription": {"ContinuousBackupsStatus": r}}
 
         # TODO override any other methods that DynamoDBLocal doesn't provide
 
@@ -53,8 +59,9 @@ using DynamoDBLocal with bloop can be found in `Issue #117`_.
 
 
     def patch_engine(engine):
-        engine.session.dynamodb_client = PatchedDynamoDBClient(engine.session.dynamodb_client)
-        return engine
+        client = PatchedDynamoDBClient(engine.session.dynamodb_client)
+        engine.session.dynamodb_client = client
+        return client
 
 
 And its usage, assuming you've saved the file as patch_local.py:
@@ -68,7 +75,11 @@ And its usage, assuming you've saved the file as patch_local.py:
     dynamodbstreams = boto3.client("dynamodbstreams", endpoint_url="http://127.0.0.1:8000")
     engine = bloop.Engine(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
 
-    patch_engine(engine)
+    client = patch_engine(engine)
+
+    client.mock_ttl["MyTableName"] = True
+    client.mock_backups["MyTableName"] = False
+
 
 .. _Issue #728: https://github.com/localstack/localstack/issues/728
 .. _here: https://github.com/numberoverzero/bloop/blob/4d2c967a8f74eb2b70a5ed9f90d5325449e56f8a/tests/integ/conftest.py#L18-L29

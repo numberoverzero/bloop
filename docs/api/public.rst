@@ -78,7 +78,7 @@ See :ref:`defining models <define-models>` in the User Guide.
 
             >>> class Document(BaseModel):
             ...     ...
-            ...     cheat_codes = Column(Set(String), name="cc")
+            ...     cheat_codes = Column(Set(String), dynamo_name="cc")
             ...
             >>> Document.cheat_codes.name
             cheat_codes
@@ -121,7 +121,7 @@ See :ref:`defining models <define-models>` in the User Guide.
             >>> class Document(BaseModel):
             ...     ...
             ...     by_email = GlobalSecondaryIndex(
-            ...         projection="keys", name="ind_e", hash_key="email")
+            ...         projection="keys", dynamo_name="ind_e", hash_key="email")
             ...
             >>> Document.by_email.name
             by_email
@@ -184,7 +184,7 @@ See :ref:`defining models <define-models>` in the User Guide.
             >>> class Document(BaseModel):
             ...     ...
             ...     by_date = LocalSecondaryIndex(
-            ...         projection="keys", name="ind_co", range_key="created_on")
+            ...         projection="keys", dynamo_name="ind_co", range_key="created_on")
             ...
             >>> Document.by_date.name
             by_date

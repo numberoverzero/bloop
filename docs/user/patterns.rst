@@ -130,7 +130,7 @@ as it will cause issues comparing values.
 ============================
 
 Bloop allows you to map multiple models to the same table.  You can rename columns during
-init with the ``name=`` param, change column types across models, and still use conditional
+init with the ``dynamo_name=`` param, change column types across models, and still use conditional
 operations and Bloop's atomic builder.  This flexibility extends to GSIs and LSIs as long
 as a Model's Index projects a subset of the actual Index.  On shared tables, a shared index
 provides tighter query validation and reduces consumed throughput.

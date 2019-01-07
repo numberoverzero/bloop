@@ -12,7 +12,11 @@ from .signals import model_created, object_modified
 from .types import DateTime, Number, Type
 
 
-__all__ = ["BaseModel", "Column", "GlobalSecondaryIndex", "LocalSecondaryIndex"]
+__all__ = [
+    "BaseModel", "Column",
+    "Index", "GlobalSecondaryIndex", "LocalSecondaryIndex",
+    "subclassof", "unpack_from_dynamodb"
+]
 
 logger = logging.getLogger("bloop.models")
 missing = util.missing

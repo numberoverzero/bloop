@@ -6,7 +6,7 @@ from .models import Column, GlobalSecondaryIndex, unpack_from_dynamodb
 from .signals import object_loaded
 
 
-__all__ = ["ScanIterator", "QueryIterator"]
+__all__ = ["ScanIterator", "Search", "QueryIterator"]
 
 
 def printable_query(query_on):

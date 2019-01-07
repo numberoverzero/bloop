@@ -4,7 +4,7 @@ import weakref
 import blinker
 
 
-__all__ = ["Sentinel", "ordered", "signal", "walk_subclasses"]
+__all__ = ["Sentinel", "WeakDefaultDictionary", "missing", "ordered", "signal", "walk_subclasses"]
 
 # De-dupe dict for Sentinel
 _symbols = {}

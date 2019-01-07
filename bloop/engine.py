@@ -22,6 +22,7 @@ from .signals import (
     object_saved,
 )
 from .stream import Stream
+from .transactions import new_tx
 from .util import missing, walk_subclasses
 
 
@@ -385,3 +386,36 @@ class Engine:
         stream = Stream(model=model, engine=self)
         stream.move_to(position=position)
         return stream
+
+    def tx(self, mode="w"):
+        """
+        Create a new :class:`~bloop.transactions.ReadTransaction` or :class:`~bloop.transactions.WriteTransaction`.
+
+        As a context manager, calling commit when the block exits:
+
+        .. code-block:: pycon
+
+            >>> engine = Engine()
+            >>> user = User(id=3, email="user@domain.com")
+            >>> tweet = Tweet(id=42, data="hello, world")
+            >>> with engine.tx("w") as tx:
+            ...     tx.delete(user)
+            ...     tx.save(tweet, condition=Tweet.id.is_(None))
+
+        Or manually calling commit:
+
+        .. code-block:: pycon
+
+            >>> engine = Engine()
+            >>> user = User(id=3, email="user@domain.com")
+            >>> tweet = Tweet(id=42, data="hello, world")
+            >>> tx = engine.tx("w")
+            >>> tx.delete(user)
+            >>> tx.save(tweet, condition=Tweet.id.is_(None))
+            >>> tx.commit()
+
+        :param str mode: Either "r" or "w" to create a ReadTransaction or WriteTransaction.  Default is "w"
+        :return: A new transaction that can be committed.
+        :rtype: :class:`~bloop.transactions.ReadTransaction` or :class:`~bloop.transactions.WriteTransaction`
+        """
+        return new_tx(self, mode)

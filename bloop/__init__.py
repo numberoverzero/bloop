@@ -21,6 +21,7 @@ from .signals import (
     object_saved,
 )
 from .stream import Stream
+from .transactions import Transaction
 from .types import (
     UUID,
     Binary,
@@ -57,6 +58,6 @@ __all__ = [
     "DynamicList", "DynamicMap",
 
     # Misc
-    "Condition", "QueryIterator", "ScanIterator", "Stream", "missing"
+    "Condition", "QueryIterator", "ScanIterator", "Stream", "Transaction", "missing"
 ]
-__version__ = "2.2.0"
+__version__ = "2.3.0"

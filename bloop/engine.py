@@ -387,7 +387,7 @@ class Engine:
         stream.move_to(position=position)
         return stream
 
-    def tx(self, mode="w"):
+    def transaction(self, mode="w"):
         """
         Create a new :class:`~bloop.transactions.ReadTransaction` or :class:`~bloop.transactions.WriteTransaction`.
 
@@ -398,7 +398,7 @@ class Engine:
             >>> engine = Engine()
             >>> user = User(id=3, email="user@domain.com")
             >>> tweet = Tweet(id=42, data="hello, world")
-            >>> with engine.tx("w") as tx:
+            >>> with engine.transaction("w") as tx:
             ...     tx.delete(user)
             ...     tx.save(tweet, condition=Tweet.id.is_(None))
 
@@ -409,7 +409,7 @@ class Engine:
             >>> engine = Engine()
             >>> user = User(id=3, email="user@domain.com")
             >>> tweet = Tweet(id=42, data="hello, world")
-            >>> tx = engine.tx("w")
+            >>> tx = engine.transaction("w")
             >>> tx.delete(user)
             >>> tx.save(tweet, condition=Tweet.id.is_(None))
             >>> tx.commit()

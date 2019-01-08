@@ -2,7 +2,7 @@ import datetime
 from typing import Union
 
 
-__all__ = ["Transaction", "ReadTransaction", "WriteTransaction", "new_tx"]
+__all__ = ["PreparedTransaction", "ReadTransaction", "Transaction", "WriteTransaction", "new_tx"]
 
 
 class Transaction:
@@ -40,10 +40,26 @@ class PreparedTransaction:
     tx_id: str
     first_commit_at: datetime.datetime
     request: dict
+    mode: str
+
+    def __init__(self):
+        self.objs = None
+        self.invoke = None
 
     def prepare(self, engine, objs, mode) -> None:
-        pass
-        # TODO
+        self.prepare_engine(engine, mode)
+        self.objs = objs
+
+    def prepare_engine(self, engine, mode):
+        self.mode = mode
+        if mode == "r":
+            method = engine.session.transaction_read
+        elif mode == "w":
+            method = engine.session.transaction_write
+        else:
+            raise ValueError(f"unknown mode {mode}")
+        self.invoke = method
+
 
     def commit(self) -> None:
         pass

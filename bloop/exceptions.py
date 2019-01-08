@@ -30,6 +30,10 @@ class TransactionCanceled(BloopException):
     """
 
 
+class TransactionTokenExpired(BloopException):
+    """The transaction's tx_id (ClientRequestToken) was first used more than 10 minutes ago"""
+
+
 class MissingObjects(BloopException):
     """Some objects were not found."""
     def __init__(self, *args, objects=None):

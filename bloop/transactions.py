@@ -1,8 +1,22 @@
-import datetime
-from typing import Union
+import uuid
+from datetime import datetime, timedelta, timezone
+from typing import Any, NamedTuple, Optional, Union
+
+from .exceptions import TransactionTokenExpired
 
 
 __all__ = ["PreparedTransaction", "ReadTransaction", "Transaction", "WriteTransaction", "new_tx"]
+
+MAX_TRANSACTION_ITEMS = 10
+# per docs this is 10 minutes, minus a bit for clock skew guard
+MAX_TOKEN_LIFETIME = timedelta(minutes=9, seconds=30)
+
+
+class _TxWriteItem(NamedTuple):
+    mode: str
+    obj: Any
+    condition: Optional[Any]
+    atomic: bool
 
 
 class Transaction:
@@ -38,42 +52,53 @@ class Transaction:
 
 class PreparedTransaction:
     tx_id: str
-    first_commit_at: datetime.datetime
-    request: dict
     mode: str
+    objs: list
+    first_commit_at: datetime
 
     def __init__(self):
-        self.objs = None
-        self.invoke = None
+        self.engine = None
+        self.first_commit_at = None
+        self._items = None
 
     def prepare(self, engine, objs, mode) -> None:
-        self.prepare_engine(engine, mode)
-        self.objs = objs
-
-    def prepare_engine(self, engine, mode):
+        self.tx_id = str(uuid.uuid4()).replace("-", "")
         self.mode = mode
-        if mode == "r":
-            method = engine.session.transaction_read
-        elif mode == "w":
-            method = engine.session.transaction_write
-        else:
-            raise ValueError(f"unknown mode {mode}")
-        self.invoke = method
+        self.objs = objs
+        self.engine = engine
+        self.prepare_request()
+
+    def prepare_request(self):
+        # TODO
+        pass
 
     def commit(self) -> None:
-        pass
-        # TODO
+        now = datetime.now(timezone.utc)
+        if self.first_commit_at is None:
+            self.first_commit_at = now
 
-    def _handle_response(self, resp: dict) -> None:
-        pass
+        if self.mode == "r":
+            response = self.engine.session.transaction_read(self._items)
+        elif self.mode == "w":
+            if now - self.first_commit_at > MAX_TOKEN_LIFETIME:
+                raise TransactionTokenExpired
+            response = self.engine.session.transaction_write(self._items, self.tx_id)
+        else:
+            raise ValueError(f"unrecognized mode {self.mode}")
+        self._handle_response(response)
+
+    def _handle_response(self, response: dict) -> None:
         # TODO
+        pass
 
 
 class ReadTransaction(Transaction):
     mode = "r"
 
     def load(self, *objs) -> "ReadTransaction":
-        # TODO
+        if len(self.objs) + len(objs) > MAX_TRANSACTION_ITEMS:
+            raise ValueError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
+        self.objs += objs
         return self
 
 
@@ -81,16 +106,29 @@ class WriteTransaction(Transaction):
     mode = "w"
 
     def check(self, obj, condition) -> "WriteTransaction":
-        # TODO
+        self._extend(_TxWriteItem(mode="check", obj=obj, condition=condition, atomic=False))
         return self
 
     def save(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
-        # TODO
+        items = [
+            _TxWriteItem(mode="update", obj=obj, condition=condition, atomic=atomic)
+            for obj in objs
+        ]
+        self._extend(items)
         return self
 
     def delete(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
-        # TODO
+        items = [
+            _TxWriteItem(mode="delete", obj=obj, condition=condition, atomic=atomic)
+            for obj in objs
+        ]
+        self._extend(items)
         return self
+
+    def _extend(self, *items):
+        if len(self.objs) + len(items) > MAX_TRANSACTION_ITEMS:
+            raise ValueError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
+        self.objs += items
 
 
 def new_tx(engine, mode) -> Union[ReadTransaction, WriteTransaction]:

@@ -29,6 +29,7 @@ class TransactionCanceled(BloopException):
         https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactGetItems.html#
     """
 
+
 class MissingObjects(BloopException):
     """Some objects were not found."""
     def __init__(self, *args, objects=None):

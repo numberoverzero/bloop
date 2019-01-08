@@ -60,7 +60,6 @@ class PreparedTransaction:
             raise ValueError(f"unknown mode {mode}")
         self.invoke = method
 
-
     def commit(self) -> None:
         pass
         # TODO

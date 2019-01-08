@@ -106,26 +106,26 @@ class WriteTransaction(Transaction):
     mode = "w"
 
     def check(self, obj, condition) -> "WriteTransaction":
-        self._extend(_TxWriteItem(mode="check", obj=obj, condition=condition, atomic=False))
+        self._extend([
+            _TxWriteItem(mode="check", obj=obj, condition=condition, atomic=False)
+        ])
         return self
 
     def save(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
-        items = [
+        self._extend([
             _TxWriteItem(mode="update", obj=obj, condition=condition, atomic=atomic)
             for obj in objs
-        ]
-        self._extend(items)
+        ])
         return self
 
     def delete(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
-        items = [
+        self._extend([
             _TxWriteItem(mode="delete", obj=obj, condition=condition, atomic=atomic)
             for obj in objs
-        ]
-        self._extend(items)
+        ])
         return self
 
-    def _extend(self, *items):
+    def _extend(self, items):
         if len(self.objs) + len(items) > MAX_TRANSACTION_ITEMS:
             raise ValueError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
         self.objs += items

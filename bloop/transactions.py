@@ -97,8 +97,8 @@ class PreparedTransaction:
         self._request = [
             {
                 item.type.value: {
-                    "Key": dump_key(self.engine, item),
-                    "TableName": get_table_name(self.engine, item),
+                    "Key": dump_key(self.engine, item.obj),
+                    "TableName": get_table_name(self.engine, item.obj),
                     **render(
                         self.engine,
                         obj=item.obj if item.should_render_obj else None,

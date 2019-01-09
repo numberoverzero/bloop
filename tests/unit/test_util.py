@@ -2,12 +2,14 @@ import collections
 import gc
 
 import pytest
+from tests.helpers.models import User
 
 from bloop.models import BaseModel, Column
 from bloop.types import Integer
 from bloop.util import (
     Sentinel,
     WeakDefaultDictionary,
+    dump_key,
     index,
     ordered,
     walk_subclasses,
@@ -26,6 +28,21 @@ def test_index():
         "bar": p2,
         "baz": p3
     }
+
+
+def test_dump_key(engine):
+    class HashAndRange(BaseModel):
+        foo = Column(Integer, hash_key=True)
+        bar = Column(Integer, range_key=True)
+    engine.bind(HashAndRange)
+
+    user = User(id="foo")
+    user_key = {"id": {"S": "foo"}}
+    assert dump_key(engine, user) == user_key
+
+    obj = HashAndRange(foo=4, bar=5)
+    obj_key = {"bar": {"N": "5"}, "foo": {"N": "4"}}
+    assert dump_key(engine, obj) == obj_key
 
 
 @pytest.mark.parametrize("obj", [None, object(), 2, False, "abc"])

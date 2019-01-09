@@ -131,6 +131,7 @@ def dump_key(engine, obj):
 
 def get_table_name(engine, obj):
     """return the table name for an object as seen by a given engine"""
+    # noinspection PyProtectedMember
     return engine._compute_table_name(obj.__class__)
 
 

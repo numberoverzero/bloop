@@ -6,7 +6,6 @@ from .exceptions import (
     InvalidModel,
     InvalidStream,
     InvalidTemplate,
-    MissingKey,
     MissingObjects,
     UnknownType,
 )

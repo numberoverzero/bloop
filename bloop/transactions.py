@@ -1,7 +1,9 @@
+import enum
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, NamedTuple, Optional, Union
+from typing import Any, List, NamedTuple, Optional, Union
 
+from .conditions import render
 from .exceptions import TransactionTokenExpired
 from .util import dump_key, get_table_name
 
@@ -13,19 +15,37 @@ MAX_TRANSACTION_ITEMS = 10
 MAX_TOKEN_LIFETIME = timedelta(minutes=9, seconds=30)
 
 
+class _TxType(enum.Enum):
+    Get = "Get"
+    Check = "CheckCondition"
+    Delete = "Delete"
+    Update = "Update"
+
+
 class _TxWriteItem(NamedTuple):
-    mode: str
+    type: _TxType
     obj: Any
     condition: Optional[Any]
     atomic: bool
 
+    @property
+    def is_update(self):
+        """Whether this should render an "UpdateExpression" in the TransactItem"""
+        return self.type is _TxType.Update
+
+    @property
+    def should_render_obj(self):
+        """Whether the object values should be rendered in the TransactItem"""
+        return self.type not in {_TxType.Check, _TxType.Get}
+
 
 class Transaction:
     mode: str
+    items: List[_TxWriteItem]
 
     def __init__(self, engine):
         self.engine = engine
-        self.objs = []
+        self.items = []
         self._ctx_depth = 0
 
     def __enter__(self):
@@ -42,36 +62,53 @@ class Transaction:
         if self._ctx_depth > 0:
             raise ValueError("cannot call commit within a context manager")
         tx = PreparedTransaction()
-        items = self._prepare_items()
         tx.prepare(
             engine=self.engine,
-            objs=self.objs,
-            items=items,
             mode=self.mode,
+            items=self.items,
         )
         tx.commit()
         return tx
 
-    def _prepare_items(self) -> list:
-        raise NotImplementedError
+    def _extend(self, items):
+        if len(self.items) + len(items) > MAX_TRANSACTION_ITEMS:
+            raise ValueError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
+        self.items += items
 
 
 class PreparedTransaction:
-    tx_id: str
     mode: str
-    objs: list
-    items: list
+    items: List[_TxWriteItem]
+    tx_id: str
     first_commit_at: Optional[datetime] = None
 
     def __init__(self):
         self.engine = None
+        self._request = None
 
-    def prepare(self, engine, objs, items, mode) -> None:
+    def prepare(self, engine, mode, items) -> None:
         self.tx_id = str(uuid.uuid4()).replace("-", "")
         self.engine = engine
         self.mode = mode
-        self.objs = objs
         self.items = items
+        self._prepare_request()
+
+    def _prepare_request(self):
+        self._request = [
+            {
+                item.type.value: {
+                    "Key": dump_key(self.engine, item),
+                    "TableName": get_table_name(self.engine, item),
+                    **render(
+                        self.engine,
+                        obj=item.obj if item.should_render_obj else None,
+                        atomic=item.atomic,
+                        condition=item.condition,
+                        update=item.is_update),
+                }
+            }
+            for item in self.items
+        ]
 
     def commit(self) -> None:
         now = datetime.now(timezone.utc)
@@ -79,16 +116,17 @@ class PreparedTransaction:
             self.first_commit_at = now
 
         if self.mode == "r":
-            response = self.engine.session.transaction_read(self.items)
+            response = self.engine.session.transaction_read(self._request)
         elif self.mode == "w":
             if now - self.first_commit_at > MAX_TOKEN_LIFETIME:
                 raise TransactionTokenExpired
-            response = self.engine.session.transaction_write(self.items, self.tx_id)
+            response = self.engine.session.transaction_write(self._request, self.tx_id)
         else:
             raise ValueError(f"unrecognized mode {self.mode}")
-        self._handle_response(response)
 
-    def _handle_response(self, response: dict) -> None:
+        self.handle_response(response)
+
+    def handle_response(self, response: dict) -> None:
         # TODO
         pass
 
@@ -97,22 +135,11 @@ class ReadTransaction(Transaction):
     mode = "r"
 
     def load(self, *objs) -> "ReadTransaction":
-        if len(self.objs) + len(objs) > MAX_TRANSACTION_ITEMS:
-            raise ValueError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
-        self.objs += objs
+        self._extend([
+            _TxWriteItem(type=_TxType.Get, obj=obj, condition=None, atomic=False)
+            for obj in objs
+        ])
         return self
-
-    def _prepare_items(self) -> list:
-        items = [
-            {
-                "Get": {
-                    "Key": dump_key(self.engine, obj),
-                    "TableName": get_table_name(self.engine, obj)
-                }
-            }
-            for obj in self.objs
-        ]
-        return items
 
 
 class WriteTransaction(Transaction):
@@ -120,35 +147,23 @@ class WriteTransaction(Transaction):
 
     def check(self, obj, condition) -> "WriteTransaction":
         self._extend([
-            _TxWriteItem(mode="check", obj=obj, condition=condition, atomic=False)
+            _TxWriteItem(type=_TxType.Check, obj=obj, condition=condition, atomic=False)
         ])
         return self
 
     def save(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
         self._extend([
-            _TxWriteItem(mode="update", obj=obj, condition=condition, atomic=atomic)
+            _TxWriteItem(type=_TxType.Update, obj=obj, condition=condition, atomic=atomic)
             for obj in objs
         ])
         return self
 
     def delete(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
         self._extend([
-            _TxWriteItem(mode="delete", obj=obj, condition=condition, atomic=atomic)
+            _TxWriteItem(type=_TxType.Delete, obj=obj, condition=condition, atomic=atomic)
             for obj in objs
         ])
         return self
-
-    def _extend(self, items):
-        if len(self.objs) + len(items) > MAX_TRANSACTION_ITEMS:
-            raise ValueError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
-        self.objs += items
-
-    def _prepare_items(self) -> list:
-        items = []
-        for obj in self.objs:
-            # TODO
-            pass
-        return items
 
 
 def new_tx(engine, mode) -> Union[ReadTransaction, WriteTransaction]:

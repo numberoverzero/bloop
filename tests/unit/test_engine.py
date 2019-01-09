@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 from tests.helpers.models import ComplexModel, User, VectorModel
 
-from bloop.engine import Engine, dump_key
+from bloop.engine import Engine
 from bloop.exceptions import (
     InvalidModel,
     InvalidStream,
@@ -104,21 +104,6 @@ def test_missing_objects(engine, session, caplog):
     assert caplog.record_tuples == [
         ("bloop.engine", logging.WARNING, "loaded 0 of 3 objects")
     ]
-
-
-def test_dump_key(engine):
-    class HashAndRange(BaseModel):
-        foo = Column(Integer, hash_key=True)
-        bar = Column(Integer, range_key=True)
-    engine.bind(HashAndRange)
-
-    user = User(id="foo")
-    user_key = {"id": {"S": "foo"}}
-    assert dump_key(engine, user) == user_key
-
-    obj = HashAndRange(foo=4, bar=5)
-    obj_key = {"bar": {"N": "5"}, "foo": {"N": "4"}}
-    assert dump_key(engine, obj) == obj_key
 
 
 def test_load_object(engine, session):

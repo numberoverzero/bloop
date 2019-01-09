@@ -23,45 +23,11 @@ from .signals import (
 )
 from .stream import Stream
 from .transactions import new_tx
-from .util import missing, walk_subclasses
+from .util import dump_key, extract_key, index_for, walk_subclasses
 
 
 __all__ = ["Engine"]
 logger = logging.getLogger("bloop.engine")
-
-
-def value_of(column):
-    """value_of({'S': 'Space Invaders'}) -> 'Space Invaders'"""
-    return next(iter(column.values()))
-
-
-def index_for(key):
-    """index_for({'id': {'S': 'foo'}, 'range': {'S': 'bar'}}) -> ('bar', 'foo')"""
-    return tuple(sorted(value_of(k) for k in key.values()))
-
-
-def extract_key(key_shape, item):
-    """construct a key according to key_shape for building an index"""
-    return {field: item[field] for field in key_shape}
-
-
-def dump_key(engine, obj):
-    """dump the hash (and range, if there is one) key(s) of an object into
-    a dynamo-friendly format.
-
-    returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
-    """
-    key = {}
-    for key_column in obj.Meta.keys:
-        key_value = getattr(obj, key_column.name, missing)
-        if key_value is missing:
-            raise MissingKey("{!r} is missing {}: {!r}".format(
-                obj, "hash_key" if key_column.hash_key else "range_key",
-                key_column.name
-            ))
-        key_value = engine._dump(key_column.typedef, key_value)
-        key[key_column.dynamo_name] = key_value
-    return key
 
 
 def validate_not_abstract(*objs):

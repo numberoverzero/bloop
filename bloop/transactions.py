@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, NamedTuple, Optional, Union
 
 from .exceptions import TransactionTokenExpired
+from .util import dump_key, get_table_name
 
 
 __all__ = ["PreparedTransaction", "ReadTransaction", "Transaction", "WriteTransaction", "new_tx"]
@@ -41,36 +42,36 @@ class Transaction:
         if self._ctx_depth > 0:
             raise ValueError("cannot call commit within a context manager")
         tx = PreparedTransaction()
+        items = self._prepare_items()
         tx.prepare(
             engine=self.engine,
             objs=self.objs,
-            mode=self.mode
+            items=items,
+            mode=self.mode,
         )
         tx.commit()
         return tx
+
+    def _prepare_items(self) -> list:
+        raise NotImplementedError
 
 
 class PreparedTransaction:
     tx_id: str
     mode: str
     objs: list
-    first_commit_at: datetime
+    items: list
+    first_commit_at: Optional[datetime] = None
 
     def __init__(self):
         self.engine = None
-        self.first_commit_at = None
-        self._items = None
 
-    def prepare(self, engine, objs, mode) -> None:
+    def prepare(self, engine, objs, items, mode) -> None:
         self.tx_id = str(uuid.uuid4()).replace("-", "")
+        self.engine = engine
         self.mode = mode
         self.objs = objs
-        self.engine = engine
-        self.prepare_request()
-
-    def prepare_request(self):
-        # TODO
-        pass
+        self.items = items
 
     def commit(self) -> None:
         now = datetime.now(timezone.utc)
@@ -78,11 +79,11 @@ class PreparedTransaction:
             self.first_commit_at = now
 
         if self.mode == "r":
-            response = self.engine.session.transaction_read(self._items)
+            response = self.engine.session.transaction_read(self.items)
         elif self.mode == "w":
             if now - self.first_commit_at > MAX_TOKEN_LIFETIME:
                 raise TransactionTokenExpired
-            response = self.engine.session.transaction_write(self._items, self.tx_id)
+            response = self.engine.session.transaction_write(self.items, self.tx_id)
         else:
             raise ValueError(f"unrecognized mode {self.mode}")
         self._handle_response(response)
@@ -100,6 +101,18 @@ class ReadTransaction(Transaction):
             raise ValueError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
         self.objs += objs
         return self
+
+    def _prepare_items(self) -> list:
+        items = [
+            {
+                "Get": {
+                    "Key": dump_key(self.engine, obj),
+                    "TableName": get_table_name(self.engine, obj)
+                }
+            }
+            for obj in self.objs
+        ]
+        return items
 
 
 class WriteTransaction(Transaction):
@@ -129,6 +142,13 @@ class WriteTransaction(Transaction):
         if len(self.objs) + len(items) > MAX_TRANSACTION_ITEMS:
             raise ValueError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
         self.objs += items
+
+    def _prepare_items(self) -> list:
+        items = []
+        for obj in self.objs:
+            # TODO
+            pass
+        return items
 
 
 def new_tx(engine, mode) -> Union[ReadTransaction, WriteTransaction]:

@@ -11,7 +11,9 @@ from bloop.util import (
     WeakDefaultDictionary,
     dump_key,
     index,
+    index_for,
     ordered,
+    value_of,
     walk_subclasses,
 )
 
@@ -113,6 +115,23 @@ def test_walk_subclasses():
     # list instead of set ensures we don't false succeed on duplicates
     subclasses = sorted(walk_subclasses(A), key=lambda c: c.__name__)
     assert subclasses == [C, D, E, F]
+
+
+def test_value_of():
+    column = {"S": "Space Invaders"}
+    assert value_of(column) == "Space Invaders"
+
+
+def test_index_for_sorts():
+    key = {
+        "f": {"S": "foo"},
+        "b": {"S": "bar"},
+    }
+    same_key = {
+        "b": {"S": "bar"},
+        "f": {"S": "foo"},
+    }
+    assert index_for(key) == index_for(same_key)
 
 
 def test_sentinel_uniqueness():

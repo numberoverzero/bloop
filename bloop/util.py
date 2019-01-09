@@ -100,7 +100,12 @@ def value_of(column):
 
 
 def index_for(key):
-    """index_for({'id': {'S': 'foo'}, 'range': {'S': 'bar'}}) -> ('bar', 'foo')"""
+    """stable hashable tuple of object keys for indexing an item in constant time.
+
+    usage::
+
+        index_for({'id': {'S': 'foo'}, 'range': {'S': 'bar'}}) -> ('bar', 'foo')
+    """
     return tuple(sorted(value_of(k) for k in key.values()))
 
 

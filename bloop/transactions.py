@@ -8,22 +8,29 @@ from .exceptions import TransactionTokenExpired
 from .util import dump_key, get_table_name
 
 
-__all__ = ["PreparedTransaction", "ReadTransaction", "Transaction", "WriteTransaction", "new_tx"]
+__all__ = [
+    "PreparedTransaction",
+    "ReadTransaction",
+    "Transaction",
+    "TxItem", "TxType",
+    "WriteTransaction",
+    "new_tx"
+]
 
 MAX_TRANSACTION_ITEMS = 10
 # per docs this is 10 minutes, minus a bit for clock skew guard
 MAX_TOKEN_LIFETIME = timedelta(minutes=9, seconds=30)
 
 
-class _TxType(enum.Enum):
+class TxType(enum.Enum):
     Get = "Get"
     Check = "CheckCondition"
     Delete = "Delete"
     Update = "Update"
 
 
-class _TxWriteItem(NamedTuple):
-    type: _TxType
+class TxItem(NamedTuple):
+    type: TxType
     obj: Any
     condition: Optional[Any]
     atomic: bool
@@ -31,21 +38,21 @@ class _TxWriteItem(NamedTuple):
     @property
     def is_update(self):
         """Whether this should render an "UpdateExpression" in the TransactItem"""
-        return self.type is _TxType.Update
+        return self.type is TxType.Update
 
     @property
     def should_render_obj(self):
         """Whether the object values should be rendered in the TransactItem"""
-        return self.type not in {_TxType.Check, _TxType.Get}
+        return self.type not in {TxType.Check, TxType.Get}
 
 
 class Transaction:
     mode: str
-    items: List[_TxWriteItem]
+    _items: List[TxItem]
 
     def __init__(self, engine):
         self.engine = engine
-        self.items = []
+        self._items = []
         self._ctx_depth = 0
 
     def __enter__(self):
@@ -65,20 +72,20 @@ class Transaction:
         tx.prepare(
             engine=self.engine,
             mode=self.mode,
-            items=self.items,
+            items=self._items,
         )
         tx.commit()
         return tx
 
     def _extend(self, items):
-        if len(self.items) + len(items) > MAX_TRANSACTION_ITEMS:
+        if len(self._items) + len(items) > MAX_TRANSACTION_ITEMS:
             raise ValueError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
-        self.items += items
+        self._items += items
 
 
 class PreparedTransaction:
     mode: str
-    items: List[_TxWriteItem]
+    items: List[TxItem]
     tx_id: str
     first_commit_at: Optional[datetime] = None
 
@@ -136,7 +143,7 @@ class ReadTransaction(Transaction):
 
     def load(self, *objs) -> "ReadTransaction":
         self._extend([
-            _TxWriteItem(type=_TxType.Get, obj=obj, condition=None, atomic=False)
+            TxItem(type=TxType.Get, obj=obj, condition=None, atomic=False)
             for obj in objs
         ])
         return self
@@ -147,20 +154,20 @@ class WriteTransaction(Transaction):
 
     def check(self, obj, condition) -> "WriteTransaction":
         self._extend([
-            _TxWriteItem(type=_TxType.Check, obj=obj, condition=condition, atomic=False)
+            TxItem(type=TxType.Check, obj=obj, condition=condition, atomic=False)
         ])
         return self
 
     def save(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
         self._extend([
-            _TxWriteItem(type=_TxType.Update, obj=obj, condition=condition, atomic=atomic)
+            TxItem(type=TxType.Update, obj=obj, condition=condition, atomic=atomic)
             for obj in objs
         ])
         return self
 
     def delete(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
         self._extend([
-            _TxWriteItem(type=_TxType.Delete, obj=obj, condition=condition, atomic=atomic)
+            TxItem(type=TxType.Delete, obj=obj, condition=condition, atomic=atomic)
             for obj in objs
         ])
         return self

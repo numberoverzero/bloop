@@ -28,12 +28,25 @@ class TxType(enum.Enum):
     Delete = "Delete"
     Update = "Update"
 
+    @classmethod
+    def by_alias(cls, name: str) -> "TxType":
+        return {
+            "get": TxType.Get,
+            "check": TxType.Check,
+            "delete": TxType.Delete,
+            "update": TxType.Update,
+        }[name]
+
 
 class TxItem(NamedTuple):
     type: TxType
     obj: Any
     condition: Optional[Any]
     atomic: bool
+
+    @classmethod
+    def new(cls, type_alias, obj, condition=None, atomic=False) -> "TxItem":
+        return TxItem(type=TxType.by_alias(type_alias), obj=obj, condition=condition, atomic=atomic)
 
     @property
     def is_update(self):
@@ -147,10 +160,7 @@ class ReadTransaction(Transaction):
     mode = "r"
 
     def load(self, *objs) -> "ReadTransaction":
-        self._extend([
-            TxItem(type=TxType.Get, obj=obj, condition=None, atomic=False)
-            for obj in objs
-        ])
+        self._extend([TxItem.new("get", obj) for obj in objs])
         return self
 
 
@@ -158,23 +168,15 @@ class WriteTransaction(Transaction):
     mode = "w"
 
     def check(self, obj, condition) -> "WriteTransaction":
-        self._extend([
-            TxItem(type=TxType.Check, obj=obj, condition=condition, atomic=False)
-        ])
+        self._extend([TxItem.new("check", obj, condition)])
         return self
 
     def save(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
-        self._extend([
-            TxItem(type=TxType.Update, obj=obj, condition=condition, atomic=atomic)
-            for obj in objs
-        ])
+        self._extend([TxItem.new("update", obj, condition, atomic) for obj in objs])
         return self
 
     def delete(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
-        self._extend([
-            TxItem(type=TxType.Delete, obj=obj, condition=condition, atomic=atomic)
-            for obj in objs
-        ])
+        self._extend([TxItem.new("delete", obj, condition, atomic) for obj in objs])
         return self
 
 

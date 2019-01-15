@@ -63,24 +63,29 @@ class Transaction:
         self._ctx_depth -= 1
         if exc_type:
             return
-        self.commit()
+        if self._ctx_depth == 0:
+            self.commit()
 
     def commit(self) -> "PreparedTransaction":
         if self._ctx_depth > 0:
-            raise ValueError("cannot call commit within a context manager")
+            raise RuntimeError("cannot call commit within a context manager")
+        tx = self._prepare()
+        tx.commit()
+        return tx
+
+    def _extend(self, items):
+        if len(self._items) + len(items) > MAX_TRANSACTION_ITEMS:
+            raise RuntimeError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
+        self._items += items
+
+    def _prepare(self):
         tx = PreparedTransaction()
         tx.prepare(
             engine=self.engine,
             mode=self.mode,
             items=self._items,
         )
-        tx.commit()
         return tx
-
-    def _extend(self, items):
-        if len(self._items) + len(items) > MAX_TRANSACTION_ITEMS:
-            raise ValueError(f"transaction cannot exceed {MAX_TRANSACTION_ITEMS} items.")
-        self._items += items
 
 
 class PreparedTransaction:

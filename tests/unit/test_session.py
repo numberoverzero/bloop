@@ -13,6 +13,7 @@ from bloop.exceptions import (
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
+    TransactionCanceled,
 )
 from bloop.models import (
     BaseModel,
@@ -20,6 +21,7 @@ from bloop.models import (
     GlobalSecondaryIndex,
     LocalSecondaryIndex,
 )
+# noinspection PyProtectedMember
 from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,
     SessionWrapper,
@@ -925,6 +927,58 @@ def test_get_records(dynamodbstreams, session):
 
 
 # END GET STREAM RECORDS ====================================================================== END GET STREAM RECORDS
+
+
+# TRANSACTION READ ================================================================================== TRANSACTION READ
+
+
+def test_transaction_read(dynamodb, session):
+    response = dynamodb.transact_get_items.return_value = {"Responses": ["placeholder"]}
+    result = session.transaction_read("some-items")
+    assert result is response["Responses"]
+    dynamodb.transact_get_items.assert_called_once_with(TransactItems="some-items")
+
+
+def test_transaction_read_canceled(dynamodb, session):
+    cause = dynamodb.transact_get_items.side_effect = client_error("TransactionCanceledException")
+    with pytest.raises(TransactionCanceled) as excinfo:
+        session.transaction_read("some-items")
+    assert excinfo.value.__cause__ is cause
+
+
+def test_transaction_read_unknown_error(dynamodb, session):
+    cause = dynamodb.transact_get_items.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.transaction_read("some-items")
+    assert excinfo.value.__cause__ is cause
+
+
+# END TRANSACTION READ ========================================================================== END TRANSACTION READ
+
+
+# TRANSACTION WRITE ================================================================================ TRANSACTION WRITE
+
+
+def test_transaction_write(dynamodb, session):
+    session.transaction_write("some-items", "some-token")
+    dynamodb.transact_write_items.assert_called_once_with(TransactItems="some-items", ClientRequestToken="some-token")
+
+
+def test_transaction_write_canceled(dynamodb, session):
+    cause = dynamodb.transact_write_items.side_effect = client_error("TransactionCanceledException")
+    with pytest.raises(TransactionCanceled) as excinfo:
+        session.transaction_write("some-items", "some-token")
+    assert excinfo.value.__cause__ is cause
+
+
+def test_transaction_write_unknown_error(dynamodb, session):
+    cause = dynamodb.transact_write_items.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.transaction_write("some-items", "some-token")
+    assert excinfo.value.__cause__ is cause
+
+
+# END TRANSACTION WRITE ======================================================================== END TRANSACTION WRITE
 
 
 # COMPARE TABLES ====================================================================================== COMPARE TABLES

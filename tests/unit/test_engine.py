@@ -103,7 +103,7 @@ def test_missing_objects(engine, session, caplog):
     assert set(excinfo.value.objects) == set(users)
 
     assert caplog.record_tuples == [
-        ("bloop.engine", logging.WARNING, "loaded 0 of 3 objects")
+        ("bloop.engine", logging.INFO, "loaded 0 of 3 objects")
     ]
 
 

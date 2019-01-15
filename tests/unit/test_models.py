@@ -416,7 +416,7 @@ def test_invalid_stream(invalid_stream):
 
 @pytest.mark.parametrize("invalid_ttl", [
     False, True,
-    {}, User.age, {"ttl": User.age}, {"column": None}, {"column": []}
+    {}, object(), {"ttl": User.age}, {"column": None}, {"column": []}
 ])
 def test_invalid_ttl(invalid_ttl):
     """ttl must be a dict with 'column' a single Column object or Column name"""
@@ -475,7 +475,7 @@ def test_ttl_by_name():
     assert Model.Meta.ttl["column"] is my_column
 
 
-@pytest.mark.parametrize("invalid_encryption", [False, True, {}, User.age])
+@pytest.mark.parametrize("invalid_encryption", [False, True, {}, object()])
 def test_invalid_encryption(invalid_encryption):
     with pytest.raises(InvalidModel):
         class Model(BaseModel):
@@ -484,7 +484,7 @@ def test_invalid_encryption(invalid_encryption):
             id = Column(Integer, hash_key=True)
 
 
-@pytest.mark.parametrize("invalid_backups", [False, True, {}, User.age])
+@pytest.mark.parametrize("invalid_backups", [False, True, {}, object()])
 def test_invalid_backups(invalid_backups):
     with pytest.raises(InvalidModel):
         class Model(BaseModel):

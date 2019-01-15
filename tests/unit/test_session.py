@@ -21,7 +21,6 @@ from bloop.models import (
     GlobalSecondaryIndex,
     LocalSecondaryIndex,
 )
-# noinspection PyProtectedMember
 from bloop.session import (
     BATCH_GET_ITEM_CHUNK_SIZE,
     SessionWrapper,
@@ -35,6 +34,10 @@ from bloop.types import String, Timestamp
 from bloop.util import Sentinel, ordered
 
 from ..helpers.models import ComplexModel, SimpleModel, User
+
+
+# noinspection PyProtectedMember
+
 
 
 missing = Sentinel("missing")

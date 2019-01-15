@@ -110,7 +110,15 @@ def index_for(key):
 
 
 def extract_key(key_shape, item):
-    """construct a key according to key_shape for building an index"""
+    """
+    construct a key according to key_shape for building an index
+
+    usage::
+
+        key_shape = "foo", "bar"
+        item = {"baz": 1, "bar": 2, "foo": 3}
+        extract_key(key_shape, item) -> {"foo": 3, "bar": 2}
+    """
     return {field: item[field] for field in key_shape}
 
 

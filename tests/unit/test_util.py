@@ -4,12 +4,16 @@ import gc
 import pytest
 from tests.helpers.models import User
 
+from bloop.engine import Engine
+from bloop.exceptions import MissingKey
 from bloop.models import BaseModel, Column
 from bloop.types import Integer
 from bloop.util import (
     Sentinel,
     WeakDefaultDictionary,
     dump_key,
+    extract_key,
+    get_table_name,
     index,
     index_for,
     ordered,
@@ -45,6 +49,39 @@ def test_dump_key(engine):
     obj = HashAndRange(foo=4, bar=5)
     obj_key = {"bar": {"N": "5"}, "foo": {"N": "4"}}
     assert dump_key(engine, obj) == obj_key
+
+
+def test_dump_key_missing(engine):
+    class HashAndRange(BaseModel):
+        foo = Column(Integer, hash_key=True)
+        bar = Column(Integer, range_key=True)
+    engine.bind(HashAndRange)
+
+    obj = HashAndRange()
+    with pytest.raises(MissingKey):
+        dump_key(engine, obj)
+
+
+def test_extract_key():
+    key_shape = "foo", "bar"
+    item = {"baz": 1, "bar": 2, "foo": 3}
+    expected = {"foo": 3, "bar": 2}
+    assert extract_key(key_shape, item) == expected
+
+
+def test_get_table_name():
+    def transform_table_name(model):
+        return f"transform.{model.Meta.table_name}"
+
+    class HashAndRange(BaseModel):
+        class Meta:
+            table_name = "custom.name"
+        foo = Column(Integer, hash_key=True)
+        bar = Column(Integer, range_key=True)
+
+    engine = Engine(table_name_template=transform_table_name)
+    obj = HashAndRange()
+    assert get_table_name(engine, obj) == "transform.custom.name"
 
 
 @pytest.mark.parametrize("obj", [None, object(), 2, False, "abc"])

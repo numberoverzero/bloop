@@ -1,8 +1,11 @@
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 import pytest
 
+from bloop.exceptions import TransactionTokenExpired
 from bloop.transactions import (
+    MAX_TOKEN_LIFETIME,
     MAX_TRANSACTION_ITEMS,
     PreparedTransaction,
     ReadTransaction,
@@ -29,6 +32,26 @@ class NoopTransaction(Transaction):
 
     def _prepare(self):
         return self.prepared
+
+
+@pytest.fixture
+def wx(engine):
+    """prepared write tx with one item"""
+    user = User(id="numberoverzero")
+    items = [TxItem.new("update", user, condition=User.id.is_(None))]
+    tx = PreparedTransaction()
+    tx.prepare(engine, "w", items)
+    return tx
+
+
+@pytest.fixture
+def rx(engine):
+    """prepared read tx with one item"""
+    user = User(id="numberoverzero")
+    items = [TxItem.new("get", user)]
+    tx = PreparedTransaction()
+    tx.prepare(engine, "r", items)
+    return tx
 
 
 @pytest.mark.parametrize("type, expected", [
@@ -192,3 +215,37 @@ def test_delete_complex_item(engine):
         "ExpressionAttributeValues"
     }
     assert set(entry.keys()) == expected_fields
+
+
+def test_commit_bad_mode(rx):
+    rx.mode = "j"
+    with pytest.raises(ValueError):
+        rx.commit()
+
+
+def test_write_commit_expired(wx, session):
+    now = datetime.now(timezone.utc)
+    offset = MAX_TOKEN_LIFETIME + timedelta(seconds=1)
+    wx.first_commit_at = now - offset
+
+    with pytest.raises(TransactionTokenExpired):
+        wx.commit()
+
+    session.transaction_write.assert_not_called()
+
+
+def test_read_commit(rx, session):
+    """read commits don't expire"""
+    now = datetime.now(timezone.utc)
+    offset = MAX_TOKEN_LIFETIME + timedelta(seconds=1)
+    rx.first_commit_at = now - offset
+    rx.commit()
+
+    session.transaction_read.assert_called_once_with(rx._request)
+
+
+def test_write_commit(wx, session):
+    now = datetime.now(timezone.utc)
+    wx.commit()
+    assert (wx.first_commit_at - now) <= timedelta(seconds=1)
+    session.transaction_write.assert_called_once_with(wx._request, wx.tx_id)

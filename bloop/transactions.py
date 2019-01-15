@@ -152,6 +152,8 @@ class PreparedTransaction:
         self.handle_response(response)
 
     def handle_response(self, response: dict) -> None:
+        if self.mode == "w":
+            return
         # TODO
         pass
 

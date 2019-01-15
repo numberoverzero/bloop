@@ -356,7 +356,7 @@ The following sections use a custom notation to describe shards and records.
 
 ``<`` represents chronological ordering between records::
 
-    R12 < R13  # In general, RX < RX when X < Y
+    R12 < R13  # In general, RX < RY when X < Y
 
 ``=>`` represents parent/child relationships between shards::
 

@@ -934,7 +934,7 @@ def test_get_records(dynamodbstreams, session):
 def test_transaction_read(dynamodb, session):
     response = dynamodb.transact_get_items.return_value = {"Responses": ["placeholder"]}
     result = session.transaction_read("some-items")
-    assert result is response["Responses"]
+    assert result is response
     dynamodb.transact_get_items.assert_called_once_with(TransactItems="some-items")
 
 

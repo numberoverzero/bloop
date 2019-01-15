@@ -355,7 +355,7 @@ class SessionWrapper:
         :return: Dict with "Records" list
         """
         try:
-            return self.dynamodb_client.transact_get_items(TransactItems=items)["Responses"]
+            return self.dynamodb_client.transact_get_items(TransactItems=items)
         except botocore.exceptions.ClientError as error:
             if error.response["Error"]["Code"] == "TransactionCanceledException":
                 raise TransactionCanceled from error

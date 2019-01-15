@@ -1,11 +1,14 @@
 import enum
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, List, NamedTuple, Optional, Union
 
 from .conditions import render
-from .exceptions import TransactionTokenExpired
+from .exceptions import MissingObjects, TransactionTokenExpired
+from .models import unpack_from_dynamodb
 from .util import dump_key, get_table_name
+from .signals import object_loaded
 
 
 __all__ = [
@@ -16,6 +19,7 @@ __all__ = [
     "WriteTransaction",
     "new_tx"
 ]
+logger = logging.getLogger("bloop.transactions")
 
 MAX_TRANSACTION_ITEMS = 10
 # per docs this is 10 minutes, minus a bit for clock skew guard
@@ -154,7 +158,21 @@ class PreparedTransaction:
     def handle_response(self, response: dict) -> None:
         if self.mode == "w":
             return
-        # TODO
+        blobs = response["Responses"]
+        not_loaded = set()
+        if len(self.items) != len(blobs):
+            raise RuntimeError("malformed response from DynamoDb")
+        for item, blob in zip(self.items, blobs):
+            obj = item.obj
+            if not blob:
+                not_loaded.add(obj)
+                continue
+            unpack_from_dynamodb(attrs=blob["Item"], expected=obj.Meta.columns, engine=self.engine, obj=obj)
+            object_loaded.send(self, engine=self.engine, obj=obj)
+        if not_loaded:
+            logger.info("loaded {} of {} objects".format(len(self.items) - len(not_loaded), len(self.items)))
+            raise MissingObjects("Failed to load some objects.", objects=not_loaded)
+        logger.info("successfully loaded {} objects".format(len(self.items)))
         pass
 
 

@@ -3,7 +3,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from bloop.exceptions import TransactionTokenExpired
+from bloop.exceptions import MissingObjects, TransactionTokenExpired
 from bloop.transactions import (
     MAX_TOKEN_LIFETIME,
     MAX_TRANSACTION_ITEMS,
@@ -236,11 +236,23 @@ def test_write_commit_expired(wx, session):
 
 def test_read_commit(rx, session):
     """read commits don't expire"""
+    session.transaction_read.return_value = {
+        "Responses": [
+            {
+                "Item": {
+                    "id": {"S": "numberoverzero"},
+                    "age": {"N": "3"}
+                }
+            }
+        ]
+    }
+
     now = datetime.now(timezone.utc)
     offset = MAX_TOKEN_LIFETIME + timedelta(seconds=1)
     rx.first_commit_at = now - offset
     rx.commit()
 
+    assert rx.items[0].obj.age == 3
     session.transaction_read.assert_called_once_with(rx._request)
 
 
@@ -249,3 +261,18 @@ def test_write_commit(wx, session):
     wx.commit()
     assert (wx.first_commit_at - now) <= timedelta(seconds=1)
     session.transaction_write.assert_called_once_with(wx._request, wx.tx_id)
+
+
+def test_malformed_read_response(rx, session):
+    session.transaction_read.return_value = {"Responses": []}
+    with pytest.raises(RuntimeError):
+        rx.commit()
+
+
+def test_read_missing_object(rx, session):
+    session.transaction_read.return_value = {"Responses": [{}]}
+    with pytest.raises(MissingObjects) as excinfo:
+        rx.commit()
+
+    obj = rx.items[0].obj
+    assert excinfo.value.objects == [obj]

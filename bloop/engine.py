@@ -232,7 +232,7 @@ class Engine:
             for index in object_index.values():
                 for index_set in index.values():
                     not_loaded.update(index_set)
-            logger.warning("loaded {} of {} objects".format(len(objs) - len(not_loaded), len(objs)))
+            logger.info("loaded {} of {} objects".format(len(objs) - len(not_loaded), len(objs)))
             raise MissingObjects("Failed to load some objects.", objects=not_loaded)
         logger.info("successfully loaded {} objects".format(len(objs)))
 

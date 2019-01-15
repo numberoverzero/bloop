@@ -18,6 +18,7 @@ from bloop.exceptions import (
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper
 from bloop.signals import object_saved
+from bloop.transactions import ReadTransaction, WriteTransaction
 from bloop.types import DateTime, Integer, String, Timestamp
 from bloop.util import ordered
 
@@ -610,6 +611,21 @@ def test_stream(engine, session):
 def test_invalid_stream(engine, session):
     with pytest.raises(InvalidStream):
         engine.stream(User, "latest")
+
+
+def test_transaction_read(engine):
+    tx = engine.transaction(mode="r")
+    assert isinstance(tx, ReadTransaction)
+
+
+def test_transaction_write(engine):
+    tx = engine.transaction(mode="w")
+    assert isinstance(tx, WriteTransaction)
+
+
+def test_transaction_unknown(engine):
+    with pytest.raises(ValueError):
+        engine.transaction(mode="unknown")
 
 
 def test_bind_non_model(engine):

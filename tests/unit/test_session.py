@@ -36,10 +36,6 @@ from bloop.util import Sentinel, ordered
 from ..helpers.models import ComplexModel, SimpleModel, User
 
 
-# noinspection PyProtectedMember
-
-
-
 missing = Sentinel("missing")
 
 

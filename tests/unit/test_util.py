@@ -69,7 +69,7 @@ def test_extract_key():
     assert extract_key(key_shape, item) == expected
 
 
-def test_get_table_name():
+def test_get_table_name(dynamodb, dynamodbstreams):
     def transform_table_name(model):
         return f"transform.{model.Meta.table_name}"
 
@@ -79,7 +79,9 @@ def test_get_table_name():
         foo = Column(Integer, hash_key=True)
         bar = Column(Integer, range_key=True)
 
-    engine = Engine(table_name_template=transform_table_name)
+    engine = Engine(
+        dynamodb=dynamodb, dynamodbstreams=dynamodbstreams,
+        table_name_template=transform_table_name)
     obj = HashAndRange()
     assert get_table_name(engine, obj) == "transform.custom.name"
 

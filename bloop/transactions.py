@@ -7,8 +7,8 @@ from typing import Any, List, NamedTuple, Optional, Union
 from .conditions import render
 from .exceptions import MissingObjects, TransactionTokenExpired
 from .models import unpack_from_dynamodb
+from .signals import object_deleted, object_loaded, object_saved
 from .util import dump_key, get_table_name
-from .signals import object_loaded
 
 
 __all__ = [
@@ -157,23 +157,28 @@ class PreparedTransaction:
 
     def handle_response(self, response: dict) -> None:
         if self.mode == "w":
-            return
-        blobs = response["Responses"]
-        not_loaded = set()
-        if len(self.items) != len(blobs):
-            raise RuntimeError("malformed response from DynamoDb")
-        for item, blob in zip(self.items, blobs):
-            obj = item.obj
-            if not blob:
-                not_loaded.add(obj)
-                continue
-            unpack_from_dynamodb(attrs=blob["Item"], expected=obj.Meta.columns, engine=self.engine, obj=obj)
-            object_loaded.send(self, engine=self.engine, obj=obj)
-        if not_loaded:
-            logger.info("loaded {} of {} objects".format(len(self.items) - len(not_loaded), len(self.items)))
-            raise MissingObjects("Failed to load some objects.", objects=not_loaded)
-        logger.info("successfully loaded {} objects".format(len(self.items)))
-        pass
+            for item in self.items:
+                obj = item.obj
+                if item.type is TxType.Delete:
+                    object_deleted.send(self.engine, engine=self.engine, obj=obj)
+                elif item.type is TxType.Update:
+                    object_saved.send(self.engine, engine=self.engine, obj=obj)
+        else:
+            blobs = response["Responses"]
+            not_loaded = set()
+            if len(self.items) != len(blobs):
+                raise RuntimeError("malformed response from DynamoDb")
+            for item, blob in zip(self.items, blobs):
+                obj = item.obj
+                if not blob:
+                    not_loaded.add(obj)
+                    continue
+                unpack_from_dynamodb(attrs=blob["Item"], expected=obj.Meta.columns, engine=self.engine, obj=obj)
+                object_loaded.send(self.engine, engine=self.engine, obj=obj)
+            if not_loaded:
+                logger.info("loaded {} of {} objects".format(len(self.items) - len(not_loaded), len(self.items)))
+                raise MissingObjects("Failed to load some objects.", objects=not_loaded)
+            logger.info("successfully loaded {} objects".format(len(self.items)))
 
 
 class ReadTransaction(Transaction):

@@ -2,8 +2,10 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock
 
 import pytest
+from tests.helpers.models import User
 
 from bloop.exceptions import MissingObjects, TransactionTokenExpired
+from bloop.signals import object_deleted, object_loaded, object_saved
 from bloop.transactions import (
     MAX_TOKEN_LIFETIME,
     MAX_TRANSACTION_ITEMS,
@@ -15,8 +17,6 @@ from bloop.transactions import (
     WriteTransaction,
     new_tx,
 )
-
-from tests.helpers.models import User
 
 
 class NoopTransaction(Transaction):
@@ -38,7 +38,12 @@ class NoopTransaction(Transaction):
 def wx(engine):
     """prepared write tx with one item"""
     user = User(id="numberoverzero")
-    items = [TxItem.new("update", user, condition=User.id.is_(None))]
+    other = User(id="other")
+    items = [
+        TxItem.new("update", user, condition=User.id.is_(None)),
+        TxItem.new("delete", other),
+        TxItem.new("check", other, condition=User.email.begins_with("foo"))
+    ]
     tx = PreparedTransaction()
     tx.prepare(engine, "w", items)
     return tx
@@ -236,6 +241,12 @@ def test_write_commit_expired(wx, session):
 
 def test_read_commit(rx, session):
     """read commits don't expire"""
+    calls = {"loaded": 0}
+
+    @object_loaded.connect
+    def on_loaded(*_, **__):
+        calls["loaded"] += 1
+
     session.transaction_read.return_value = {
         "Responses": [
             {
@@ -252,15 +263,32 @@ def test_read_commit(rx, session):
     rx.first_commit_at = now - offset
     rx.commit()
 
-    assert rx.items[0].obj.age == 3
     session.transaction_read.assert_called_once_with(rx._request)
+    assert rx.items[0].obj.age == 3
+    assert calls["loaded"] == 1
 
 
 def test_write_commit(wx, session):
+    calls = {
+        "saved": 0,
+        "deleted": 0
+    }
+
+    @object_saved.connect
+    def on_saved(*_, **__):
+        calls["saved"] += 1
+
+    @object_deleted.connect
+    def on_deleted(*_, **__):
+        calls["deleted"] += 1
+
     now = datetime.now(timezone.utc)
     wx.commit()
-    assert (wx.first_commit_at - now) <= timedelta(seconds=1)
+
     session.transaction_write.assert_called_once_with(wx._request, wx.tx_id)
+    assert (wx.first_commit_at - now) <= timedelta(seconds=1)
+    assert calls["saved"] == 1
+    assert calls["deleted"] == 1
 
 
 def test_malformed_read_response(rx, session):

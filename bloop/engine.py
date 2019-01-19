@@ -21,7 +21,7 @@ from .signals import (
     object_saved,
 )
 from .stream import Stream
-from .transactions import new_tx
+from .transactions import ReadTransaction, WriteTransaction
 from .util import dump_key, extract_key, index_for, walk_subclasses
 
 
@@ -367,7 +367,7 @@ class Engine:
             ...     tx.delete(user)
             ...     tx.save(tweet, condition=Tweet.id.is_(None))
 
-        Or manually calling commit:
+        Or manually calling prepare and commit:
 
         .. code-block:: pycon
 
@@ -377,10 +377,16 @@ class Engine:
             >>> tx = engine.transaction("w")
             >>> tx.delete(user)
             >>> tx.save(tweet, condition=Tweet.id.is_(None))
-            >>> tx.commit()
+            >>> tx.prepare().commit()
 
         :param str mode: Either "r" or "w" to create a ReadTransaction or WriteTransaction.  Default is "w"
         :return: A new transaction that can be committed.
         :rtype: :class:`~bloop.transactions.ReadTransaction` or :class:`~bloop.transactions.WriteTransaction`
         """
-        return new_tx(self, mode)
+        if mode == "r":
+            cls = ReadTransaction
+        elif mode == "w":
+            cls = WriteTransaction
+        else:
+            raise ValueError(f"unknown mode {mode}")
+        return cls(self)

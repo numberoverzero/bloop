@@ -190,6 +190,22 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
 .. autoclass:: bloop.stream.buffer.RecordBuffer
     :members:
 
+==============
+ Transactions
+==============
+
+.. autoclass:: bloop.transactions.Transaction
+    :members:
+
+.. autoclass:: bloop.transactions.PreparedTransaction
+    :members:
+
+.. autoclass:: bloop.transactions.TxItem
+    :members:
+
+.. autoclass:: bloop.transactions.TxType
+    :members:
+
 ============
  Conditions
 ============

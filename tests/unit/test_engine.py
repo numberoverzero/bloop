@@ -613,14 +613,14 @@ def test_invalid_stream(engine, session):
         engine.stream(User, "latest")
 
 
-def test_transaction_read(engine):
-    tx = engine.transaction(mode="r")
-    assert isinstance(tx, ReadTransaction)
-
-
-def test_transaction_write(engine):
-    tx = engine.transaction(mode="w")
-    assert isinstance(tx, WriteTransaction)
+@pytest.mark.parametrize("mode, cls", [
+    ("r", ReadTransaction),
+    ("w", WriteTransaction),
+])
+def test_transaction_mode(mode, cls, engine):
+    tx = engine.transaction(mode=mode)
+    assert isinstance(tx, cls)
+    assert tx.mode == mode
 
 
 def test_transaction_unknown(engine):

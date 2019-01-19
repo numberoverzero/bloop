@@ -613,6 +613,18 @@ Stream.
 .. autoclass:: bloop.stream.Stream
     :members:
 
+==============
+ Transactions
+==============
+
+.. autoclass:: bloop.transactions.ReadTransaction
+    :members:
+    :inherited-members:
+
+.. autoclass:: bloop.transactions.WriteTransaction
+    :members:
+    :inherited-members:
+
 ============
  Conditions
 ============

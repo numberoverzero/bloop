@@ -21,7 +21,6 @@ through the :ref:`extensions module<public-ext-datetime>`.  For example, let's s
 built-in DateTime:
 
 .. code-block:: python
-    :emphasize-lines: 1, 2, 9, 10
 
     import datetime
     from bloop import DateTime
@@ -34,15 +33,11 @@ built-in DateTime:
     utc = datetime.timezone.utc
     now = datetime.datetime.now(utc)
 
-    user = User
-        id=0,
-        created_on=now
-    )
+    user = User(id=0, created_on=now)
 
 Now, using pendulum:
 
 .. code-block:: python
-    :emphasize-lines: 1, 2, 9
 
     import pendulum
     from bloop.ext.pendulum import DateTime
@@ -54,15 +49,11 @@ Now, using pendulum:
 
     now = pendulum.now("utc")
 
-    user = User
-        id=0,
-        created_on=now
-    )
+    user = User(id=0, created_on=now)
 
 Now, using arrow:
 
 .. code-block:: python
-    :emphasize-lines: 1, 2, 9
 
     import arrow
     from bloop.ext.arrow import DateTime
@@ -74,10 +65,7 @@ Now, using arrow:
 
     now = arrow.now("utc")
 
-    user = User
-        id=0,
-        created_on=now
-    )
+    user = User(id=0, created_on=now)
 
 .. _arrow: http://crsmithdev.com/arrow
 .. _delorean: https://delorean.readthedocs.io/en/latest/

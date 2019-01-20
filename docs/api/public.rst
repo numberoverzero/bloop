@@ -722,6 +722,10 @@ fail with :exc`~bloop.exceptions.ConstraintViolation`.
 
 .. autoclass:: bloop.exceptions.TableMismatch
 
+.. autoclass:: bloop.exceptions.TransactionCanceled
+
+.. autoclass:: bloop.exceptions.TransactionTokenExpired
+
 -----------
  Bad Input
 -----------

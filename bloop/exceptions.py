@@ -26,7 +26,9 @@ class TransactionCanceled(BloopException):
 
     .. seealso::
 
-        https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactGetItems.html#
+        The API reference for `TransactionCanceledException`_
+
+        .. _TransactionCanceledException: https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactGetItems.html#API_TransactGetItems_Errors
     """
 
 

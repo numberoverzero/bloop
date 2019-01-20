@@ -7,6 +7,7 @@ from .exceptions import (
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
+    TransactionCanceled
 )
 from .models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from .search import QueryIterator, ScanIterator
@@ -47,7 +48,7 @@ __all__ = [
 
     # Exceptions
     "BloopException", "ConstraintViolation", "MissingObjects",
-    "RecordsExpired", "ShardIteratorExpired", "TableMismatch",
+    "RecordsExpired", "ShardIteratorExpired", "TableMismatch", "TransactionCanceled",
 
     # Signals
     "before_create_table", "model_bound", "model_created", "model_validated",

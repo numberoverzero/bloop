@@ -34,10 +34,10 @@ class Shard:
     def __init__(self, *, stream_arn, shard_id, iterator_id=None,
                  iterator_type=None, sequence_number=None, parent=None, session=None):
 
-        # Set once on creation, never changes
+        #: The stream arn is set once on creation and never changes
         self.stream_arn = stream_arn
 
-        # Set once on creation, never changes
+        #: The shard id is set once on creation and never changes
         self.shard_id = shard_id
 
         # ID of the current iterator for this shard.

@@ -38,6 +38,10 @@ class TransactionTokenExpired(BloopException):
 
 class MissingObjects(BloopException):
     """Some objects were not found."""
+
+    #: The objects that failed to load
+    objects: list
+
     def __init__(self, *args, objects=None):
         super().__init__(*args)
         self.objects = list(objects) if objects else []

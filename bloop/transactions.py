@@ -170,7 +170,13 @@ class PreparedTransaction:
     """
     mode: str
     items: List[TxItem]
+
+    #: Unique id used as the "ClientRequestToken" for write transactions.  This is
+    #: generated but not sent with a read transaction, since reads are not idempotent.
     tx_id: str
+
+    #: When the transaction was first committed at.  A prepared write transaction can only call commit
+    #: again within 10 minutes of its first commit.  This is ``None`` until commit() is called at least once.
     first_commit_at: Optional[datetime] = None
 
     def __init__(self):

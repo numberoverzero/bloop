@@ -208,6 +208,8 @@ the ``atomic`` shorthand and its limitations.
 
 .. _DeleteItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html
 
+.. _user-engine-load:
+
 ======
  Load
 ======
@@ -242,7 +244,7 @@ If any objects aren't loaded, Bloop raises :exc:`~bloop.exceptions.MissingObject
       ...
     MissingObjects: Failed to load some objects.
 
-You can access :data:`MissingObjects.objects <bloop.exceptions.MissingObjects.objects>` to see which objects failed
+You can access :attr:`MissingObjects.objects <bloop.exceptions.MissingObjects.objects>` to see which objects failed
 to load.
 
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadConsistency.html

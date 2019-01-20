@@ -715,6 +715,7 @@ fail with :exc`~bloop.exceptions.ConstraintViolation`.
 .. autoclass:: bloop.exceptions.ConstraintViolation
 
 .. autoclass:: bloop.exceptions.MissingObjects
+    :members:
 
 .. autoclass:: bloop.exceptions.RecordsExpired
 

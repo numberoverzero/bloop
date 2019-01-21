@@ -561,6 +561,43 @@ You can easily construct a parallel scan with ``s`` segments by calling engine.s
 
 __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/QueryAndScan.html#QueryAndScanParallelScan
 
+==============
+ Transactions
+==============
+
+.. note::
+
+    For a detailed guide to using transactions, see the :ref:`user-transactions` section of the User Guide.
+
+You can construct a read or write transaction by passing each mode:
+
+.. code-block:: pycon
+
+    >>> read_tx = engine.transaction(mode="r")
+    >>> write_tx = engine.transaction(mode="w")  # defaults to write
+
+You can also use the transaction as a context manager:
+
+.. code-block:: pycon
+
+    >>> with engine.transaction() as tx:
+    ...     tx.save(user, condition=User.id.is_(None))
+    ...     tx.delete(tweet, atomic=True)
+    ...     tx.check(meta, Metadata.verified.is_(True))
+    ...
+    >>> # tx is committed or raises TransactionCanceled
+
+To manually commit a transaction, call :func:`prepare() <bloop.transactions.Transaction.prepare>` and
+:func:`commit() <bloop.transactions.PreparedTransaction.commit>`:
+
+.. code-block:: pycon
+
+    >>> tx = engine.transaction(mode="r")
+    >>> tx.load(user, tweet)
+    >>> prepared = tx.prepare()
+    >>> prepared.commit()
+    >>> prepared.commit()  # subsequent commits on a ReadTransaction re-load the objects
+
 ========
  Stream
 ========

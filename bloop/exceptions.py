@@ -29,7 +29,7 @@ class TransactionCanceled(BloopException):
         The API reference for `TransactionCanceledException`_
 
         .. _TransactionCanceledException: https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_TransactGetItems.html#API_TransactGetItems_Errors
-    """
+    """  # noqa: E501
 
 
 class TransactionTokenExpired(BloopException):

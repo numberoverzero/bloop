@@ -210,14 +210,26 @@ class SessionWrapper:
         if not compare_tables(model, actual):
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
 
-        # In the following blocks, insert values/arns that the model didn't specify or can't know ahead of time.
+        # Fill in values that Meta doesn't know ahead of time (such as arns).
+        # These won't be populated unless Meta explicitly cares about the value
         if model.Meta.stream:
             stream_arn = model.Meta.stream["arn"] = actual["LatestStreamArn"]
             logger.debug(f"Set {model.__name__}.Meta.stream['arn'] to '{stream_arn}' from DescribeTable response")
         if model.Meta.ttl:
-            ttl_enabled = actual["TimeToLiveDescription"]["TimeToLiveStatus"].lower()
+            ttl_enabled = actual["TimeToLiveDescription"]["TimeToLiveStatus"].lower() == "enabled"
             model.Meta.ttl["enabled"] = ttl_enabled
             logger.debug(f"Set {model.__name__}.Meta.ttl['enabled'] to '{ttl_enabled}' from DescribeTable response")
+
+        # Fill in meta values that the table didn't care about (eg. billing=None)
+        if model.Meta.encryption is None:
+            sse_enabled = actual["SSEDescription"]["Status"].lower() == "enabled"
+            model.Meta.encryption = {"enabled": sse_enabled}
+            logger.debug(
+                f"Set {model.__name__}.Meta.encryption['enabled'] to '{sse_enabled}' from DescribeTable response")
+        if model.Meta.backups is None:
+            backups = actual["ContinuousBackupsDescription"]["ContinuousBackupsStatus"] == "ENABLED"
+            model.Meta.backups = {"enabled": backups}
+            logger.debug(f"Set {model.__name__}.Meta.backups['enabled'] to '{backups}' from DescribeTable response")
         if model.Meta.billing is None:
             billing_mode = {
                 "PAY_PER_REQUEST": "on_demand",
@@ -225,7 +237,6 @@ class SessionWrapper:
             }[actual["BillingModeSummary"]["BillingMode"]]
             model.Meta.billing = {"mode": billing_mode}
             logger.debug(f"Set {model.__name__}.Meta.billing['mode'] to '{billing_mode}' from DescribeTable response")
-
         if model.Meta.read_units is None:
             read_units = model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
             logger.debug(
@@ -463,6 +474,8 @@ def compare_tables(model, actual):
     # AttributeDefinitions
     matches = True
 
+    provisioned_billing = actual["BillingModeSummary"]["BillingMode"] == "PROVISIONED"
+
     if model.Meta.encryption:
         actual_sse = actual["SSEDescription"]["Status"]
         expected_sse = {
@@ -518,17 +531,18 @@ def compare_tables(model, actual):
             logger.debug(f"Model expects billing mode to be '{billing}' but was '{actual_billing}'")
             matches = False
 
-    read_units = model.Meta.read_units
-    actual_ru = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
-    if read_units is not None and read_units != actual_ru:
-        logger.debug(f"Model expects {read_units} read units but was {actual_ru}")
-        matches = False
+    if provisioned_billing:
+        read_units = model.Meta.read_units
+        actual_ru = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
+        if read_units is not None and read_units != actual_ru:
+            logger.debug(f"Model expects {read_units} read units but was {actual_ru}")
+            matches = False
 
-    write_units = model.Meta.write_units
-    actual_wu = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
-    if write_units is not None and write_units != actual_wu:
-        logger.debug(f"Model expects {write_units} write units but was {actual_wu}")
-        matches = False
+        write_units = model.Meta.write_units
+        actual_wu = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
+        if write_units is not None and write_units != actual_wu:
+            logger.debug(f"Model expects {write_units} write units but was {actual_wu}")
+            matches = False
 
     actual_gsis = {index["IndexName"]: index for index in actual["GlobalSecondaryIndexes"]}
     for index in model.Meta.gsis:
@@ -548,18 +562,19 @@ def compare_tables(model, actual):
         if not is_valid_superset(actual_projection, index):
             logger.debug(f"Projection mismatch for index '{index.dynamo_name}'")
             matches = False
-        expected_wu = index.write_units
-        actual_wu = actual_gsi["ProvisionedThroughput"]["WriteCapacityUnits"]
-        if expected_wu is not None and actual_wu != expected_wu:
-            logger.debug(
-                f"ProvisionedThroughput.WriteCapacityUnits mismatch for index '{index.dynamo_name}'")
-            matches = False
-        expected_ru = index.read_units
-        actual_ru = actual_gsi["ProvisionedThroughput"]["ReadCapacityUnits"]
-        if expected_ru is not None and actual_ru != expected_ru:
-            logger.debug(
-                f"ProvisionedThroughput.ReadCapacityUnits mismatch for index '{index.dynamo_name}'")
-            matches = False
+        if provisioned_billing:
+            expected_wu = index.write_units
+            actual_wu = actual_gsi["ProvisionedThroughput"]["WriteCapacityUnits"]
+            if expected_wu is not None and actual_wu != expected_wu:
+                logger.debug(
+                    f"ProvisionedThroughput.WriteCapacityUnits mismatch for index '{index.dynamo_name}'")
+                matches = False
+            expected_ru = index.read_units
+            actual_ru = actual_gsi["ProvisionedThroughput"]["ReadCapacityUnits"]
+            if expected_ru is not None and actual_ru != expected_ru:
+                logger.debug(
+                    f"ProvisionedThroughput.ReadCapacityUnits mismatch for index '{index.dynamo_name}'")
+                matches = False
 
     actual_lsis = {index["IndexName"]: index for index in actual["LocalSecondaryIndexes"]}
     for index in model.Meta.lsis:
@@ -755,8 +770,8 @@ def sanitize_table_description(description):
     read_field = functools.partial(_read_field, description)
 
     provisioned_throughput = {
-        "ReadCapacityUnits": read_field(None, "ProvisionedThroughput", "ReadCapacityUnits"),
-        "WriteCapacityUnits": read_field(None, "ProvisionedThroughput", "WriteCapacityUnits"),
+        "ReadCapacityUnits": read_field(0, "ProvisionedThroughput", "ReadCapacityUnits"),
+        "WriteCapacityUnits": read_field(0, "ProvisionedThroughput", "WriteCapacityUnits"),
     }
     sse_spec = {
         "Status": read_field("DISABLED", "SSEDescription", "Status"),
@@ -794,8 +809,10 @@ def sanitize_table_description(description):
                     "NonKeyAttributes": gsi["Projection"].get("NonKeyAttributes", []),
                     "ProjectionType": gsi["Projection"]["ProjectionType"]},
                 "ProvisionedThroughput": {
-                    "ReadCapacityUnits": gsi["ProvisionedThroughput"]["ReadCapacityUnits"],
-                    "WriteCapacityUnits": gsi["ProvisionedThroughput"]["WriteCapacityUnits"]}}
+                    "ReadCapacityUnits": gsi.get(
+                        "ProvisionedThroughput", {"ReadCapacityUnits": 0})["ReadCapacityUnits"],
+                    "WriteCapacityUnits": gsi.get(
+                        "ProvisionedThroughput", {"WriteCapacityUnits": 0})["WriteCapacityUnits"]}}
                 for gsi in description.get("GlobalSecondaryIndexes", [])
         ],
         "KeySchema": [

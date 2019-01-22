@@ -493,6 +493,21 @@ def test_invalid_backups(invalid_backups):
             id = Column(Integer, hash_key=True)
 
 
+@pytest.mark.parametrize("invalid_billing", [
+    "provisioned", "on_demand",  # no bare specification
+    ["provisioned"],  # must be a dict
+    {},  # missing "mode" key
+    {"mode": "unknown"},  # unsupported mode
+    object()
+])
+def test_invalid_billing(invalid_billing):
+    with pytest.raises(InvalidModel):
+        class Model(BaseModel):
+            class Meta:
+                billing = invalid_billing
+            id = Column(Integer, hash_key=True)
+
+
 @pytest.mark.parametrize("valid_stream", [
     {"include": ["new"]},
     {"include": ["old"]},
@@ -511,7 +526,8 @@ def test_valid_stream(valid_stream):
 @pytest.mark.parametrize("valid_encryption", [
     {"enabled": True},
     {"enabled": False},
-    {"enabled": True, "unused": object()}
+    {"enabled": True, "unused": object()},
+    None
 ])
 def test_valid_encryption(valid_encryption):
     class Model(BaseModel):
@@ -525,7 +541,8 @@ def test_valid_encryption(valid_encryption):
 @pytest.mark.parametrize("valid_backups", [
     {"enabled": True},
     {"enabled": False},
-    {"enabled": True, "unused": object()}
+    {"enabled": True, "unused": object()},
+    None
 ])
 def test_valid_backups(valid_backups):
     class Model(BaseModel):
@@ -534,6 +551,21 @@ def test_valid_backups(valid_backups):
 
         id = Column(Integer, hash_key=True)
     assert Model.Meta.backups is valid_backups
+
+
+@pytest.mark.parametrize("valid_billing", [
+    {"mode": "provisioned"},
+    {"mode": "on_demand"},
+    {"mode": "on_demand", "unused": object()},
+    None,
+])
+def test_valid_billing(valid_billing):
+    class Model(BaseModel):
+        class Meta:
+            billing = valid_billing
+
+        id = Column(Integer, hash_key=True)
+    assert Model.Meta.billing is valid_billing
 
 
 def test_require_hash():

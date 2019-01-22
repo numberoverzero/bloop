@@ -56,6 +56,7 @@ class IMeta:
     ttl: Optional[Dict]
     encryption: Optional[Dict]
     backups: Optional[Dict]
+    billing: Optional[Dict]
 
     model: "BaseModel"
 
@@ -197,6 +198,7 @@ class BaseModel:
         validate_ttl(meta)
         validate_encryption(meta)
         validate_backups(meta)
+        validate_billing(meta)
 
         # 3.0 Fire model_created for customizing the class after creation
         model_created.send(None, model=cls)
@@ -688,6 +690,19 @@ def validate_backups(meta):
         raise InvalidModel("Backups must specify whether it is enabled with the 'enabled' key.")
 
 
+def validate_billing(meta):
+    billing = meta.billing
+    if billing is None:
+        return
+    if not isinstance(billing, collections.abc.MutableMapping):
+        raise InvalidModel("Billing must be None or a dict.")
+    if "mode" not in billing:
+        raise InvalidModel("Billing must specify whether it is enabled with the 'enabled' key.")
+    mode = billing["mode"]
+    if mode not in {"provisioned", "on_demand"}:
+        raise InvalidModel("Billing mode must be one of 'provisioned' or 'on_demand'")
+
+
 def validate_ttl(meta):
     ttl = meta.ttl
     if ttl is None:
@@ -777,6 +792,7 @@ def initialize_meta(cls: type):
     setdefault(meta, "ttl", None)
     setdefault(meta, "encryption", None)
     setdefault(meta, "backups", None)
+    setdefault(meta, "billing", None)
 
     setdefault(meta, "hash_key", None)
     setdefault(meta, "range_key", None)

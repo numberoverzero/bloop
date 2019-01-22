@@ -477,7 +477,9 @@ def test_create_table(session, dynamodb):
             {"AttributeType": "S", "AttributeName": "date"},
             {"AttributeType": "S", "AttributeName": "name"},
             {"AttributeType": "S", "AttributeName": "joined"},
-            {"AttributeType": "S", "AttributeName": "email"}]}
+            {"AttributeType": "S", "AttributeName": "email"}],
+        'BillingMode': 'PROVISIONED',
+    }
 
     def handle(**table):
         assert ordered(table) == ordered(expected)
@@ -496,6 +498,7 @@ def test_create_subclass(session, dynamodb):
             {'AttributeName': 'my_id', 'AttributeType': 'S'},
             {'AttributeName': 'email', 'AttributeType': 'S'},
         ],
+        'BillingMode': 'PROVISIONED',
         'KeySchema': [{'AttributeName': 'my_id', 'KeyType': 'HASH'}],
         'ProvisionedThroughput': {
             'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1},
@@ -1187,6 +1190,7 @@ def test_create_simple():
     expected = {
         'AttributeDefinitions': [
             {'AttributeName': 'id', 'AttributeType': 'S'}],
+        'BillingMode': 'PROVISIONED',
         'KeySchema': [{'AttributeName': 'id', 'KeyType': 'HASH'}],
         'ProvisionedThroughput': {
             'ReadCapacityUnits': 1,
@@ -1202,6 +1206,7 @@ def test_create_complex():
             {'AttributeType': 'S', 'AttributeName': 'email'},
             {'AttributeType': 'S', 'AttributeName': 'joined'},
             {'AttributeType': 'S', 'AttributeName': 'name'}],
+        'BillingMode': 'PROVISIONED',
         'GlobalSecondaryIndexes': [{
             'IndexName': 'by_email',
             'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}],

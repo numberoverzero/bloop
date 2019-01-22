@@ -2,6 +2,8 @@ import collections
 import functools
 import logging
 
+from typing import Iterable  # noqa: F401
+
 import boto3
 import botocore.exceptions
 
@@ -216,6 +218,14 @@ class SessionWrapper:
             ttl_enabled = actual["TimeToLiveDescription"]["TimeToLiveStatus"].lower()
             model.Meta.ttl["enabled"] = ttl_enabled
             logger.debug(f"Set {model.__name__}.Meta.ttl['enabled'] to '{ttl_enabled}' from DescribeTable response")
+        if model.Meta.billing is None:
+            billing_mode = {
+                "PAY_PER_REQUEST": "on_demand",
+                "PROVISIONED": "provisioned"
+            }[actual["BillingModeSummary"]["BillingMode"]]
+            model.Meta.billing = {"mode": billing_mode}
+            logger.debug(f"Set {model.__name__}.Meta.billing['mode'] to '{billing_mode}' from DescribeTable response")
+
         if model.Meta.read_units is None:
             read_units = model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
             logger.debug(
@@ -446,6 +456,7 @@ def compare_tables(model, actual):
     # SSE (ignored unless declared)
     # Stream (ignored unless declared)
     # TTL (ignored unless declared)
+    # Billing Mode (ignored unless declared)
     # ProvisionedThroughput (ignored unless declared)
     # GSIs (only declared indexes)
     # LSIs (only declared indexes)
@@ -495,6 +506,16 @@ def compare_tables(model, actual):
         expected_ttl = model.Meta.ttl["column"].dynamo_name
         if actual_ttl != expected_ttl:
             logger.debug(f"Model expects ttl column to be '{expected_ttl}' but was '{actual_ttl}'")
+            matches = False
+
+    if model.Meta.billing:
+        billing = model.Meta.billing["mode"]
+        actual_billing = {
+            "PAY_PER_REQUEST": "on_demand",
+            "PROVISIONED": "provisioned"
+        }[actual["BillingModeSummary"]["BillingMode"]]
+        if actual_billing != billing:
+            logger.debug(f"Model expects billing mode to be '{billing}' but was '{actual_billing}'")
             matches = False
 
     read_units = model.Meta.read_units
@@ -659,8 +680,10 @@ def key_schema(*, index=None, model=None):
 
 
 def create_table_request(table_name, model):
+    on_demand_billing = model.Meta.billing and model.Meta.billing["mode"] == "on_demand"
     table = {
         "AttributeDefinitions": attribute_definitions(model),
+        "BillingMode": "PAY_PER_REQUEST" if on_demand_billing else "PROVISIONED",
         "KeySchema": key_schema(model=model),
         "ProvisionedThroughput": {
             # On create when not specified, use minimum values instead of None
@@ -693,8 +716,7 @@ def create_table_request(table_name, model):
             for index in model.Meta.lsis
         ]
     if model.Meta.stream:
-        include = model.Meta.stream["include"]
-        # noinspection PyTypeChecker
+        include = model.Meta.stream["include"]  # type: Iterable[str]
         view = {
             ("keys",): "KEYS_ONLY",
             ("new",): "NEW_IMAGE",
@@ -706,6 +728,12 @@ def create_table_request(table_name, model):
             "StreamEnabled": True,
             "StreamViewType": view
         }
+
+    if on_demand_billing:
+        table.pop("ProvisionedThroughput")
+        for gsi in table.get("GlobalSecondaryIndexes", []):
+            gsi.pop("ProvisionedThroughput")
+
     if model.Meta.encryption:
         table["SSESpecification"] = {"Enabled": bool(model.Meta.encryption["enabled"])}
     return table
@@ -745,12 +773,16 @@ def sanitize_table_description(description):
         "ContinuousBackupsStatus": read_field(
             "DISABLED", "ContinuousBackupsDescription", "ContinuousBackupsStatus"),
     }
+    billing_spec = {
+        "BillingMode": read_field("PROVISIONED", "BillingModeSummary", "BillingMode")
+    }
 
     return {
         "AttributeDefinitions": [
             {"AttributeName": attr_definition["AttributeName"], "AttributeType": attr_definition["AttributeType"]}
             for attr_definition in description.get("AttributeDefinitions", [])
         ],
+        "BillingModeSummary": billing_spec,
         "ContinuousBackupsDescription": backups_spec,
         "GlobalSecondaryIndexes": [
             {

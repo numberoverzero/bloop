@@ -21,7 +21,7 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 
 This release adds support for `Transactions`_ and `On-Demand Billing`_.  Transactions can include changes across
 tables, and provide ACID guarantees at a 2x throughput cost and a limit of 10 items per transaction.
-See the :ref:`User Guide <user-transactions>` for details.
+See the `User Guide`__ for details.
 
 .. code-block:: python
 
@@ -29,6 +29,8 @@ See the :ref:`User Guide <user-transactions>` for details.
         tx.save(user, tweet)
         tx.delete(event, task)
         tx.check(meta, condition=Metadata.worker_id == current_worker)
+
+__ https://bloop.readthedocs.io/en/latest/user/transactions.html
 
 [Added]
 =======
@@ -440,9 +442,11 @@ Bug fixes.
   careful with this; transactions on top of DynamoDB are very hard to get right.
 
 See the Migration Guide above for specific examples of breaking changes and how to fix them, or the
-:ref:`User Guide <user-quickstart>` for a tour of the new Bloop.  Lastly, the Public and Internal API References are
+`User Guide`__ for a tour of the new Bloop.  Lastly, the Public and Internal API References are
 finally available and should cover everything you need to extend or replace whole subsystems in Bloop
 (if not, please open an issue).
+
+__ https://bloop.readthedocs.io/en/latest/user/quickstart.html#user-quickstart
 
 [Added]
 =======
@@ -461,7 +465,7 @@ finally available and should cover everything you need to extend or replace whol
 
 * ``Engine.stream`` can be used to iterate over all records in a stream, with a total ordering over approximate
   record creation time.  Use ``engine.stream(model, "trim_horizon")`` to get started.  See the
-  :ref:`User Guide <user-streams>` for details.
+  `User Guide`__ for details.
 * New exceptions ``RecordsExpired`` and ``ShardIteratorExpired`` for errors in stream state
 * New exceptions ``Invalid*`` for bad input subclass ``BloopException`` and ``ValueError``
 * ``DateTime`` types for the three most common date time libraries:
@@ -491,6 +495,7 @@ finally available and should cover everything you need to extend or replace whol
   that provide clearer docstrings, instead of showing ``func(..., default=object<0x...>)`` these will show
   ``func(..., default=Sentinel<[Missing]>)``
 
+__ https://bloop.readthedocs.io/en/latest/user/streams.html#user-streams
 
 [Changed]
 =========
@@ -532,7 +537,7 @@ finally available and should cover everything you need to extend or replace whol
 * Calling ``Index.__set__`` or ``Index.__del__`` will raise ``AttributeError``.  For example,
   ``some_user.by_email = 3`` raises if ``User.by_email`` is a GSI
 * ``bloop.Number`` replaces ``bloop.Float`` and takes an optional ``decimal.Context`` for converting numbers.
-  For a less strict, **lossy** ``Float`` type see the :ref:`Patterns <patterns-float>` section of the User Guide
+  For a less strict, **lossy** ``Float`` type see the `Patterns`__ section of the User Guide
 * ``bloop.String.dynamo_dump`` no longer calls ``str()`` on the value, which was hiding bugs where a non-string
   object was passed (eg. ``some_user.name = object()`` would save with a name of ``<object <0x...>``)
 * ``bloop.DateTime`` is now backed by ``datetime.datetime`` and only knows UTC in a fixed format.  Adapters for
@@ -568,6 +573,8 @@ finally available and should cover everything you need to extend or replace whol
   always ensure a ``__hash__`` function when the subclass is created
 * *(internal)* ``Filter`` and ``FilterIterator`` rewritten entirely in the ``bloop.search`` module across multiple
   classes
+
+__ https://bloop.readthedocs.io/en/latest/user/patterns.html#patterns-float
 
 [Removed]
 =========

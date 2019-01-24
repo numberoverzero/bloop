@@ -10,4 +10,5 @@ docs:
 publish:
 	- rm -fr build dist .egg bloop.egg-info
 	python setup.py sdist bdist_wheel
+	twine check dist/*
 	twine upload dist/*

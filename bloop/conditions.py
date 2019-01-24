@@ -13,7 +13,7 @@ from .signals import (
 from .util import WeakDefaultDictionary, missing
 
 
-__all__ = ["Condition", "render"]
+__all__ = ["BaseCondition", "ComparisonMixin", "Condition", "iter_columns", "render"]
 
 
 comparison_aliases = {

@@ -6,7 +6,6 @@ from .exceptions import (
     InvalidModel,
     InvalidStream,
     InvalidTemplate,
-    MissingKey,
     MissingObjects,
     UnknownType,
 )
@@ -22,45 +21,12 @@ from .signals import (
     object_saved,
 )
 from .stream import Stream
-from .util import missing, walk_subclasses
+from .transactions import ReadTransaction, WriteTransaction
+from .util import dump_key, extract_key, index_for, walk_subclasses
 
 
 __all__ = ["Engine"]
 logger = logging.getLogger("bloop.engine")
-
-
-def value_of(column):
-    """value_of({'S': 'Space Invaders'}) -> 'Space Invaders'"""
-    return next(iter(column.values()))
-
-
-def index_for(key):
-    """index_for({'id': {'S': 'foo'}, 'range': {'S': 'bar'}}) -> ('bar', 'foo')"""
-    return tuple(sorted(value_of(k) for k in key.values()))
-
-
-def extract_key(key_shape, item):
-    """construct a key according to key_shape for building an index"""
-    return {field: item[field] for field in key_shape}
-
-
-def dump_key(engine, obj):
-    """dump the hash (and range, if there is one) key(s) of an object into
-    a dynamo-friendly format.
-
-    returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
-    """
-    key = {}
-    for key_column in obj.Meta.keys:
-        key_value = getattr(obj, key_column.name, missing)
-        if key_value is missing:
-            raise MissingKey("{!r} is missing {}: {!r}".format(
-                obj, "hash_key" if key_column.hash_key else "range_key",
-                key_column.name
-            ))
-        key_value = engine._dump(key_column.typedef, key_value)
-        key[key_column.dynamo_name] = key_value
-    return key
 
 
 def validate_not_abstract(*objs):
@@ -266,7 +232,7 @@ class Engine:
             for index in object_index.values():
                 for index_set in index.values():
                     not_loaded.update(index_set)
-            logger.warning("loaded {} of {} objects".format(len(objs) - len(not_loaded), len(objs)))
+            logger.info("loaded {} of {} objects".format(len(objs) - len(not_loaded), len(objs)))
             raise MissingObjects("Failed to load some objects.", objects=not_loaded)
         logger.info("successfully loaded {} objects".format(len(objs)))
 
@@ -385,3 +351,42 @@ class Engine:
         stream = Stream(model=model, engine=self)
         stream.move_to(position=position)
         return stream
+
+    def transaction(self, mode="w"):
+        """
+        Create a new :class:`~bloop.transactions.ReadTransaction` or :class:`~bloop.transactions.WriteTransaction`.
+
+        As a context manager, calling commit when the block exits:
+
+        .. code-block:: pycon
+
+            >>> engine = Engine()
+            >>> user = User(id=3, email="user@domain.com")
+            >>> tweet = Tweet(id=42, data="hello, world")
+            >>> with engine.transaction("w") as tx:
+            ...     tx.delete(user)
+            ...     tx.save(tweet, condition=Tweet.id.is_(None))
+
+        Or manually calling prepare and commit:
+
+        .. code-block:: pycon
+
+            >>> engine = Engine()
+            >>> user = User(id=3, email="user@domain.com")
+            >>> tweet = Tweet(id=42, data="hello, world")
+            >>> tx = engine.transaction("w")
+            >>> tx.delete(user)
+            >>> tx.save(tweet, condition=Tweet.id.is_(None))
+            >>> tx.prepare().commit()
+
+        :param str mode: Either "r" or "w" to create a ReadTransaction or WriteTransaction.  Default is "w"
+        :return: A new transaction that can be committed.
+        :rtype: :class:`~bloop.transactions.ReadTransaction` or :class:`~bloop.transactions.WriteTransaction`
+        """
+        if mode == "r":
+            cls = ReadTransaction
+        elif mode == "w":
+            cls = WriteTransaction
+        else:
+            raise ValueError(f"unknown mode {mode}")
+        return cls(self)

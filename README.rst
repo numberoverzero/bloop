@@ -59,6 +59,16 @@ Let's make a few users and persist them:
     >>> support.id = uuid.uuid4()
     >>> engine.save(admin, support)
 
+Or do the same in a transaction:
+
+.. code-block:: python
+
+    >>> with engine.transaction() as tx:
+    ...     tx.save(admin)
+    ...     tx.save(support)
+    ...
+    >>>
+
 And find them again:
 
 .. code-block:: python

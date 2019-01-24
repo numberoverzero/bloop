@@ -613,6 +613,18 @@ Stream.
 .. autoclass:: bloop.stream.Stream
     :members:
 
+==============
+ Transactions
+==============
+
+.. autoclass:: bloop.transactions.ReadTransaction
+    :members:
+    :inherited-members:
+
+.. autoclass:: bloop.transactions.WriteTransaction
+    :members:
+    :inherited-members:
+
 ============
  Conditions
 ============
@@ -703,12 +715,17 @@ fail with :exc`~bloop.exceptions.ConstraintViolation`.
 .. autoclass:: bloop.exceptions.ConstraintViolation
 
 .. autoclass:: bloop.exceptions.MissingObjects
+    :members:
 
 .. autoclass:: bloop.exceptions.RecordsExpired
 
 .. autoclass:: bloop.exceptions.ShardIteratorExpired
 
 .. autoclass:: bloop.exceptions.TableMismatch
+
+.. autoclass:: bloop.exceptions.TransactionCanceled
+
+.. autoclass:: bloop.exceptions.TransactionTokenExpired
 
 -----------
  Bad Input

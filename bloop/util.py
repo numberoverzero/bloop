@@ -3,8 +3,15 @@ import weakref
 
 import blinker
 
+from .exceptions import MissingKey
 
-__all__ = ["Sentinel", "ordered", "signal", "walk_subclasses"]
+
+__all__ = [
+    "Sentinel", "WeakDefaultDictionary",
+    "dump_key", "extract_key", "get_table_name",
+    "index_for", "missing", "ordered", "signal",
+    "value_of", "walk_subclasses",
+]
 
 # De-dupe dict for Sentinel
 _symbols = {}
@@ -85,6 +92,60 @@ def walk_subclasses(root):
         visited.add(cls)
         if cls is not root:
             yield cls
+
+
+def value_of(column):
+    """value_of({'S': 'Space Invaders'}) -> 'Space Invaders'"""
+    return next(iter(column.values()))
+
+
+def index_for(key):
+    """stable hashable tuple of object keys for indexing an item in constant time.
+
+    usage::
+
+        index_for({'id': {'S': 'foo'}, 'range': {'S': 'bar'}}) -> ('bar', 'foo')
+    """
+    return tuple(sorted(value_of(k) for k in key.values()))
+
+
+def extract_key(key_shape, item):
+    """
+    construct a key according to key_shape for building an index
+
+    usage::
+
+        key_shape = "foo", "bar"
+        item = {"baz": 1, "bar": 2, "foo": 3}
+        extract_key(key_shape, item) -> {"foo": 3, "bar": 2}
+    """
+    return {field: item[field] for field in key_shape}
+
+
+def dump_key(engine, obj):
+    """dump the hash (and range, if there is one) key(s) of an object into
+    a dynamo-friendly format.
+
+    returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
+    """
+    key = {}
+    for key_column in obj.Meta.keys:
+        key_value = getattr(obj, key_column.name, missing)
+        if key_value is missing:
+            raise MissingKey("{!r} is missing {}: {!r}".format(
+                obj, "hash_key" if key_column.hash_key else "range_key",
+                key_column.name
+            ))
+        # noinspection PyProtectedMember
+        key_value = engine._dump(key_column.typedef, key_value)
+        key[key_column.dynamo_name] = key_value
+    return key
+
+
+def get_table_name(engine, obj):
+    """return the table name for an object as seen by a given engine"""
+    # noinspection PyProtectedMember
+    return engine._compute_table_name(obj.__class__)
 
 
 class Sentinel:

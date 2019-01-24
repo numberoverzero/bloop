@@ -189,6 +189,30 @@ are not enabled, and this is ``None``.  To enable continuous backups, use:
 
 .. _Continuous Backups: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/BackupRestore.html
 
+---------
+ billing
+---------
+
+You can use ``billing`` to enable `On-Demand Billing`_ or explicitly require provisioned throughput.  By default
+billing is None.
+
+If you do not specify the billing mode, the existing configuration in DynamoDB is used.  When
+the table does not exist and billing mode is None, the table is created using provisioned throughput.
+
+.. code-block:: python
+
+    class Meta:
+        billing = {
+            "mode": "on_demand"
+        }
+
+    class Meta:
+        billing = {
+            "mode": "provisioned"  # if not specified, provisioned billing is used for new tables
+        }
+
+.. _On-Demand Billing: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadWriteCapacityMode.html#HowItWorks.OnDemand
+
 ------------
  encryption
 ------------

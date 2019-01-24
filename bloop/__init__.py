@@ -7,6 +7,7 @@ from .exceptions import (
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
+    TransactionCanceled
 )
 from .models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from .search import QueryIterator, ScanIterator
@@ -21,6 +22,7 @@ from .signals import (
     object_saved,
 )
 from .stream import Stream
+from .transactions import ReadTransaction, WriteTransaction
 from .types import (
     UUID,
     Binary,
@@ -46,7 +48,7 @@ __all__ = [
 
     # Exceptions
     "BloopException", "ConstraintViolation", "MissingObjects",
-    "RecordsExpired", "ShardIteratorExpired", "TableMismatch",
+    "RecordsExpired", "ShardIteratorExpired", "TableMismatch", "TransactionCanceled",
 
     # Signals
     "before_create_table", "model_bound", "model_created", "model_validated",
@@ -57,6 +59,6 @@ __all__ = [
     "DynamicList", "DynamicMap",
 
     # Misc
-    "Condition", "QueryIterator", "ScanIterator", "Stream", "missing"
+    "Condition", "QueryIterator", "ReadTransaction", "ScanIterator", "Stream", "WriteTransaction", "missing"
 ]
-__version__ = "2.2.0"
+__version__ = "2.3.0"

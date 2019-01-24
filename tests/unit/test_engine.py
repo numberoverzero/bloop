@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 from tests.helpers.models import ComplexModel, User, VectorModel
 
-from bloop.engine import Engine, dump_key
+from bloop.engine import Engine
 from bloop.exceptions import (
     InvalidModel,
     InvalidStream,
@@ -18,6 +18,7 @@ from bloop.exceptions import (
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper
 from bloop.signals import object_saved
+from bloop.transactions import ReadTransaction, WriteTransaction
 from bloop.types import DateTime, Integer, String, Timestamp
 from bloop.util import ordered
 
@@ -102,23 +103,8 @@ def test_missing_objects(engine, session, caplog):
     assert set(excinfo.value.objects) == set(users)
 
     assert caplog.record_tuples == [
-        ("bloop.engine", logging.WARNING, "loaded 0 of 3 objects")
+        ("bloop.engine", logging.INFO, "loaded 0 of 3 objects")
     ]
-
-
-def test_dump_key(engine):
-    class HashAndRange(BaseModel):
-        foo = Column(Integer, hash_key=True)
-        bar = Column(Integer, range_key=True)
-    engine.bind(HashAndRange)
-
-    user = User(id="foo")
-    user_key = {"id": {"S": "foo"}}
-    assert dump_key(engine, user) == user_key
-
-    obj = HashAndRange(foo=4, bar=5)
-    obj_key = {"bar": {"N": "5"}, "foo": {"N": "4"}}
-    assert dump_key(engine, obj) == obj_key
 
 
 def test_load_object(engine, session):
@@ -625,6 +611,21 @@ def test_stream(engine, session):
 def test_invalid_stream(engine, session):
     with pytest.raises(InvalidStream):
         engine.stream(User, "latest")
+
+
+@pytest.mark.parametrize("mode, cls", [
+    ("r", ReadTransaction),
+    ("w", WriteTransaction),
+])
+def test_transaction_mode(mode, cls, engine):
+    tx = engine.transaction(mode=mode)
+    assert isinstance(tx, cls)
+    assert tx.mode == mode
+
+
+def test_transaction_unknown(engine):
+    with pytest.raises(ValueError):
+        engine.transaction(mode="unknown")
 
 
 def test_bind_non_model(engine):

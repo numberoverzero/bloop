@@ -13,6 +13,7 @@ from bloop.exceptions import (
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
+    TransactionCanceled,
 )
 from bloop.models import (
     BaseModel,
@@ -63,6 +64,7 @@ def model():
     class MyModel(BaseModel):
         class Meta:
             backups = {"enabled": True}
+            billing = {"mode": "provisioned"}
             encryption = {"enabled": True}
             stream = {"include": {"old", "new"}}
             ttl = {"column": "expiry"}
@@ -129,6 +131,10 @@ def description_for(cls, active=None):
             "ContinuousBackupsStatus": "ENABLED"
         }
     description["LatestStreamArn"] = "not-a-real-arn"
+
+    # CreateTable::BillingMode -> DescribeTable::BillingModeSummary.BillingMode
+    description["BillingModeSummary"] = {"BillingMode": description.pop("BillingMode")}
+
     description = sanitize_table_description(description)
     # post-sanitize because it strips TableStatus
     if active is not None:
@@ -476,7 +482,9 @@ def test_create_table(session, dynamodb):
             {"AttributeType": "S", "AttributeName": "date"},
             {"AttributeType": "S", "AttributeName": "name"},
             {"AttributeType": "S", "AttributeName": "joined"},
-            {"AttributeType": "S", "AttributeName": "email"}]}
+            {"AttributeType": "S", "AttributeName": "email"}],
+        'BillingMode': 'PROVISIONED',
+    }
 
     def handle(**table):
         assert ordered(table) == ordered(expected)
@@ -495,6 +503,7 @@ def test_create_subclass(session, dynamodb):
             {'AttributeName': 'my_id', 'AttributeType': 'S'},
             {'AttributeName': 'email', 'AttributeType': 'S'},
         ],
+        'BillingMode': 'PROVISIONED',
         'KeySchema': [{'AttributeName': 'my_id', 'KeyType': 'HASH'}],
         'ProvisionedThroughput': {
             'ReadCapacityUnits': 1, 'WriteCapacityUnits': 1},
@@ -657,6 +666,23 @@ def test_enable_backups_wraps_exception(session, dynamodb):
 # VALIDATE TABLE ====================================================================================== VALIDATE TABLE
 
 
+def test_validate_table_all_meta(model, session, dynamodb, logger):
+    description = description_for(model, active=True)
+    dynamodb.describe_table.return_value = {"Table": description}
+    dynamodb.describe_time_to_live.return_value = {
+        "TimeToLiveDescription": {
+            "AttributeName": model.Meta.ttl["column"].dynamo_name,
+            "TimeToLiveStatus": "ENABLED"
+        }
+    }
+    dynamodb.describe_continuous_backups.return_value = {
+        "ContinuousBackupsDescription": {
+            "ContinuousBackupsStatus": "ENABLED"
+        }
+    }
+    session.validate_table(model.Meta.table_name, model)
+
+
 def test_validate_table_mismatch(basic_model, session, dynamodb, logger):
     description = description_for(basic_model, active=True)
     description["AttributeDefinitions"] = []
@@ -671,6 +697,8 @@ def test_validate_table_mismatch(basic_model, session, dynamodb, logger):
 
 def test_validate_table_sets_stream_arn(model, session, dynamodb, logger):
     # isolate the Meta component we're trying to observe
+    model.Meta.billing = None
+    # model.Meta.stream = None
     model.Meta.ttl = None
     model.Meta.encryption = None
     model.Meta.backups = None
@@ -686,7 +714,9 @@ def test_validate_table_sets_stream_arn(model, session, dynamodb, logger):
 
 def test_validate_table_sets_ttl(model, session, dynamodb, logger):
     # isolate the Meta component we're trying to observe
+    model.Meta.billing = None
     model.Meta.stream = None
+    # model.Meta.ttl = None
     model.Meta.encryption = None
     model.Meta.backups = None
 
@@ -701,12 +731,83 @@ def test_validate_table_sets_ttl(model, session, dynamodb, logger):
     dynamodb.describe_continuous_backups.return_value = {}
 
     session.validate_table(model.Meta.table_name, model)
-    assert model.Meta.ttl["enabled"] == "enabled"
-    logger.assert_logged("Set MyModel.Meta.ttl['enabled'] to 'enabled' from DescribeTable response")
+    assert model.Meta.ttl["enabled"] is True
+    logger.assert_logged("Set MyModel.Meta.ttl['enabled'] to 'True' from DescribeTable response")
+
+
+def test_validate_table_sets_encryption(model, session, dynamodb, logger):
+    # isolate the Meta component we're trying to observe
+    model.Meta.billing = None
+    model.Meta.stream = None
+    model.Meta.ttl = None
+    # model.Meta.encryption = None
+    model.Meta.backups = None
+
+    description = description_for(model, active=True)
+    dynamodb.describe_table.return_value = {"Table": description}
+    dynamodb.describe_time_to_live.return_value = {}
+    dynamodb.describe_continuous_backups.return_value = {}
+
+    # clear the Meta value so validate_table can set it
+    model.Meta.encryption = None
+
+    session.validate_table(model.Meta.table_name, model)
+    assert model.Meta.encryption["enabled"] is True
+    logger.assert_logged("Set MyModel.Meta.encryption['enabled'] to 'True' from DescribeTable response")
+
+
+def test_validate_table_sets_backups(model, session, dynamodb, logger):
+    # isolate the Meta component we're trying to observe
+    model.Meta.billing = None
+    model.Meta.stream = None
+    model.Meta.ttl = None
+    model.Meta.encryption = None
+    # model.Meta.backups = None
+
+    description = description_for(model, active=True)
+    dynamodb.describe_table.return_value = {"Table": description}
+    dynamodb.describe_time_to_live.return_value = {}
+    dynamodb.describe_continuous_backups.return_value = {
+        "ContinuousBackupsDescription": {
+            "ContinuousBackupsStatus": "ENABLED"
+        }
+    }
+
+    # clear the Meta value so validate_table can set it
+    model.Meta.backups = None
+
+    session.validate_table(model.Meta.table_name, model)
+    assert model.Meta.backups == {"enabled": True}
+    logger.assert_logged("Set MyModel.Meta.backups['enabled'] to 'True' from DescribeTable response")
+
+
+@pytest.mark.parametrize("billing_mode", ["provisioned", "on_demand"])
+def test_validate_table_sets_billing_mode(billing_mode, model, session, dynamodb, logger):
+    # isolate the Meta components we're trying to observe
+    # model.Meta.billing = None
+    model.Meta.stream = None
+    model.Meta.ttl = None
+    model.Meta.encryption = None
+    model.Meta.backups = None
+
+    model.Meta.billing["mode"] = billing_mode
+
+    description = description_for(model, active=True)
+    dynamodb.describe_table.return_value = {"Table": description}
+    dynamodb.describe_time_to_live.return_value = {}
+    dynamodb.describe_continuous_backups.return_value = {}
+
+    # clear the Meta value so validate_table can set it
+    model.Meta.billing = None
+
+    session.validate_table(model.Meta.table_name, model)
+    assert model.Meta.billing["mode"] == billing_mode
+    logger.assert_logged(f"Set MyModel.Meta.billing['mode'] to '{billing_mode}' from DescribeTable response")
 
 
 def test_validate_table_sets_table_throughput(model, session, dynamodb, logger):
     # isolate the Meta components we're trying to observe
+    model.Meta.billing = None
     model.Meta.stream = None
     model.Meta.ttl = None
     model.Meta.encryption = None
@@ -731,6 +832,7 @@ def test_validate_table_sets_table_throughput(model, session, dynamodb, logger):
 
 def test_validate_table_sets_gsi_throughput(model, session, dynamodb, logger):
     # isolate the Meta components we're trying to observe
+    model.Meta.billing = None
     model.Meta.stream = None
     model.Meta.ttl = None
     model.Meta.encryption = None
@@ -927,6 +1029,58 @@ def test_get_records(dynamodbstreams, session):
 # END GET STREAM RECORDS ====================================================================== END GET STREAM RECORDS
 
 
+# TRANSACTION READ ================================================================================== TRANSACTION READ
+
+
+def test_transaction_read(dynamodb, session):
+    response = dynamodb.transact_get_items.return_value = {"Responses": ["placeholder"]}
+    result = session.transaction_read("some-items")
+    assert result is response
+    dynamodb.transact_get_items.assert_called_once_with(TransactItems="some-items")
+
+
+def test_transaction_read_canceled(dynamodb, session):
+    cause = dynamodb.transact_get_items.side_effect = client_error("TransactionCanceledException")
+    with pytest.raises(TransactionCanceled) as excinfo:
+        session.transaction_read("some-items")
+    assert excinfo.value.__cause__ is cause
+
+
+def test_transaction_read_unknown_error(dynamodb, session):
+    cause = dynamodb.transact_get_items.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.transaction_read("some-items")
+    assert excinfo.value.__cause__ is cause
+
+
+# END TRANSACTION READ ========================================================================== END TRANSACTION READ
+
+
+# TRANSACTION WRITE ================================================================================ TRANSACTION WRITE
+
+
+def test_transaction_write(dynamodb, session):
+    session.transaction_write("some-items", "some-token")
+    dynamodb.transact_write_items.assert_called_once_with(TransactItems="some-items", ClientRequestToken="some-token")
+
+
+def test_transaction_write_canceled(dynamodb, session):
+    cause = dynamodb.transact_write_items.side_effect = client_error("TransactionCanceledException")
+    with pytest.raises(TransactionCanceled) as excinfo:
+        session.transaction_write("some-items", "some-token")
+    assert excinfo.value.__cause__ is cause
+
+
+def test_transaction_write_unknown_error(dynamodb, session):
+    cause = dynamodb.transact_write_items.side_effect = client_error("FooError")
+    with pytest.raises(BloopException) as excinfo:
+        session.transaction_write("some-items", "some-token")
+    assert excinfo.value.__cause__ is cause
+
+
+# END TRANSACTION WRITE ======================================================================== END TRANSACTION WRITE
+
+
 # COMPARE TABLES ====================================================================================== COMPARE TABLES
 
 
@@ -972,21 +1126,21 @@ def test_compare_table_simple(basic_model):
     assert compare_tables(basic_model, description)
 
 
-def test_compare_table_missing_sse(model, logger):
+def test_compare_table_wrong_encryption_enabled(model, logger):
     description = description_for(model)
     description["SSEDescription"]["Status"] = "DISABLED"
     assert not compare_tables(model, description)
     logger.assert_only_logged("Model expects SSE to be 'ENABLED' but was 'DISABLED'")
 
 
-def test_compare_table_missing_backups(model, logger):
+def test_compare_table_wrong_backups_enabled(model, logger):
     description = description_for(model)
     description["ContinuousBackupsDescription"]["ContinuousBackupsStatus"] = "DISABLED"
     assert not compare_tables(model, description)
     logger.assert_only_logged("Model expects backups to be 'ENABLED' but was 'DISABLED'")
 
 
-def test_compare_table_missing_stream(model, logger):
+def test_compare_table_wrong_stream_enabled(model, logger):
     description = description_for(model)
     description["StreamSpecification"]["StreamEnabled"] = False
     assert not compare_tables(model, description)
@@ -1000,7 +1154,7 @@ def test_compare_table_wrong_stream_type(model, logger):
     logger.assert_only_logged("Model expects StreamViewType 'NEW_AND_OLD_IMAGES' but was 'UNKNOWN'")
 
 
-def test_compare_table_missing_ttl(model, logger):
+def test_compare_table_wrong_ttl_enabled(model, logger):
     description = description_for(model)
     description["TimeToLiveDescription"]["TimeToLiveStatus"] = "DISABLED"
     assert not compare_tables(model, description)
@@ -1012,6 +1166,21 @@ def test_compare_table_wrong_ttl_column(model, logger):
     description["TimeToLiveDescription"]["AttributeName"] = "wrong_column"
     assert not compare_tables(model, description)
     logger.assert_only_logged("Model expects ttl column to be 'expiry' but was 'wrong_column'")
+
+
+@pytest.mark.parametrize("expected, wire", [
+    ("on_demand", "provisioned"),
+    ("provisioned", "on_demand")
+])
+def test_compare_table_wrong_billing_mode(expected, wire, model, logger):
+    description = description_for(model)
+    description["BillingModeSummary"]["BillingMode"] = {
+        "on_demand": "PAY_PER_REQUEST",
+        "provisioned": "PROVISIONED"
+    }[wire]
+    model.Meta.billing["mode"] = expected
+    assert not compare_tables(model, description)
+    logger.assert_only_logged(f"Model expects billing mode to be '{expected}' but was '{wire}'")
 
 
 def test_compare_table_wrong_provisioned_throughput(model, logger):
@@ -1134,6 +1303,7 @@ def test_create_simple():
     expected = {
         'AttributeDefinitions': [
             {'AttributeName': 'id', 'AttributeType': 'S'}],
+        'BillingMode': 'PROVISIONED',
         'KeySchema': [{'AttributeName': 'id', 'KeyType': 'HASH'}],
         'ProvisionedThroughput': {
             'ReadCapacityUnits': 1,
@@ -1149,6 +1319,7 @@ def test_create_complex():
             {'AttributeType': 'S', 'AttributeName': 'email'},
             {'AttributeType': 'S', 'AttributeName': 'joined'},
             {'AttributeType': 'S', 'AttributeName': 'name'}],
+        'BillingMode': 'PROVISIONED',
         'GlobalSecondaryIndexes': [{
             'IndexName': 'by_email',
             'KeySchema': [{'KeyType': 'HASH', 'AttributeName': 'email'}],

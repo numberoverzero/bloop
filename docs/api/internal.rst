@@ -190,6 +190,22 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
 .. autoclass:: bloop.stream.buffer.RecordBuffer
     :members:
 
+==============
+ Transactions
+==============
+
+.. autoclass:: bloop.transactions.Transaction
+    :members:
+
+.. autoclass:: bloop.transactions.PreparedTransaction
+    :members:
+
+.. autoclass:: bloop.transactions.TxItem
+    :members:
+
+.. autoclass:: bloop.transactions.TxType
+    :members:
+
 ============
  Conditions
 ============
@@ -356,7 +372,7 @@ The following sections use a custom notation to describe shards and records.
 
 ``<`` represents chronological ordering between records::
 
-    R12 < R13  # In general, RX < RX when X < Y
+    R12 < R13  # In general, RX < RY when X < Y
 
 ``=>`` represents parent/child relationships between shards::
 

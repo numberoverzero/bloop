@@ -641,7 +641,7 @@ class DynamicType(Type):
 
             4 -> 'N'
             ['x', 3] -> 'L'
-            {2, 4} -> 'SS
+            {2, 4} -> 'SS'
         """
         if isinstance(value, str):
             vtype = "S"

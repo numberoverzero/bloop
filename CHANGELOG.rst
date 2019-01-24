@@ -16,6 +16,65 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 (no unreleased changes)
 
 --------------------
+ 2.3.0 - 2019-01-24
+--------------------
+
+This release adds support for `Transactions`_ and `On-Demand Billing`_.  Transactions can include changes across
+tables, and provide ACID guarantees at a 2x throughput cost and a limit of 10 items per transaction.
+See the :ref:`User Guide <user-transactions>` for details.
+
+.. code-block:: python
+
+    with engine.transaction() as tx:
+        tx.save(user, tweet)
+        tx.delete(event, task)
+        tx.check(meta, condition=Metadata.worker_id == current_worker)
+
+[Added]
+=======
+
+* ``Engine.transaction(mode="w")`` returns a transaction object which can be used directly or as a context manager.
+  By default this creates a ``WriteTransaction``, but you can pass ``mode="r"`` to create a read transaction.
+* ``WriteTransaction`` and ``ReadTransaction`` can be prepared for committing with ``.prepare()`` which returns a
+  ``PreparedTransaction`` which can be committed with ``.commit()`` some number of times.  These calls are usually
+  handled automatically when using the read/write transaction as a context manager::
+
+    # manual calls
+    tx = engine.transaction()
+    tx.save(user)
+    p = tx.prepare()
+    p.commit()
+
+    # equivalent functionality
+    with engine.transaction() as tx:
+        tx.save(user)
+* Meta supports `On-Demand Billing`_::
+
+    class MyModel(BaseModel):
+        id = Column(String, hash_key=True)
+        class Meta:
+            billing = {"mode": "on_demand"}
+
+* *(internal)* ``bloop.session.SessionWrapper.transaction_read`` and
+  ``bloop.session.SessionWrapper.transaction_write`` can be used to call TransactGetItems and TransactWriteItems
+  with fully serialized request objects.  The write api requires a client request token to provide idempotency guards,
+  but does not provide temporal bounds checks for those tokens.
+
+[Changed]
+=========
+
+* ``Engine.load`` now logs at ``INFO`` instead of ``WARNING`` when failing to load some objects.
+* ``Meta.ttl["enabled"]`` will now be a literal ``True`` or ``False`` after binding the model, rather than the string
+  "enabled" or "disabled".
+* If ``Meta.encryption`` or ``Meta.backups`` is None or missing, it will now be set after binding the model.
+* ``Meta`` and GSI read/write units are not validated if billing mode is ``"on_demand"`` since they will be 0 and the
+  provided setting is ignored.
+
+
+.. _Transactions: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/transactions.html
+.. _On-Demand Billing: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/HowItWorks.ReadWriteCapacityMode.html#HowItWorks.OnDemand
+
+--------------------
  2.2.0 - 2018-08-30
 --------------------
 
@@ -94,7 +153,7 @@ Fix a bug where the last records in a closed shard in a Stream were dropped.  Se
 
 * Model inheritance and mixins
 * Table name templates:  ``table_name_template="prod-{table_name}"``
-* `TTL`_ Support: ``ttl = {"column": "not_after"}``
+* `TTL`_ support: ``ttl = {"column": "not_after"}``
 * Column defaults::
 
     verified=Column(Boolean, default=False)
@@ -106,7 +165,7 @@ Fix a bug where the last records in a closed shard in a Stream were dropped.  Se
         )
     )
 
-Python 3.6.0 is now the minimum required version, as Bloop takes advantage of ``__set_name`` and
+Python 3.6.0 is now the minimum required version, as Bloop takes advantage of ``__set_name__`` and
 ``__init_subclass__`` to avoid the need for a Metaclass.
 
 A number of internal-only and rarely-used external methods have been removed, as the processes which required them
@@ -225,9 +284,6 @@ have been simplified:
   ``bloop.models.bind_index``.
 
 __ https://pypi.python.org/pypi/declare
-
-[Fixed]
-=======
 
 --------------------
  1.3.0 - 2017-10-08
@@ -383,9 +439,10 @@ Bug fixes.
   loads another object as a column's value, using the engine and context passed into the load and dump functions.  Be
   careful with this; transactions on top of DynamoDB are very hard to get right.
 
-See the Migration Guide above for specific examples of breaking changes and how to fix them, or the User Guide for
-a tour of the new Bloop.  Lastly, the Public and Internal API References are finally available and should cover
-everything you need to extend or replace whole subsystems in Bloop (if not, please open an issue).
+See the Migration Guide above for specific examples of breaking changes and how to fix them, or the
+:ref:`User Guide <user-quickstart>` for a tour of the new Bloop.  Lastly, the Public and Internal API References are
+finally available and should cover everything you need to extend or replace whole subsystems in Bloop
+(if not, please open an issue).
 
 [Added]
 =======
@@ -403,7 +460,8 @@ everything you need to extend or replace whole subsystems in Bloop (if not, plea
     * ``model_validated``
 
 * ``Engine.stream`` can be used to iterate over all records in a stream, with a total ordering over approximate
-  record creation time.  Use ``engine.stream(model, "trim_horizon")`` to get started.  See the User Guide
+  record creation time.  Use ``engine.stream(model, "trim_horizon")`` to get started.  See the
+  :ref:`User Guide <user-streams>` for details.
 * New exceptions ``RecordsExpired`` and ``ShardIteratorExpired`` for errors in stream state
 * New exceptions ``Invalid*`` for bad input subclass ``BloopException`` and ``ValueError``
 * ``DateTime`` types for the three most common date time libraries:
@@ -413,11 +471,10 @@ everything you need to extend or replace whole subsystems in Bloop (if not, plea
     * ``bloop.ext.pendulum.DateTime``
 
 * ``model.Meta`` has a new optional attribute ``stream`` which can be used to enable a stream on the model's table.
-  See the User Guide for details
 * ``model.Meta`` exposes the same ``projection`` attribute as ``Index`` so that ``(index or model.Meta).projection``
   can be used interchangeably
 * New ``Stream`` class exposes DynamoDBStreams API as a single iterable with powerful seek/jump options, and simple
-  json-friendly tokens for pausing and resuming iteration.  See the User Guide for details
+  json-friendly tokens for pausing and resuming iteration.
 * Over 1200 unit tests added
 * Initial integration tests added
 * *(internal)* ``bloop.conditions.ReferenceTracker`` handles building ``#n0``, ``:v1``, and associated values.
@@ -475,7 +532,7 @@ everything you need to extend or replace whole subsystems in Bloop (if not, plea
 * Calling ``Index.__set__`` or ``Index.__del__`` will raise ``AttributeError``.  For example,
   ``some_user.by_email = 3`` raises if ``User.by_email`` is a GSI
 * ``bloop.Number`` replaces ``bloop.Float`` and takes an optional ``decimal.Context`` for converting numbers.
-  For a less strict, **lossy** ``Float`` type see the Patterns section of the User Guide
+  For a less strict, **lossy** ``Float`` type see the :ref:`Patterns <patterns-float>` section of the User Guide
 * ``bloop.String.dynamo_dump`` no longer calls ``str()`` on the value, which was hiding bugs where a non-string
   object was passed (eg. ``some_user.name = object()`` would save with a name of ``<object <0x...>``)
 * ``bloop.DateTime`` is now backed by ``datetime.datetime`` and only knows UTC in a fixed format.  Adapters for

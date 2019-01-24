@@ -2,6 +2,8 @@ import collections
 import functools
 import logging
 
+from typing import Iterable  # noqa: F401
+
 import boto3
 import botocore.exceptions
 
@@ -14,6 +16,7 @@ from .exceptions import (
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
+    TransactionCanceled,
 )
 from .util import Sentinel, ordered
 
@@ -207,14 +210,33 @@ class SessionWrapper:
         if not compare_tables(model, actual):
             raise TableMismatch("The expected and actual tables for {!r} do not match.".format(model.__name__))
 
-        # In the following blocks, insert values/arns that the model didn't specify or can't know ahead of time.
+        # Fill in values that Meta doesn't know ahead of time (such as arns).
+        # These won't be populated unless Meta explicitly cares about the value
         if model.Meta.stream:
             stream_arn = model.Meta.stream["arn"] = actual["LatestStreamArn"]
             logger.debug(f"Set {model.__name__}.Meta.stream['arn'] to '{stream_arn}' from DescribeTable response")
         if model.Meta.ttl:
-            ttl_enabled = actual["TimeToLiveDescription"]["TimeToLiveStatus"].lower()
+            ttl_enabled = actual["TimeToLiveDescription"]["TimeToLiveStatus"].lower() == "enabled"
             model.Meta.ttl["enabled"] = ttl_enabled
             logger.debug(f"Set {model.__name__}.Meta.ttl['enabled'] to '{ttl_enabled}' from DescribeTable response")
+
+        # Fill in meta values that the table didn't care about (eg. billing=None)
+        if model.Meta.encryption is None:
+            sse_enabled = actual["SSEDescription"]["Status"].lower() == "enabled"
+            model.Meta.encryption = {"enabled": sse_enabled}
+            logger.debug(
+                f"Set {model.__name__}.Meta.encryption['enabled'] to '{sse_enabled}' from DescribeTable response")
+        if model.Meta.backups is None:
+            backups = actual["ContinuousBackupsDescription"]["ContinuousBackupsStatus"] == "ENABLED"
+            model.Meta.backups = {"enabled": backups}
+            logger.debug(f"Set {model.__name__}.Meta.backups['enabled'] to '{backups}' from DescribeTable response")
+        if model.Meta.billing is None:
+            billing_mode = {
+                "PAY_PER_REQUEST": "on_demand",
+                "PROVISIONED": "provisioned"
+            }[actual["BillingModeSummary"]["BillingMode"]]
+            model.Meta.billing = {"mode": billing_mode}
+            logger.debug(f"Set {model.__name__}.Meta.billing['mode'] to '{billing_mode}' from DescribeTable response")
         if model.Meta.read_units is None:
             read_units = model.Meta.read_units = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
             logger.debug(
@@ -345,6 +367,40 @@ class SessionWrapper:
                 raise ShardIteratorExpired from error
             raise BloopException("Unexpected error while getting records.") from error
 
+    def transaction_read(self, items):
+        """
+        Wraps :func:`boto3.DynamoDB.Client.db.transact_get_items`.
+
+        :param items: Unpacked into "TransactionItems" for :func:`boto3.DynamoDB.Client.transact_get_items`
+        :raises bloop.exceptions.TransactionCanceled: if the transaction was canceled.
+        :return: Dict with "Records" list
+        """
+        try:
+            return self.dynamodb_client.transact_get_items(TransactItems=items)
+        except botocore.exceptions.ClientError as error:
+            if error.response["Error"]["Code"] == "TransactionCanceledException":
+                raise TransactionCanceled from error
+            raise BloopException("Unexpected error during transaction read.") from error
+
+    def transaction_write(self, items, client_request_token):
+        """
+        Wraps :func:`boto3.DynamoDB.Client.db.transact_write_items`.
+
+        :param items: Unpacked into "TransactionItems" for :func:`boto3.DynamoDB.Client.transact_write_items`
+        :param client_request_token: Idempotency token valid for 10 minutes from first use.
+            Unpacked into "ClientRequestToken"
+        :raises bloop.exceptions.TransactionCanceled: if the transaction was canceled.
+        """
+        try:
+            self.dynamodb_client.transact_write_items(
+                TransactItems=items,
+                ClientRequestToken=client_request_token
+            )
+        except botocore.exceptions.ClientError as error:
+            if error.response["Error"]["Code"] == "TransactionCanceledException":
+                raise TransactionCanceled from error
+            raise BloopException("Unexpected error during transaction write.") from error
+
 
 def validate_search_mode(mode):
     if mode not in {"query", "scan"}:
@@ -411,11 +467,14 @@ def compare_tables(model, actual):
     # SSE (ignored unless declared)
     # Stream (ignored unless declared)
     # TTL (ignored unless declared)
+    # Billing Mode (ignored unless declared)
     # ProvisionedThroughput (ignored unless declared)
     # GSIs (only declared indexes)
     # LSIs (only declared indexes)
     # AttributeDefinitions
     matches = True
+
+    provisioned_billing = actual["BillingModeSummary"]["BillingMode"] == "PROVISIONED"
 
     if model.Meta.encryption:
         actual_sse = actual["SSEDescription"]["Status"]
@@ -462,17 +521,28 @@ def compare_tables(model, actual):
             logger.debug(f"Model expects ttl column to be '{expected_ttl}' but was '{actual_ttl}'")
             matches = False
 
-    read_units = model.Meta.read_units
-    actual_ru = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
-    if read_units is not None and read_units != actual_ru:
-        logger.debug(f"Model expects {read_units} read units but was {actual_ru}")
-        matches = False
+    if model.Meta.billing:
+        billing = model.Meta.billing["mode"]
+        actual_billing = {
+            "PAY_PER_REQUEST": "on_demand",
+            "PROVISIONED": "provisioned"
+        }[actual["BillingModeSummary"]["BillingMode"]]
+        if actual_billing != billing:
+            logger.debug(f"Model expects billing mode to be '{billing}' but was '{actual_billing}'")
+            matches = False
 
-    write_units = model.Meta.write_units
-    actual_wu = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
-    if write_units is not None and write_units != actual_wu:
-        logger.debug(f"Model expects {write_units} write units but was {actual_wu}")
-        matches = False
+    if provisioned_billing:
+        read_units = model.Meta.read_units
+        actual_ru = actual["ProvisionedThroughput"]["ReadCapacityUnits"]
+        if read_units is not None and read_units != actual_ru:
+            logger.debug(f"Model expects {read_units} read units but was {actual_ru}")
+            matches = False
+
+        write_units = model.Meta.write_units
+        actual_wu = actual["ProvisionedThroughput"]["WriteCapacityUnits"]
+        if write_units is not None and write_units != actual_wu:
+            logger.debug(f"Model expects {write_units} write units but was {actual_wu}")
+            matches = False
 
     actual_gsis = {index["IndexName"]: index for index in actual["GlobalSecondaryIndexes"]}
     for index in model.Meta.gsis:
@@ -492,18 +562,19 @@ def compare_tables(model, actual):
         if not is_valid_superset(actual_projection, index):
             logger.debug(f"Projection mismatch for index '{index.dynamo_name}'")
             matches = False
-        expected_wu = index.write_units
-        actual_wu = actual_gsi["ProvisionedThroughput"]["WriteCapacityUnits"]
-        if expected_wu is not None and actual_wu != expected_wu:
-            logger.debug(
-                f"ProvisionedThroughput.WriteCapacityUnits mismatch for index '{index.dynamo_name}'")
-            matches = False
-        expected_ru = index.read_units
-        actual_ru = actual_gsi["ProvisionedThroughput"]["ReadCapacityUnits"]
-        if expected_ru is not None and actual_ru != expected_ru:
-            logger.debug(
-                f"ProvisionedThroughput.ReadCapacityUnits mismatch for index '{index.dynamo_name}'")
-            matches = False
+        if provisioned_billing:
+            expected_wu = index.write_units
+            actual_wu = actual_gsi["ProvisionedThroughput"]["WriteCapacityUnits"]
+            if expected_wu is not None and actual_wu != expected_wu:
+                logger.debug(
+                    f"ProvisionedThroughput.WriteCapacityUnits mismatch for index '{index.dynamo_name}'")
+                matches = False
+            expected_ru = index.read_units
+            actual_ru = actual_gsi["ProvisionedThroughput"]["ReadCapacityUnits"]
+            if expected_ru is not None and actual_ru != expected_ru:
+                logger.debug(
+                    f"ProvisionedThroughput.ReadCapacityUnits mismatch for index '{index.dynamo_name}'")
+                matches = False
 
     actual_lsis = {index["IndexName"]: index for index in actual["LocalSecondaryIndexes"]}
     for index in model.Meta.lsis:
@@ -624,8 +695,10 @@ def key_schema(*, index=None, model=None):
 
 
 def create_table_request(table_name, model):
+    on_demand_billing = model.Meta.billing and model.Meta.billing["mode"] == "on_demand"
     table = {
         "AttributeDefinitions": attribute_definitions(model),
+        "BillingMode": "PAY_PER_REQUEST" if on_demand_billing else "PROVISIONED",
         "KeySchema": key_schema(model=model),
         "ProvisionedThroughput": {
             # On create when not specified, use minimum values instead of None
@@ -658,8 +731,7 @@ def create_table_request(table_name, model):
             for index in model.Meta.lsis
         ]
     if model.Meta.stream:
-        include = model.Meta.stream["include"]
-        # noinspection PyTypeChecker
+        include = model.Meta.stream["include"]  # type: Iterable[str]
         view = {
             ("keys",): "KEYS_ONLY",
             ("new",): "NEW_IMAGE",
@@ -671,6 +743,12 @@ def create_table_request(table_name, model):
             "StreamEnabled": True,
             "StreamViewType": view
         }
+
+    if on_demand_billing:
+        table.pop("ProvisionedThroughput")
+        for gsi in table.get("GlobalSecondaryIndexes", []):
+            gsi.pop("ProvisionedThroughput")
+
     if model.Meta.encryption:
         table["SSESpecification"] = {"Enabled": bool(model.Meta.encryption["enabled"])}
     return table
@@ -692,8 +770,8 @@ def sanitize_table_description(description):
     read_field = functools.partial(_read_field, description)
 
     provisioned_throughput = {
-        "ReadCapacityUnits": read_field(None, "ProvisionedThroughput", "ReadCapacityUnits"),
-        "WriteCapacityUnits": read_field(None, "ProvisionedThroughput", "WriteCapacityUnits"),
+        "ReadCapacityUnits": read_field(0, "ProvisionedThroughput", "ReadCapacityUnits"),
+        "WriteCapacityUnits": read_field(0, "ProvisionedThroughput", "WriteCapacityUnits"),
     }
     sse_spec = {
         "Status": read_field("DISABLED", "SSEDescription", "Status"),
@@ -710,12 +788,16 @@ def sanitize_table_description(description):
         "ContinuousBackupsStatus": read_field(
             "DISABLED", "ContinuousBackupsDescription", "ContinuousBackupsStatus"),
     }
+    billing_spec = {
+        "BillingMode": read_field("PROVISIONED", "BillingModeSummary", "BillingMode")
+    }
 
     return {
         "AttributeDefinitions": [
             {"AttributeName": attr_definition["AttributeName"], "AttributeType": attr_definition["AttributeType"]}
             for attr_definition in description.get("AttributeDefinitions", [])
         ],
+        "BillingModeSummary": billing_spec,
         "ContinuousBackupsDescription": backups_spec,
         "GlobalSecondaryIndexes": [
             {
@@ -727,8 +809,10 @@ def sanitize_table_description(description):
                     "NonKeyAttributes": gsi["Projection"].get("NonKeyAttributes", []),
                     "ProjectionType": gsi["Projection"]["ProjectionType"]},
                 "ProvisionedThroughput": {
-                    "ReadCapacityUnits": gsi["ProvisionedThroughput"]["ReadCapacityUnits"],
-                    "WriteCapacityUnits": gsi["ProvisionedThroughput"]["WriteCapacityUnits"]}}
+                    "ReadCapacityUnits": gsi.get(
+                        "ProvisionedThroughput", {"ReadCapacityUnits": 0})["ReadCapacityUnits"],
+                    "WriteCapacityUnits": gsi.get(
+                        "ProvisionedThroughput", {"WriteCapacityUnits": 0})["WriteCapacityUnits"]}}
                 for gsi in description.get("GlobalSecondaryIndexes", [])
         ],
         "KeySchema": [

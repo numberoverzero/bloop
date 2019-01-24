@@ -24,6 +24,7 @@ __ https://gist.github.com/numberoverzero/9584cfc375de0e087c8e1ae35ab8559c
 * Server-Side Encryption
 * Time-To-Live
 * Continuous Backups
+* On-Demand Billing
 
 ============
  Ergonomics

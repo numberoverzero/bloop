@@ -10,7 +10,7 @@ pytz~=2017.0
 readme_renderer[md]
 requests~=2.18
 sphinx==1.8.3
-sphinx-rtd-theme==0.3.0
+sphinx-rtd-theme~=0.4
 tox~=2.9
 twine~=1.12
 wheel~=0.30

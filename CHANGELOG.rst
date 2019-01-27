@@ -16,6 +16,22 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 (no unreleased changes)
 
 --------------------
+ 2.3.3 - 2019-01-27
+--------------------
+
+``Engine.bind`` is much faster for multi-model tables.  See `Issue #130`_.
+
+.. _Issue #130: https://github.com/numberoverzero/bloop/issues/130
+
+[Changed]
+=========
+
+* *(internal)* ``SessionWrapper`` caches ``DescribeTable`` responses.  You can clear these with
+  ``SessionWrapper.clear_cache``; mutating calls such as ``.enable_ttl`` will invalidate the cached description.
+* *(internal)* Each ``Engine.bind`` will call ``CreateTable`` at most once per table.  Subsequent calls to ``bind``
+  will call ``CreateTable`` again.
+
+--------------------
  2.3.2 - 2019-01-27
 --------------------
 

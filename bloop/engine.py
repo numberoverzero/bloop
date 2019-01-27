@@ -134,6 +134,8 @@ class Engine:
         # to call multiple times for the same unbound model.
         if skip_table_setup:
             logger.info("skip_table_setup is True; not trying to create tables or validate models during bind")
+        else:
+            self.session.clear_cache()
 
         is_creating = {}
 
@@ -141,13 +143,15 @@ class Engine:
             table_name = self._compute_table_name(model)
             before_create_table.send(self, engine=self, model=model)
             if not skip_table_setup:
+                if table_name in is_creating:
+                    continue
                 creating = self.session.create_table(table_name, model)
-                is_creating[model] = creating
+                is_creating[table_name] = creating
 
         for model in concrete:
             if not skip_table_setup:
                 table_name = self._compute_table_name(model)
-                if is_creating[model]:
+                if is_creating[table_name]:
                     # polls until table is active
                     self.session.describe_table(table_name)
                     if model.Meta.ttl:
@@ -155,9 +159,7 @@ class Engine:
                     if model.Meta.backups and model.Meta.backups["enabled"]:
                         self.session.enable_backups(table_name, model)
                 self.session.validate_table(table_name, model)
-
-            model_validated.send(self, engine=self, model=model)
-
+                model_validated.send(self, engine=self, model=model)
             model_bound.send(self, engine=self, model=model)
 
         logger.info("successfully bound {} models to the engine".format(len(concrete)))

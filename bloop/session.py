@@ -49,8 +49,13 @@ class SessionWrapper:
         dynamodb = dynamodb or boto3.client("dynamodb")
         dynamodbstreams = dynamodbstreams or boto3.client("dynamodbstreams")
 
+        self._tables = {}
         self.dynamodb_client = dynamodb
         self.stream_client = dynamodbstreams
+
+    def clear_cache(self):
+        """Clear all cached table descriptions."""
+        self._tables.clear()
 
     def save_item(self, item):
         """Save an object to DynamoDB.
@@ -165,6 +170,8 @@ class SessionWrapper:
         :return: The (sanitized) result of DescribeTable["Table"]
         :rtype: dict
         """
+        if table_name in self._tables:
+            return self._tables[table_name]
         status, description = None, {}
         calls = 0
         while status is not ready:
@@ -193,7 +200,8 @@ class SessionWrapper:
                 backups, None, "ContinuousBackupsDescription", "ContinuousBackupsStatus"),
         }
 
-        return sanitize_table_description(description)
+        table = self._tables[table_name] = sanitize_table_description(description)
+        return table
 
     def validate_table(self, table_name, model):
         """Polls until a creating table is ready, then verifies the description against the model's requirements.
@@ -266,6 +274,7 @@ class SessionWrapper:
         :param table_name: The name of the table to enable the TTL setting on
         :param model: The model to get TTL settings from
         """
+        self._tables.pop(table_name, None)
         ttl_name = model.Meta.ttl["column"].dynamo_name
         request = {
             "TableName": table_name,
@@ -282,6 +291,7 @@ class SessionWrapper:
         :param table_name: The name of the table to enable Continuous Backups on
         :param model: The model to get Continuous Backups settings from
         """
+        self._tables.pop(table_name, None)
         request = {
             "TableName": table_name,
             "PointInTimeRecoverySpecification": {"PointInTimeRecoveryEnabled": True}

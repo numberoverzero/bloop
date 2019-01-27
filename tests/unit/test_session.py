@@ -585,6 +585,7 @@ def test_describe_table_polls_status(session, dynamodb):
     assert "TableStatus" not in description
     assert dynamodb.describe_table.call_count == 2
     assert dynamodb.describe_time_to_live.call_count == 1
+    assert dynamodb.describe_continuous_backups.call_count == 1
 
 
 def test_describe_table_sanitizes(session, dynamodb, caplog):
@@ -606,6 +607,31 @@ def test_describe_table_sanitizes(session, dynamodb, caplog):
         ("bloop.session", logging.DEBUG,
          "describe_table: table \"User\" was in ACTIVE state after 2 calls"),
     ]
+
+
+def test_describe_table_caches_responses(session, dynamodb):
+    dynamodb.describe_table.side_effect = [
+        {"Table": minimal_description(True)},
+        {"Table": minimal_description(True)}
+    ]
+
+    dynamodb.describe_time_to_live.return_value = {"TimeToLiveDescription": {}}
+    dynamodb.describe_continuous_backups.return_value = {"ContinuousBackupsDescription": {}}
+
+    first_description = session.describe_table("User")
+    second_description = session.describe_table("User")
+
+    assert first_description is second_description
+    assert dynamodb.describe_table.call_count == 1
+    assert dynamodb.describe_time_to_live.call_count == 1
+    assert dynamodb.describe_continuous_backups.call_count == 1
+
+    session.clear_cache()
+    session.describe_table("User")
+
+    assert dynamodb.describe_table.call_count == 2
+    assert dynamodb.describe_time_to_live.call_count == 2
+    assert dynamodb.describe_continuous_backups.call_count == 2
 
 
 # END DESCRIBE TABLE ============================================================================== END DESCRIBE TABLE

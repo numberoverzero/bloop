@@ -16,6 +16,18 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 (no unreleased changes)
 
 --------------------
+ 2.3.2 - 2019-01-27
+--------------------
+
+Minor bug fix.
+
+[Fixed]
+=======
+
+* *(internal)* ``bloop.conditions.iter_columns`` no longer yields ``None`` on ``Condition()`` (or
+  any other condition whose ``.column`` attribute is ``None``).
+
+--------------------
  2.3.0 - 2019-01-24
 --------------------
 

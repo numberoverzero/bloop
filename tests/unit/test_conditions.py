@@ -1536,6 +1536,11 @@ def test_iter_columns_single(condition):
     assert set(iter_columns(condition)) == {User.age}
 
 
+@pytest.mark.parametrize("condition", empty_conditions())
+def test_iter_columns_empty(condition):
+    assert not set(iter_columns(condition))
+
+
 def test_iter_columns_nested():
     """Nested AND, OR, NOT are unpacked"""
     a = User.age == 3

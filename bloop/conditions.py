@@ -954,6 +954,12 @@ def iter_columns(condition):
 
         # unwrap proxies created for paths
         column = proxied(condition.column)
+
+        # special case for None
+        # this could also have skipped on isinstance(condition, Condition)
+        # but this is slightly more flexible for users to create their own None-sentinel Conditions
+        if column is None:
+            continue
         if column not in visited:
             visited.add(column)
             yield column

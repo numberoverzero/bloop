@@ -1,4 +1,6 @@
 import collections
+import json
+import base64
 
 from .conditions import BaseCondition, iter_columns, render
 from .exceptions import ConstraintViolation, InvalidSearch
@@ -156,6 +158,47 @@ def fail_bad_range(query_on):
     msg = "Invalid key condition for a Query on {!r}."
     raise InvalidSearch(msg.format(printable_query(query_on)))
 
+
+def b64encode_json(payload):
+    """Converts a native Python dict to a Base64 encoded JSON string.
+
+    Encoding follows these steps:
+    - Dict
+    - JSON string from dict
+    - Encode string into UTF-8 bytes
+    - Base64 encode bytes (still UTF-8)
+    - Decode UTF-8 bytes into final encoded string
+
+    :param dict payload: The Python dict to encode.
+
+    :return str: The encoded string.
+    """
+    if payload is None:
+        return None
+
+    payload_json_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+    return base64.b64encode(payload_json_bytes).decode('utf-8')
+
+
+def b64decode_json(payload):
+    """Converts a Base64 encoded JSON string to a native Python dict.
+
+    Decoding follows these steps:
+    - Base64 encoded string
+    - Encode into UTF-8 bytes
+    - Base64 decode bytes
+    - Decode UTF-8 bytes into JSON string
+    - Load JSON string into dict
+
+    :param str payload: The encoded string to decode.
+
+    :return dict: The decoded dict.
+    """
+    if payload is None:
+        return None
+
+    payload_json = base64.b64decode(payload.encode('utf-8')).decode('utf-8')
+    return json.loads(payload_json)
 
 class Search:
     """A user-created search object.
@@ -361,6 +404,9 @@ class SearchIterator:
         self._count = 0
         self._scanned = 0
         self._exhausted = False
+        self._page_offset = 0
+        self._truncate = 0
+        self._last_evaluated_key = None
 
     @property
     def count(self):
@@ -377,6 +423,19 @@ class SearchIterator:
             while not self.exhausted:
                 next(self, None)
         return self._scanned
+
+    @property
+    def token(self):
+        """Continuation token to resume a search with move_to."""
+
+        payload = {
+            'LastEvaluatedKey': self._last_evaluated_key,
+            'bloop_page_offset': self._page_offset,
+            'bloop_count': self._count,
+            'bloop_scanned': self._scanned
+        }
+
+        return b64encode_json(payload)
 
     def all(self):
         """Eagerly load all results and return a single list.  If there are no results, the list is empty.
@@ -417,7 +476,27 @@ class SearchIterator:
         self._count = 0
         self._scanned = 0
         self._exhausted = False
+        self._page_offset = 0
+        self._truncate = 0
+        self._last_evaluated_key = None
         self.request.pop("ExclusiveStartKey", None)
+
+    def move_to(self, token):
+        """Move to the state specified in the supplied token.
+
+        :param str token: The Base64 encoded continuation token describing the
+            operation to resume.
+        """
+        self.reset()
+
+        payload = b64decode_json(token)
+
+        if payload.get('LastEvaluatedKey', None):
+            self.request['ExclusiveStartKey'] = payload['LastEvaluatedKey']
+
+        self._count = payload['bloop_count']
+        self._scanned = payload['bloop_scanned']
+        self._truncate = payload['bloop_page_offset']
 
     @property
     def exhausted(self):
@@ -433,16 +512,39 @@ class SearchIterator:
     def __next__(self):
         while (not self._exhausted) and len(self.buffer) == 0:
             response = self.session.search_items(self.mode, self.request)
+
+            # Record the ExclusiveStartKey that was used on the request we just
+            # sent. This is necessary for building a continuation token.
+            self._last_evaluated_key = self.request.get('ExclusiveStartKey', None)
+
             continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
             self._exhausted = not continuation_token
 
-            self._count += response["Count"]
-            self._scanned += response["ScannedCount"]
+            if self._truncate == 0:
+                # If the truncate attribute is set, we've already recorded Count
+                # and ScannedCount for the API call we just repeated. Don't
+                # double up.
+                self._count += response["Count"]
+                self._scanned += response["ScannedCount"]
+
+            self._page_offset = 0
 
             # Each item is a dict of attributes
             self.buffer.extend(response.get("Items", []))
 
+            # If the truncate attribute is set, it means the move_to method was
+            # used to resume a search in progress. We need to skip a certain
+            # number of items to get to where we left off. If, for some reason,
+            # we run out of items in the buffer while truncate is still greater
+            # than zero, the outer while loop will repeat and get more items for
+            # us.
+            while self._truncate > 0 and self.buffer:
+                self.buffer.popleft()
+                self._truncate -= 1
+                self._page_offset += 1
+
         if self.buffer:
+            self._page_offset += 1
             return self.buffer.popleft()
 
         # Buffer must be empty (if _buffer)

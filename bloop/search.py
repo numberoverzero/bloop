@@ -200,6 +200,7 @@ def b64decode_json(payload):
     payload_json = base64.b64decode(payload.encode('utf-8')).decode('utf-8')
     return json.loads(payload_json)
 
+
 class Search:
     """A user-created search object.
 

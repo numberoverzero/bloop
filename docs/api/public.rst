@@ -549,6 +549,16 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
         Number of items that DynamoDB evaluated, before any filter was applied.
         When projection type is "count", accessing this will automatically exhaust the query.
 
+    .. attribute:: token
+
+        A Base64 encoded token describing the current state of the iterator. This token can be used to continue an
+        operation in a separate thread or process.
+
+    .. function:: move_to(token : string)
+
+        Restore an iterator to the state stored in a token. This will wipe out any data that is has already been
+        loaded in the iterator.
+
 ======
  Scan
 ======
@@ -585,6 +595,16 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
 
         Number of items that DynamoDB evaluated, before any filter was applied.
         When projection type is "count", accessing this will automatically exhaust the query.
+
+    .. attribute:: token
+
+        A Base64 encoded token describing the current state of the iterator. This token can be used to continue an
+        operation in a separate thread or process.
+
+    .. function:: move_to(token : string)
+
+        Restore an iterator to the state stored in a token. This will wipe out any data that is has already been
+        loaded in the iterator.
 
 ========
  Stream

@@ -492,6 +492,27 @@ To restart a query, use :func:`QueryIterator.reset() <bloop.search.QueryIterator
     >>> unique == same  # Assume we implemented __eq__
     True
 
+-------------------
+Continuation Tokens
+-------------------
+
+It is possible to record the state of an iterator and recreate that state in a separate thread or process using a
+continuation token. Use the ``token`` property to retrieve a continuation token describing the current state of the
+iterator. When recreating the iterator, pass the token to the
+:func:`QueryIterator.move_to() <bloop.search.QueryIterator.move_to>` method to restore the previous state:
+
+.. code-block:: pycon
+
+    >>> query = engine.query(...)
+    >>> for x in range(0, 10):
+    ...     next(query) # read the first ten records.
+    ...
+    >>> token = query.token
+    >>> resumed = engine.query(...)
+    >>> resumed.move_to(token)
+    >>> for x in range(0, 10):
+    ...     next(query) # read the next ten records.
+
 ======
  Scan
 ======

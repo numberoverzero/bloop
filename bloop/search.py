@@ -426,7 +426,9 @@ class SearchIterator:
 
     @property
     def token(self):
-        """Continuation token to resume a search with move_to."""
+        """A Base64 encoded token describing the current state of the iterator.
+        This token can be used to continue an operation in a separate thread or
+        process."""
 
         payload = {
             'LastEvaluatedKey': self._last_evaluated_key,
@@ -482,7 +484,8 @@ class SearchIterator:
         self.request.pop("ExclusiveStartKey", None)
 
     def move_to(self, token):
-        """Move to the state specified in the supplied token.
+        """Restore an iterator to the state stored in a token. This will wipe
+        out any data that is has already been loaded in the iterator.
 
         :param str token: The Base64 encoded continuation token describing the
             operation to resume.

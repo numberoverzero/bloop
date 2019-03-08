@@ -431,6 +431,9 @@ class SearchIterator:
         This token can be used to continue an operation in a separate thread or
         process."""
 
+        if self.exhausted:
+            return None
+
         payload = {
             'LastEvaluatedKey': self._last_evaluated_key,
             'bloop_page_offset': self._page_offset,

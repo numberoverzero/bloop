@@ -1004,7 +1004,7 @@ def bind_index(model, name, index, force=False, recursive=True, copy=False) -> I
     )
 
     if isinstance(index, LocalSecondaryIndex) and not meta.range_key:
-            raise InvalidModel("An LSI requires the Model to have a range key.")
+        raise InvalidModel("An LSI requires the Model to have a range key.")
 
     if force:
         if same_name:

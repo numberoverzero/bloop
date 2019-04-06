@@ -361,6 +361,29 @@ class SearchIterator:
         self._count = 0
         self._scanned = 0
         self._exhausted = False
+        self._last_yielded = None
+
+    @property
+    def token(self):
+        """
+        JSON-serializable representation of the current SearchIterator state.
+
+        Use :func:`iterator.move_to(token) <bloop.search.SearchIterator.move_to>` to move an iterator to this position.
+
+        Implementations will always include a "ExclusiveStartKey" key but may include additional metadata.
+        The iterator's ``count`` and ``scanned`` values are not preserved.
+
+        :returns: Iterator state as a json-friendly dict
+        """
+        if self._last_yielded is None:
+            # If the iterator isn't advanced but the user calls .move_to, ESK will not be None
+            # Otherwise, this returns {"ESK": None}
+            # >>> it = engine.Scan(User)
+            # >>> it.move_to(token)
+            # >>> assert token == it.token
+            esk = self.request.get("ExclusiveStartKey")
+            return {"ExclusiveStartKey": esk}
+        return self._extract_token(self._last_yielded)
 
     @property
     def count(self):
@@ -398,6 +421,15 @@ class SearchIterator:
             raise ConstraintViolation("{} did not find any results.".format(self.mode.capitalize()))
         return value
 
+    def move_to(self, token):
+        """Restore an iterator to the state stored in a token.  This will reset all iterator state, including
+        ``count``, ``scanned``, and ``exhausted`` properties.
+
+        :param token: a :attr:`SearchIterator.token <bloop.search.SearchIterator.token>`
+        """
+        self.reset()
+        self.request["ExclusiveStartKey"] = token["ExclusiveStartKey"]
+
     def one(self):
         """Return the unique result.  If there is not exactly one result,
         raises :exc:`~bloop.exceptions.ConstraintViolation`.
@@ -431,6 +463,8 @@ class SearchIterator:
         return self
 
     def __next__(self):
+        if "ExclusiveStartKey" in self.request and self.request["ExclusiveStartKey"] is None:
+            del self.request["ExclusiveStartKey"]
         while (not self._exhausted) and len(self.buffer) == 0:
             response = self.session.search_items(self.mode, self.request)
             continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
@@ -443,11 +477,23 @@ class SearchIterator:
             self.buffer.extend(response.get("Items", []))
 
         if self.buffer:
-            return self.buffer.popleft()
+            self._last_yielded = self.buffer.popleft()
+            return self._last_yielded
 
         # Buffer must be empty (if _buffer)
         # No more continue tokens (while not _exhausted)
         raise StopIteration
+
+    def _extract_token(self, obj: dict):
+        # Using self.model, self.index convert obj into an "ExclusiveStartKey"
+        # table keys are always included (since they're always loaded)
+        # index keys are included if there's an index
+        keys = self.model.Meta.keys
+        if self.index:
+            keys |= self.index.keys
+        return {
+            "ExclusiveStartKey": {k.dynamo_name: obj[k.dynamo_name] for k in keys}
+        }
 
 
 class SearchModelIterator(SearchIterator):

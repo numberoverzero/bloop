@@ -56,12 +56,6 @@ class Stream:
         :param position: "trim_horizon", "latest", :class:`~datetime.datetime`, or a
             :attr:`Stream.token <bloop.stream.stream.Stream.token>`
         """
-        """
-
-        * Move to either endpoint of the stream with "trim_horizon" or "latest".
-        * Move to a stream token (``other_stream.token``)
-        * Move to a specific time ie. ``datetime.now() - timedelta(hours=2)``
-        """
         self.coordinator.move_to(position)
 
     @property

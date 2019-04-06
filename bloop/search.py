@@ -378,12 +378,14 @@ class SearchIterator:
         if self._last_yielded is None:
             # If the iterator isn't advanced but the user calls .move_to, ESK will not be None
             # Otherwise, this returns {"ESK": None}
-            # >>> it = engine.Scan(User)
-            # >>> it.move_to(token)
-            # >>> assert token == it.token
             esk = self.request.get("ExclusiveStartKey")
-            return {"ExclusiveStartKey": esk}
-        return self._extract_token(self._last_yielded)
+        else:
+            # table keys are always included (since they're always loaded)
+            # index keys are included if there's an index
+            keys = self.model.Meta.keys | (self.index.keys if self.index else set())
+            keys = (k.dynamo_name for k in keys)
+            esk = {k: self._last_yielded[k] for k in keys}
+        return {"ExclusiveStartKey": esk}
 
     @property
     def count(self):
@@ -428,7 +430,9 @@ class SearchIterator:
         :param token: a :attr:`SearchIterator.token <bloop.search.SearchIterator.token>`
         """
         self.reset()
-        self.request["ExclusiveStartKey"] = token["ExclusiveStartKey"]
+        # Don't set to None since boto3 doesn't like an explicit None
+        if token["ExclusiveStartKey"]:
+            self.request["ExclusiveStartKey"] = token["ExclusiveStartKey"]
 
     def one(self):
         """Return the unique result.  If there is not exactly one result,
@@ -463,8 +467,6 @@ class SearchIterator:
         return self
 
     def __next__(self):
-        if "ExclusiveStartKey" in self.request and self.request["ExclusiveStartKey"] is None:
-            del self.request["ExclusiveStartKey"]
         while (not self._exhausted) and len(self.buffer) == 0:
             response = self.session.search_items(self.mode, self.request)
             continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
@@ -483,17 +485,6 @@ class SearchIterator:
         # Buffer must be empty (if _buffer)
         # No more continue tokens (while not _exhausted)
         raise StopIteration
-
-    def _extract_token(self, obj: dict):
-        # Using self.model, self.index convert obj into an "ExclusiveStartKey"
-        # table keys are always included (since they're always loaded)
-        # index keys are included if there's an index
-        keys = self.model.Meta.keys
-        if self.index:
-            keys |= self.index.keys
-        return {
-            "ExclusiveStartKey": {k.dynamo_name: obj[k.dynamo_name] for k in keys}
-        }
 
 
 class SearchModelIterator(SearchIterator):

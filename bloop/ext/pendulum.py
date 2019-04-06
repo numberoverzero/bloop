@@ -8,7 +8,7 @@ DEFAULT_TIMEZONE = "utc"
 
 
 class DateTime(types.DateTime):
-    python_type = pendulum.Pendulum
+    python_type = pendulum.DateTime
 
     def __init__(self, timezone=DEFAULT_TIMEZONE):
         self.timezone = timezone
@@ -28,7 +28,7 @@ class DateTime(types.DateTime):
 
 
 class Timestamp(types.Timestamp):
-    python_type = pendulum.Pendulum
+    python_type = pendulum.DateTime
 
     def __init__(self, timezone=DEFAULT_TIMEZONE):
         self.timezone = timezone

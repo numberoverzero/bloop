@@ -261,6 +261,16 @@ def build_responses(chain, items=None):
     return responses
 
 
+def extract_request(mock_method):
+    """Pull out the request object from the last call to the mocked method
+
+    req = extract_request(session.search_items)
+    """
+    args, kwargs = mock_method.call_args
+    *_, request = args
+    return request
+
+
 @pytest.fixture
 def simple_iter(engine, session):
     def _simple_iter(cls=SearchIterator, model=User, index=None):
@@ -846,6 +856,81 @@ def test_all_resets(simple_iter, session, chain):
     results = iterator.all()
     assert len(results) == sum(chain)
     assert session.search_items.call_count == len(chain)
+
+
+def test_empty_token(simple_iter):
+    """When no results have been fetched the token is empty"""
+    iterator = simple_iter()
+    token = iterator.token
+    assert token == {"ExclusiveStartKey": None}
+
+
+def test_token_last_yielded(simple_iter, session):
+    """When any results have been yielded, the token should always be the last one"""
+    items = [
+        {"id": {"S": "first"}},
+        {"id": {"S": "second"}},
+    ]
+    session.search_items.side_effect = build_responses([1, 1], items=items)
+    iterator = simple_iter()
+
+    assert iterator.token == {"ExclusiveStartKey": None}
+
+    next(iterator)
+    assert iterator.token == {"ExclusiveStartKey": items[0]}
+
+    next(iterator)
+    assert iterator.token == {"ExclusiveStartKey": items[1]}
+
+    # advance with no result; token still points at last yielded
+    next(iterator, None)
+    assert iterator.token == {"ExclusiveStartKey": items[1]}
+
+
+def test_move_to_beginning(simple_iter, session):
+    """Moving to None starts at the beginning of the search again"""
+    items = [
+        {"id": {"S": "first"}},
+        {"id": {"S": "second"}},
+    ]
+    session.search_items.side_effect = build_responses([1, 1], items=items)
+    iterator = simple_iter()
+
+    empty = iterator.token
+    next(iterator)
+
+    # ensure we're not still at the beginning; something has been yielded
+    assert iterator.token != empty
+
+    # we don't send the ESK from the first yielded value because the iterator was reset
+    iterator.move_to(empty)
+    next(iterator)
+    *_, request = session.search_items.call_args
+    assert "ExclusiveStartKey" not in request
+
+
+def test_move_to_token(simple_iter, session):
+    """Moving to a token sends that ESK in the next request"""
+    items = [
+        {"id": {"S": "first"}},
+        {"id": {"S": "second"}},
+    ]
+    session.search_items.side_effect = build_responses([1, 1], items=items)
+    iterator = simple_iter()
+    same = simple_iter()
+
+    # advance once and create a token
+    next(iterator)
+    token = iterator.token
+
+    # move and advance; this should update .request to include ESK
+    same.move_to(token)
+    next(same)
+    request = extract_request(session.search_items)
+    assert request["ExclusiveStartKey"] == items[0]
+
+    # since this is the second advance the new token should be 2
+    assert same.token == {"ExclusiveStartKey": items[1]}
 
 
 # END ITERATOR TESTS =============================================================================== END ITERATOR TESTS

@@ -429,10 +429,12 @@ class SearchIterator:
 
         :param token: a :attr:`SearchIterator.token <bloop.search.SearchIterator.token>`
         """
+        esk = token["ExclusiveStartKey"]
         self.reset()
         # Don't set to None since boto3 doesn't like an explicit None
-        if token["ExclusiveStartKey"]:
-            self.request["ExclusiveStartKey"] = token["ExclusiveStartKey"]
+        if esk:
+            self.request["ExclusiveStartKey"] = esk
+        self._last_yielded = esk
 
     def one(self):
         """Return the unique result.  If there is not exactly one result,
@@ -453,6 +455,7 @@ class SearchIterator:
         self._count = 0
         self._scanned = 0
         self._exhausted = False
+        self._last_yielded = None
         self.request.pop("ExclusiveStartKey", None)
 
     @property
@@ -469,7 +472,9 @@ class SearchIterator:
     def __next__(self):
         while (not self._exhausted) and len(self.buffer) == 0:
             response = self.session.search_items(self.mode, self.request)
-            continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
+            continuation_token = response.get("LastEvaluatedKey", None)
+            if continuation_token:
+                self.request["ExclusiveStartKey"] = continuation_token
             self._exhausted = not continuation_token
 
             self._count += response["Count"]

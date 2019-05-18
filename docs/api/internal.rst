@@ -133,37 +133,7 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
 ---------------------
 
 .. autoclass:: bloop.search.SearchModelIterator
-
-    .. attribute:: count
-
-        Number of items that have been loaded from DynamoDB so far, including buffered items.
-        When projection type is "count", accessing this will automatically exhaust the query.
-
-    .. attribute:: exhausted
-
-        True if there are no more results.
-
-    .. function:: all()
-
-        Eagerly load all results and return a single list.  If there are no results, the list is empty.
-
-    .. function:: first()
-
-        Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
-
-    .. function:: one()
-
-        Return the unique result.  If there is not exactly one result,
-        raises :exc:`~bloop.exceptions.ConstraintViolation`.
-
-    .. function:: reset()
-
-        Reset to the initial state, clearing the buffer and zeroing count and scanned.
-
-    .. attribute:: scanned
-
-        Number of items that DynamoDB evaluated, before any filter was applied.
-        When projection type is "count", accessing this will automatically exhaust the query.
+    :inherited-members:
 
 ===========
  Streaming

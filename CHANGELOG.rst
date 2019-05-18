@@ -13,7 +13,15 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  Unreleased
 ------------
 
-(no unreleased changes)
+[Added]
+=======
+
+* ``SearchIterator.token`` provides a way to start a new Query or Scan from a previous query/scan's state.
+  See `Issue #132`_.
+* ``SearchIterator.move_to`` takes a token to update the search state.  Count/ScannedCount state are lost when
+  moving to a token.
+
+.. _Issue #132: https://github.com/numberoverzero/bloop/issues/132
 
 --------------------
  2.3.3 - 2019-01-27

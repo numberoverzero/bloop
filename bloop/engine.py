@@ -42,6 +42,20 @@ def validate_is_model(model):
         raise InvalidModel("{!r} does not subclass BaseModel.".format(cls.__name__))
 
 
+def validate_sync(mode, value):
+    allowed = {
+        "save": {None, "new", "old"},
+        "delete": {None, "old"}
+    }[mode]
+    if value not in allowed:
+        raise ValueError(f"Unrecognized option {value!r} for sync parameter, must be one of {allowed}")
+    return {
+        None: "NONE",
+        "old": "ALL_OLD",
+        "new": "ALL_NEW"
+    }[value]
+
+
 def fail_unknown(model, ctx):
     # Best-effort check for a more helpful message
     msg = "{!r} does not support the Type interface."
@@ -164,22 +178,29 @@ class Engine:
 
         logger.info("successfully bound {} models to the engine".format(len(concrete)))
 
-    def delete(self, *objs, condition=None, atomic=False):
+    def delete(self, *objs, condition=None, atomic=False, sync=None):
         """Delete one or more objects.
 
         :param objs: objects to delete.
         :param condition: only perform each delete if this condition holds.
         :param bool atomic: only perform each delete if the local and DynamoDB versions of the object match.
+        :param sync:
+            update objects after deleting.  "old" loads attributes before the delete;
+            None does not mutate the object locally.  Default is None.
         :raises bloop.exceptions.ConstraintViolation: if the condition (or atomic) is not met.
         """
         objs = set(objs)
         validate_not_abstract(*objs)
+        validate_sync("delete", sync)
         for obj in objs:
-            self.session.delete_item({
+            attrs = self.session.delete_item({
                 "TableName": self._compute_table_name(obj.__class__),
                 "Key": dump_key(self, obj),
+                "ReturnValues": validate_sync("delete", sync),
                 **render(self, obj=obj, atomic=atomic, condition=condition)
             })
+            if attrs is not None:
+                unpack_from_dynamodb(attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
             object_deleted.send(self, engine=self, obj=obj)
         logger.info("successfully deleted {} objects".format(len(objs)))
 
@@ -267,22 +288,28 @@ class Engine:
             projection=projection, consistent=consistent, forward=forward)
         return iter(q.prepare())
 
-    def save(self, *objs, condition=None, atomic=False):
+    def save(self, *objs, condition=None, atomic=False, sync=None):
         """Save one or more objects.
 
         :param objs: objects to save.
         :param condition: only perform each save if this condition holds.
         :param bool atomic: only perform each save if the local and DynamoDB versions of the object match.
+        :param sync:
+            update objects after saving.  "new" loads attributes after the save;
+            "old" loads attributes before the save; None does not mutate the object locally.  Default is None.
         :raises bloop.exceptions.ConstraintViolation: if the condition (or atomic) is not met.
         """
         objs = set(objs)
         validate_not_abstract(*objs)
         for obj in objs:
-            self.session.save_item({
+            attrs = self.session.save_item({
                 "TableName": self._compute_table_name(obj.__class__),
                 "Key": dump_key(self, obj),
+                "ReturnValues": validate_sync("save", sync),
                 **render(self, obj=obj, atomic=atomic, condition=condition, update=True)
             })
+            if attrs is not None:
+                unpack_from_dynamodb(attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
             object_saved.send(self, engine=self, obj=obj)
         logger.info("successfully saved {} objects".format(len(objs)))
 

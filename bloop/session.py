@@ -60,22 +60,30 @@ class SessionWrapper:
     def save_item(self, item):
         """Save an object to DynamoDB.
 
+        Returns Optional[dict] of read attributes depending on the "ReturnValues" kwarg.
+        Return value is None when no attributes were requested.
+
         :param item: Unpacked into kwargs for :func:`boto3.DynamoDB.Client.update_item`.
         :raises bloop.exceptions.ConstraintViolation: if the condition (or atomic) is not met.
         """
         try:
-            self.dynamodb_client.update_item(**item)
+            resp = self.dynamodb_client.update_item(**item)
+            return resp.get("Attributes", None)
         except botocore.exceptions.ClientError as error:
             handle_constraint_violation(error)
 
     def delete_item(self, item):
         """Delete an object in DynamoDB.
 
+        Returns Optional[dict] of read attributes depending on the "ReturnValues" kwarg.
+        Return value is None when no attributes were requested.
+
         :param item: Unpacked into kwargs for :func:`boto3.DynamoDB.Client.delete_item`.
         :raises bloop.exceptions.ConstraintViolation: if the condition (or atomic) is not met.
         """
         try:
-            self.dynamodb_client.delete_item(**item)
+            resp = self.dynamodb_client.delete_item(**item)
+            return resp.get("Attributes", None)
         except botocore.exceptions.ClientError as error:
             handle_constraint_violation(error)
 

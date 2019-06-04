@@ -638,11 +638,11 @@ def test_delete_sync(engine, session):
     engine.delete(user, sync="old")
     assert user.age == 3
     assert get_snapshot(user) == (
-            User.age.is_(None) &
-            User.email.is_(None) &
-            User.id.is_(None) &
-            User.joined.is_(None) &
-            User.name.is_(None)
+        User.age.is_(None) &
+        User.email.is_(None) &
+        User.id.is_(None) &
+        User.joined.is_(None) &
+        User.name.is_(None)
     )
 
 

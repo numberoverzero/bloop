@@ -6,6 +6,7 @@ from unittest.mock import Mock
 import pytest
 from tests.helpers.models import ComplexModel, User, VectorModel
 
+from bloop.conditions import get_snapshot
 from bloop.engine import Engine
 from bloop.exceptions import (
     InvalidModel,
@@ -506,6 +507,27 @@ def test_save_unknown_sync(engine, sync):
         engine.save(user, sync=sync)
 
 
+@pytest.mark.parametrize("sync", ["new", "old"])
+def test_save_sync(engine, session, sync):
+    """Engine.save(sync='old'|'new') the retured values should be loaded and the object should not be marked dirty"""
+
+    session.save_item.return_value = {
+        "id": {"S": "user_id"},
+        "age": {"N": "3"}
+    }
+    user = User(id="user_id", age=4)
+    engine.save(user, sync=sync)
+    assert user.age == 3
+
+    assert get_snapshot(user) == (
+        User.age.is_({"N": "3"}) &
+        User.email.is_(None) &
+        User.id.is_({"S": "user_id"}) &
+        User.joined.is_(None) &
+        User.name.is_(None)
+    )
+
+
 def test_delete_multiple_condition(engine, session, caplog):
     users = [User(id=str(i)) for i in range(3)]
     condition = User.id == "foo"
@@ -603,6 +625,25 @@ def test_delete_unknown_sync(engine, sync):
     user = User(id="user_id", age=4)
     with pytest.raises(ValueError):
         engine.delete(user, sync=sync)
+
+
+def test_delete_sync(engine, session):
+    """Engine.delete(sync='old') the previous values should be loaded and the object should be marked dirty"""
+
+    session.delete_item.return_value = {
+        "id": {"S": "user_id"},
+        "age": {"N": "3"}
+    }
+    user = User(id="user_id", age=4)
+    engine.delete(user, sync="old")
+    assert user.age == 3
+    assert get_snapshot(user) == (
+            User.age.is_(None) &
+            User.email.is_(None) &
+            User.id.is_(None) &
+            User.joined.is_(None) &
+            User.name.is_(None)
+    )
 
 
 def test_query(engine):

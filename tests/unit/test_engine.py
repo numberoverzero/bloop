@@ -496,6 +496,16 @@ def test_save_del_only(engine, session):
     session.save_item.assert_called_once_with(expected)
 
 
+@pytest.mark.parametrize("sync", [
+    "ALL_NEW", "ALL_OLD", "NONE",  # literal values
+    False, True,  # ambiguous if update/all is exposed in the future
+])
+def test_save_unknown_sync(engine, sync):
+    user = User(id="user_id", age=4)
+    with pytest.raises(ValueError):
+        engine.save(user, sync=sync)
+
+
 def test_delete_multiple_condition(engine, session, caplog):
     users = [User(id=str(i)) for i in range(3)]
     condition = User.id == "foo"
@@ -582,6 +592,17 @@ def test_delete_atomic_condition(engine, session):
     }
     engine.delete(user, condition=User.name.is_("foo"), atomic=True)
     session.delete_item.assert_called_once_with(expected)
+
+
+@pytest.mark.parametrize("sync", [
+    "ALL_NEW", "ALL_OLD", "NONE",  # literal values
+    False, True,  # ambiguous if update/all is exposed in the future
+    "new",  # only for save, not delete
+])
+def test_delete_unknown_sync(engine, sync):
+    user = User(id="user_id", age=4)
+    with pytest.raises(ValueError):
+        engine.delete(user, sync=sync)
 
 
 def test_query(engine):

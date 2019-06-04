@@ -26,7 +26,19 @@ from .util import dump_key, extract_key, index_for, walk_subclasses
 
 
 __all__ = ["Engine"]
+
 logger = logging.getLogger("bloop.engine")
+_sync_values = {
+    "save": {
+        None: "NONE",
+        "new": "ALL_NEW",
+        "old": "ALL_OLD"
+    },
+    "delete": {
+        None: "NONE",
+        "old": "ALL_OLD"
+    }
+}
 
 
 def validate_not_abstract(*objs):
@@ -43,17 +55,11 @@ def validate_is_model(model):
 
 
 def validate_sync(mode, value):
-    allowed = {
-        "save": {None, "new", "old"},
-        "delete": {None, "old"}
-    }[mode]
-    if value not in allowed:
-        raise ValueError(f"Unrecognized option {value!r} for sync parameter, must be one of {allowed}")
-    return {
-        None: "NONE",
-        "old": "ALL_OLD",
-        "new": "ALL_NEW"
-    }[value]
+    allowed = _sync_values[mode]
+    wire = allowed.get(value)
+    if wire is None:
+        raise ValueError(f"Unrecognized option {value!r} for sync parameter, must be one of {set(allowed.keys())}")
+    return wire
 
 
 def fail_unknown(model, ctx):

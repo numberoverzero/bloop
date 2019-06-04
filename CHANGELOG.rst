@@ -20,8 +20,12 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
   See `Issue #132`_.
 * ``SearchIterator.move_to`` takes a token to update the search state.  Count/ScannedCount state are lost when
   moving to a token.
+* ``Engine.delete`` and ``Engine.save`` take an optional argument ``sync=`` which can be used to update objects with
+  the old or new values from DynamoDB after saving or deleting.  See the `User Guide`__ and `Issue #137`_.
 
+__ https://bloop.readthedocs.io/en/latest/user/engine.html#return-values
 .. _Issue #132: https://github.com/numberoverzero/bloop/issues/132
+.. _Issue #137: https://github.com/numberoverzero/bloop/issues/137
 
 --------------------
  2.3.3 - 2019-01-27

@@ -1,7 +1,6 @@
 import collections
 import functools
 import logging
-
 from typing import Iterable  # noqa: F401
 
 import boto3

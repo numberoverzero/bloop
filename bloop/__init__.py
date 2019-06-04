@@ -7,7 +7,7 @@ from .exceptions import (
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
-    TransactionCanceled
+    TransactionCanceled,
 )
 from .models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from .search import QueryIterator, ScanIterator

@@ -1,4 +1,21 @@
-from .util import signal
+import blinker
+
+
+__all__ = [
+    "before_create_table",
+    "object_deleted",
+    "object_loaded",
+    "object_modified",
+    "object_saved",
+    "model_bound",
+    "model_created",
+    "model_validated",
+]
+
+# Isolate to avoid collisions with other modules.
+# Don't expose the namespace.
+__signals = blinker.Namespace()
+signal = __signals.signal
 
 
 before_create_table = signal("before_create_table")

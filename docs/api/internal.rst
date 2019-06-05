@@ -180,6 +180,13 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
  Conditions
 ============
 
+----------------
+ ObjectTracking
+----------------
+
+.. autoclass:: bloop.conditions.ObjectTracking
+    :members:
+
 ------------------
  ReferenceTracker
 ------------------
@@ -233,9 +240,6 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
 ===========
 
 .. autoclass:: bloop.util.Sentinel
-    :members:
-
-.. autoclass:: bloop.util.WeakDefaultDictionary
     :members:
 
 ========================

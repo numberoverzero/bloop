@@ -20,8 +20,7 @@ from bloop.conditions import (
     Proxy,
     Reference,
     ReferenceTracker,
-    get_marked,
-    get_snapshot,
+    global_tracking,
     iter_columns,
     iter_conditions,
     printable_name,
@@ -127,18 +126,18 @@ def test_on_deleted(engine):
     """When an object is deleted, the snapshot expects all columns to be empty"""
     user = User(age=3, name="foo")
     object_deleted.send(engine, engine=engine, obj=user)
-    assert get_snapshot(user) == empty_user_condition
+    assert global_tracking.get_snapshot(user) == empty_user_condition
 
     # It doesn't matter if the object had non-empty values saved from a previous sync
     object_saved.send(engine, engine=engine, obj=user)
-    assert get_snapshot(user) == (
+    assert global_tracking.get_snapshot(user) == (
         User.age.is_({"N": "3"}) &
         User.name.is_({"S": "foo"})
     )
 
     # The deleted signal still clears everything
     object_deleted.send(engine, engine=engine, obj=user)
-    assert get_snapshot(user) == empty_user_condition
+    assert global_tracking.get_snapshot(user) == empty_user_condition
 
     # But the current values aren't replaced
     assert user.age == 3
@@ -149,7 +148,7 @@ def test_on_loaded_partial(engine):
     """When an object is loaded, the state after loading is snapshotted for future atomic calls"""
     # Creating an instance doesn't snapshot anything
     user = User(age=3, name="foo")
-    assert get_snapshot(user) == empty_user_condition
+    assert global_tracking.get_snapshot(user) == empty_user_condition
 
     # Pretend the user was just loaded.  Because only
     # age and name are marked, they will be the only
@@ -161,7 +160,7 @@ def test_on_loaded_partial(engine):
     # Values are stored dumped.  Since the dumped flag isn't checked as
     # part of equality testing, we can simply construct the dumped
     # representations to compare.
-    assert get_snapshot(user) == (
+    assert global_tracking.get_snapshot(user) == (
         User.age.is_({"N": "3"}) &
         User.name.is_({"S": "foo"})
     )
@@ -171,7 +170,7 @@ def test_on_loaded_full(engine):
     """Same as the partial test, but with explicit Nones to simulate a real engine.load"""
     user = User(age=3, email=None, id=None, joined=None, name="foo")
     object_loaded.send(engine, engine=engine, obj=user)
-    assert get_snapshot(user) == (
+    assert global_tracking.get_snapshot(user) == (
         User.age.is_({"N": "3"}) &
         User.email.is_(None) &
         User.id.is_(None) &
@@ -185,20 +184,20 @@ def test_on_modified():
 
     # Creating an instance doesn't mark anything
     user = User()
-    assert get_marked(user) == set()
+    assert global_tracking.get_marked(user) == set()
 
     user.id = "foo"
-    assert get_marked(user) == {User.id}
+    assert global_tracking.get_marked(user) == {User.id}
 
     # Deleting the value does not clear it from the set of marked columns
     del user.id
-    assert get_marked(user) == {User.id}
+    assert global_tracking.get_marked(user) == {User.id}
 
     # Even when the delete fails, the column is marked.
     # We're tracking intention, not state change.
     with pytest.raises(AttributeError):
         del user.age
-    assert get_marked(user) == {User.id, User.age}
+    assert global_tracking.get_marked(user) == {User.id, User.age}
 
 
 def test_on_saved(engine):
@@ -212,7 +211,7 @@ def test_on_saved(engine):
     # they are the only columns that must match for an atomic save.  The
     # state of the other columns wasn't specified, so it's not safe to
     # assume the intended value (missing vs empty)
-    assert get_snapshot(user) == (
+    assert global_tracking.get_snapshot(user) == (
         User.age.is_({"N": "3"}) &
         User.name.is_({"S": "foo"})
     )

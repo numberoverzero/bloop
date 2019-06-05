@@ -6,7 +6,7 @@ from unittest.mock import Mock
 import pytest
 from tests.helpers.models import ComplexModel, User, VectorModel
 
-from bloop.conditions import get_snapshot
+from bloop.conditions import global_tracking
 from bloop.engine import Engine
 from bloop.exceptions import (
     InvalidModel,
@@ -519,7 +519,7 @@ def test_save_sync(engine, session, sync):
     engine.save(user, sync=sync)
     assert user.age == 3
 
-    assert get_snapshot(user) == (
+    assert global_tracking.get_snapshot(user) == (
         User.age.is_({"N": "3"}) &
         User.email.is_(None) &
         User.id.is_({"S": "user_id"}) &
@@ -637,7 +637,7 @@ def test_delete_sync(engine, session):
     user = User(id="user_id", age=4)
     engine.delete(user, sync="old")
     assert user.age == 3
-    assert get_snapshot(user) == (
+    assert global_tracking.get_snapshot(user) == (
         User.age.is_(None) &
         User.email.is_(None) &
         User.id.is_(None) &

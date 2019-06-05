@@ -2,6 +2,8 @@
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import collections
 import logging
+import weakref
+from typing import Set
 
 from .exceptions import InvalidCondition
 from .signals import (
@@ -10,7 +12,7 @@ from .signals import (
     object_modified,
     object_saved,
 )
-from .util import WeakDefaultDictionary, missing
+from .util import missing
 
 
 __all__ = ["BaseCondition", "ComparisonMixin", "Condition", "iter_columns", "render"]
@@ -31,20 +33,73 @@ logger = logging.getLogger("bloop.conditions")
 # CONDITION TRACKING ============================================================================== CONDITION TRACKING
 
 
+class ObjectTracking(weakref.WeakKeyDictionary):
+    def __getitem__(self, key):
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            r = self[key] = {"marked": set(), "snapshot": None}
+            return r
+
+    def get_snapshot(self, obj):
+        """Return the latest snapshot of the object.
+
+        If none exists, creates a snapshot that expects all values to be None.
+        """
+        snapshot = self[obj].get("snapshot")
+        if snapshot is not None:
+            return snapshot
+
+        # If the object has never been synced, create and cache
+        # a condition that expects every column to be empty
+        snapshot = Condition()
+        for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
+            snapshot &= column.is_(None)
+        self[obj]["snapshot"] = snapshot
+        return snapshot
+
+    def set_snapshot(self, obj, snapshot) -> None:
+        """Set the object snapshot eg. after saving or deleting"""
+        self[obj]["snapshot"] = snapshot
+
+    def get_marked(self, obj) -> Set:
+        """Return the set of columns considered 'dirty' for this object."""
+        return self[obj]["marked"]
+
+    def sync(self, obj, engine) -> None:
+        """
+        Mark the object as having been persisted at least once.
+
+        Store the latest snapshot of all marked values.
+        """
+        snapshot = Condition()
+        # Only expect values (or lack of a value) for columns that have been explicitly set
+        for column in sorted(global_tracking.get_marked(obj), key=lambda col: col.dynamo_name):
+            value = getattr(obj, column.name, None)
+            value = engine._dump(column.typedef, value)
+            condition = column == value
+            # The renderer shouldn't try to dump the value again.
+            # We're dumping immediately in case the value is mutable,
+            # such as a set or (many) custom data types.
+            condition.dumped = True
+            snapshot &= condition
+        self.set_snapshot(obj, snapshot)
+
+
 # Tracks the state of instances of models:
 # 1) Are any columns marked for including in an update?
 # 2) Latest snapshot for atomic operations
-_obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None})
+global_tracking = ObjectTracking()
 
 
 @object_deleted.connect
 def on_object_deleted(_, *, obj, **__):
-    _obj_tracking[obj].pop("snapshot", None)
+    global_tracking.set_snapshot(obj, None)
 
 
 @object_loaded.connect
 def on_object_loaded(_, *, engine, obj, **__):
-    sync(obj, engine)
+    global_tracking.sync(obj, engine)
 
 
 @object_modified.connect
@@ -52,50 +107,12 @@ def on_object_modified(_, *, obj, column, **__):
     # Mark a column for a given object as being modified in any way.
     # Any marked columns will be pushed (possibly as DELETES) in
     # future UpdateItem calls that include the object.
-    _obj_tracking[obj]["marked"].add(column)
+    global_tracking.get_marked(obj).add(column)
 
 
 @object_saved.connect
 def on_object_saved(_, *, engine, obj, **__):
-    sync(obj, engine)
-
-
-def sync(obj, engine):
-    """Mark the object as having been persisted at least once.
-
-    Store the latest snapshot of all marked values."""
-    snapshot = Condition()
-    # Only expect values (or lack of a value) for columns that have been explicitly set
-    for column in sorted(_obj_tracking[obj]["marked"], key=lambda col: col.dynamo_name):
-        value = getattr(obj, column.name, None)
-        value = engine._dump(column.typedef, value)
-        condition = column == value
-        # The renderer shouldn't try to dump the value again.
-        # We're dumping immediately in case the value is mutable,
-        # such as a set or (many) custom data types.
-        condition.dumped = True
-        snapshot &= condition
-    _obj_tracking[obj]["snapshot"] = snapshot
-
-
-def get_snapshot(obj):
-    # Cached value
-    snapshot = _obj_tracking[obj].get("snapshot", None)
-    if snapshot is not None:
-        return snapshot
-
-    # If the object has never been synced, create and cache
-    # a condition that expects every column to be empty
-    snapshot = Condition()
-    for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
-        snapshot &= column.is_(None)
-    _obj_tracking[obj]["snapshot"] = snapshot
-    return snapshot
-
-
-def get_marked(obj):
-    """Returns the set of marked columns for an object"""
-    return set(_obj_tracking[obj]["marked"])
+    global_tracking.sync(obj, engine)
 
 
 # END CONDITION TRACKING ====================================================================== END CONDITION TRACKING
@@ -331,7 +348,7 @@ class ConditionRenderer:
             self.render_key_expression(key)
 
         # Condition requires a bit of work, because either one can be empty/false
-        condition = (condition or Condition()) & (get_snapshot(obj) if atomic else Condition())
+        condition = (condition or Condition()) & (global_tracking.get_snapshot(obj) if atomic else Condition())
         if condition:
             self.render_condition_expression(condition)
 
@@ -364,7 +381,7 @@ class ConditionRenderer:
             "remove": []}
         for column in sorted(
                 # Don't include key columns in an UpdateExpression
-                filter(lambda c: c not in obj.Meta.keys, get_marked(obj)),
+                filter(lambda c: c not in obj.Meta.keys, global_tracking.get_marked(obj)),
                 key=lambda c: c.dynamo_name):
             name_ref = self.refs.any_ref(column=column)
             value_ref = self.refs.any_ref(column=column, value=getattr(obj, column.name, None))

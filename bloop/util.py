@@ -1,25 +1,17 @@
 import collections.abc
-import weakref
-
-import blinker
 
 from .exceptions import MissingKey
 
 
 __all__ = [
-    "Sentinel", "WeakDefaultDictionary",
+    "Sentinel",
     "dump_key", "extract_key", "get_table_name",
-    "index_for", "missing", "ordered", "signal",
+    "index_for", "missing", "ordered",
     "value_of", "walk_subclasses",
 ]
 
 # De-dupe dict for Sentinel
 _symbols = {}
-
-# Isolate to avoid collisions with other modules.
-# Don't expose the namespace.
-__signals = blinker.Namespace()
-signal = __signals.signal
 
 
 def index(objects, attr):
@@ -208,25 +200,6 @@ class Sentinel:
 
     def __repr__(self):
         return "<Sentinel[{}]>".format(self.name)
-
-
-class WeakDefaultDictionary(weakref.WeakKeyDictionary):
-    """The cross product of :class:`weakref.WeakKeyDictionary` and :class:`collections.defaultdict`."""
-    def __init__(self, default_factory):
-        self.default_factory = default_factory
-        super().__init__()
-
-    def __getitem__(self, key):
-        try:
-            return super().__getitem__(key)
-        except KeyError:
-            return self.__missing__(key)
-
-    def __missing__(self, key):
-        self[key] = value = self.default_factory()
-        return value
-
-    __iter__ = weakref.WeakKeyDictionary.__iter__
 
 
 missing = Sentinel("missing")

@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+pydeps ./bloop -x blinker boto3 botocore pendulum delorean arrow bloop.ext

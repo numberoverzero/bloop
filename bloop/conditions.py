@@ -3,7 +3,7 @@
 import collections
 import logging
 import weakref
-from typing import Set
+from typing import Any, Set
 
 from .exceptions import InvalidCondition
 from .signals import (
@@ -12,6 +12,7 @@ from .signals import (
     object_modified,
     object_saved,
 )
+from . import actions
 from .util import missing
 
 
@@ -76,6 +77,7 @@ class ObjectTracking(weakref.WeakKeyDictionary):
         # Only expect values (or lack of a value) for columns that have been explicitly set
         for column in sorted(global_tracking.get_marked(obj), key=lambda col: col.dynamo_name):
             value = getattr(obj, column.name, None)
+            # noinspection PyProtectedMember
             value = engine._dump(column.typedef, value)
             condition = column == value
             # The renderer shouldn't try to dump the value again.
@@ -105,7 +107,7 @@ def on_object_loaded(_, *, engine, obj, **__):
 @object_modified.connect
 def on_object_modified(_, *, obj, column, **__):
     # Mark a column for a given object as being modified in any way.
-    # Any marked columns will be pushed (possibly as DELETES) in
+    # Any marked columns will be pushed (possibly as DELETE) in
     # future UpdateItem calls that include the object.
     global_tracking.get_marked(obj).add(column)
 
@@ -126,7 +128,7 @@ Reference = collections.namedtuple("Reference", ["name", "type", "value"])
 
 def is_empty(ref):
     """True if ref is a value ref with None value"""
-    return ref.type == "value" and ref.value is None
+    return ref.type == "value" and actions.unwrap(ref.value) is None
 
 
 class ReferenceTracker:
@@ -167,7 +169,7 @@ class ReferenceTracker:
         self.counts[ref] += 1
         return ref
 
-    def _path_ref(self, column):
+    def _path_ref(self, column: "ComparisonMixin"):
         pieces = [column.dynamo_name]
         pieces.extend(path_of(column))
         str_pieces = []
@@ -184,20 +186,23 @@ class ReferenceTracker:
         """inner=True uses column.typedef.inner_type instead of column.typedef"""
         ref = ":v{}".format(self.next_index)
 
-        # Need to dump this value
         if not dumped:
             typedef = column.typedef
             for segment in path_of(column):
                 typedef = typedef[segment]
             if inner:
                 typedef = typedef.inner_typedef
+            # noinspection PyProtectedMember
             value = self.engine._dump(typedef, value)
 
-        self.attr_values[ref] = value
+        # The raw value needs to be stored in attr_values, but the Action information needs
+        # to be passed back for the renderer to decide whether this is a set/remove/add/delete
+        self.attr_values[ref] = actions.unwrap(value)
         self.counts[ref] += 1
         return ref, value
 
-    def any_ref(self, *, column, value=missing, dumped=False, inner=False):
+    def any_ref(self, *, column, value=missing, dumped=False, inner=False) -> Reference:
+        # noinspection PyUnresolvedReferences
         """Returns a NamedTuple of (name, type, value) for any type of reference.
 
         .. code-block:: python
@@ -281,6 +286,7 @@ def render(engine, obj=None, filter=None, projection=None, key=None, atomic=None
 
 
 class ConditionRenderer:
+    # noinspection PyUnresolvedReferences
     """Renders collections of :class:`~bloop.conditions.BaseCondition` into DynamoDB's wire format for expressions,
     including:
 
@@ -329,7 +335,7 @@ class ConditionRenderer:
         :param filter: *(Optional)* A filter condition for a query or scan, rendered as a "FilterExpression".
             Default is None.
         :type filter: :class:`~bloop.conditions.BaseCondition`
-        :param projection: *(Optional)* A set of Columns to include in a query or scan, redered as a
+        :param projection: *(Optional)* A set of Columns to include in a query or scan, rendered as a
             "ProjectionExpression".  Default is None.
         :type projection: set :class:`~bloop.models.Column`
         :param key: *(Optional)* A key condition for queries, rendered as a "KeyConditionExpression".  Default is None.
@@ -817,6 +823,11 @@ class InCondition(BaseCondition):
 
 
 class ComparisonMixin:
+    dynamo_name: str
+    model: Any
+    name: str
+    typedef: Any
+
     def __repr__(self):
         return "<ComparisonMixin>"
 
@@ -918,10 +929,12 @@ def printable_name(column, path=None):
 
 def path_of(obj):
     if isinstance(obj, Proxy):
+        # noinspection PyProtectedMember
         return obj._path
     return []
 
 
+# noinspection PyProtectedMember
 def proxied(obj):
     if isinstance(obj, Proxy):
         return obj._obj

@@ -59,6 +59,6 @@ __all__ = [
     "DynamicList", "DynamicMap",
 
     # Misc
-    "Condition", "QueryIterator", "ReadTransaction", "ScanIterator", "Stream", "WriteTransaction", "missing"
+    "Condition", "QueryIterator", "ReadTransaction", "ScanIterator", "Stream", "WriteTransaction", "missing",
 ]
 __version__ = "2.3.3"

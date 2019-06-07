@@ -18,7 +18,7 @@ class Action:
     def __new__(cls, action_type: ActionType, value):
         if action_type not in _type_set:
             raise ValueError(f"action_type must be one of {_type_set} but was {action_type}")
-        return super().__new__()
+        return super().__new__(cls)
 
     def __init__(self, action_type: ActionType, value):
         self.type = action_type

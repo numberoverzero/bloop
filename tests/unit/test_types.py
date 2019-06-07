@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 
+from bloop import actions
 from bloop.types import (
     OPERATION_SUPPORT_BY_OP,
     UUID,
@@ -36,6 +37,7 @@ def symmetric_test(typedef, *pairs):
 def test_missing_abstract_methods():
     """NotImplementedError when dynamo_load or dynamo_dump are missing"""
 
+    # noinspection PyAbstractClass
     class MyType(Type):
         backing_type = "S"
         python_type = str
@@ -139,6 +141,23 @@ def test_dump_none_vector_types(engine, typedef, nones):
 def test_dump_partial_none(engine, typedef, values, expected):
     """vector types filter out inner Nones"""
     assert typedef.dynamo_dump(values, context={"engine": engine}) == expected
+
+
+# noinspection PyTypeChecker
+@pytest.mark.parametrize("action_type", list(actions.ActionType))
+def test_dump_actions(action_type):
+    # noinspection PyAbstractClass
+    class MyType(Type):
+        backing_type = "placeholder"
+
+        def dynamo_dump(self, value, *, context, **kwargs):
+            return 3
+
+    action = actions.Action(action_type, "foo")
+    typedef = MyType()
+    same = typedef._dump(action, context=None)
+    assert same is action
+    assert action.value == {"placeholder": 3}
 
 
 def test_string():
@@ -482,3 +501,15 @@ def test_dynamic_path_uses_singleton():
     dm = DynamicMap()
     assert dl["foo"] is DynamicType.i
     assert dm["bar"] is DynamicType.i
+
+
+# noinspection PyTypeChecker
+@pytest.mark.parametrize("action_type", list(actions.ActionType))
+@pytest.mark.parametrize("value", [1, "hello", b"hello"])
+def test_dynamic_dump_action(action_type, value):
+    """In 2.4 when an action is passed, the action is returned with a dumped value"""
+    typedef = DynamicType()
+    action = actions.Action(action_type, value)
+    v = typedef._dump(action, context=None)
+    assert v is action
+    assert isinstance(v.value, dict)

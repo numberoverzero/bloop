@@ -5,6 +5,7 @@ import logging
 import weakref
 from typing import Any, Set
 
+from . import actions
 from .exceptions import InvalidCondition
 from .signals import (
     object_deleted,
@@ -12,7 +13,6 @@ from .signals import (
     object_modified,
     object_saved,
 )
-from . import actions
 from .util import missing
 
 

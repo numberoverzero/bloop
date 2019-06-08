@@ -1,8 +1,10 @@
+# https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.UpdateExpressions.html#Expressions.UpdateExpressions
 import enum
 from typing import Any, Union
 
 
 class ActionType(enum.Enum):
+    """Represents how Dynamo should apply an update."""
     Add = ("ADD", "{name_ref.name} {value_ref.name}")
     Delete = ("DELETE", "{name_ref.name} {value_ref.name}")
     Remove = ("REMOVE", "{name_ref.name}")
@@ -13,6 +15,7 @@ class ActionType(enum.Enum):
         self.fmt = fmt
 
     def render(self, name_ref, value_ref):
+        """name_ref, value_ref should be instances of ``bloop.conditions.Reference`` or None"""
         return self.fmt.format(name_ref=name_ref, value_ref=value_ref)
 
 
@@ -22,6 +25,28 @@ _type_set = set(ActionType)
 
 
 class Action:
+    # noinspection PyUnresolvedReferences
+    """
+    Encapsulates an update value and how Dynamo should apply the update.
+
+    Generally, you will only need to use the ``Action`` class if you are updating an atomic counter (ADD)
+    or making additions and deletions from a set (ADD, DELETE).
+
+    You do not need to use an ``Action`` for SET or REMOVE updates.
+
+    .. code-block:: python
+
+        >>> import bloop.actions
+        >>> from my_models import Website, User
+        >>> user = User()
+        >>> website = Website()
+        # SET and REMOVE don't need an explicit action
+        >>> user.verified = True
+        >>> del user.pw_hash
+        # ADD and DELETE need explicit actions
+        >>> website.view_count = bloop.actions.add(1)
+        >>> website.remote_addrs = bloop.actions.delete({"::0", "localhost"})
+    """
     def __new__(cls, action_type: ActionType, value):
         if action_type not in _type_set:
             raise ValueError(f"action_type must be one of {_type_set} but was {action_type}")
@@ -31,38 +56,92 @@ class Action:
         self.type = action_type
         self.value = value
 
-    @staticmethod
-    def add(value):
-        return Action(ActionType.Add, value)
-
-    @staticmethod
-    def delete(value):
-        return Action(ActionType.Delete, value)
-
-    @staticmethod
-    def set(value):
-        return Action(ActionType.Set, value)
-
-    @staticmethod
-    def remove(value):
-        return Action(ActionType.Remove, value)
+    def __repr__(self):
+        return f"<Action[{self.type.wire_key}={self.value!r}]>"
 
 
 def unwrap(x: Union[Action, Any]) -> Any:
+    """return an action's inner value"""
     if isinstance(x, Action):
         return x.value
     return x
 
 
 def wrap(x: Any) -> Action:
+    """return an action: REMOVE if x is None else SET"""
     if isinstance(x, Action):
         return x
     elif x is None:
-        return Action.remove(None)
-    return Action.set(x)
+        return remove(None)
+    return set(x)
 
 
-add = Action.add
-delete = Action.delete
-set = Action.set
-remove = Action.remove
+def add(value):
+    # noinspection PyUnresolvedReferences
+    """Create a new ADD action.
+
+        The ADD action only supports Number and set data types.
+        In addition, ADD can only be used on top-level attributes, not nested attributes.
+
+        .. code-block:: pycon
+
+            >>> import bloop.actions
+            >>> from my_models import Website
+            >>> website = Website(...)
+            >>> website.views = bloop.actions.add(1)
+            >>> website.remote_addrs = bloop.actions.add({"::0", "localhost"})
+        """
+    return Action(ActionType.Add, value)
+
+
+def delete(value):
+    # noinspection PyUnresolvedReferences
+    """Create a new DELETE action.
+
+    The DELETE action only supports set data types.
+    In addition, DELETE can only be used on top-level attributes, not nested attributes.
+
+    .. code-block:: pycon
+
+        >>> import bloop.actions
+        >>> from my_models import Website
+        >>> website = Website(...)
+        >>> website.remote_addrs = bloop.actions.delete({"::0", "localhost"})
+    """
+    return Action(ActionType.Delete, value)
+
+
+def remove(value=None):
+    # noinspection PyUnresolvedReferences
+    """Create a new REMOVE action.
+
+    Most types automatically create this action when you use ``del obj.some_attr`` or ``obj.some_attr = None``
+
+    .. code-block:: pycon
+
+        >>> import bloop.actions
+        >>> from my_models import User
+        >>> user = User(...)
+        # equivalent
+        >>> user.shell = None
+        >>> user.shell = bloop.actions.remove(None)
+    """
+    return Action(ActionType.Remove, value)
+
+
+def set(value):
+    # noinspection PyUnresolvedReferences
+    """Create a new SET action.
+
+    Most types automatically create this action when you use ``obj.some_attr = value``
+
+    .. code-block:: pycon
+
+        >>> import bloop.actions
+        >>> from my_models import User
+        >>> user = User(...)
+        # equivalent
+        >>> user.shell = "/bin/sh"
+        >>> user.shell = bloop.actions.set("/bin/sh")
+    """
+    return Action(ActionType.Set, value)

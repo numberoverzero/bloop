@@ -44,16 +44,15 @@ def test_render(action_type, expected):
     assert action_type.render(name_ref, value_ref) == expected
 
 
-@pytest.mark.parametrize("name, func, type", [
-    ("add", add, ActionType.Add),
-    ("delete", delete, ActionType.Delete),
-    ("set", set, ActionType.Set),
-    ("remove", remove, ActionType.Remove),
+@pytest.mark.parametrize("func, type", [
+    (add, ActionType.Add),
+    (delete, ActionType.Delete),
+    (set, ActionType.Set),
+    (remove, ActionType.Remove),
 
 ])
-def test_shorthand(name, func, type):
+def test_shorthand(func, type):
     assert func(3).type is type
-    assert getattr(Action, name)(3).type is type
 
 
 @pytest.mark.parametrize("value", [3, dict(), ActionType, None])

@@ -102,6 +102,19 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
     .. attribute:: python_type
         :annotation: = None
 
+=========
+ Actions
+=========
+
+.. autoclass:: bloop.actions.Action
+
+.. autoclass:: bloop.actions.ActionType
+    :members:
+    :undoc-members:
+
+.. autofunction:: bloop.actions.unwrap
+.. autofunction:: bloop.actions.wrap
+
 ===========
  Searching
 ===========

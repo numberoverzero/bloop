@@ -512,6 +512,24 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
         :annotation: = dict
 
 
+=========
+ Actions
+=========
+
+**In most cases you do not need an action.**  However, you can use :func:`bloop.actions.add` to change a
+numeric value or a set's members without reading it, or :func:`bloop.actions.delete` to change a set's members
+without reading it.
+
+As mentioned in the `Atomic Counters`_ section of the DynamoDB Developer Guide, you should understand the limitations
+of atomic counters and be
+
+.. _Atomic Counters: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/WorkingWithItems.html#WorkingWithItems.AtomicCounters
+
+.. autofunction:: bloop.actions.add
+.. autofunction:: bloop.actions.delete
+.. autofunction:: bloop.actions.remove
+.. autofunction:: bloop.actions.set
+
 =======
  Query
 =======

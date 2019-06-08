@@ -1,6 +1,15 @@
 import pytest
 
-from bloop.actions import Action, ActionType, add, delete, remove, set, unwrap, wrap
+from bloop.actions import (
+    Action,
+    ActionType,
+    add,
+    delete,
+    remove,
+    set,
+    unwrap,
+    wrap,
+)
 from bloop.conditions import Reference
 
 

@@ -906,7 +906,7 @@ def test_update_missing_vector_types(engine, session):
         "ReturnValues": "NONE",
         # Map is set, but only with the key that has a value.
         # list is deleted, since it has no values.
-        "UpdateExpression": "SET #n2=:v3 REMOVE #n0",
+        "UpdateExpression": "REMOVE #n0 SET #n2=:v3",
     }
 
     engine.save(obj)

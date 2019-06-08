@@ -5,7 +5,7 @@ import logging
 import weakref
 from typing import Any, Set
 
-from . import actions
+from .actions import ActionType, unwrap, wrap
 from .exceptions import InvalidCondition
 from .signals import (
     object_deleted,
@@ -128,7 +128,7 @@ Reference = collections.namedtuple("Reference", ["name", "type", "value"])
 
 def is_empty(ref):
     """True if ref is a value ref with None value"""
-    return ref.type == "value" and actions.unwrap(ref.value) is None
+    return ref.type == "value" and unwrap(ref.value) is None
 
 
 class ReferenceTracker:
@@ -197,7 +197,7 @@ class ReferenceTracker:
 
         # The raw value needs to be stored in attr_values, but the Action information needs
         # to be passed back for the renderer to decide whether this is a set/remove/add/delete
-        self.attr_values[ref] = actions.unwrap(value)
+        self.attr_values[ref] = unwrap(value)
         self.counts[ref] += 1
         return ref, value
 
@@ -383,29 +383,35 @@ class ConditionRenderer:
 
     def render_update_expression(self, obj):
         updates = {
-            "set": [],
-            "remove": []}
+            ActionType.Add: [],
+            ActionType.Delete: [],
+            ActionType.Remove: [],
+            ActionType.Set: [],
+        }
         for column in sorted(
                 # Don't include key columns in an UpdateExpression
                 filter(lambda c: c not in obj.Meta.keys, global_tracking.get_marked(obj)),
                 key=lambda c: c.dynamo_name):
             name_ref = self.refs.any_ref(column=column)
             value_ref = self.refs.any_ref(column=column, value=getattr(obj, column.name, None))
+            update_type = wrap(value_ref.value).type
             # Can't set to an empty value
-            if is_empty(value_ref):
+            if is_empty(value_ref) or update_type is ActionType.Remove:
                 self.refs.pop_refs(value_ref)
-                updates["remove"].append(name_ref.name)
-            # Setting this column to a value, or to another column's value
-            else:
-                updates["set"].append("{}={}".format(name_ref.name, value_ref.name))
+                updates[ActionType.Remove].append((name_ref, None))
+                continue
+            update_type = wrap(value_ref.value).type
+            updates[update_type].append((name_ref, value_ref))
 
-        expression = ""
-        if updates["set"]:
-            expression += "SET " + ", ".join(updates["set"])
-        if updates["remove"]:
-            expression += " REMOVE " + ", ".join(updates["remove"])
-        if expression:
-            self.expressions["UpdateExpression"] = expression.strip()
+        expressions = []
+        for update_type, refs in updates.items():
+            if not refs:
+                continue
+            k = update_type.wire_key.upper()
+            r = update_type.render
+            expressions.append(f"{k} " + ", ".join(r(*ref) for ref in refs))
+        if expressions:
+            self.expressions["UpdateExpression"] = " ".join(e.strip() for e in expressions)
 
     @property
     def rendered(self):

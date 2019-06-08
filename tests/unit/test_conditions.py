@@ -3,6 +3,7 @@ import operator
 
 import pytest
 
+from bloop import actions
 from bloop.conditions import (
     AndCondition,
     BaseCondition,
@@ -30,7 +31,7 @@ from bloop.models import BaseModel, Column
 from bloop.signals import object_deleted, object_loaded, object_saved
 from bloop.types import Binary, Boolean, Integer, List, Map, Set, String
 
-from ..helpers.models import Document, User
+from ..helpers.models import Document, User, VectorModel
 
 
 class MockColumn(Column):
@@ -633,7 +634,7 @@ def test_render_complex(engine):
         "ProjectionExpression": "#n2, #n3",
         "KeyConditionExpression": "(#n4 = :v5)",
         "ConditionExpression": "((#n4 <= #n3) AND (#n4 = :v6) AND (attribute_not_exists(#n0)) AND (#n3 = :v8))",
-        "UpdateExpression": "SET #n2=:v11 REMOVE #n4, #n0",
+        "UpdateExpression": "REMOVE #n4, #n0 SET #n2=:v11",
     }
 
 
@@ -702,6 +703,27 @@ def test_render_update_remove_only(renderer):
     }
 
 
+def test_render_actions(renderer):
+    obj = VectorModel()
+    obj.name = "test_obj"
+
+    # ADD only supports number and set types
+    obj.some_int = actions.add(2)
+    # DELETE only supports set types
+    obj.set_str = actions.delete(["d", "e"])
+    # REMOVE supports all types
+    obj.list_str = actions.remove("remove value is not used")
+    # SET supports all types
+    obj.some_bytes = actions.set(b"hello")
+
+    renderer.render_update_expression(obj)
+    assert renderer.rendered == {
+        "ExpressionAttributeNames": {"#n0": "list_str", "#n2": "set_str", "#n4": "some_bytes", "#n6": "some_int"},
+        "ExpressionAttributeValues": {":v3": {"SS": ["d", "e"]}, ":v5": {"B": "aGVsbG8="}, ":v7": {"N": "2"}},
+        "UpdateExpression": "ADD #n6 :v7 DELETE #n2 :v3 REMOVE #n0 SET #n4=:v5"
+    }
+
+
 def test_render_update_set_and_remove(renderer):
     """Some values set, some values removed"""
     document = Document()
@@ -720,7 +742,7 @@ def test_render_update_set_and_remove(renderer):
     assert renderer.rendered == {
         "ExpressionAttributeNames": {"#n0": "another_value", "#n2": "data", "#n4": "numbers", "#n6": "value"},
         "ExpressionAttributeValues": {":v1": {"N": "4"}, ":v7": {"N": "3"}},
-        "UpdateExpression": "SET #n0=:v1, #n6=:v7 REMOVE #n2, #n4",
+        "UpdateExpression": "REMOVE #n2, #n4 SET #n0=:v1, #n6=:v7",
     }
 
 

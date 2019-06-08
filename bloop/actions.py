@@ -3,10 +3,17 @@ from typing import Any, Union
 
 
 class ActionType(enum.Enum):
-    Add = "ADD"
-    Delete = "DELETE"
-    Set = "SET"
-    Remove = "REMOVE"
+    Add = ("ADD", "{name_ref.name} {value_ref.name}")
+    Delete = ("DELETE", "{name_ref.name} {value_ref.name}")
+    Remove = ("REMOVE", "{name_ref.name}")
+    Set = ("SET", "{name_ref.name}={value_ref.name}")
+
+    def __init__(self, wire_key: str, fmt: str):
+        self.wire_key = wire_key
+        self.fmt = fmt
+
+    def render(self, name_ref, value_ref):
+        return self.fmt.format(name_ref=name_ref, value_ref=value_ref)
 
 
 # O(1) __contains__ for Action.__new__

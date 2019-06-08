@@ -1,63 +1,79 @@
 import pytest
 
-from bloop import actions
+from bloop.actions import Action, ActionType, add, delete, remove, set, unwrap, wrap
+from bloop.conditions import Reference
+
+
+short_funcs = [add, delete, remove, set]
 
 
 # noinspection PyTypeChecker
-@pytest.mark.parametrize("action_type", list(actions.ActionType))
-@pytest.mark.parametrize("value", [None, object(), 1, actions.ActionType.Add, actions.Action])
+@pytest.mark.parametrize("action_type", list(ActionType))
+@pytest.mark.parametrize("value", [None, object(), 1, ActionType.Add, Action])
 def test_valid_actions(action_type, value):
-    action = actions.Action(action_type, value)
+    action = Action(action_type, value)
     assert action.type is action_type
     assert action.value is value
 
 
-@pytest.mark.parametrize("action_type", ["set", "ADD", actions.Action, actions.ActionType])
+@pytest.mark.parametrize("action_type", ["set", "ADD", Action, ActionType])
 def test_invalid_actions(action_type):
     with pytest.raises(ValueError):
         # noinspection PyTypeChecker
-        actions.Action(action_type, 3)
+        Action(action_type, 3)
+
+
+@pytest.mark.parametrize("action_type, expected", [
+    (ActionType.Add, "my_name my_value"),
+    (ActionType.Delete, "my_name my_value"),
+    (ActionType.Remove, "my_name"),
+    (ActionType.Set, "my_name=my_value"),
+])
+def test_render(action_type, expected):
+    name_ref = Reference("my_name", object(), object())
+    value_ref = Reference("my_value", object(), object())
+    assert action_type.render(name_ref, value_ref) == expected
 
 
 @pytest.mark.parametrize("name, func, type", [
-    ("add", actions.add, actions.ActionType.Add),
-    ("delete", actions.delete, actions.ActionType.Delete),
-    ("set", actions.set, actions.ActionType.Set),
-    ("remove", actions.remove, actions.ActionType.Remove),
+    ("add", add, ActionType.Add),
+    ("delete", delete, ActionType.Delete),
+    ("set", set, ActionType.Set),
+    ("remove", remove, ActionType.Remove),
 
 ])
 def test_shorthand(name, func, type):
     assert func(3).type is type
-    assert getattr(actions.Action, name)(3).type is type
+    assert getattr(Action, name)(3).type is type
 
 
-@pytest.mark.parametrize("value", [3, dict(), actions.ActionType, None])
+@pytest.mark.parametrize("value", [3, dict(), ActionType, None])
 def test_unwrap_non_action(value):
-    assert actions.unwrap(value) is value
+    assert unwrap(value) is value
 
 
-@pytest.mark.parametrize("value", [3, dict(), actions.ActionType, None])
-@pytest.mark.parametrize("action", [actions.add, actions.delete, actions.remove, actions.set])
-def test_unwrap_action(value, action):
-    assert actions.unwrap(action(value)) is value
+@pytest.mark.parametrize("value", [3, dict(), ActionType, None])
+@pytest.mark.parametrize("func", short_funcs)
+def test_unwrap_action(value, func):
+    assert unwrap(func(value)) is value
 
 
 @pytest.mark.parametrize("value, type", [
-    (3, actions.ActionType.Set),
-    (dict(), actions.ActionType.Set),
-    (actions.ActionType, actions.ActionType.Set),
-    ("", actions.ActionType.Set),
+    (3, ActionType.Set),
+    (dict(), ActionType.Set),
+    (ActionType, ActionType.Set),
+    ("", ActionType.Set),
 
-    (None, actions.ActionType.Remove)
+    (None, ActionType.Remove)
 ])
 def test_wrap_non_action(value, type):
-    w = actions.wrap(value)
+    w = wrap(value)
     assert w.value is value
     assert w.type is type
 
 
-@pytest.mark.parametrize("value", [3, dict(), actions.ActionType, None])
-@pytest.mark.parametrize("func", [actions.add, actions.delete, actions.remove, actions.set])
+@pytest.mark.parametrize("value", [3, dict(), ActionType, None])
+@pytest.mark.parametrize("func", short_funcs)
 def test_wrap_action(value, func):
     action = func(value)
-    assert actions.wrap(action) is action
+    assert wrap(action) is action

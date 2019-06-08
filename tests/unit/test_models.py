@@ -933,14 +933,14 @@ def test_contains_container_types(container_column, engine):
     """Contains should render with the column type's inner type"""
     renderer = ConditionRenderer(engine)
     condition = container_column.contains("foo")
-    renderer.render_condition_expression(condition)
+    renderer.condition_expression(condition)
 
     expected = {
         'ExpressionAttributeValues': {':v1': {'S': "foo"}},
         'ConditionExpression': '(contains(#n0, :v1))',
         'ExpressionAttributeNames': {'#n0': container_column.dynamo_name}
     }
-    assert renderer.rendered == expected
+    assert renderer.output == expected
 
 
 def test_column_defaults():

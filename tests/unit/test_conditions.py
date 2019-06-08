@@ -639,9 +639,9 @@ def test_render_complex(engine):
 
 
 @pytest.mark.parametrize("func_name, expression_key", [
-    ("render_condition_expression", "ConditionExpression"),
-    ("render_filter_expression", "FilterExpression"),
-    ("render_key_expression", "KeyConditionExpression"),
+    ("condition_expression", "ConditionExpression"),
+    ("filter_expression", "FilterExpression"),
+    ("key_expression", "KeyConditionExpression"),
 ])
 def test_render_simple_conditions(func_name, expression_key, renderer):
     """condition, filter, key expression rendering simply defers to the condition"""
@@ -649,7 +649,7 @@ def test_render_simple_conditions(func_name, expression_key, renderer):
     render = getattr(renderer, func_name)
     render(condition)
 
-    assert renderer.rendered == {
+    assert renderer.output == {
         "ExpressionAttributeNames": {"#n0": "name", "#n2": "age"},
         "ExpressionAttributeValues": {":v1": {"S": "foo"}},
         expression_key: "(#n0 BETWEEN :v1 AND #n2)"
@@ -659,9 +659,9 @@ def test_render_simple_conditions(func_name, expression_key, renderer):
 def test_render_projection_dedupes_names(renderer):
     """Duplicate columns are filtered when rendering the projection expression"""
     columns = [User.id, User.email, User.id, User.age]
-    renderer.render_projection_expression(columns)
+    renderer.projection_expression(columns)
 
-    assert renderer.rendered == {
+    assert renderer.output == {
         "ExpressionAttributeNames": {"#n0": "id", "#n1": "email", "#n2": "age"},
         "ProjectionExpression": "#n0, #n1, #n2",
     }
@@ -670,15 +670,15 @@ def test_render_projection_dedupes_names(renderer):
 def test_render_update_no_changes(renderer):
     """When there aren't any marked *non-key* columns on an object, there's no update expression"""
     user = User(id="user_id")
-    renderer.render_update_expression(user)
-    assert not renderer.rendered
+    renderer.update_expression(user)
+    assert not renderer.output
 
 
 def test_render_update_set_only(renderer):
     """Only updates are where values were set (none of the values were None or rendered as None)"""
     user = User(email="@", age=3)
-    renderer.render_update_expression(user)
-    assert renderer.rendered == {
+    renderer.update_expression(user)
+    assert renderer.output == {
         "ExpressionAttributeNames": {"#n0": "age", "#n2": "email"},
         "ExpressionAttributeValues": {":v1": {"N": "3"}, ":v3": {"S": "@"}},
         "UpdateExpression": "SET #n0=:v1, #n2=:v3",
@@ -696,8 +696,8 @@ def test_render_update_remove_only(renderer):
     # Explicit None
     document.value = None
 
-    renderer.render_update_expression(document)
-    assert renderer.rendered == {
+    renderer.update_expression(document)
+    assert renderer.output == {
         "ExpressionAttributeNames": {"#n0": "data", "#n2": "numbers", "#n4": "value"},
         "UpdateExpression": "REMOVE #n0, #n2, #n4",
     }
@@ -716,8 +716,8 @@ def test_render_actions(renderer):
     # SET supports all types
     obj.some_bytes = actions.set(b"hello")
 
-    renderer.render_update_expression(obj)
-    assert renderer.rendered == {
+    renderer.update_expression(obj)
+    assert renderer.output == {
         "ExpressionAttributeNames": {"#n0": "list_str", "#n2": "set_str", "#n4": "some_bytes", "#n6": "some_int"},
         "ExpressionAttributeValues": {":v3": {"SS": ["d", "e"]}, ":v5": {"B": "aGVsbG8="}, ":v7": {"N": "2"}},
         "UpdateExpression": "ADD #n6 :v7 DELETE #n2 :v3 REMOVE #n0 SET #n4=:v5"
@@ -736,10 +736,10 @@ def test_render_update_set_and_remove(renderer):
     document.value = 3
     document.another_value = 4
 
-    renderer.render_update_expression(document)
+    renderer.update_expression(document)
     # Ordering is alphabetical by model name: another_value, data, numbers, value
     # REMOVE statements will cause a skip in index (because value renders empty and pops the ref)
-    assert renderer.rendered == {
+    assert renderer.output == {
         "ExpressionAttributeNames": {"#n0": "another_value", "#n2": "data", "#n4": "numbers", "#n6": "value"},
         "ExpressionAttributeValues": {":v1": {"N": "4"}, ":v7": {"N": "3"}},
         "UpdateExpression": "REMOVE #n2, #n4 SET #n0=:v1, #n6=:v7",
@@ -781,7 +781,7 @@ def test_iter_empty():
 def test_render_empty(renderer):
     condition = Condition()
     condition.render(renderer)
-    assert not renderer.rendered
+    assert not renderer.output
 
 
 @pytest.mark.parametrize("condition", non_meta_conditions())
@@ -1251,14 +1251,14 @@ def test_render_valid_condition(condition, as_str, expected_names, expected_valu
     assert condition.render(renderer) == as_str
 
     if expected_names:
-        assert renderer.rendered["ExpressionAttributeNames"] == expected_names
+        assert renderer.output["ExpressionAttributeNames"] == expected_names
     else:
-        assert "ExpressionAttributeNames" not in renderer.rendered
+        assert "ExpressionAttributeNames" not in renderer.output
 
     if expected_values:
-        assert renderer.rendered["ExpressionAttributeValues"] == expected_values
+        assert renderer.output["ExpressionAttributeValues"] == expected_values
     else:
-        assert "ExpressionAttributeValues" not in renderer.rendered
+        assert "ExpressionAttributeValues" not in renderer.output
 
 
 @pytest.mark.parametrize("condition", [
@@ -1290,7 +1290,7 @@ def test_render_invalid_condition(condition, renderer):
     """After a condition fails to render, all of its name and value refs should be popped."""
     with pytest.raises(InvalidCondition):
         condition.render(renderer)
-    assert not renderer.rendered
+    assert not renderer.output
 
 
 def test_render_nested_meta_condition(renderer):
@@ -1307,7 +1307,7 @@ def test_render_nested_meta_condition(renderer):
 
     condition = (has_name & is_foo) | (~is_3) | is_email_address
     assert condition.render(renderer) == expected
-    assert renderer.rendered == {
+    assert renderer.output == {
         "ExpressionAttributeNames": expected_names,
         "ExpressionAttributeValues": expected_values
     }
@@ -1321,7 +1321,7 @@ def test_render_and_or_simplify(condition_cls, renderer):
     expected = "(#n0 < :v1)"
 
     assert condition.render(renderer) == expected
-    assert renderer.rendered == {
+    assert renderer.output == {
         "ExpressionAttributeNames": {"#n0": "age"},
         "ExpressionAttributeValues": {":v1": {"N": "3"}}
     }

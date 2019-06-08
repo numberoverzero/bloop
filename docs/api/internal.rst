@@ -199,7 +199,7 @@ atomic tracking via weakrefs) and specific parameters and error handling that Bl
 -------------------
 
 .. autoclass:: bloop.conditions.ConditionRenderer
-        :members: render, rendered
+        :members: render, output
 
 ---------------------
  Built-in Conditions

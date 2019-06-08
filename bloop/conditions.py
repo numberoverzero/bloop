@@ -282,7 +282,7 @@ def render(engine, obj=None, filter=None, projection=None, key=None, atomic=None
         atomic=atomic, update=update,
         filter=filter, projection=projection, key=key,
     )
-    return renderer.rendered
+    return renderer.output
 
 
 class ConditionRenderer:
@@ -305,7 +305,7 @@ class ConditionRenderer:
     .. code-block:: python
 
         >>> renderer.render(obj=user, atomic=True)
-        >>> renderer.rendered
+        >>> renderer.output
         {'ConditionExpression': '((#n0 = :v1) AND (attribute_not_exists(#n2)) AND (#n4 = :v5))',
          'ExpressionAttributeNames': {'#n0': 'age', '#n2': 'email', '#n4': 'id'},
          'ExpressionAttributeValues': {':v1': {'N': '3'}, ':v5': {'S': 'some-user-id'}}}
@@ -345,32 +345,32 @@ class ConditionRenderer:
             raise InvalidCondition("An object is required to render atomic conditions or updates without an object.")
 
         if filter:
-            self.render_filter_expression(filter)
+            self.filter_expression(filter)
 
         if projection:
-            self.render_projection_expression(projection)
+            self.projection_expression(projection)
 
         if key:
-            self.render_key_expression(key)
+            self.key_expression(key)
 
         # Condition requires a bit of work, because either one can be empty/false
         condition = (condition or Condition()) & (global_tracking.get_snapshot(obj) if atomic else Condition())
         if condition:
-            self.render_condition_expression(condition)
+            self.condition_expression(condition)
 
         if update:
-            self.render_update_expression(obj)
+            self.update_expression(obj)
 
-    def render_condition_expression(self, condition):
+    def condition_expression(self, condition):
         self.expressions["ConditionExpression"] = condition.render(self)
 
-    def render_filter_expression(self, condition):
+    def filter_expression(self, condition):
         self.expressions["FilterExpression"] = condition.render(self)
 
-    def render_key_expression(self, condition):
+    def key_expression(self, condition):
         self.expressions["KeyConditionExpression"] = condition.render(self)
 
-    def render_projection_expression(self, columns):
+    def projection_expression(self, columns):
         included = set()
         ref_names = []
         for column in columns:
@@ -381,7 +381,7 @@ class ConditionRenderer:
             ref_names.append(ref.name)
         self.expressions["ProjectionExpression"] = ", ".join(ref_names)
 
-    def render_update_expression(self, obj):
+    def update_expression(self, obj):
         updates = {
             ActionType.Add: [],
             ActionType.Delete: [],
@@ -414,9 +414,9 @@ class ConditionRenderer:
             self.expressions["UpdateExpression"] = " ".join(e.strip() for e in expressions)
 
     @property
-    def rendered(self):
-        """The rendered wire format for all conditions that have been rendered.  Rendered conditions are never
-        cleared.  A new :class:`~bloop.conditions.ConditionRenderer` should be used for each operation."""
+    def output(self):
+        """The wire format for all conditions that have been rendered.
+        A new :class:`~bloop.conditions.ConditionRenderer` should be used for each operation."""
         expressions = {k: v for (k, v) in self.expressions.items() if v is not None}
         if self.refs.attr_names:
             expressions["ExpressionAttributeNames"] = self.refs.attr_names

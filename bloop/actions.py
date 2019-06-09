@@ -5,18 +5,23 @@ from typing import Any, Union
 
 class ActionType(enum.Enum):
     """Represents how Dynamo should apply an update."""
-    Add = ("ADD", "{name_ref.name} {value_ref.name}")
-    Delete = ("DELETE", "{name_ref.name} {value_ref.name}")
-    Remove = ("REMOVE", "{name_ref.name}")
-    Set = ("SET", "{name_ref.name}={value_ref.name}")
+    Add = ("ADD", "{name_ref.name} {value_ref.name}", False)
+    Delete = ("DELETE", "{name_ref.name} {value_ref.name}", False)
+    Remove = ("REMOVE", "{name_ref.name}", True)
+    Set = ("SET", "{name_ref.name}={value_ref.name}", True)
 
-    def __init__(self, wire_key: str, fmt: str):
+    def __init__(self, wire_key: str, fmt: str, nestable: bool):
         self.wire_key = wire_key
         self.fmt = fmt
+        self.nestable = nestable
 
     def render(self, name_ref, value_ref):
         """name_ref, value_ref should be instances of ``bloop.conditions.Reference`` or None"""
         return self.fmt.format(name_ref=name_ref, value_ref=value_ref)
+
+    def new_action(self, value) -> "Action":
+        """Convenience function to instantiate an Action with this type"""
+        return Action(self, value)
 
 
 # O(1) __contains__ for Action.__new__
@@ -80,7 +85,7 @@ def add(value):
     # noinspection PyUnresolvedReferences
     """Create a new ADD action.
 
-        The ADD action only supports Number and set data types.
+        The ADD action only supports Number and Set data types.
         In addition, ADD can only be used on top-level attributes, not nested attributes.
 
         .. code-block:: pycon
@@ -98,7 +103,7 @@ def delete(value):
     # noinspection PyUnresolvedReferences
     """Create a new DELETE action.
 
-    The DELETE action only supports set data types.
+    The DELETE action only supports Set data types.
     In addition, DELETE can only be used on top-level attributes, not nested attributes.
 
     .. code-block:: pycon

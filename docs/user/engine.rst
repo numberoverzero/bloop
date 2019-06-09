@@ -233,6 +233,75 @@ Instead, you should read the previous values when you perform the write, and the
         if doc.location != new_location:
             delete_s3_object(doc.location)
 
+---------
+ Actions
+---------
+
+Most changes you make to modeled objects fall into two update categories: ``SET`` and ``REMOVE``.  Any time a value
+serializes as ``None`` or you call ``del myobj.some_attr`` it will likely be a remove, while ``myobj.attr = value``
+will be a set.  (This is up to the column's type, so you can override this behavior to use your own sentinel values).
+
+.. warning::
+    As mentioned in `Issue #136`_ and the `DynamoDb Developer Guide`_, an atomic counter is not appropriate
+    unless you can tolerate overcounting or undercounting.  AWS explicitly discourages using ``add`` or ``delete``
+    in general.
+
+    .. _Issue #136: https://github.com/numberoverzero/bloop/issues/136
+    .. _DynamoDb Developer Guide: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/WorkingWithItems.html#WorkingWithItems.AtomicCounters
+
+Dynamo exposes two additional update types: ``ADD`` and ``DELETE``.  These allow you to specify relative changes
+without knowing the current value stored in Dynamo.  One of the most common examples is a website view count: for a
+popular website the optimistic concurrency model will cause a lot of write contention and cap your throughput since
+each change requires a read, modify, save.  If there's a conflict you'll need to do all three again, for each writer.
+
+Instead of reading the value and using a conditional save, you can instead wrap the offset in a
+:func:`bloop.actions.add` and tell bloop to apply the desired change.  Compare the two following:
+
+.. code-block:: python
+
+    # Option 1) conditional write, wrap in retries
+    website = Website("google.com")
+    engine.load(website)
+    website.views += 1
+        # raises ConstraintViolation most of the time due to write contention
+    engine.save(website, condition=Website.views==(website.views-1))
+
+
+    # Option 2) add instead of set
+    website = Website("google.com")
+    website.views = bloop.actions.add(1)
+        # no contention
+    engine.save(website)
+
+When combined with return values above, we can add 1 and see the new value all in one call:
+
+.. code-block:: python
+
+    website = Website("google.com")
+    website.views = bloop.actions.add(1)
+    engine.save(website, sync=True)
+    print(f"views after save: {website.views}")
+
+Note that :func:`bloop.actions.set` and :func:`bloop.actions.remove` are assumed if you don't set a column
+to an explicit action:
+
+.. code-block:: python
+
+    # both equivalent
+    website.views = 21
+    website.views = bloop.actions.set(21)
+
+    # all equivalent
+    website.views = None
+    del website.views
+    website.views = bloop.actions.remove(None)
+
+Finally, the :func:`bloop.actions.add` action only supports Number and Set data types.
+In addition, add can only be used on top-level attributes, not nested attributes.
+
+Meanwhile :func:`bloop.actions.delete` only supports the Set data type.
+It can also only be used on top-level attributes.
+
 .. _user-engine-delete:
 
 ========

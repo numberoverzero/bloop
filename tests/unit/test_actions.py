@@ -17,7 +17,7 @@ short_funcs = [add, delete, remove, set]
 
 
 # noinspection PyTypeChecker
-@pytest.mark.parametrize("action_type", list(ActionType))
+@pytest.mark.parametrize("action_type", ActionType)
 @pytest.mark.parametrize("value", [None, object(), 1, ActionType.Add, Action])
 def test_valid_actions(action_type, value):
     action = Action(action_type, value)
@@ -85,3 +85,20 @@ def test_wrap_non_action(value, type):
 def test_wrap_action(value, func):
     action = func(value)
     assert wrap(action) is action
+
+
+# noinspection PyTypeChecker
+@pytest.mark.parametrize("action_type", list(ActionType))
+def test_new_action(action_type):
+    value = object()
+    action = action_type.new_action(value)
+    assert isinstance(action, Action)
+    assert action.type is action_type
+    assert action.value is value
+
+
+# noinspection PyTypeChecker
+@pytest.mark.parametrize("action_type", list(ActionType))
+def test_repr(action_type):
+    action = action_type.new_action("testval")
+    assert repr(action) == f"<Action[{action_type.wire_key}='testval']>"

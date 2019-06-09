@@ -420,6 +420,26 @@ def type_instance(typedef):
     return typedef
 
 
+def guard_no_action(func):
+    def call(value, *, context, **kwargs):
+        # guard call to _load or _dump
+        if isinstance(value, actions.Action):
+            if not value.type.nestable:
+                raise ValueError(f"cannot nest the action type {value.type}")
+            value = actions.unwrap(value)
+        value = func(value, context=context, **kwargs)
+
+        # guard response from _dump
+        if isinstance(value, actions.Action):
+            if not value.type.nestable:
+                raise ValueError(f"cannot nest the action type {value.type}")
+            value = actions.unwrap(value)
+
+        return value
+
+    return call
+
+
 class Set(Type):
     """Generic set type.  Must provide an inner type.
 
@@ -452,8 +472,9 @@ class Set(Type):
         if values is None:
             return None
         dumped = []
+        dump = guard_no_action(self.inner_typedef.dynamo_dump)
         for value in values:
-            value = self.inner_typedef.dynamo_dump(value, context=context, **kwargs)
+            value = dump(value, context=context, **kwargs)
             if value is not None:
                 dumped.append(value)
         return dumped or None
@@ -497,14 +518,18 @@ class List(Type):
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return list()
+        # noinspection PyProtectedMember
+        load = self.inner_typedef._load
         return [
-            self.inner_typedef._load(value, context=context, **kwargs)
+            load(value, context=context, **kwargs)
             for value in values]
 
     def dynamo_dump(self, values, *, context, **kwargs):
         if values is None:
             return None
-        dumped = (self.inner_typedef._dump(value, context=context, **kwargs) for value in values)
+        # noinspection PyProtectedMember
+        dump = guard_no_action(self.inner_typedef._dump)
+        dumped = (dump(value, context=context, **kwargs) for value in values)
         return [value for value in dumped if value is not None] or None
 
 
@@ -552,6 +577,7 @@ class Map(Type):
             values = dict()
         loaded = {}
         for key, typedef in self.types.items():
+            # noinspection PyProtectedMember
             value = typedef._load(values.get(key, None), context=context, **kwargs)
             loaded[key] = value
         return loaded
@@ -561,7 +587,9 @@ class Map(Type):
             return None
         dumped = {}
         for key, typedef in self.types.items():
-            value = typedef._dump(values.get(key, None), context=context, **kwargs)
+            # noinspection PyProtectedMember
+            dump = guard_no_action(typedef._dump)
+            value = dump(values.get(key, None), context=context, **kwargs)
             if value is not None:
                 dumped[key] = value
         return dumped or None
@@ -723,17 +751,21 @@ class DynamicList(Type):
         """Overload allows easy nested access to types"""
         return DynamicType.i
 
+    # noinspection PyProtectedMember
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return []
+        load = DynamicType.i._load
         return [
-            DynamicType.i._load(value, context=context, **kwargs)
+            load(value, context=context, **kwargs)
             for value in values]
 
     def dynamo_dump(self, values, *, context, **kwargs):
         if values is None:
             return None
-        dumped = (DynamicType.i._dump(value, context=context, **kwargs) for value in values)
+        # noinspection PyProtectedMember
+        dump = guard_no_action(DynamicType.i._dump)
+        dumped = (dump(value, context=context, **kwargs) for value in values)
         return [value for value in dumped if value is not None] or None
 
 
@@ -764,6 +796,7 @@ class DynamicMap(Type):
     def dynamo_load(self, values, *, context, **kwargs):
         if values is None:
             return {}
+        # noinspection PyProtectedMember
         return {
             key: DynamicType.i._load(value, context=context, **kwargs)
             for (key, value) in values.items()
@@ -773,8 +806,10 @@ class DynamicMap(Type):
         if values is None:
             return None
         dumped = {}
+        # noinspection PyProtectedMember
+        dump = guard_no_action(DynamicType.i._dump)
         for key, value in values.items():
-            value = DynamicType.i._dump(value, context=context, **kwargs)
+            value = dump(value, context=context, **kwargs)
             if value is not None:
                 dumped[key] = value
         return dumped or None

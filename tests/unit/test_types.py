@@ -153,11 +153,11 @@ def test_dump_actions(action_type):
         def dynamo_dump(self, value, *, context, **kwargs):
             return 3
 
-    action = actions.Action(action_type, "foo")
+    action = action_type.new_action("foo")
     typedef = MyType()
     same = typedef._dump(action, context=None)
-    assert same is action
-    assert action.value == {"placeholder": 3}
+    assert same.type is action_type
+    assert same.value == {"placeholder": 3}
 
 
 def test_string():
@@ -509,9 +509,10 @@ def test_dynamic_path_uses_singleton():
 def test_dynamic_dump_action(action_type, value):
     """In 2.4 when an action is passed, the action is returned with a dumped value"""
     typedef = DynamicType()
-    action = actions.Action(action_type, value)
+    action = action_type.new_action(value)
     v = typedef._dump(action, context=None)
-    assert v is action
+    assert isinstance(v, actions.Action)
+    assert v.type is action_type
     assert isinstance(v.value, dict)
 
 

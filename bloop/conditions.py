@@ -5,7 +5,7 @@ import logging
 import weakref
 from typing import Any, Set
 
-from .actions import ActionType, unwrap, wrap
+from .actions import Action, ActionType, unwrap, wrap
 from .exceptions import InvalidCondition
 from .signals import (
     object_deleted,
@@ -79,6 +79,9 @@ class ObjectTracking(weakref.WeakKeyDictionary):
             value = getattr(obj, column.name, None)
             # noinspection PyProtectedMember
             value = engine._dump(column.typedef, value)
+            # add/delete are relative values, we can't expect a specific value from them
+            if isinstance(value, Action) and value.type in {ActionType.Add, ActionType.Delete}:
+                continue
             condition = column == value
             # The renderer shouldn't try to dump the value again.
             # We're dumping immediately in case the value is mutable,

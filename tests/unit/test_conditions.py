@@ -205,15 +205,16 @@ def test_on_saved(engine):
     """Saving is equivalent to loading w.r.t. tracking.
 
     The state after saving is snapshotted for future atomic operations."""
-    user = User(name="foo", age=3)
+    user = User(name="foo", email="foo@bar.com", age=actions.add(1))
     object_saved.send(engine, engine=engine, obj=user)
 
-    # Since "name" and "age" were the only marked columns saved to DynamoDB,
-    # they are the only columns that must match for an atomic save.  The
-    # state of the other columns wasn't specified, so it's not safe to
+    # Since "name" and "email" were the only marked columns saved to DynamoDB,
+    # they are the only columns that must match for an atomic save.  Since age is a relative value,
+    # we don't know what value it should have (the user probably wanted to save with sync=True here).
+    # The state of the other columns wasn't specified, so it's not safe to
     # assume the intended value (missing vs empty)
     assert global_tracking.get_snapshot(user) == (
-        User.age.is_({"N": "3"}) &
+        User.email.is_({"S": "foo@bar.com"}) &
         User.name.is_({"S": "foo"})
     )
 

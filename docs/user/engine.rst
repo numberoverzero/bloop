@@ -151,6 +151,13 @@ specified on columns using the standard ``<, >=, ==, ...`` operators, as well as
  Atomic Save
 -------------
 
+.. warning::
+
+    The ``atomic=`` keyword is deprecated in 2.4 and will be removed in 3.0.
+    For an equivalent pattern see :ref:`patterns-snapshot` and `Issue #138`_.
+
+    .. _Issue #138: https://github.com/numberoverzero/bloop/issues/138
+
 A common use for conditions is performing atomic updates.  Often you only want to apply some changes if the local
 state matches the state in DynamoDB; if it has changed, you may need to reload the object before applying
 local changes.  Save provides a shorthand for this, ``atomic=True``.  By default saves are not atomic.

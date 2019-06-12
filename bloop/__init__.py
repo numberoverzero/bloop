@@ -1,3 +1,5 @@
+import warnings
+
 from .conditions import Condition
 from .engine import Engine
 from .exceptions import (
@@ -62,3 +64,4 @@ __all__ = [
     "Condition", "QueryIterator", "ReadTransaction", "ScanIterator", "Stream", "WriteTransaction", "missing",
 ]
 __version__ = "2.3.3"
+warnings.simplefilter("always", DeprecationWarning)

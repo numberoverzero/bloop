@@ -1,4 +1,5 @@
 import logging
+import warnings
 from typing import Any, Callable, Union
 
 from .conditions import render
@@ -22,12 +23,14 @@ from .signals import (
 )
 from .stream import Stream
 from .transactions import ReadTransaction, WriteTransaction
-from .util import dump_key, extract_key, index_for, walk_subclasses
+from .util import Sentinel, dump_key, extract_key, index_for, walk_subclasses
 
 
 __all__ = ["Engine"]
 
 logger = logging.getLogger("bloop.engine")
+deprecated_false = Sentinel("Deprecated:False")
+
 _sync_values = {
     "save": {
         None: "NONE",
@@ -39,6 +42,15 @@ _sync_values = {
         "old": "ALL_OLD"
     }
 }
+
+
+def deprecate_atomic(x):
+    if x is deprecated_false:
+        return False
+    warnings.warn(
+        "The 'atomic=' kwarg will be removed in 3.0.0; see https://github.com/numberoverzero/bloop/issues/138",
+        DeprecationWarning, stacklevel=3)
+    return x
 
 
 def validate_not_abstract(*objs):
@@ -184,12 +196,13 @@ class Engine:
 
         logger.info("successfully bound {} models to the engine".format(len(concrete)))
 
-    def delete(self, *objs, condition=None, atomic=False, sync=None):
+    def delete(self, *objs, condition=None, atomic=deprecated_false, sync=None):
         """Delete one or more objects.
 
         :param objs: objects to delete.
         :param condition: only perform each delete if this condition holds.
         :param bool atomic: only perform each delete if the local and DynamoDB versions of the object match.
+            **This parameter is deprecated and will be removed in 3.0**
         :param sync:
             update objects after deleting.  "old" loads attributes before the delete;
             None does not mutate the object locally.  Default is None.
@@ -203,7 +216,7 @@ class Engine:
                 "TableName": self._compute_table_name(obj.__class__),
                 "Key": dump_key(self, obj),
                 "ReturnValues": validate_sync("delete", sync),
-                **render(self, obj=obj, atomic=atomic, condition=condition)
+                **render(self, obj=obj, atomic=deprecate_atomic(atomic), condition=condition)
             })
             if attrs is not None:
                 unpack_from_dynamodb(attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
@@ -294,12 +307,13 @@ class Engine:
             projection=projection, consistent=consistent, forward=forward)
         return iter(q.prepare())
 
-    def save(self, *objs, condition=None, atomic=False, sync=None):
+    def save(self, *objs, condition=None, atomic=deprecated_false, sync=None):
         """Save one or more objects.
 
         :param objs: objects to save.
         :param condition: only perform each save if this condition holds.
         :param bool atomic: only perform each save if the local and DynamoDB versions of the object match.
+            **This parameter is deprecated and will be removed in 3.0**
         :param sync:
             update objects after saving.  "new" loads attributes after the save;
             "old" loads attributes before the save; None does not mutate the object locally.  Default is None.
@@ -312,7 +326,7 @@ class Engine:
                 "TableName": self._compute_table_name(obj.__class__),
                 "Key": dump_key(self, obj),
                 "ReturnValues": validate_sync("save", sync),
-                **render(self, obj=obj, atomic=atomic, condition=condition, update=True)
+                **render(self, obj=obj, atomic=deprecate_atomic(atomic), condition=condition, update=True)
             })
             if attrs is not None:
                 unpack_from_dynamodb(attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)

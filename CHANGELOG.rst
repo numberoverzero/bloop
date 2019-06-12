@@ -61,6 +61,14 @@ Note that this is backwards compatible in 2.4: ``Type._dump`` will not change un
 .. _Atomic Counters: https://bloop.readthedocs.io/en/latest/user/engine.html#actions
 .. _Issue #136: https://github.com/numberoverzero/bloop/issues/136
 
+[Changed]
+=========
+
+* The ``atomic=`` keyword for ``Engine.save`` and ``Engine.delete`` emits ``DeprecationWarning`` and will be
+  removed in 3.0.
+* ``Type._dump`` will return a ``bloop.action.Action`` object if one is passed in, in preparation for the
+  change in 3.0.
+
 --------------------
  2.3.3 - 2019-01-27
 --------------------

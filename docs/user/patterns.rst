@@ -109,6 +109,47 @@ Create a condition for any model or object that fails the operation if the item 
     # or
     engine.save(tweet, condition=if_not_exist(Tweet))
 
+.. _patterns-snapshot:
+
+====================
+ Snapshot Condition
+====================
+
+Creates a condition that ensures the object hasn't changed in DynamoDb since you loaded it.
+You need to create the condition before you modify the object locally.
+
+.. code-block:: python
+
+    from bloop import Condition
+    from copy import deepcopy
+
+    def snapshot(obj):
+        condition = Condition()
+        for col in obj.Meta.columns:
+            value = getattr(obj, col.name, None)
+            # use a deep copy here for nested dicts, lists
+            condition &= (col == deepcopy(value))
+        return condition
+
+And to use it:
+
+.. code-block:: python
+
+    from bloop_patterns import snapshot
+    from my_models import User
+
+    user = User(name="n/0")
+    engine.load(user)
+
+    # snapshot before any modifications
+    last_seen = snapshot(user)
+
+    # modify the object locally
+    user.verified = True
+
+    # save only if the state matches what was loaded
+    engine.save(user, condition=last_seen)
+
 .. _patterns-float:
 
 ============

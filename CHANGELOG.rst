@@ -13,6 +13,12 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  Unreleased
 ------------
 
+(no unreleased changes)
+
+--------------------
+ 2.4.0 - 2019-06-13
+--------------------
+
 The ``atomic=`` keyword for ``Engine.save`` and ``Engine.delete`` is deprecated and will be removed in 3.0.
 In 2.4 your code will continue to work but will raise ``DeprecationWarning`` when you specify a value for ``atomic=``.
 

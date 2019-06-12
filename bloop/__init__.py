@@ -63,5 +63,5 @@ __all__ = [
     # Misc
     "Condition", "QueryIterator", "ReadTransaction", "ScanIterator", "Stream", "WriteTransaction", "missing",
 ]
-__version__ = "2.3.3"
+__version__ = "2.4.0"
 warnings.simplefilter("always", DeprecationWarning)

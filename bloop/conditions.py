@@ -3,16 +3,11 @@
 import collections
 import logging
 import weakref
-from typing import Any, Set
+from typing import Any
 
-from .actions import Action, ActionType, unwrap, wrap
+from .actions import ActionType, unwrap, wrap
 from .exceptions import InvalidCondition
-from .signals import (
-    object_deleted,
-    object_loaded,
-    object_modified,
-    object_saved,
-)
+from .signals import object_modified
 from .util import missing
 
 
@@ -39,56 +34,8 @@ class ObjectTracking(weakref.WeakKeyDictionary):
         try:
             return super().__getitem__(key)
         except KeyError:
-            r = self[key] = {"marked": set(), "snapshot": None}
+            r = self[key] = set()
             return r
-
-    def get_snapshot(self, obj):
-        """Return the latest snapshot of the object.
-
-        If none exists, creates a snapshot that expects all values to be None.
-        """
-        snapshot = self[obj].get("snapshot")
-        if snapshot is not None:
-            return snapshot
-
-        # If the object has never been synced, create and cache
-        # a condition that expects every column to be empty
-        snapshot = Condition()
-        for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
-            snapshot &= column.is_(None)
-        self[obj]["snapshot"] = snapshot
-        return snapshot
-
-    def set_snapshot(self, obj, snapshot) -> None:
-        """Set the object snapshot eg. after saving or deleting"""
-        self[obj]["snapshot"] = snapshot
-
-    def get_marked(self, obj) -> Set:
-        """Return the set of columns considered 'dirty' for this object."""
-        return self[obj]["marked"]
-
-    def sync(self, obj, engine) -> None:
-        """
-        Mark the object as having been persisted at least once.
-
-        Store the latest snapshot of all marked values.
-        """
-        snapshot = Condition()
-        # Only expect values (or lack of a value) for columns that have been explicitly set
-        for column in sorted(global_tracking.get_marked(obj), key=lambda col: col.dynamo_name):
-            value = getattr(obj, column.name, None)
-            # noinspection PyProtectedMember
-            value = engine._dump(column.typedef, value)
-            # add/delete are relative values, we can't expect a specific value from them
-            if isinstance(value, Action) and value.type in {ActionType.Add, ActionType.Delete}:
-                continue
-            condition = column == value
-            # The renderer shouldn't try to dump the value again.
-            # We're dumping immediately in case the value is mutable,
-            # such as a set or (many) custom data types.
-            condition.dumped = True
-            snapshot &= condition
-        self.set_snapshot(obj, snapshot)
 
 
 # Tracks the state of instances of models:
@@ -97,27 +44,12 @@ class ObjectTracking(weakref.WeakKeyDictionary):
 global_tracking = ObjectTracking()
 
 
-@object_deleted.connect
-def on_object_deleted(_, *, obj, **__):
-    global_tracking.set_snapshot(obj, None)
-
-
-@object_loaded.connect
-def on_object_loaded(_, *, engine, obj, **__):
-    global_tracking.sync(obj, engine)
-
-
 @object_modified.connect
 def on_object_modified(_, *, obj, column, **__):
     # Mark a column for a given object as being modified in any way.
     # Any marked columns will be pushed (possibly as DELETE) in
     # future UpdateItem calls that include the object.
-    global_tracking.get_marked(obj).add(column)
-
-
-@object_saved.connect
-def on_object_saved(_, *, engine, obj, **__):
-    global_tracking.sync(obj, engine)
+    global_tracking[obj].add(column)
 
 
 # END CONDITION TRACKING ====================================================================== END CONDITION TRACKING
@@ -185,18 +117,17 @@ class ReferenceTracker:
                 str_pieces.append(self._name_ref(piece))
         return ".".join(str_pieces)
 
-    def _value_ref(self, column, value, *, dumped=False, inner=False):
+    def _value_ref(self, column, value, *, inner=False):
         """inner=True uses column.typedef.inner_type instead of column.typedef"""
         ref = ":v{}".format(self.next_index)
 
-        if not dumped:
-            typedef = column.typedef
-            for segment in path_of(column):
-                typedef = typedef[segment]
-            if inner:
-                typedef = typedef.inner_typedef
-            # noinspection PyProtectedMember
-            value = self.engine._dump(typedef, value)
+        typedef = column.typedef
+        for segment in path_of(column):
+            typedef = typedef[segment]
+        if inner:
+            typedef = typedef.inner_typedef
+        # noinspection PyProtectedMember
+        value = self.engine._dump(typedef, value)
 
         # The raw value needs to be stored in attr_values, but the Action information needs
         # to be passed back for the renderer to decide whether this is a set/remove/add/delete
@@ -204,7 +135,7 @@ class ReferenceTracker:
         self.counts[ref] += 1
         return ref, value
 
-    def any_ref(self, *, column, value=missing, dumped=False, inner=False) -> Reference:
+    def any_ref(self, *, column, value=missing, inner=False) -> Reference:
         # noinspection PyUnresolvedReferences
         """Returns a NamedTuple of (name, type, value) for any type of reference.
 
@@ -226,9 +157,6 @@ class ReferenceTracker:
         :type column: :class:`~bloop.conditions.ComparisonMixin`
         :param value: *(Optional)* If provided, this is likely a value ref.  If ``value`` is also a column,
             this will render a name ref for that column (not the ``column`` parameter).
-        :param bool dumped:  *(Optional)* True if the value has already been dumped and should not be dumped
-            through the column's typedef again.  Commonly used with atomic conditions (which store the object's dumped
-            representation).  Default is False.
         :param bool inner: *(Optional)* True if this is a value ref and it should be dumped through a collection's
             inner type, and not the collection type itself.  Default is False.
         :return: A name or value reference
@@ -247,7 +175,7 @@ class ReferenceTracker:
             value = None
         else:
             # Simple value ref.
-            name, value = self._value_ref(column=column, value=value, dumped=dumped, inner=inner)
+            name, value = self._value_ref(column=column, value=value, inner=inner)
             ref_type = "value"
         return Reference(name=name, type=ref_type, value=value)
 
@@ -278,11 +206,11 @@ class ReferenceTracker:
                     del self.name_attr_index[path_segment]
 
 
-def render(engine, obj=None, filter=None, projection=None, key=None, atomic=None, condition=None, update=None):
+def render(engine, obj=None, filter=None, projection=None, key=None, condition=None, update=None):
     renderer = ConditionRenderer(engine)
     renderer.render(
         obj=obj, condition=condition,
-        atomic=atomic, update=update,
+        update=update,
         filter=filter, projection=projection, key=key,
     )
     return renderer.output
@@ -322,7 +250,7 @@ class ConditionRenderer:
         self.engine = engine
         self.expressions = {}
 
-    def render(self, obj=None, condition=None, atomic=False, update=False, filter=None, projection=None, key=None):
+    def render(self, obj=None, condition=None, update=False, filter=None, projection=None, key=None):
         """Main entry point for rendering multiple expressions.  All parameters are optional, except obj when
         atomic or update are True.
 
@@ -331,8 +259,6 @@ class ConditionRenderer:
         :param condition: *(Optional)* Rendered as a "ConditionExpression" for a conditional operation.
             If atomic is True, the two are rendered in an AND condition.  Default is None.
         :type condition: :class:`~bloop.conditions.BaseCondition`
-        :param bool atomic: *(Optional)*  True if an atomic condition should be created for ``obj`` and rendered as
-            a "ConditionExpression".  Default is False.
         :param bool update: *(Optional)*  True if an "UpdateExpression" should be rendered for ``obj``.
             Default is False.
         :param filter: *(Optional)* A filter condition for a query or scan, rendered as a "FilterExpression".
@@ -344,8 +270,8 @@ class ConditionRenderer:
         :param key: *(Optional)* A key condition for queries, rendered as a "KeyConditionExpression".  Default is None.
         :type key: :class:`~bloop.conditions.BaseCondition`
         """
-        if (atomic or update) and not obj:
-            raise InvalidCondition("An object is required to render atomic conditions or updates without an object.")
+        if update and not obj:
+            raise InvalidCondition("An object is required to render updates.")
 
         if filter:
             self.filter_expression(filter)
@@ -357,7 +283,6 @@ class ConditionRenderer:
             self.key_expression(key)
 
         # Condition requires a bit of work, because either one can be empty/false
-        condition = (condition or Condition()) & (global_tracking.get_snapshot(obj) if atomic else Condition())
         if condition:
             self.condition_expression(condition)
 
@@ -393,7 +318,7 @@ class ConditionRenderer:
         }
         for column in sorted(
                 # Don't include key columns in an UpdateExpression
-                filter(lambda c: c not in obj.Meta.keys, global_tracking.get_marked(obj)),
+                filter(lambda c: c not in obj.Meta.keys, global_tracking[obj]),
                 key=lambda c: c.dynamo_name):
             name_ref = self.refs.any_ref(column=column)
             value_ref = self.refs.any_ref(column=column, value=getattr(obj, column.name, None))
@@ -435,11 +360,10 @@ class ConditionRenderer:
 
 
 class BaseCondition:
-    def __init__(self, operation, *, column=None, values=None, dumped=False):
+    def __init__(self, operation, *, column=None, values=None):
         self.operation = operation
         self.column = column
         self.values = list(values or [])
-        self.dumped = dumped
 
     __hash__ = object.__hash__
 
@@ -702,10 +626,8 @@ class ComparisonCondition(BaseCondition):
             self.operation, self.values[0])
 
     def render(self, renderer):
-        column_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped)
-        value_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped, value=self.values[0])
+        column_ref = renderer.refs.any_ref(column=self.column)
+        value_ref = renderer.refs.any_ref(column=self.column, value=self.values[0])
 
         # #n0 >= :v1
         # Comparison against another column, or comparison against non-None value
@@ -739,10 +661,8 @@ class BeginsWithCondition(BaseCondition):
             self.values[0])
 
     def render(self, renderer):
-        column_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped)
-        value_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped, value=self.values[0])
+        column_ref = renderer.refs.any_ref(column=self.column)
+        value_ref = renderer.refs.any_ref(column=self.column, value=self.values[0])
         if is_empty(value_ref):
             # Try to revert the renderer to a valid state
             renderer.refs.pop_refs(column_ref, value_ref)
@@ -763,12 +683,9 @@ class BetweenCondition(BaseCondition):
             self.values[0], self.values[1])
 
     def render(self, renderer):
-        column_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped)
-        lower_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped, value=self.values[0])
-        upper_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped, value=self.values[1])
+        column_ref = renderer.refs.any_ref(column=self.column)
+        lower_ref = renderer.refs.any_ref(column=self.column, value=self.values[0])
+        upper_ref = renderer.refs.any_ref(column=self.column, value=self.values[1])
         if is_empty(lower_ref) or is_empty(upper_ref):
             # Try to revert the renderer to a valid state
             renderer.refs.pop_refs(column_ref, lower_ref, upper_ref)
@@ -789,10 +706,8 @@ class ContainsCondition(BaseCondition):
             self.values[0])
 
     def render(self, renderer):
-        column_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped)
-        value_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped, value=self.values[0], inner=True)
+        column_ref = renderer.refs.any_ref(column=self.column)
+        value_ref = renderer.refs.any_ref(column=self.column, value=self.values[0], inner=True)
         if is_empty(value_ref):
             # Try to revert the renderer to a valid state
             renderer.refs.pop_refs(column_ref, value_ref)
@@ -817,14 +732,12 @@ class InCondition(BaseCondition):
             raise InvalidCondition("Condition <{!r}> is missing values.".format(self))
         value_refs = []
         for value in self.values:
-            value_ref = renderer.refs.any_ref(
-                column=self.column, dumped=self.dumped, value=value)
+            value_ref = renderer.refs.any_ref(column=self.column, value=value)
             value_refs.append(value_ref)
             if is_empty(value_ref):
                 renderer.refs.pop_refs(*value_refs)
                 raise InvalidCondition("Condition <{!r}> includes the value None.".format(self))
-        column_ref = renderer.refs.any_ref(
-            column=self.column, dumped=self.dumped)
+        column_ref = renderer.refs.any_ref(column=self.column)
         return "({} IN ({}))".format(column_ref.name, ", ".join(ref.name for ref in value_refs))
 
 

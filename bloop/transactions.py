@@ -45,14 +45,14 @@ class TxType(enum.Enum):
 
 class TxItem(NamedTuple):
     """
-    Includes the type, an object, and its condition/atomic settings.
+    Includes the type, an object, and its condition settings.
 
     The common way to construct an item is through the ``new`` method:
 
     .. code-block:: pycon
 
         >>> get_item = TxItem.new("get", some_obj)
-        >>> save_item = TxItem.new("save", some_obj, atomic=True)
+        >>> save_item = TxItem.new("save", some_obj)
     """
 
     #: How this item will be used in a transaction
@@ -64,12 +64,9 @@ class TxItem(NamedTuple):
     #: An optional condition that constrains an update
     condition: Optional[Any]
 
-    #: Whether the object must be identical locally to Dynamo before the commit takes place.
-    atomic: bool
-
     @classmethod
-    def new(cls, type_alias, obj, condition=None, atomic=False) -> "TxItem":
-        return TxItem(type=TxType.by_alias(type_alias), obj=obj, condition=condition, atomic=atomic)
+    def new(cls, type_alias, obj, condition=None) -> "TxItem":
+        return TxItem(type=TxType.by_alias(type_alias), obj=obj, condition=condition)
 
     @property
     def is_update(self):
@@ -87,7 +84,6 @@ class TxItem(NamedTuple):
 TxItem.type.__doc__ = """How this item will be used in a transaction"""
 TxItem.obj.__doc__ = """The object that will be modified, persisted, or referenced in a transaction"""
 TxItem.condition.__doc__ = """An optional condition that constrains an update"""
-TxItem.atomic.__doc__ = """Whether the object must be identical locally to Dynamo before the commit takes place."""
 
 
 class Transaction:
@@ -202,7 +198,6 @@ class PreparedTransaction:
                     **render(
                         self.engine,
                         obj=item.obj if item.should_render_obj else None,
-                        atomic=item.atomic,
                         condition=item.condition,
                         update=item.is_update),
                 }
@@ -316,7 +311,7 @@ class WriteTransaction(Transaction):
         self._extend([TxItem.new("check", obj, condition)])
         return self
 
-    def save(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
+    def save(self, *objs, condition=None) -> "WriteTransaction":
         """
         Add one or more objects to be saved in this transaction.
 
@@ -326,13 +321,12 @@ class WriteTransaction(Transaction):
 
         :param objs: Objects to add to the set that are updated in this transaction.
         :param condition: A condition for these objects which must hold for the transaction to commit.
-        :param bool atomic: only commit the transaction if the local and DynamoDB versions of the object match.
         :return: this transaction for chaining
         """
-        self._extend([TxItem.new("save", obj, condition, atomic) for obj in objs])
+        self._extend([TxItem.new("save", obj, condition) for obj in objs])
         return self
 
-    def delete(self, *objs, condition=None, atomic=False) -> "WriteTransaction":
+    def delete(self, *objs, condition=None) -> "WriteTransaction":
         """
         Add one or more objects to be deleted in this transaction.
 
@@ -342,8 +336,7 @@ class WriteTransaction(Transaction):
 
         :param objs: Objects to add to the set that are deleted in this transaction.
         :param condition: A condition for these objects which must hold for the transaction to commit.
-        :param bool atomic: only commit the transaction if the local and DynamoDB versions of the object match.
         :return: this transaction for chaining
         """
-        self._extend([TxItem.new("delete", obj, condition, atomic) for obj in objs])
+        self._extend([TxItem.new("delete", obj, condition) for obj in objs])
         return self

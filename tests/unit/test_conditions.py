@@ -28,7 +28,6 @@ from bloop.conditions import (
     render,
 )
 from bloop.models import BaseModel, Column
-from bloop.signals import object_deleted, object_loaded, object_saved
 from bloop.types import Binary, Boolean, Integer, List, Map, Set, String
 
 from ..helpers.models import Document, User, VectorModel
@@ -41,6 +40,7 @@ class MockColumn(Column):
         self._name = name
 
         # Mock model so this can render as M.name
+        # noinspection PyTypeChecker
         self.model = type("M", tuple(), {})
 
 
@@ -113,110 +113,25 @@ def renderer(engine):
 # TRACKING SIGNALS ================================================================================== TRACKING SIGNALS
 
 
-# Columns are sorted by model name
-empty_user_condition = (
-    User.age.is_(None) &
-    User.email.is_(None) &
-    User.id.is_(None) &
-    User.joined.is_(None) &
-    User.name.is_(None)
-)
-
-
-def test_on_deleted(engine):
-    """When an object is deleted, the snapshot expects all columns to be empty"""
-    user = User(age=3, name="foo")
-    object_deleted.send(engine, engine=engine, obj=user)
-    assert global_tracking.get_snapshot(user) == empty_user_condition
-
-    # It doesn't matter if the object had non-empty values saved from a previous sync
-    object_saved.send(engine, engine=engine, obj=user)
-    assert global_tracking.get_snapshot(user) == (
-        User.age.is_({"N": "3"}) &
-        User.name.is_({"S": "foo"})
-    )
-
-    # The deleted signal still clears everything
-    object_deleted.send(engine, engine=engine, obj=user)
-    assert global_tracking.get_snapshot(user) == empty_user_condition
-
-    # But the current values aren't replaced
-    assert user.age == 3
-    assert user.name == "foo"
-
-
-def test_on_loaded_partial(engine):
-    """When an object is loaded, the state after loading is snapshotted for future atomic calls"""
-    # Creating an instance doesn't snapshot anything
-    user = User(age=3, name="foo")
-    assert global_tracking.get_snapshot(user) == empty_user_condition
-
-    # Pretend the user was just loaded.  Because only
-    # age and name are marked, they will be the only
-    # columns included in the snapshot.  A normal load
-    # would set the other values to None, and the
-    # snapshot would expect those.
-    object_loaded.send(engine, engine=engine, obj=user)
-
-    # Values are stored dumped.  Since the dumped flag isn't checked as
-    # part of equality testing, we can simply construct the dumped
-    # representations to compare.
-    assert global_tracking.get_snapshot(user) == (
-        User.age.is_({"N": "3"}) &
-        User.name.is_({"S": "foo"})
-    )
-
-
-def test_on_loaded_full(engine):
-    """Same as the partial test, but with explicit Nones to simulate a real engine.load"""
-    user = User(age=3, email=None, id=None, joined=None, name="foo")
-    object_loaded.send(engine, engine=engine, obj=user)
-    assert global_tracking.get_snapshot(user) == (
-        User.age.is_({"N": "3"}) &
-        User.email.is_(None) &
-        User.id.is_(None) &
-        User.joined.is_(None) &
-        User.name.is_({"S": "foo"})
-    )
-
-
 def test_on_modified():
     """When an object's values are set or deleted, those columns are marked for tracking"""
 
     # Creating an instance doesn't mark anything
     user = User()
-    assert global_tracking.get_marked(user) == set()
+    assert global_tracking[user] == set()
 
     user.id = "foo"
-    assert global_tracking.get_marked(user) == {User.id}
+    assert global_tracking[user] == {User.id}
 
     # Deleting the value does not clear it from the set of marked columns
     del user.id
-    assert global_tracking.get_marked(user) == {User.id}
+    assert global_tracking[user] == {User.id}
 
     # Even when the delete fails, the column is marked.
     # We're tracking intention, not state change.
     with pytest.raises(AttributeError):
         del user.age
-    assert global_tracking.get_marked(user) == {User.id, User.age}
-
-
-def test_on_saved(engine):
-    """Saving is equivalent to loading w.r.t. tracking.
-
-    The state after saving is snapshotted for future atomic operations."""
-    user = User(name="foo", email="foo@bar.com", age=actions.add(1))
-    object_saved.send(engine, engine=engine, obj=user)
-
-    # Since "name" and "email" were the only marked columns saved to DynamoDB,
-    # they are the only columns that must match for an atomic save.  Since age is a relative value,
-    # we don't know what value it should have (the user probably wanted to save with sync=True here).
-    # The state of the other columns wasn't specified, so it's not safe to
-    # assume the intended value (missing vs empty)
-    assert global_tracking.get_snapshot(user) == (
-        User.email.is_({"S": "foo@bar.com"}) &
-        User.name.is_({"S": "foo"})
-    )
+    assert global_tracking[user] == {User.id, User.age}
 
 
 # END TRACKING SIGNALS ========================================================================== END TRACKING SIGNALS
@@ -340,37 +255,6 @@ def test_ref_value_path(reference_tracker):
 
     assert ref == expected_ref
     assert value == expected_value
-    assert reference_tracker.attr_values == expected_values
-
-
-def test_ref_value_dumped(reference_tracker):
-    """no path, value already dumped"""
-    column = Document.id
-    # This shouldn't be dumped, so we use an impossible value for the type
-    dumped_value = object()
-    expected_ref = ":v0"
-    expected_values = {":v0": dumped_value}
-
-    ref, value = reference_tracker._value_ref(column, dumped_value, dumped=True)
-
-    assert ref == expected_ref
-    assert value == dumped_value
-    assert reference_tracker.attr_values == expected_values
-
-
-def test_ref_value_dumped_path(reference_tracker):
-    """has path, value already dumped"""
-    column = Document.data["Description"]
-    # Description's typedef is Map, wich can't dump an object
-    # This shouldn't be dumped, so we use an impossible value for the type
-    dumped_value = object()
-    expected_ref = ":v0"
-    expected_values = {":v0": dumped_value}
-
-    ref, value = reference_tracker._value_ref(column, dumped_value, dumped=True)
-
-    assert ref == expected_ref
-    assert value == dumped_value
     assert reference_tracker.attr_values == expected_values
 
 
@@ -504,11 +388,9 @@ def test_ref_pop_value(reference_tracker):
 
 
 def test_render_missing_object(engine):
-    """Can't render atomic or update without an object"""
+    """Can't render update without an object"""
     with pytest.raises(InvalidCondition):
         render(engine, update=True)
-    with pytest.raises(InvalidCondition):
-        render(engine, atomic=True)
 
 
 @pytest.mark.parametrize("kwarg_name, expression_key", [
@@ -541,53 +423,6 @@ def test_render_projection_only(engine):
     }
 
 
-def test_render_atomic_only_new(engine):
-    """Atomic condition on a new object only -> all attribute_not_exists"""
-    rendered = render(engine, obj=User(), atomic=True)
-    assert rendered == {
-        "ExpressionAttributeNames": {"#n0": "age", "#n2": "email", "#n4": "id", "#n6": "j", "#n8": "name"},
-        "ConditionExpression": (
-            "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n2)) AND"
-            " (attribute_not_exists(#n4)) AND (attribute_not_exists(#n6)) AND"
-            " (attribute_not_exists(#n8)))"
-        )
-    }
-
-
-def test_render_atomic_only_partial(engine):
-    """Atomic condition on an object already partially synced"""
-    user = User(id="user_id", age=3, email=None)
-    # Sync gives us an atomic condition
-    object_saved.send(engine, engine=engine, obj=user)
-
-    # Unlike a new save, this one has no expectation about the values of "joined" or "name"
-    rendered = render(engine, obj=user, atomic=True)
-
-    assert rendered == {
-        "ExpressionAttributeNames": {"#n0": "age", "#n2": "email", "#n4": "id"},
-        "ExpressionAttributeValues": {":v1": {"N": "3"}, ":v5": {"S": "user_id"}},
-        "ConditionExpression": "((#n0 = :v1) AND (attribute_not_exists(#n2)) AND (#n4 = :v5))"
-    }
-
-
-def test_render_atomic_and_condition(engine):
-    """Atomic condition and condition are ANDed together (condition first)"""
-    user = User(id="user_id", age=3, email=None)
-    # Sync gives us an atomic condition
-    object_saved.send(engine, engine=engine, obj=user)
-
-    # Value ref isn't re-used
-    condition = User.email.contains("@")
-
-    rendered = render(engine, obj=user, condition=condition, atomic=True)
-
-    assert rendered == {
-        "ExpressionAttributeNames": {"#n0": "email", "#n2": "age", "#n5": "id"},
-        "ExpressionAttributeValues": {":v1": {"S": "@"}, ":v3": {"N": "3"}, ":v6": {"S": "user_id"}},
-        "ConditionExpression": "((contains(#n0, :v1)) AND (#n2 = :v3) AND (attribute_not_exists(#n0)) AND (#n5 = :v6))"
-    }
-
-
 def test_render_update_only(engine):
     user = User(email="@", age=3)
     rendered = render(engine, obj=user, update=True)
@@ -599,10 +434,8 @@ def test_render_update_only(engine):
 
 
 def test_render_complex(engine):
-    """Render a filter condition, key condition, projection, condition, atomic and update"""
-    user = User(id="uid", age=3, email=None)
-    # Sync gives us an atomic condition on id, age, email (sorted)
-    object_saved.send(engine, engine=engine, obj=user)
+    """Render a filter condition, key condition, projection, condition, and update"""
+    user = User(id="uid", age=None, email=None)
 
     filter_condition = User.email.contains("@")
     key_condition = User.age == 4
@@ -616,26 +449,26 @@ def test_render_complex(engine):
     user.name = "bill"
     del user.age
 
-    rendered = render(engine, obj=user,
-                      filter=filter_condition, projection=projection, key=key_condition,
-                      atomic=True, condition=condition, update=True)
+    rendered = render(
+        engine, obj=user,
+        filter=filter_condition, projection=projection,
+        key=key_condition,
+        condition=condition, update=True)
 
-    # Render order: filter, projection, key, (condition & atomic), update
+    # Render order: filter, projection, key, condition, update
     assert rendered == {
         "ExpressionAttributeNames": {"#n0": "email", "#n2": "name", "#n3": "id", "#n4": "age"},
         "ExpressionAttributeValues": {
             ":v1": {"S": "@"},
             ":v5": {"N": "4"},
-            ":v6": {"N": "3"},
-            ":v8": {"S": "uid"},
-            ":v11": {"S": "bill"}
+            ":v8": {"S": "bill"},
         },
 
         "FilterExpression": "(contains(#n0, :v1))",
         "ProjectionExpression": "#n2, #n3",
         "KeyConditionExpression": "(#n4 = :v5)",
-        "ConditionExpression": "((#n4 <= #n3) AND (#n4 = :v6) AND (attribute_not_exists(#n0)) AND (#n3 = :v8))",
-        "UpdateExpression": "REMOVE #n4, #n0 SET #n2=:v11",
+        "ConditionExpression": "(#n4 <= #n3)",
+        "UpdateExpression": "REMOVE #n4, #n0 SET #n2=:v8",
     }
 
 

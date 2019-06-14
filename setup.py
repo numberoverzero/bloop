@@ -21,6 +21,7 @@ if __name__ == "__main__":
         version=VERSION,
         description="ORM for DynamoDB",
         long_description=README + "\n\n" + CHANGES,
+        long_description_content_type="text/x-rst",
         classifiers=[
             "Development Status :: 5 - Production/Stable",
             "Intended Audience :: Developers",

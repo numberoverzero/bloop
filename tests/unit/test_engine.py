@@ -509,7 +509,7 @@ def test_save_unknown_sync(engine, sync):
 
 @pytest.mark.parametrize("sync", ["new", "old"])
 def test_save_sync(engine, session, sync):
-    """Engine.save(sync='old'|'new') the retured values should be loaded and the object should not be marked dirty"""
+    """Engine.save(sync='old'|'new') the returned values should be loaded and the object should not be marked dirty"""
 
     session.save_item.return_value = {
         "id": {"S": "user_id"},

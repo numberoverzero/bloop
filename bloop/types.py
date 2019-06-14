@@ -125,8 +125,7 @@ class Type:
         # TODO in 3.0 the code path will simplify by first calling ``value = actions.wrap(value)``
         #   but for 2.4 we don't return an Action unless one is passed
         if isinstance(value, actions.Action):
-            value.value = real_dump(value.value)
-            return value
+            return value.type.new_action(real_dump(value.value))
 
         return real_dump(value)
 
@@ -660,8 +659,7 @@ class DynamicType(Type):
         # TODO in 3.0 the code path will simplify by first calling ``value = actions.wrap(value)``
         #   but for 2.4 we don't return an Action unless one is passed
         if isinstance(value, actions.Action):
-            value.value = real_dump(value.value)
-            return value
+            return value.type.new_action(real_dump(value.value))
         else:
             return real_dump(value)
 

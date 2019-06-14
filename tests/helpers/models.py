@@ -81,6 +81,8 @@ class VectorModel(BaseModel):
             "str": String
         })
     }))
+    some_int = Column(Integer)
+    some_bytes = Column(Binary)
 
 
 # Provides a gsi and lsi with constrained projections for testing Filter.select validation

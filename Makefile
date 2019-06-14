@@ -1,3 +1,4 @@
+SHELL := /bin/bash
 .PHONY: cov docs publish
 
 cov:

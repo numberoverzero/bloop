@@ -1,3 +1,5 @@
+import warnings
+
 from .conditions import Condition
 from .engine import Engine
 from .exceptions import (
@@ -7,7 +9,7 @@ from .exceptions import (
     RecordsExpired,
     ShardIteratorExpired,
     TableMismatch,
-    TransactionCanceled
+    TransactionCanceled,
 )
 from .models import BaseModel, Column, GlobalSecondaryIndex, LocalSecondaryIndex
 from .search import QueryIterator, ScanIterator
@@ -59,6 +61,7 @@ __all__ = [
     "DynamicList", "DynamicMap",
 
     # Misc
-    "Condition", "QueryIterator", "ReadTransaction", "ScanIterator", "Stream", "WriteTransaction", "missing"
+    "Condition", "QueryIterator", "ReadTransaction", "ScanIterator", "Stream", "WriteTransaction", "missing",
 ]
-__version__ = "2.3.3"
+__version__ = "2.4.0"
+warnings.simplefilter("always", DeprecationWarning)

@@ -361,6 +361,31 @@ class SearchIterator:
         self._count = 0
         self._scanned = 0
         self._exhausted = False
+        self._last_yielded = None
+
+    @property
+    def token(self):
+        """
+        JSON-serializable representation of the current SearchIterator state.
+
+        Use :func:`iterator.move_to(token) <bloop.search.SearchIterator.move_to>` to move an iterator to this position.
+
+        Implementations will always include a "ExclusiveStartKey" key but may include additional metadata.
+        The iterator's ``count`` and ``scanned`` values are not preserved.
+
+        :returns: Iterator state as a json-friendly dict
+        """
+        if self._last_yielded is None:
+            # If the iterator isn't advanced but the user calls .move_to, ESK will not be None
+            # Otherwise, this returns {"ESK": None}
+            esk = self.request.get("ExclusiveStartKey")
+        else:
+            # table keys are always included (since they're always loaded)
+            # index keys are included if there's an index
+            keys = self.model.Meta.keys | (self.index.keys if self.index else set())
+            keys = (k.dynamo_name for k in keys)
+            esk = {k: self._last_yielded[k] for k in keys}
+        return {"ExclusiveStartKey": esk}
 
     @property
     def count(self):
@@ -398,6 +423,19 @@ class SearchIterator:
             raise ConstraintViolation("{} did not find any results.".format(self.mode.capitalize()))
         return value
 
+    def move_to(self, token):
+        """Restore an iterator to the state stored in a token.  This will reset all iterator state, including
+        ``count``, ``scanned``, and ``exhausted`` properties.
+
+        :param token: a :attr:`SearchIterator.token <bloop.search.SearchIterator.token>`
+        """
+        esk = token["ExclusiveStartKey"]
+        self.reset()
+        # Don't set to None since boto3 doesn't like an explicit None
+        if esk:
+            self.request["ExclusiveStartKey"] = esk
+        self._last_yielded = esk
+
     def one(self):
         """Return the unique result.  If there is not exactly one result,
         raises :exc:`~bloop.exceptions.ConstraintViolation`.
@@ -417,6 +455,7 @@ class SearchIterator:
         self._count = 0
         self._scanned = 0
         self._exhausted = False
+        self._last_yielded = None
         self.request.pop("ExclusiveStartKey", None)
 
     @property
@@ -433,7 +472,9 @@ class SearchIterator:
     def __next__(self):
         while (not self._exhausted) and len(self.buffer) == 0:
             response = self.session.search_items(self.mode, self.request)
-            continuation_token = self.request["ExclusiveStartKey"] = response.get("LastEvaluatedKey", None)
+            continuation_token = response.get("LastEvaluatedKey", None)
+            if continuation_token:
+                self.request["ExclusiveStartKey"] = continuation_token
             self._exhausted = not continuation_token
 
             self._count += response["Count"]
@@ -443,7 +484,8 @@ class SearchIterator:
             self.buffer.extend(response.get("Items", []))
 
         if self.buffer:
-            return self.buffer.popleft()
+            self._last_yielded = self.buffer.popleft()
+            return self._last_yielded
 
         # Buffer must be empty (if _buffer)
         # No more continue tokens (while not _exhausted)

@@ -1,4 +1,5 @@
 import logging
+import warnings
 from typing import Any, Callable, Union
 
 from .conditions import render
@@ -22,11 +23,34 @@ from .signals import (
 )
 from .stream import Stream
 from .transactions import ReadTransaction, WriteTransaction
-from .util import dump_key, extract_key, index_for, walk_subclasses
+from .util import Sentinel, dump_key, extract_key, index_for, walk_subclasses
 
 
 __all__ = ["Engine"]
+
 logger = logging.getLogger("bloop.engine")
+deprecated_false = Sentinel("Deprecated:False")
+
+_sync_values = {
+    "save": {
+        None: "NONE",
+        "new": "ALL_NEW",
+        "old": "ALL_OLD"
+    },
+    "delete": {
+        None: "NONE",
+        "old": "ALL_OLD"
+    }
+}
+
+
+def deprecate_atomic(x):
+    if x is deprecated_false:
+        return False
+    warnings.warn(
+        "The 'atomic=' kwarg will be removed in 3.0.0; see https://github.com/numberoverzero/bloop/issues/138",
+        DeprecationWarning, stacklevel=3)
+    return x
 
 
 def validate_not_abstract(*objs):
@@ -40,6 +64,14 @@ def validate_is_model(model):
     if not subclassof(model, BaseModel):
         cls = model if isinstance(model, type) else model.__class__
         raise InvalidModel("{!r} does not subclass BaseModel.".format(cls.__name__))
+
+
+def validate_sync(mode, value):
+    allowed = _sync_values[mode]
+    wire = allowed.get(value)
+    if wire is None:
+        raise ValueError(f"Unrecognized option {value!r} for sync parameter, must be one of {set(allowed.keys())}")
+    return wire
 
 
 def fail_unknown(model, ctx):
@@ -164,22 +196,30 @@ class Engine:
 
         logger.info("successfully bound {} models to the engine".format(len(concrete)))
 
-    def delete(self, *objs, condition=None, atomic=False):
+    def delete(self, *objs, condition=None, atomic=deprecated_false, sync=None):
         """Delete one or more objects.
 
         :param objs: objects to delete.
         :param condition: only perform each delete if this condition holds.
         :param bool atomic: only perform each delete if the local and DynamoDB versions of the object match.
+            **This parameter is deprecated and will be removed in 3.0**
+        :param sync:
+            update objects after deleting.  "old" loads attributes before the delete;
+            None does not mutate the object locally.  Default is None.
         :raises bloop.exceptions.ConstraintViolation: if the condition (or atomic) is not met.
         """
         objs = set(objs)
         validate_not_abstract(*objs)
+        validate_sync("delete", sync)
         for obj in objs:
-            self.session.delete_item({
+            attrs = self.session.delete_item({
                 "TableName": self._compute_table_name(obj.__class__),
                 "Key": dump_key(self, obj),
-                **render(self, obj=obj, atomic=atomic, condition=condition)
+                "ReturnValues": validate_sync("delete", sync),
+                **render(self, obj=obj, atomic=deprecate_atomic(atomic), condition=condition)
             })
+            if attrs is not None:
+                unpack_from_dynamodb(attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
             object_deleted.send(self, engine=self, obj=obj)
         logger.info("successfully deleted {} objects".format(len(objs)))
 
@@ -267,22 +307,29 @@ class Engine:
             projection=projection, consistent=consistent, forward=forward)
         return iter(q.prepare())
 
-    def save(self, *objs, condition=None, atomic=False):
+    def save(self, *objs, condition=None, atomic=deprecated_false, sync=None):
         """Save one or more objects.
 
         :param objs: objects to save.
         :param condition: only perform each save if this condition holds.
         :param bool atomic: only perform each save if the local and DynamoDB versions of the object match.
+            **This parameter is deprecated and will be removed in 3.0**
+        :param sync:
+            update objects after saving.  "new" loads attributes after the save;
+            "old" loads attributes before the save; None does not mutate the object locally.  Default is None.
         :raises bloop.exceptions.ConstraintViolation: if the condition (or atomic) is not met.
         """
         objs = set(objs)
         validate_not_abstract(*objs)
         for obj in objs:
-            self.session.save_item({
+            attrs = self.session.save_item({
                 "TableName": self._compute_table_name(obj.__class__),
                 "Key": dump_key(self, obj),
-                **render(self, obj=obj, atomic=atomic, condition=condition, update=True)
+                "ReturnValues": validate_sync("save", sync),
+                **render(self, obj=obj, atomic=deprecate_atomic(atomic), condition=condition, update=True)
             })
+            if attrs is not None:
+                unpack_from_dynamodb(attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
             object_saved.send(self, engine=self, obj=obj)
         logger.info("successfully saved {} objects".format(len(objs)))
 

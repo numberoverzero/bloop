@@ -16,6 +16,66 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 (no unreleased changes)
 
 --------------------
+ 2.4.0 - 2019-06-13
+--------------------
+
+The ``atomic=`` keyword for ``Engine.save`` and ``Engine.delete`` is deprecated and will be removed in 3.0.
+In 2.4 your code will continue to work but will raise ``DeprecationWarning`` when you specify a value for ``atomic=``.
+
+The ``Type._dump`` function return value is changing to ``Union[Any, bloop.Action]`` in 2.4 to prepare for the
+change in 3.0 to exclusively returning a ``bloop.Action``.  For built-in types and most custom types that only
+override ``dynamo_dump`` this is a no-op, but if you call ``Type._dump`` you can use ``bloop.actions.unwrap()`` on
+the result to get the inner value.  If you have a custom ``Type._dump`` method it must return an action in 3.0.  For
+ease of use you can use ``bloop.actions.wrap()`` which will specify either the ``SET`` or ``REMOVE`` action to match
+existing behavior.  Here's an example of how you can quickly modify your code:
+
+.. code-block:: python
+
+    # current pre-2.4 method, continues to work until 3.0
+    def _dump(self, value, **kwargs):
+        value = self.dynamo_dump(value, **kwargs)
+        if value is None:
+            return None
+        return {self.backing_type: value}
+
+    # works in 2.4 and 3.0
+    from bloop import actions
+    def _dump(self, value, **kwargs):
+        value = actions.unwrap(value)
+        value = self.dynamo_dump(value, **kwargs)
+        return actions.wrap(value)
+
+Note that this is backwards compatible in 2.4: ``Type._dump`` will not change unless you opt to pass the new
+``Action`` object to it.
+
+[Added]
+=======
+
+* ``SearchIterator.token`` provides a way to start a new Query or Scan from a previous query/scan's state.
+  See `Issue #132`_.
+* ``SearchIterator.move_to`` takes a token to update the search state.  Count/ScannedCount state are lost when
+  moving to a token.
+* ``Engine.delete`` and ``Engine.save`` take an optional argument ``sync=`` which can be used to update objects with
+  the old or new values from DynamoDB after saving or deleting.  See the `Return Values`_ section of the User Guide
+  and `Issue #137`_.
+* ``bloop.actions`` expose a way to manipulate atomic counters and sets.  See the `Atomic Counters`_ section of the
+  User Guide and `Issue #136`_.
+
+.. _Issue #132: https://github.com/numberoverzero/bloop/issues/132
+.. _Return Values: https://bloop.readthedocs.io/en/latest/user/engine.html#return-values
+.. _Issue #137: https://github.com/numberoverzero/bloop/issues/137
+.. _Atomic Counters: https://bloop.readthedocs.io/en/latest/user/engine.html#actions
+.. _Issue #136: https://github.com/numberoverzero/bloop/issues/136
+
+[Changed]
+=========
+
+* The ``atomic=`` keyword for ``Engine.save`` and ``Engine.delete`` emits ``DeprecationWarning`` and will be
+  removed in 3.0.
+* ``Type._dump`` will return a ``bloop.action.Action`` object if one is passed in, in preparation for the
+  change in 3.0.
+
+--------------------
  2.3.3 - 2019-01-27
 --------------------
 

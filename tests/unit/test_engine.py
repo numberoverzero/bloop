@@ -6,6 +6,7 @@ from unittest.mock import Mock
 import pytest
 from tests.helpers.models import ComplexModel, User, VectorModel
 
+from bloop.conditions import global_tracking
 from bloop.engine import Engine
 from bloop.exceptions import (
     InvalidModel,
@@ -360,9 +361,11 @@ def test_save_twice(engine, session):
     expected = {
         "Key": {"id": {"S": user.id}},
         "TableName": "User",
+        "ReturnValues": "NONE",
         "ExpressionAttributeNames": {"#n0": "age"},
         "ExpressionAttributeValues": {":v1": {"N": "5"}},
-        "UpdateExpression": "SET #n0=:v1"}
+        "UpdateExpression": "SET #n0=:v1",
+    }
     engine.save(user)
     engine.save(user)
 
@@ -378,7 +381,9 @@ def test_save_list_with_condition(engine, session, caplog):
             "ConditionExpression": "(attribute_not_exists(#n0))",
             "ExpressionAttributeNames": {"#n0": "id"},
             "Key": {"id": {"S": user.id}},
-            "TableName": "User"}
+            "TableName": "User",
+            "ReturnValues": "NONE",
+        }
         for user in users]
     engine.save(*users, condition=condition)
     for expected in expected_calls:
@@ -392,6 +397,7 @@ def test_save_single_with_condition(engine, session):
     user = User(id="user_id")
     condition = User.id.is_(None)
     expected = {"TableName": "User",
+                "ReturnValues": "NONE",
                 "ExpressionAttributeNames": {"#n0": "id"},
                 "ConditionExpression": "(attribute_not_exists(#n0))",
                 "Key": {"id": {"S": user.id}}}
@@ -408,6 +414,7 @@ def test_save_atomic_new(engine, session):
             "#n8": "name", "#n4": "id"},
         "Key": {"id": {"S": user.id}},
         "TableName": "User",
+        "ReturnValues": "NONE",
         "ConditionExpression": (
             "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n2)) "
             "AND (attribute_not_exists(#n4)) AND (attribute_not_exists(#n6))"
@@ -434,6 +441,7 @@ def test_save_atomic_condition(engine, session):
             ":v4": {"S": "new_foo"}},
         "Key": {"id": {"S": user.id}},
         "TableName": "User",
+        "ReturnValues": "NONE",
         "UpdateExpression": "SET #n0=:v4"
     }
     engine.save(user, condition=condition, atomic=True)
@@ -449,6 +457,7 @@ def test_save_condition_key_only(engine, session):
     expected = {
         "ConditionExpression": "(attribute_not_exists(#n0))",
         "TableName": "User",
+        "ReturnValues": "NONE",
         "ExpressionAttributeNames": {"#n0": "id"},
         "Key": {"id": {"S": user.id}}}
     engine.save(user, condition=condition)
@@ -465,6 +474,7 @@ def test_save_set_only(engine, session):
         "Key": {"id": {"S": user.id}},
         "ExpressionAttributeNames": {"#n0": "email"},
         "TableName": "User",
+        "ReturnValues": "NONE",
         "UpdateExpression": "SET #n0=:v1",
         "ExpressionAttributeValues": {":v1": {"S": "foo@domain.com"}}}
     engine.save(user)
@@ -481,20 +491,55 @@ def test_save_del_only(engine, session):
         "Key": {"id": {"S": user.id}},
         "ExpressionAttributeNames": {"#n0": "age"},
         "TableName": "User",
+        "ReturnValues": "NONE",
         "UpdateExpression": "REMOVE #n0"}
     engine.save(user)
     session.save_item.assert_called_once_with(expected)
+
+
+@pytest.mark.parametrize("sync", [
+    "ALL_NEW", "ALL_OLD", "NONE",  # literal values
+    False, True,  # ambiguous if update/all is exposed in the future
+])
+def test_save_unknown_sync(engine, sync):
+    user = User(id="user_id", age=4)
+    with pytest.raises(ValueError):
+        engine.save(user, sync=sync)
+
+
+@pytest.mark.parametrize("sync", ["new", "old"])
+def test_save_sync(engine, session, sync):
+    """Engine.save(sync='old'|'new') the retured values should be loaded and the object should not be marked dirty"""
+
+    session.save_item.return_value = {
+        "id": {"S": "user_id"},
+        "age": {"N": "3"}
+    }
+    user = User(id="user_id", age=4)
+    engine.save(user, sync=sync)
+    assert user.age == 3
+
+    assert global_tracking.get_snapshot(user) == (
+        User.age.is_({"N": "3"}) &
+        User.email.is_(None) &
+        User.id.is_({"S": "user_id"}) &
+        User.joined.is_(None) &
+        User.name.is_(None)
+    )
 
 
 def test_delete_multiple_condition(engine, session, caplog):
     users = [User(id=str(i)) for i in range(3)]
     condition = User.id == "foo"
     expected_calls = [
-        {"Key": {"id": {"S": user.id}},
-         "ExpressionAttributeValues": {":v1": {"S": "foo"}},
-         "ExpressionAttributeNames": {"#n0": "id"},
-         "ConditionExpression": "(#n0 = :v1)",
-         "TableName": "User"}
+        {
+            "Key": {"id": {"S": user.id}},
+            "ExpressionAttributeValues": {":v1": {"S": "foo"}},
+            "ExpressionAttributeNames": {"#n0": "id"},
+            "ConditionExpression": "(#n0 = :v1)",
+            "TableName": "User",
+            "ReturnValues": "NONE",
+        }
         for user in users]
     engine.delete(*users, condition=condition)
     for expected in expected_calls:
@@ -514,6 +559,7 @@ def test_delete_atomic(engine, session):
         "ConditionExpression": "(#n0 = :v1)",
         "ExpressionAttributeValues": {":v1": {"S": user.id}},
         "TableName": "User",
+        "ReturnValues": "NONE",
         "Key": {"id": {"S": user.id}},
         "ExpressionAttributeNames": {"#n0": "id"}}
     engine.delete(user, atomic=True)
@@ -525,6 +571,7 @@ def test_delete_atomic_new(engine, session):
     user = User(id="user_id")
     expected = {
         "TableName": "User",
+        "ReturnValues": "NONE",
         "ExpressionAttributeNames": {
             "#n4": "id", "#n0": "age", "#n8": "name",
             "#n6": "j", "#n2": "email"},
@@ -542,6 +589,7 @@ def test_delete_new(engine, session):
     user = User(id="user_id")
     expected = {
         "TableName": "User",
+        "ReturnValues": "NONE",
         "Key": {"id": {"S": user.id}}}
     engine.delete(user)
     session.delete_item.assert_called_once_with(expected)
@@ -561,10 +609,41 @@ def test_delete_atomic_condition(engine, session):
             ":v5": {"S": user.id}},
         "ExpressionAttributeNames": {"#n0": "name", "#n2": "email", "#n4": "id"},
         "Key": {"id": {"S": user.id}},
-        "TableName": "User"
+        "TableName": "User",
+        "ReturnValues": "NONE",
     }
     engine.delete(user, condition=User.name.is_("foo"), atomic=True)
     session.delete_item.assert_called_once_with(expected)
+
+
+@pytest.mark.parametrize("sync", [
+    "ALL_NEW", "ALL_OLD", "NONE",  # literal values
+    False, True,  # ambiguous if update/all is exposed in the future
+    "new",  # only for save, not delete
+])
+def test_delete_unknown_sync(engine, sync):
+    user = User(id="user_id", age=4)
+    with pytest.raises(ValueError):
+        engine.delete(user, sync=sync)
+
+
+def test_delete_sync(engine, session):
+    """Engine.delete(sync='old') the previous values should be loaded and the object should be marked dirty"""
+
+    session.delete_item.return_value = {
+        "id": {"S": "user_id"},
+        "age": {"N": "3"}
+    }
+    user = User(id="user_id", age=4)
+    engine.delete(user, sync="old")
+    assert user.age == 3
+    assert global_tracking.get_snapshot(user) == (
+        User.age.is_(None) &
+        User.email.is_(None) &
+        User.id.is_(None) &
+        User.joined.is_(None) &
+        User.name.is_(None)
+    )
 
 
 def test_query(engine):
@@ -824,9 +903,10 @@ def test_update_missing_vector_types(engine, session):
         "ExpressionAttributeValues": {":v3": {"M": {"str": {"S": "bar"}}}},
         "Key": {"name": {"S": "foo"}},
         "TableName": "VectorModel",
+        "ReturnValues": "NONE",
         # Map is set, but only with the key that has a value.
         # list is deleted, since it has no values.
-        "UpdateExpression": "SET #n2=:v3 REMOVE #n0",
+        "UpdateExpression": "REMOVE #n0 SET #n2=:v3",
     }
 
     engine.save(obj)

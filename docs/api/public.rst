@@ -512,79 +512,37 @@ You should use :class:`decimal.Decimal` instances to avoid rounding errors:
         :annotation: = dict
 
 
+=========
+ Actions
+=========
+
+**In most cases you do not need an action.**  However, you can use :func:`bloop.actions.add` to change a
+numeric value or a set's members without reading it, or :func:`bloop.actions.delete` to change a set's members
+without reading it.
+
+As mentioned in the `Atomic Counters`_ section of the DynamoDB Developer Guide, you should understand the limitations
+of atomic counters and be
+
+.. _Atomic Counters: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/WorkingWithItems.html#WorkingWithItems.AtomicCounters
+
+.. autofunction:: bloop.actions.add
+.. autofunction:: bloop.actions.delete
+.. autofunction:: bloop.actions.remove
+.. autofunction:: bloop.actions.set
+
 =======
  Query
 =======
 
 .. autoclass:: bloop.search.QueryIterator
-
-    .. attribute:: count
-
-        Number of items that have been loaded from DynamoDB so far, including buffered items.
-        When projection type is "count", accessing this will automatically exhaust the query.
-
-    .. attribute:: exhausted
-
-        True if there are no more results.
-
-    .. function:: all()
-
-        Eagerly load all results and return a single list.  If there are no results, the list is empty.
-
-    .. function:: first()
-
-        Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
-
-    .. function:: one()
-
-        Return the unique result.  If there is not exactly one result,
-        raises :exc:`~bloop.exceptions.ConstraintViolation`.
-
-    .. function:: reset()
-
-        Reset to the initial state, clearing the buffer and zeroing count and scanned.
-
-    .. attribute:: scanned
-
-        Number of items that DynamoDB evaluated, before any filter was applied.
-        When projection type is "count", accessing this will automatically exhaust the query.
+    :inherited-members:
 
 ======
  Scan
 ======
 
 .. autoclass:: bloop.search.ScanIterator
-
-    .. attribute:: count
-
-        Number of items that have been loaded from DynamoDB so far, including buffered items.
-        When projection type is "count", accessing this will automatically exhaust the query.
-
-    .. attribute:: exhausted
-
-        True if there are no more results.
-
-    .. function:: all()
-
-        Eagerly load all results and return a single list.  If there are no results, the list is empty.
-
-    .. function:: first()
-
-        Return the first result.  If there are no results, raises :exc:`~bloop.exceptions.ConstraintViolation`.
-
-    .. function:: one()
-
-        Return the unique result.  If there is not exactly one result,
-        raises :exc:`~bloop.exceptions.ConstraintViolation`.
-
-    .. function:: reset()
-
-        Reset to the initial state, clearing the buffer and zeroing count and scanned.
-
-    .. attribute:: scanned
-
-        Number of items that DynamoDB evaluated, before any filter was applied.
-        When projection type is "count", accessing this will automatically exhaust the query.
+    :inherited-members:
 
 ========
  Stream

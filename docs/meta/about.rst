@@ -14,7 +14,7 @@ To start developing Bloop first `create a fork`_, then clone and run the tests::
     git clone git@github.com:[YOU]/bloop.git
     cd bloop
     pip install tox -e .
-    tox -e unit, docs
+    tox
 
 .. note::
 

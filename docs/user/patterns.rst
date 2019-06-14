@@ -109,6 +109,47 @@ Create a condition for any model or object that fails the operation if the item 
     # or
     engine.save(tweet, condition=if_not_exist(Tweet))
 
+.. _patterns-snapshot:
+
+====================
+ Snapshot Condition
+====================
+
+Creates a condition that ensures the object hasn't changed in DynamoDb since you loaded it.
+You need to create the condition before you modify the object locally.
+
+.. code-block:: python
+
+    from bloop import Condition
+    from copy import deepcopy
+
+    def snapshot(obj):
+        condition = Condition()
+        for col in obj.Meta.columns:
+            value = getattr(obj, col.name, None)
+            # use a deep copy here for nested dicts, lists
+            condition &= (col == deepcopy(value))
+        return condition
+
+And to use it:
+
+.. code-block:: python
+
+    from bloop_patterns import snapshot
+    from my_models import User
+
+    user = User(name="n/0")
+    engine.load(user)
+
+    # snapshot before any modifications
+    last_seen = snapshot(user)
+
+    # modify the object locally
+    user.verified = True
+
+    # save only if the state matches what was loaded
+    engine.save(user, condition=last_seen)
+
 .. _patterns-float:
 
 ============
@@ -279,6 +320,86 @@ Using this class, a type failure looks like:
     ValueError: Tried to set id to None but column is not nullable
     >>> appt.location = 3
     TypeError: Tried to set location with invalid type <class 'int'> (expected <class 'str'>)
+
+
+====================
+ Json Serialization
+====================
+
+When you're ready to serialize your objects for use in other systems you should reach for `marshmallow`__.
+Marshmallow's context-specific serialization is useful for excluding fields for different consumers,
+such as internal account notes.  You can specify multiple formats and switch based on use eg. base64 to send bytes
+over the wire or as raw bytes to write to disk.
+
+But when you want to quickly send something over the wire, marshmallow can be heavy.
+The following is a drop in function for the ``default`` argument to ``json.dumps``.
+
+It is not intended for production use.  For historical discussion, see `Issue #135`_.
+
+.. code-block:: python
+
+    # bloop_serializer.py
+    import base64
+    import datetime
+    import decimal
+    import uuid
+    from bloop import BaseModel
+
+    def serialize(use_float: bool = True, explicit_none: bool = True):
+        def default(obj):
+            # bloop.Set[T]
+            if isinstance(obj, set):
+                return list(obj)
+            # bloop.{Datetime,Timestamp}
+            if isinstance(obj, datetime.datetime):
+                return obj.isoformat()
+            # bloop.UUID
+            elif isinstance(obj, uuid.UUID):
+                return str(obj)
+            # bloop.Number
+            elif isinstance(obj, decimal.Decimal):
+                if use_float:
+                    return float(obj)
+                return str(obj)
+            # bloop.Binary
+            elif isinstance(obj, bytes):
+                return base64.b64encode(obj).decode("utf-8")
+            # bloop.BaseModel
+            elif isinstance(obj, BaseModel):
+                return {
+                    c.name: getattr(obj, c.name, None)
+                    for c in obj.Meta.columns
+                    if hasattr(obj, c.name) or explicit_none
+                }
+            raise TypeError(f"Type {type(obj)} is not serializable")
+        return default
+
+
+To use the serializer, simply pass it to ``json.dumps``:
+
+.. code-block:: python
+
+    import json
+    from bloop_serializer import serialize
+
+    user = User(...)
+    json.dumps(
+        user,
+        default=serialize(),
+        indent=True, sort_keys=True
+    )
+
+    # render None/empty values as null instead of omitting
+    json.dumps(
+        user,
+        default=serialize(explicit_none=True),
+        indent=True, sort_keys=True
+    )
+
+
+__ https://marshmallow.readthedocs.io
+
+.. _Issue #135: https://github.com/numberoverzero/bloop/issues/135
 
 .. _marshmallow-pattern:
 

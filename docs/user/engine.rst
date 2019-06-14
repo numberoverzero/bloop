@@ -126,6 +126,10 @@ Saving an item or items is very simple:
     >>> user.last_activity = now
     >>> engine.save(user, tweet)
 
+-----------------
+ Save Conditions
+-----------------
+
 You can perform optimistic saves with a ``condition``.  If a condition is not met when DynamoDB tries to apply the
 update, the update fails and bloop immediately raises :exc:`~bloop.exceptions.ConstraintViolation`.  Conditions are
 specified on columns using the standard ``<, >=, ==, ...`` operators, as well as
@@ -143,21 +147,26 @@ specified on columns using the standard ``<, >=, ==, ...`` operators, as well as
       ...
     ConstraintViolation: The condition was not met.
 
+-------------
+ Atomic Save
+-------------
+
+.. warning::
+
+    The ``atomic=`` keyword is deprecated in 2.4 and will be removed in 3.0.
+    For an equivalent pattern see :ref:`patterns-snapshot` and `Issue #138`_.
+
+    .. _Issue #138: https://github.com/numberoverzero/bloop/issues/138
+
 A common use for conditions is performing atomic updates.  Often you only want to apply some changes if the local
 state matches the state in DynamoDB; if it has changed, you may need to reload the object before applying
 local changes.  Save provides a shorthand for this, ``atomic=True``.  By default saves are not atomic.
 
-.. warning::
 
-    The ``atomic`` keyword (and its resulting condition) are applied **per-object** being saved, not
-    **for all objects being saved at once**.  DynamoDB provides guarantees for atomic updates to a single row, and
-    does not expose a transaction primitive.  It is possible that ``engine.save(user, tweet, atomic=True)`` will
-    successfully update ``tweet`` but the ``user`` fails for some reason.
-    The changes to ``tweet`` will not be rolled back.
+.. note::
 
-    For more discussion about transactions and the ``atomic`` argument, see `Issue #120`_.
-
-.. _Issue #120: https://github.com/numberoverzero/bloop/issues/120
+    The ``atomic`` keyword is applied **per-object** and not **for all objects being saved at once**.
+    For full-blown transactions see the User Guide's :ref:`user-transactions`.
 
 If you create a new User and perform an atomic save, it will fail if there was any previous state for that hash/range
 key (since the expected state before the save was non-existent).  If you fetch an object from a query which doesn't
@@ -183,6 +192,123 @@ form a single ConditionExpression.
 
 .. _UpdateItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
 
+---------------
+ Return Values
+---------------
+
+You can optionally specify ``sync="old"`` or ``sync="new"`` to update the saved objects with the last seen or most
+recent values when the save completes.  This saves a read unit and is strongly consistent, and can be useful to eg.
+read the last value before you overwrote an attr or fetch attributes you didn't modify:
+
+.. code-block:: pycon
+
+    >>> user = User(username="n0", email="user@n0.dev")
+    >>> engine.save(user, sync="new")
+    >>> if not user.verified:
+    ...     helpers.send_verification_reminder(user.email, since=user.created_on)
+
+
+In a highly concurrent environment the ``sync="old"`` option is very useful to capture the last value a field held
+before overwriting; then you can safely clean up any cascading references.  For example, if you store an
+s3 object key that points to the latest revision of some document you might model it as follows:
+
+.. code-block:: pycon
+
+    class Document(BaseModel):
+        name = Column(String, hash_key=True)
+        location = Column(String)
+
+The following could cause dangling objects if two updates occur at the same time:
+
+.. code-block:: python
+
+    def wrong_update(name, new_location):
+        doc = Document(name=name)
+        engine.load(doc)
+        if doc.location != new_location:
+            delete_s3_object(doc.location)
+        doc.location = new_location
+        engine.save(doc)
+
+Instead, you should read the previous values when you perform the write, and then clean up the location:
+
+.. code-block:: python
+
+    def correct_update(name, new_location):
+        doc = Document(name=name, location=new_location)
+        engine.save(doc, sync="old")
+        if doc.location != new_location:
+            delete_s3_object(doc.location)
+
+---------
+ Actions
+---------
+
+Most changes you make to modeled objects fall into two update categories: ``SET`` and ``REMOVE``.  Any time a value
+serializes as ``None`` or you call ``del myobj.some_attr`` it will likely be a remove, while ``myobj.attr = value``
+will be a set.  (This is up to the column's type, so you can override this behavior to use your own sentinel values).
+
+.. warning::
+    As mentioned in `Issue #136`_ and the `DynamoDb Developer Guide`_, an atomic counter is not appropriate
+    unless you can tolerate overcounting or undercounting.  AWS explicitly discourages using ``add`` or ``delete``
+    in general.
+
+    .. _Issue #136: https://github.com/numberoverzero/bloop/issues/136
+    .. _DynamoDb Developer Guide: https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/WorkingWithItems.html#WorkingWithItems.AtomicCounters
+
+Dynamo exposes two additional update types: ``ADD`` and ``DELETE``.  These allow you to specify relative changes
+without knowing the current value stored in Dynamo.  One of the most common examples is a website view count: for a
+popular website the optimistic concurrency model will cause a lot of write contention and cap your throughput since
+each change requires a read, modify, save.  If there's a conflict you'll need to do all three again, for each writer.
+
+Instead of reading the value and using a conditional save, you can instead wrap the offset in a
+:func:`bloop.actions.add` and tell bloop to apply the desired change.  Compare the two following:
+
+.. code-block:: python
+
+    # Option 1) conditional write, wrap in retries
+    website = Website("google.com")
+    engine.load(website)
+    website.views += 1
+        # raises ConstraintViolation most of the time due to write contention
+    engine.save(website, condition=Website.views==(website.views-1))
+
+
+    # Option 2) add instead of set
+    website = Website("google.com")
+    website.views = bloop.actions.add(1)
+        # no contention
+    engine.save(website)
+
+When combined with return values above, we can add 1 and see the new value all in one call:
+
+.. code-block:: python
+
+    website = Website("google.com")
+    website.views = bloop.actions.add(1)
+    engine.save(website, sync=True)
+    print(f"views after save: {website.views}")
+
+Note that :func:`bloop.actions.set` and :func:`bloop.actions.remove` are assumed if you don't set a column
+to an explicit action:
+
+.. code-block:: python
+
+    # both equivalent
+    website.views = 21
+    website.views = bloop.actions.set(21)
+
+    # all equivalent
+    website.views = None
+    del website.views
+    website.views = bloop.actions.remove(None)
+
+Finally, the :func:`bloop.actions.add` action only supports Number and Set data types.
+In addition, add can only be used on top-level attributes, not nested attributes.
+
+Meanwhile :func:`bloop.actions.delete` only supports the Set data type.
+It can also only be used on top-level attributes.
+
 .. _user-engine-delete:
 
 ========
@@ -191,9 +317,9 @@ form a single ConditionExpression.
 
 :func:`Delete <bloop.engine.Engine.delete>` has the same signature as :func:`~bloop.engine.Engine.save`.  Both
 operations are mutations on an object that may or may not exist, and simply map to two different APIs (Delete calls
-`DeleteItem`_).  You can delete multiple objects at once, specify a ``condition``, and use the ``atomic=True``
-shorthand to only delete objects unchanged since you last loaded them from DynamoDB.  See above for details on using
-the ``atomic`` shorthand and its limitations.
+`DeleteItem`_).  You can delete multiple objects at once; specify a ``condition``; use the ``atomic=True``
+shorthand to only delete objects unchanged since you last loaded them from DynamoDB; and use ``sync="old"`` to update
+local objects with their last values before deletion.
 
 .. code-block:: pycon
 
@@ -205,6 +331,14 @@ the ``atomic`` shorthand and its limitations.
     >>> engine.delete(
     ...     account,
     ...     condition=Account.last_login < cutoff)
+
+
+.. code-block:: pycon
+
+    >>> banned_account = Account(id="user@n0.dev")
+    >>> engine.delete(banned_account, sync="old")
+    >>> last_email = banned_account.email
+    >>> helpers.notify_acct_change(last_email, reason="spamming")
 
 .. _DeleteItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_DeleteItem.html
 
@@ -491,6 +625,27 @@ To restart a query, use :func:`QueryIterator.reset() <bloop.search.QueryIterator
     >>> same = query.one()
     >>> unique == same  # Assume we implemented __eq__
     True
+
+-------------------
+Continuation Tokens
+-------------------
+
+It is possible to record the state of an iterator and recreate that state in a separate thread or process using a
+continuation token. Use the ``token`` property to retrieve a continuation token describing the current state of the
+iterator. When recreating the iterator, pass the token to the
+:func:`QueryIterator.move_to() <bloop.search.QueryIterator.move_to>` method to restore the previous state:
+
+.. code-block:: pycon
+
+    >>> query = engine.query(...)
+    >>> for _ in range(10):
+    ...     next(query) # read the first ten records.
+    ...
+    >>> token = query.token
+    >>> resumed = engine.query(...)
+    >>> resumed.move_to(token)
+    >>> for _ in range(10):
+    ...     next(query) # read the next ten records.
 
 ======
  Scan

@@ -2,7 +2,10 @@
 #   Expressions.SpecifyingConditions.html#ConditionExpressionReference.Syntax
 import collections
 import logging
+import weakref
+from typing import Any, Set
 
+from .actions import ActionType, unwrap, wrap
 from .exceptions import InvalidCondition
 from .signals import (
     object_deleted,
@@ -10,7 +13,7 @@ from .signals import (
     object_modified,
     object_saved,
 )
-from .util import WeakDefaultDictionary, missing
+from .util import missing
 
 
 __all__ = ["BaseCondition", "ComparisonMixin", "Condition", "iter_columns", "render"]
@@ -31,71 +34,87 @@ logger = logging.getLogger("bloop.conditions")
 # CONDITION TRACKING ============================================================================== CONDITION TRACKING
 
 
+class ObjectTracking(weakref.WeakKeyDictionary):
+    def __getitem__(self, key):
+        try:
+            return super().__getitem__(key)
+        except KeyError:
+            r = self[key] = {"marked": set(), "snapshot": None}
+            return r
+
+    def get_snapshot(self, obj):
+        """Return the latest snapshot of the object.
+
+        If none exists, creates a snapshot that expects all values to be None.
+        """
+        snapshot = self[obj].get("snapshot")
+        if snapshot is not None:
+            return snapshot
+
+        # If the object has never been synced, create and cache
+        # a condition that expects every column to be empty
+        snapshot = Condition()
+        for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
+            snapshot &= column.is_(None)
+        self[obj]["snapshot"] = snapshot
+        return snapshot
+
+    def set_snapshot(self, obj, snapshot) -> None:
+        """Set the object snapshot eg. after saving or deleting"""
+        self[obj]["snapshot"] = snapshot
+
+    def get_marked(self, obj) -> Set:
+        """Return the set of columns considered 'dirty' for this object."""
+        return self[obj]["marked"]
+
+    def sync(self, obj, engine) -> None:
+        """
+        Mark the object as having been persisted at least once.
+
+        Store the latest snapshot of all marked values.
+        """
+        snapshot = Condition()
+        # Only expect values (or lack of a value) for columns that have been explicitly set
+        for column in sorted(global_tracking.get_marked(obj), key=lambda col: col.dynamo_name):
+            value = getattr(obj, column.name, None)
+            # noinspection PyProtectedMember
+            value = engine._dump(column.typedef, value)
+            condition = column == value
+            # The renderer shouldn't try to dump the value again.
+            # We're dumping immediately in case the value is mutable,
+            # such as a set or (many) custom data types.
+            condition.dumped = True
+            snapshot &= condition
+        self.set_snapshot(obj, snapshot)
+
+
 # Tracks the state of instances of models:
 # 1) Are any columns marked for including in an update?
 # 2) Latest snapshot for atomic operations
-_obj_tracking = WeakDefaultDictionary(lambda: {"marked": set(), "snapshot": None})
+global_tracking = ObjectTracking()
 
 
 @object_deleted.connect
 def on_object_deleted(_, *, obj, **__):
-    _obj_tracking[obj].pop("snapshot", None)
+    global_tracking.set_snapshot(obj, None)
 
 
 @object_loaded.connect
 def on_object_loaded(_, *, engine, obj, **__):
-    sync(obj, engine)
+    global_tracking.sync(obj, engine)
 
 
 @object_modified.connect
 def on_object_modified(_, *, obj, column, **__):
     # Mark a column for a given object as being modified in any way.
-    # Any marked columns will be pushed (possibly as DELETES) in
+    # Any marked columns will be pushed (possibly as DELETE) in
     # future UpdateItem calls that include the object.
-    _obj_tracking[obj]["marked"].add(column)
+    global_tracking.get_marked(obj).add(column)
 
 
 @object_saved.connect
 def on_object_saved(_, *, engine, obj, **__):
-    sync(obj, engine)
-
-
-def sync(obj, engine):
-    """Mark the object as having been persisted at least once.
-
-    Store the latest snapshot of all marked values."""
-    snapshot = Condition()
-    # Only expect values (or lack of a value) for columns that have been explicitly set
-    for column in sorted(_obj_tracking[obj]["marked"], key=lambda col: col.dynamo_name):
-        value = getattr(obj, column.name, None)
-        value = engine._dump(column.typedef, value)
-        condition = column == value
-        # The renderer shouldn't try to dump the value again.
-        # We're dumping immediately in case the value is mutable,
-        # such as a set or (many) custom data types.
-        condition.dumped = True
-        snapshot &= condition
-    _obj_tracking[obj]["snapshot"] = snapshot
-
-
-def get_snapshot(obj):
-    # Cached value
-    snapshot = _obj_tracking[obj].get("snapshot", None)
-    if snapshot is not None:
-        return snapshot
-
-    # If the object has never been synced, create and cache
-    # a condition that expects every column to be empty
-    snapshot = Condition()
-    for column in sorted(obj.Meta.columns, key=lambda col: col.dynamo_name):
-        snapshot &= column.is_(None)
-    _obj_tracking[obj]["snapshot"] = snapshot
-    return snapshot
-
-
-def get_marked(obj):
-    """Returns the set of marked columns for an object"""
-    return set(_obj_tracking[obj]["marked"])
+    global_tracking.sync(obj, engine)
 
 
 # END CONDITION TRACKING ====================================================================== END CONDITION TRACKING
@@ -109,7 +128,7 @@ Reference = collections.namedtuple("Reference", ["name", "type", "value"])
 
 def is_empty(ref):
     """True if ref is a value ref with None value"""
-    return ref.type == "value" and ref.value is None
+    return ref.type == "value" and unwrap(ref.value) is None
 
 
 class ReferenceTracker:
@@ -150,7 +169,7 @@ class ReferenceTracker:
         self.counts[ref] += 1
         return ref
 
-    def _path_ref(self, column):
+    def _path_ref(self, column: "ComparisonMixin"):
         pieces = [column.dynamo_name]
         pieces.extend(path_of(column))
         str_pieces = []
@@ -167,20 +186,23 @@ class ReferenceTracker:
         """inner=True uses column.typedef.inner_type instead of column.typedef"""
         ref = ":v{}".format(self.next_index)
 
-        # Need to dump this value
         if not dumped:
             typedef = column.typedef
             for segment in path_of(column):
                 typedef = typedef[segment]
             if inner:
                 typedef = typedef.inner_typedef
+            # noinspection PyProtectedMember
             value = self.engine._dump(typedef, value)
 
-        self.attr_values[ref] = value
+        # The raw value needs to be stored in attr_values, but the Action information needs
+        # to be passed back for the renderer to decide whether this is a set/remove/add/delete
+        self.attr_values[ref] = unwrap(value)
         self.counts[ref] += 1
         return ref, value
 
-    def any_ref(self, *, column, value=missing, dumped=False, inner=False):
+    def any_ref(self, *, column, value=missing, dumped=False, inner=False) -> Reference:
+        # noinspection PyUnresolvedReferences
         """Returns a NamedTuple of (name, type, value) for any type of reference.
 
         .. code-block:: python
@@ -260,10 +282,11 @@ def render(engine, obj=None, filter=None, projection=None, key=None, atomic=None
         atomic=atomic, update=update,
         filter=filter, projection=projection, key=key,
     )
-    return renderer.rendered
+    return renderer.output
 
 
 class ConditionRenderer:
+    # noinspection PyUnresolvedReferences
     """Renders collections of :class:`~bloop.conditions.BaseCondition` into DynamoDB's wire format for expressions,
     including:
 
@@ -282,7 +305,7 @@ class ConditionRenderer:
     .. code-block:: python
 
         >>> renderer.render(obj=user, atomic=True)
-        >>> renderer.rendered
+        >>> renderer.output
         {'ConditionExpression': '((#n0 = :v1) AND (attribute_not_exists(#n2)) AND (#n4 = :v5))',
          'ExpressionAttributeNames': {'#n0': 'age', '#n2': 'email', '#n4': 'id'},
          'ExpressionAttributeValues': {':v1': {'N': '3'}, ':v5': {'S': 'some-user-id'}}}
@@ -312,7 +335,7 @@ class ConditionRenderer:
         :param filter: *(Optional)* A filter condition for a query or scan, rendered as a "FilterExpression".
             Default is None.
         :type filter: :class:`~bloop.conditions.BaseCondition`
-        :param projection: *(Optional)* A set of Columns to include in a query or scan, redered as a
+        :param projection: *(Optional)* A set of Columns to include in a query or scan, rendered as a
             "ProjectionExpression".  Default is None.
         :type projection: set :class:`~bloop.models.Column`
         :param key: *(Optional)* A key condition for queries, rendered as a "KeyConditionExpression".  Default is None.
@@ -322,32 +345,32 @@ class ConditionRenderer:
             raise InvalidCondition("An object is required to render atomic conditions or updates without an object.")
 
         if filter:
-            self.render_filter_expression(filter)
+            self.filter_expression(filter)
 
         if projection:
-            self.render_projection_expression(projection)
+            self.projection_expression(projection)
 
         if key:
-            self.render_key_expression(key)
+            self.key_expression(key)
 
         # Condition requires a bit of work, because either one can be empty/false
-        condition = (condition or Condition()) & (get_snapshot(obj) if atomic else Condition())
+        condition = (condition or Condition()) & (global_tracking.get_snapshot(obj) if atomic else Condition())
         if condition:
-            self.render_condition_expression(condition)
+            self.condition_expression(condition)
 
         if update:
-            self.render_update_expression(obj)
+            self.update_expression(obj)
 
-    def render_condition_expression(self, condition):
+    def condition_expression(self, condition):
         self.expressions["ConditionExpression"] = condition.render(self)
 
-    def render_filter_expression(self, condition):
+    def filter_expression(self, condition):
         self.expressions["FilterExpression"] = condition.render(self)
 
-    def render_key_expression(self, condition):
+    def key_expression(self, condition):
         self.expressions["KeyConditionExpression"] = condition.render(self)
 
-    def render_projection_expression(self, columns):
+    def projection_expression(self, columns):
         included = set()
         ref_names = []
         for column in columns:
@@ -358,36 +381,42 @@ class ConditionRenderer:
             ref_names.append(ref.name)
         self.expressions["ProjectionExpression"] = ", ".join(ref_names)
 
-    def render_update_expression(self, obj):
+    def update_expression(self, obj):
         updates = {
-            "set": [],
-            "remove": []}
+            ActionType.Add: [],
+            ActionType.Delete: [],
+            ActionType.Remove: [],
+            ActionType.Set: [],
+        }
         for column in sorted(
                 # Don't include key columns in an UpdateExpression
-                filter(lambda c: c not in obj.Meta.keys, get_marked(obj)),
+                filter(lambda c: c not in obj.Meta.keys, global_tracking.get_marked(obj)),
                 key=lambda c: c.dynamo_name):
             name_ref = self.refs.any_ref(column=column)
             value_ref = self.refs.any_ref(column=column, value=getattr(obj, column.name, None))
+            update_type = wrap(value_ref.value).type
             # Can't set to an empty value
-            if is_empty(value_ref):
+            if is_empty(value_ref) or update_type is ActionType.Remove:
                 self.refs.pop_refs(value_ref)
-                updates["remove"].append(name_ref.name)
-            # Setting this column to a value, or to another column's value
-            else:
-                updates["set"].append("{}={}".format(name_ref.name, value_ref.name))
+                updates[ActionType.Remove].append((name_ref, None))
+                continue
+            update_type = wrap(value_ref.value).type
+            updates[update_type].append((name_ref, value_ref))
 
-        expression = ""
-        if updates["set"]:
-            expression += "SET " + ", ".join(updates["set"])
-        if updates["remove"]:
-            expression += " REMOVE " + ", ".join(updates["remove"])
-        if expression:
-            self.expressions["UpdateExpression"] = expression.strip()
+        expressions = []
+        for update_type, refs in updates.items():
+            if not refs:
+                continue
+            k = update_type.wire_key.upper()
+            r = update_type.render
+            expressions.append(f"{k} " + ", ".join(r(*ref) for ref in refs))
+        if expressions:
+            self.expressions["UpdateExpression"] = " ".join(e.strip() for e in expressions)
 
     @property
-    def rendered(self):
-        """The rendered wire format for all conditions that have been rendered.  Rendered conditions are never
-        cleared.  A new :class:`~bloop.conditions.ConditionRenderer` should be used for each operation."""
+    def output(self):
+        """The wire format for all conditions that have been rendered.
+        A new :class:`~bloop.conditions.ConditionRenderer` should be used for each operation."""
         expressions = {k: v for (k, v) in self.expressions.items() if v is not None}
         if self.refs.attr_names:
             expressions["ExpressionAttributeNames"] = self.refs.attr_names
@@ -800,6 +829,11 @@ class InCondition(BaseCondition):
 
 
 class ComparisonMixin:
+    dynamo_name: str
+    model: Any
+    name: str
+    typedef: Any
+
     def __repr__(self):
         return "<ComparisonMixin>"
 
@@ -901,10 +935,12 @@ def printable_name(column, path=None):
 
 def path_of(obj):
     if isinstance(obj, Proxy):
+        # noinspection PyProtectedMember
         return obj._path
     return []
 
 
+# noinspection PyProtectedMember
 def proxied(obj):
     if isinstance(obj, Proxy):
         return obj._obj

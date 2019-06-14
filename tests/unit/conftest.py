@@ -31,7 +31,14 @@ def dynamodbstreams():
 
 @pytest.fixture
 def session():
-    return Mock(spec=SessionWrapper)
+    s = Mock(spec=SessionWrapper)
+
+    # Most tests won't send a "ReturnValues" so simplify mock setup by
+    # assuming we don't inspect the response.
+    s.save_item.return_value = None
+    s.delete_item.return_value = None
+
+    return s
 
 
 @pytest.fixture

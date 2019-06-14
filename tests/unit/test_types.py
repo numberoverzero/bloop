@@ -4,6 +4,7 @@ import uuid
 
 import pytest
 
+from bloop import actions
 from bloop.types import (
     OPERATION_SUPPORT_BY_OP,
     UUID,
@@ -36,6 +37,7 @@ def symmetric_test(typedef, *pairs):
 def test_missing_abstract_methods():
     """NotImplementedError when dynamo_load or dynamo_dump are missing"""
 
+    # noinspection PyAbstractClass
     class MyType(Type):
         backing_type = "S"
         python_type = str
@@ -139,6 +141,23 @@ def test_dump_none_vector_types(engine, typedef, nones):
 def test_dump_partial_none(engine, typedef, values, expected):
     """vector types filter out inner Nones"""
     assert typedef.dynamo_dump(values, context={"engine": engine}) == expected
+
+
+# noinspection PyTypeChecker
+@pytest.mark.parametrize("action_type", list(actions.ActionType))
+def test_dump_actions(action_type):
+    # noinspection PyAbstractClass
+    class MyType(Type):
+        backing_type = "placeholder"
+
+        def dynamo_dump(self, value, *, context, **kwargs):
+            return 3
+
+    action = actions.Action(action_type, "foo")
+    typedef = MyType()
+    same = typedef._dump(action, context=None)
+    assert same is action
+    assert action.value == {"placeholder": 3}
 
 
 def test_string():
@@ -482,3 +501,80 @@ def test_dynamic_path_uses_singleton():
     dm = DynamicMap()
     assert dl["foo"] is DynamicType.i
     assert dm["bar"] is DynamicType.i
+
+
+# noinspection PyTypeChecker
+@pytest.mark.parametrize("action_type", list(actions.ActionType))
+@pytest.mark.parametrize("value", [1, "hello", b"hello"])
+def test_dynamic_dump_action(action_type, value):
+    """In 2.4 when an action is passed, the action is returned with a dumped value"""
+    typedef = DynamicType()
+    action = actions.Action(action_type, value)
+    v = typedef._dump(action, context=None)
+    assert v is action
+    assert isinstance(v.value, dict)
+
+
+@pytest.mark.parametrize("action_type", list(a for a in actions.ActionType if not a.nestable))
+@pytest.mark.parametrize("typedef, build_value", [
+    (List(String), lambda x: ["foo", x]),
+    (DynamicList(), lambda x: ["foo", x]),
+    (Map(foo=String, bar=String), lambda x: {"foo": "f", "bar": x}),
+    (DynamicMap(), lambda x: {"foo": "f", "bar": x}),
+    (Set(String), lambda x: {"foo", x})
+])
+def test_nested_input_actions_fail(action_type, typedef, build_value):
+    """The input to _dump includes a non-nestable action"""
+    # create a new list/set/map with the non-nestable action
+    x = action_type.new_action("bar")
+
+    with pytest.raises(ValueError):
+        typedef._dump(value=build_value(x), context=None)
+
+
+@pytest.mark.parametrize("action_type", list(a for a in actions.ActionType if not a.nestable))
+def test_nested_output_actions_fail(action_type):
+    """When the _dump function returns a non-nestable action the type raises"""
+
+    class AlwaysAction(String):
+        def _dump(self, value, **kwargs):
+            return action_type.new_action(value)
+
+    typedef = List(AlwaysAction)
+    with pytest.raises(ValueError):
+        typedef._dump(["foo"], context=None)
+
+    typedef = Map(foo=AlwaysAction)
+    with pytest.raises(ValueError):
+        typedef._dump({"foo": "f"}, context=None)
+
+
+@pytest.mark.parametrize("action_type", list(a for a in actions.ActionType if a.nestable))
+def test_nested_output_actions_pass(action_type):
+    """Any actions returned from _dump are nestable"""
+
+    class AlwaysAction(String):
+        def _dump(self, value, **kwargs):
+            return action_type.new_action(value)
+
+    typedef = List(AlwaysAction)
+    typedef._dump(["foo"], context=None)
+
+    typedef = Map(foo=AlwaysAction)
+    typedef._dump({"foo": "f"}, context=None)
+
+
+@pytest.mark.parametrize("action_type", list(a for a in actions.ActionType if a.nestable))
+@pytest.mark.parametrize("typedef, build_value", [
+    (List(String), lambda x: ["foo", x]),
+    (DynamicList(), lambda x: ["foo", x]),
+    (Map(foo=String, bar=String), lambda x: {"foo": "f", "bar": x}),
+    (DynamicMap(), lambda x: {"foo": "f", "bar": x}),
+    (Set(String), lambda x: {"foo", x})
+])
+def test_nested_actions_pass(action_type, typedef, build_value):
+    """Any actions input to _dump are nestable"""
+    # create a new list/set/map with the non-nestable action
+    x = action_type.new_action("bar")
+
+    typedef._dump(value=build_value(x), context=None)

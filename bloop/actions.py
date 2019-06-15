@@ -64,6 +64,15 @@ class Action:
     def __repr__(self):
         return f"<Action[{self.type.wire_key}={self.value!r}]>"
 
+    def __eq__(self, other):
+        return (
+            isinstance(other, Action) and
+            (self.type is other.type) and
+            (self.value == other.value)
+        )
+
+    __hash__ = object.__hash__
+
 
 def unwrap(x: Union[Action, Any]) -> Any:
     """return an action's inner value"""

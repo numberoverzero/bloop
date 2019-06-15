@@ -14,11 +14,20 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 ------------
 
 
+[Added]
+=======
+
+* *(internal)* ``util.default_context`` can be used to create a new load/dump context and respects existing dict
+  objects and keys (even if empty).
+
 [Removed]
 =========
 
+* The exception ``bloop.exceptions.UnknownType`` is no longer raised and has been removed.
 * *(internal)* ``BaseModel._load`` and ``BaseModel._dump`` have been removed.  These were not documented or used
   anywhere in the code base, and ``unpack_from_dynamodb`` should be used where ``_load`` was anyway.
+* *(internal)* ``Engine._load`` and ``Engine._dump`` have been removed.  These were not documented and are trivially
+  replaced with calls to ``typedef._load`` and ``typedef._dump`` instead.
 
 --------------------
  2.4.0 - 2019-06-13

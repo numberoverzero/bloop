@@ -8,7 +8,7 @@ from typing import Any
 from .actions import ActionType, unwrap, wrap
 from .exceptions import InvalidCondition
 from .signals import object_modified
-from .util import missing
+from .util import default_context, missing
 
 
 __all__ = ["BaseCondition", "ComparisonMixin", "Condition", "iter_columns", "render"]
@@ -126,8 +126,9 @@ class ReferenceTracker:
             typedef = typedef[segment]
         if inner:
             typedef = typedef.inner_typedef
+        context = default_context(self.engine)
         # noinspection PyProtectedMember
-        value = self.engine._dump(typedef, value)
+        value = typedef._dump(value, context=context)
 
         # The raw value needs to be stored in attr_values, but the Action information needs
         # to be passed back for the renderer to decide whether this is a set/remove/add/delete

@@ -567,8 +567,8 @@ def loaded_columns(obj: BaseModel):
 
 def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, context=None, **kwargs):
     """Push values by dynamo_name into an object"""
-    context = context or {"engine": engine}
-    engine = engine or context.get("engine", None)
+    context = util.default_context(engine, context)
+    engine = context["engine"]
     if not engine:
         raise ValueError("You must provide engine or a context with an engine.")
     if model is None and obj is None:
@@ -580,7 +580,8 @@ def unpack_from_dynamodb(*, attrs, expected, model=None, obj=None, engine=None, 
 
     for column in expected:
         value = attrs.get(column.dynamo_name, None)
-        value = engine._load(column.typedef, value, context=context, **kwargs)
+        # noinspection PyProtectedMember
+        value = column.typedef._load(value, context=context, **kwargs)
         setattr(obj, column.name, value)
     return obj
 

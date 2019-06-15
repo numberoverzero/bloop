@@ -7,7 +7,6 @@ from .exceptions import (
     InvalidStream,
     InvalidTemplate,
     MissingObjects,
-    UnknownType,
 )
 from .models import BaseModel, Index, subclassof, unpack_from_dynamodb
 from .search import Search
@@ -63,13 +62,6 @@ def validate_sync(mode, value):
     return wire
 
 
-def fail_unknown(model, ctx):
-    # Best-effort check for a more helpful message
-    msg = "{!r} does not support the Type interface."
-    obj = getattr(model, "__name__", model)
-    raise UnknownType(msg.format(obj)) from ctx
-
-
 TableNameFormatter = Callable[[Any], str]
 
 
@@ -115,25 +107,6 @@ class Engine:
             table_name_template: Union[str, TableNameFormatter] = "{table_name}"):
         self._compute_table_name = create_get_table_name_func(table_name_template)
         self.session = SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
-
-    def _dump(self, model, obj, context=None, **kwargs):
-        context = context or {"engine": self}
-        try:
-            dump = model._dump
-        except AttributeError as e:
-            fail_unknown(model, e)
-        else:
-            return dump(obj, context=context, **kwargs)
-
-    def _load(self, model, value, context=None, **kwargs):
-        context = context or {"engine": self}
-        try:
-            # noinspection PyProtectedMember
-            load = model._load
-        except AttributeError as e:
-            fail_unknown(model, e)
-        else:
-            return load(value, context=context, **kwargs)
 
     def bind(self, model, *, skip_table_setup=False):
         """Create backing tables for a model and its non-abstract subclasses.

@@ -13,7 +13,6 @@ from bloop.exceptions import (
     InvalidTemplate,
     MissingKey,
     MissingObjects,
-    UnknownType,
 )
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper
@@ -285,22 +284,6 @@ def test_load_missing_attrs(engine, session):
     engine.load(obj)
     assert obj.age == 5
     assert obj.name == ""
-
-
-def test_load_dump_unknown(engine):
-    class NotModeled:
-        pass
-    obj = NotModeled()
-    value = {
-        "age": {"N": 5},
-        "name": {"S": "foo"},
-        "id": {"S": "user_id"}
-    }
-
-    with pytest.raises(UnknownType):
-        engine._load(NotModeled, value)
-    with pytest.raises(UnknownType):
-        engine._dump(NotModeled, obj)
 
 
 def test_load_missing_key(engine):

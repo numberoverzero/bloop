@@ -13,12 +13,25 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  Unreleased
 ------------
 
-
 [Added]
 =======
 
 * *(internal)* ``util.default_context`` can be used to create a new load/dump context and respects existing dict
   objects and keys (even if empty).
+
+[Changed]
+=========
+
+* ``Type._dump`` must return a ``bloop.actions.Action`` now.  Most users won't need to change any code since custom
+  types usually override ``dynamo_dump``.  If you have implemented your own ``_dump`` function, you can probably
+  just use ``actions.wrap`` and ``actions.unwrap`` to migrate:
+
+  .. code-block:: python
+
+    def _dump(self, value, *, context, **kwargs):
+        value = actions.unwrap(value)
+        # the rest of your function here
+        return actions.wrap(value)
 
 [Removed]
 =========
@@ -28,6 +41,8 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
   anywhere in the code base, and ``unpack_from_dynamodb`` should be used where ``_load`` was anyway.
 * *(internal)* ``Engine._load`` and ``Engine._dump`` have been removed.  These were not documented and are trivially
   replaced with calls to ``typedef._load`` and ``typedef._dump`` instead.
+* *(internal)* The ``dumped`` attr for Conditions is no longer needed since there's no need to dump objects except
+  at render time.
 
 --------------------
  2.4.0 - 2019-06-13

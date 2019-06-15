@@ -5,7 +5,7 @@ import logging
 import weakref
 from typing import Any
 
-from .actions import ActionType, unwrap, wrap
+from .actions import ActionType
 from .exceptions import InvalidCondition
 from .signals import object_modified
 from .util import default_context, missing
@@ -58,12 +58,12 @@ def on_object_modified(_, *, obj, column, **__):
 # RENDERING ================================================================================================ RENDERING
 
 
-Reference = collections.namedtuple("Reference", ["name", "type", "value"])
+Reference = collections.namedtuple("Reference", ["name", "type", "action"])
 
 
 def is_empty(ref):
     """True if ref is a value ref with None value"""
-    return ref.type == "value" and unwrap(ref.value) is None
+    return ref.type == "value" and ref.action.value is None
 
 
 class ReferenceTracker:
@@ -128,13 +128,13 @@ class ReferenceTracker:
             typedef = typedef.inner_typedef
         context = default_context(self.engine)
         # noinspection PyProtectedMember
-        value = typedef._dump(value, context=context)
+        action = typedef._dump(value, context=context)
 
         # The raw value needs to be stored in attr_values, but the Action information needs
         # to be passed back for the renderer to decide whether this is a set/remove/add/delete
-        self.attr_values[ref] = unwrap(value)
+        self.attr_values[ref] = action.value
         self.counts[ref] += 1
-        return ref, value
+        return ref, action
 
     def any_ref(self, *, column, value=missing, inner=False) -> Reference:
         # noinspection PyUnresolvedReferences
@@ -168,17 +168,17 @@ class ReferenceTracker:
             # Simple path ref to the column.
             name = self._path_ref(column=column)
             ref_type = "name"
-            value = None
+            action = None
         elif isinstance(value, ComparisonMixin):
             # value is also a column!  Also a path ref.
             name = self._path_ref(column=value)
             ref_type = "name"
-            value = None
+            action = None
         else:
             # Simple value ref.
-            name, value = self._value_ref(column=column, value=value, inner=inner)
+            name, action = self._value_ref(column=column, value=value, inner=inner)
             ref_type = "value"
-        return Reference(name=name, type=ref_type, value=value)
+        return Reference(name=name, type=ref_type, action=action)
 
     def pop_refs(self, *refs):
         """Decrement the usage of each ref by 1.
@@ -323,13 +323,12 @@ class ConditionRenderer:
                 key=lambda c: c.dynamo_name):
             name_ref = self.refs.any_ref(column=column)
             value_ref = self.refs.any_ref(column=column, value=getattr(obj, column.name, None))
-            update_type = wrap(value_ref.value).type
-            # Can't set to an empty value
+            update_type = value_ref.action.type
+            # Can't set to an empty value, force to a Remove
             if is_empty(value_ref) or update_type is ActionType.Remove:
                 self.refs.pop_refs(value_ref)
-                updates[ActionType.Remove].append((name_ref, None))
-                continue
-            update_type = wrap(value_ref.value).type
+                update_type = ActionType.Remove
+                value_ref = None
             updates[update_type].append((name_ref, value_ref))
 
         expressions = []
@@ -632,7 +631,7 @@ class ComparisonCondition(BaseCondition):
 
         # #n0 >= :v1
         # Comparison against another column, or comparison against non-None value
-        if (value_ref.type == "name") or (value_ref.value is not None):
+        if (value_ref.type == "name") or (value_ref.action.value is not None):
             return "({} {} {})".format(column_ref.name, comparison_aliases[self.operation], value_ref.name)
 
         # attribute_exists(#n0), attribute_not_exists(#n1)

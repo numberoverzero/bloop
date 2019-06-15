@@ -233,13 +233,13 @@ def test_ref_value(reference_tracker):
     column = User.age
     value = 3
     expected_ref = ":v0"
-    expected_value = {"N": "3"}
-    expected_values = {":v0": expected_value}
+    expected_action = actions.set({"N": "3"})
+    expected_values = {":v0": expected_action.value}
 
-    ref, value = reference_tracker._value_ref(column, value)
+    ref, action = reference_tracker._value_ref(column, value)
 
     assert ref == expected_ref
-    assert value == expected_value
+    assert action == expected_action
     assert reference_tracker.attr_values == expected_values
 
 
@@ -248,20 +248,20 @@ def test_ref_value_path(reference_tracker):
     column = Document.data["Description"]["Body"]
     value = "value"
     expected_ref = ":v0"
-    expected_value = {"S": value}
-    expected_values = {":v0": expected_value}
+    expected_action = actions.set({"S": value})
+    expected_values = {":v0": expected_action.value}
 
-    ref, value = reference_tracker._value_ref(column, value)
+    ref, action = reference_tracker._value_ref(column, value)
 
     assert ref == expected_ref
-    assert value == expected_value
+    assert action == expected_action
     assert reference_tracker.attr_values == expected_values
 
 
 def test_ref_any_name(reference_tracker):
     """Render a reference to the column name (and path) when there's no value"""
     column = Document.data["Description"]["Body"]
-    expected_ref = Reference(name="#n0.#n1.#n2", type="name", value=None)
+    expected_ref = Reference(name="#n0.#n1.#n2", type="name", action=None)
     expected_names = {
         "#n0": "data",
         "#n1": "Description",
@@ -281,7 +281,7 @@ def test_ref_any_value_is_column(reference_tracker):
     # value has its own path
     value = Document.data["Description"]["Body"]
 
-    expected_ref = Reference(name="#n0.#n1.#n2", type="name", value=None)
+    expected_ref = Reference(name="#n0.#n1.#n2", type="name", action=None)
     expected_names = {
         "#n0": "data",
         "#n1": "Description",
@@ -298,9 +298,9 @@ def test_ref_any_value_not_column(reference_tracker):
     """Render a reference to a regular value"""
     column = Document.id
     value = 3
-    expected_value = {"N": "3"}
-    expected_ref = Reference(name=":v0", type="value", value=expected_value)
-    expected_values = {":v0": expected_value}
+    expected_action = actions.set({"N": "3"})
+    expected_ref = Reference(name=":v0", type="value", action=expected_action)
+    expected_values = {":v0": expected_action.value}
 
     ref = reference_tracker.any_ref(column=column, value=value)
 
@@ -326,8 +326,8 @@ def test_ref_pop_unknown(reference_tracker):
     name = reference_tracker.any_ref(column=Document.id).name
     value = reference_tracker.any_ref(column=Document.id, value=3).name
 
-    unknown_name_ref = Reference(name="foo", type="value", value=None)
-    unknown_value_ref = Reference(name="bar", type="name", value=None)
+    unknown_name_ref = Reference(name="foo", type="value", action=actions.wrap(None))
+    unknown_value_ref = Reference(name="bar", type="name", action=actions.wrap(None))
     reference_tracker.pop_refs(unknown_name_ref, unknown_value_ref)
 
     assert name in reference_tracker.attr_names
@@ -409,8 +409,9 @@ def test_render_condition_only(kwarg_name, expression_key, engine, caplog):
     }
 
     assert caplog.record_tuples == [
-        ("bloop.conditions", logging.DEBUG, "popping last usage of Reference(name=':v3', type='value', value=None)"),
-        ("bloop.conditions", logging.DEBUG, "rendering \"==\" as attribute_not_exists"),
+        ("bloop.conditions", logging.DEBUG,
+         f"popping last usage of Reference(name=':v3', type='value', action={actions.wrap(None)})"),
+        ("bloop.conditions", logging.DEBUG, f"rendering \"==\" as attribute_not_exists"),
     ]
 
 

@@ -116,18 +116,13 @@ class Type:
         :func:`~bloop.types.Type.dynamo_dump`.  This can happen when dumping eg. a sparse
         :class:`~.bloop.types.Map`, or a missing (not set) value.
         """
-        def real_dump(v):
-            v = self.dynamo_dump(v, **kwargs)
-            if v is None:
-                return v
-            return {self.backing_type: v}
-
-        # TODO in 3.0 the code path will simplify by first calling ``value = actions.wrap(value)``
-        #   but for 2.4 we don't return an Action unless one is passed
-        if isinstance(value, actions.Action):
-            return value.type.new_action(real_dump(value.value))
-
-        return real_dump(value)
+        wrapped = actions.wrap(value)
+        value = self.dynamo_dump(wrapped.value, **kwargs)
+        if value is None:
+            return actions.wrap(None)
+        else:
+            value = {self.backing_type: value}
+            return wrapped.type.new_action(value)
 
     def _load(self, value, **kwargs):
         """Entry point for deserializing values.  Most custom types should use :func:`~bloop.types.Type.dynamo_load`.
@@ -650,18 +645,11 @@ class DynamicType(Type):
         return DYNAMIC_TYPES[vtype]._load(value, **kwargs)
 
     def _dump(self, value, **kwargs):
-        def real_dump(v):
-            if v is None:
-                return None
-            vtype = DynamicType.backing_type_for(v)
-            return DYNAMIC_TYPES[vtype]._dump(v, **kwargs)
-
-        # TODO in 3.0 the code path will simplify by first calling ``value = actions.wrap(value)``
-        #   but for 2.4 we don't return an Action unless one is passed
-        if isinstance(value, actions.Action):
-            return value.type.new_action(real_dump(value.value))
-        else:
-            return real_dump(value)
+        wrapped = actions.wrap(value)
+        if wrapped.value is None:
+            return wrapped
+        vtype = DynamicType.backing_type_for(wrapped.value)
+        return DYNAMIC_TYPES[vtype]._dump(wrapped, **kwargs)
 
     def dynamo_load(self, value, *, context, **kwargs):
         raise NotImplementedError

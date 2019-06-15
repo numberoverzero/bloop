@@ -287,40 +287,6 @@ def test_load_missing_attrs(engine, session):
     assert obj.name == ""
 
 
-def test_load_dump_unbound(engine):
-    class Model(BaseModel):
-        id = Column(Integer, hash_key=True)
-    obj = Model(id=5)
-    value = {"id": {"N": "5"}}
-
-    loaded = engine._load(Model, value)
-    assert loaded.id == 5
-
-    dumped = engine._dump(Model, obj)
-    assert dumped == {"id": {"N": "5"}}
-
-
-def test_load_dump_subclass(engine):
-    """Both immediate and inherited Columns should be dumped"""
-
-    class Admin(User):
-        admin_id = Column(Integer, hash_key=True)
-        other = Column(Integer)
-    engine.bind(User)
-
-    admin = Admin(admin_id=3)
-    # Set an attribute for a column on the parent class
-    admin.email = "admin@domain.com"
-
-    dumped_admin = {"admin_id": {"N": "3"}, "email": {"S": "admin@domain.com"}}
-    assert engine._dump(Admin, admin) == dumped_admin
-
-    # Inject a value that for a column on the parent class
-    dumped_admin["email"] = {"S": "support@foo.com"}
-    same_admin = engine._load(Admin, dumped_admin)
-    assert same_admin.email == "support@foo.com"
-
-
 def test_load_dump_unknown(engine):
     class NotModeled:
         pass

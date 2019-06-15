@@ -1,4 +1,3 @@
-import datetime
 import logging
 import operator
 
@@ -89,47 +88,9 @@ def test_load_default_init(engine):
         "extra_field": {"N": "0.125"}
     }
 
-    engine._load(Blob, blob)
+    unpack_from_dynamodb(attrs=blob, expected=Blob.Meta.columns, model=Blob, engine=engine)
 
     assert init_called is False
-
-
-def test_load_dump(engine):
-    """_load and _dump should be symmetric"""
-    user = User(id="user_id", name="test-name", email="email@domain.com", age=31,
-                joined=datetime.datetime.now(datetime.timezone.utc))
-    serialized = {
-        "id": {"S": user.id},
-        "age": {"N": "31"},
-        "name": {"S": "test-name"},
-        "email": {"S": "email@domain.com"},
-        "j": {"S": user.joined.isoformat()}
-    }
-
-    loaded_user = engine._load(User, serialized)
-
-    missing = object()
-    for attr in (c.name for c in User.Meta.columns):
-        assert getattr(loaded_user, attr, missing) == getattr(user, attr, missing)
-
-    assert engine._dump(User, user) == serialized
-    assert engine._dump(User, loaded_user) == serialized
-
-
-def test_load_dump_none(engine):
-    user = User()
-    assert engine._dump(User, user) is None
-    assert engine._dump(User, None) is None
-
-    # Loaded instances have None or Falsey (in the case of String, Set, List, Map) attributes.
-    # This is unlike newly created instances which don't have those attributes.
-    loaded_user = engine._load(User, None)
-    for attr in (c.name for c in User.Meta.columns):
-        assert not getattr(loaded_user, attr)
-
-    loaded_user = engine._load(User, {})
-    for attr in (c.name for c in User.Meta.columns):
-        assert not getattr(loaded_user, attr)
 
 
 def test_meta_read_write_units():
@@ -367,12 +328,10 @@ def test_abstract_subclass():
 def test_model_str(engine):
     """Different strings for None and missing"""
     new_user = User()
-    loaded_empty_user = engine._load(User, None)
-
-    # No values to show
     assert str(new_user) == "User()"
-    # Values set to None
-    assert str(loaded_empty_user) == "User(age=None, email='', id='', joined=None, name='')"
+
+    empty_user = User(age=None, email="", id="", joined=None, name="")
+    assert str(empty_user) == "User(age=None, email='', id='', joined=None, name='')"
 
 
 def test_created_signal():

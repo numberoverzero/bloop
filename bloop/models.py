@@ -203,29 +203,6 @@ class BaseModel:
         # 3.0 Fire model_created for customizing the class after creation
         model_created.send(None, model=cls)
 
-    @classmethod
-    def _load(cls, attrs, *, context, **kwargs):
-        """ dict (dynamo name) -> obj """
-        return unpack_from_dynamodb(
-            model=cls,
-            attrs=attrs or {},
-            expected=cls.Meta.columns,
-            context=context, **kwargs)
-
-    @classmethod
-    def _dump(cls, obj, *, context, **kwargs):
-        """ obj -> dict """
-        if obj is None:
-            return None
-        dump = context["engine"]._dump
-        filtered = filter(
-            lambda item: item[1] is not None,
-            ((
-                column.dynamo_name,
-                dump(column.typedef, getattr(obj, column.name, None), context=context, **kwargs)
-            ) for column in cls.Meta.columns))
-        return dict(filtered) or None
-
     def __repr__(self):
         attrs = ", ".join("{}={!r}".format(*item) for item in loaded_columns(self))
         return f"{self.__class__.__name__}({attrs})"

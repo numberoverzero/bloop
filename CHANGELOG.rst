@@ -13,7 +13,12 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  Unreleased
 ------------
 
-(no unreleased changes)
+
+[Removed]
+=========
+
+* *(internal)* ``BaseModel._load`` and ``BaseModel._dump`` have been removed.  These were not documented or used
+  anywhere in the code base, and ``unpack_from_dynamodb`` should be used where ``_load`` was anyway.
 
 --------------------
  2.4.0 - 2019-06-13

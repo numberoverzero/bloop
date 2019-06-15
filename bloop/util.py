@@ -1,5 +1,6 @@
 import collections.abc
 
+from .actions import ActionType
 from .exceptions import MissingKey
 
 
@@ -131,8 +132,11 @@ def dump_key(engine, obj):
                 key_column.name
             ))
         # noinspection PyProtectedMember
-        key_value = key_column.typedef._dump(key_value, context=context)
-        key[key_column.dynamo_name] = key_value
+        key_action = key_column.typedef._dump(key_value, context=context)
+        if key_action.type is not ActionType.Set:
+            raise ValueError(
+                f"key value {key_value} for column {key_column} must be a SET action but was {key_action}")
+        key[key_column.dynamo_name] = key_action.value
     return key
 
 

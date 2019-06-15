@@ -3,12 +3,14 @@ import collections
 import pytest
 from tests.helpers.models import User
 
+from bloop.actions import ActionType
 from bloop.engine import Engine
 from bloop.exceptions import MissingKey
 from bloop.models import BaseModel, Column
 from bloop.types import Integer
 from bloop.util import (
     Sentinel,
+    default_context,
     dump_key,
     extract_key,
     get_table_name,
@@ -18,6 +20,13 @@ from bloop.util import (
     value_of,
     walk_subclasses,
 )
+
+
+class HashAndRange(BaseModel):
+    class Meta:
+        abstract = True
+    foo = Column(Integer, hash_key=True)
+    bar = Column(Integer, range_key=True)
 
 
 def test_index():
@@ -35,11 +44,6 @@ def test_index():
 
 
 def test_dump_key(engine):
-    class HashAndRange(BaseModel):
-        foo = Column(Integer, hash_key=True)
-        bar = Column(Integer, range_key=True)
-    engine.bind(HashAndRange)
-
     user = User(id="foo")
     user_key = {"id": {"S": "foo"}}
     assert dump_key(engine, user) == user_key
@@ -50,13 +54,18 @@ def test_dump_key(engine):
 
 
 def test_dump_key_missing(engine):
-    class HashAndRange(BaseModel):
-        foo = Column(Integer, hash_key=True)
-        bar = Column(Integer, range_key=True)
-    engine.bind(HashAndRange)
-
     obj = HashAndRange()
     with pytest.raises(MissingKey):
+        dump_key(engine, obj)
+
+
+@pytest.mark.parametrize("action_type", [t for t in ActionType if t is not ActionType.Set])
+def test_dump_invalid_key_action(engine, action_type):
+    obj = HashAndRange(
+        foo=action_type.new_action(2),
+        bar=3
+    )
+    with pytest.raises(ValueError):
         dump_key(engine, obj)
 
 
@@ -71,17 +80,11 @@ def test_get_table_name(dynamodb, dynamodbstreams):
     def transform_table_name(model):
         return f"transform.{model.Meta.table_name}"
 
-    class HashAndRange(BaseModel):
-        class Meta:
-            table_name = "custom.name"
-        foo = Column(Integer, hash_key=True)
-        bar = Column(Integer, range_key=True)
-
     engine = Engine(
         dynamodb=dynamodb, dynamodbstreams=dynamodbstreams,
         table_name_template=transform_table_name)
     obj = HashAndRange()
-    assert get_table_name(engine, obj) == "transform.custom.name"
+    assert get_table_name(engine, obj) == "transform.HashAndRange"
 
 
 @pytest.mark.parametrize("obj", [None, object(), 2, False, "abc"])
@@ -180,3 +183,14 @@ def test_sentinel_uniqueness():
 def test_sentinel_repr():
     foo = Sentinel("foo")
     assert repr(foo) == "<Sentinel[foo]>"
+
+
+def test_default_context(engine):
+    ctx = default_context(engine)
+    assert ctx["engine"] is engine
+
+    other_engine = object()
+    other_ctx = {"engine": other_engine}
+    ctx = default_context(engine, other_ctx)
+    assert ctx is other_ctx
+    assert ctx["engine"] is other_engine

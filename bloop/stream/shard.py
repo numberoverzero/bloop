@@ -323,8 +323,8 @@ def unpack_shards(shards, stream_arn, session):
              for shard_token in shards}
 
     for shard in by_id.values():
+        shard.parent = by_id.get(shard.parent)
         if shard.parent:
-            shard.parent = by_id[shard.parent]
             shard.parent.children.append(shard)
     return by_id
 

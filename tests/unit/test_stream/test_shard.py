@@ -517,3 +517,21 @@ def test_unpack_shards_from_describe_stream(session):
             assert "ParentShardId" not in by_id[shard_id]
         else:
             assert shard.parent.shard_id == by_id[shard_id].get("ParentShardId")
+
+
+def test_unpack_shards_with_deleted_parent_shard(session):
+    # multiple roots, 1:1 and 1:2 relations
+    shards = stream_description(6, {0: 1, 1: 2, 3: [4, 5]})["Shards"]
+    # removing old shard
+    shards = shards[1:]
+
+    by_id = {shard["ShardId"]: shard for shard in shards}
+    unpacked = unpack_shards(shards, "stream_arn", session=session)
+
+    assert by_id.keys() == unpacked.keys()
+    assert len([shard for shard in unpacked.values() if not shard.parent]) == 2
+    for shard_id, shard in unpacked.items():
+        if by_id[shard_id].get("ParentShardId") not in by_id:
+            assert shard.parent is None
+        else:
+            assert shard.parent.shard_id == by_id[shard_id].get("ParentShardId")

@@ -1,5 +1,4 @@
 import logging
-import warnings
 from typing import Any, Callable, Union
 
 from .conditions import render
@@ -8,7 +7,6 @@ from .exceptions import (
     InvalidStream,
     InvalidTemplate,
     MissingObjects,
-    UnknownType,
 )
 from .models import BaseModel, Index, subclassof, unpack_from_dynamodb
 from .search import Search
@@ -23,13 +21,12 @@ from .signals import (
 )
 from .stream import Stream
 from .transactions import ReadTransaction, WriteTransaction
-from .util import Sentinel, dump_key, extract_key, index_for, walk_subclasses
+from .util import dump_key, extract_key, index_for, walk_subclasses
 
 
 __all__ = ["Engine"]
 
 logger = logging.getLogger("bloop.engine")
-deprecated_false = Sentinel("Deprecated:False")
 
 _sync_values = {
     "save": {
@@ -42,15 +39,6 @@ _sync_values = {
         "old": "ALL_OLD"
     }
 }
-
-
-def deprecate_atomic(x):
-    if x is deprecated_false:
-        return False
-    warnings.warn(
-        "The 'atomic=' kwarg will be removed in 3.0.0; see https://github.com/numberoverzero/bloop/issues/138",
-        DeprecationWarning, stacklevel=3)
-    return x
 
 
 def validate_not_abstract(*objs):
@@ -74,13 +62,6 @@ def validate_sync(mode, value):
     return wire
 
 
-def fail_unknown(model, ctx):
-    # Best-effort check for a more helpful message
-    msg = "{!r} does not support the Type interface."
-    obj = getattr(model, "__name__", model)
-    raise UnknownType(msg.format(obj)) from ctx
-
-
 TableNameFormatter = Callable[[Any], str]
 
 
@@ -96,6 +77,7 @@ def create_get_table_name_func(table_name_template: Union[str, TableNameFormatte
 
 
 class Engine:
+    # noinspection PyUnresolvedReferences
     """Primary means of interacting with DynamoDB.
 
     To apply a prefix to each model's table name, you can use a simple format string:
@@ -125,24 +107,6 @@ class Engine:
             table_name_template: Union[str, TableNameFormatter] = "{table_name}"):
         self._compute_table_name = create_get_table_name_func(table_name_template)
         self.session = SessionWrapper(dynamodb=dynamodb, dynamodbstreams=dynamodbstreams)
-
-    def _dump(self, model, obj, context=None, **kwargs):
-        context = context or {"engine": self}
-        try:
-            dump = model._dump
-        except AttributeError as e:
-            fail_unknown(model, e)
-        else:
-            return dump(obj, context=context, **kwargs)
-
-    def _load(self, model, value, context=None, **kwargs):
-        context = context or {"engine": self}
-        try:
-            load = model._load
-        except AttributeError as e:
-            fail_unknown(model, e)
-        else:
-            return load(value, context=context, **kwargs)
 
     def bind(self, model, *, skip_table_setup=False):
         """Create backing tables for a model and its non-abstract subclasses.
@@ -196,13 +160,11 @@ class Engine:
 
         logger.info("successfully bound {} models to the engine".format(len(concrete)))
 
-    def delete(self, *objs, condition=None, atomic=deprecated_false, sync=None):
+    def delete(self, *objs, condition=None, sync=None):
         """Delete one or more objects.
 
         :param objs: objects to delete.
         :param condition: only perform each delete if this condition holds.
-        :param bool atomic: only perform each delete if the local and DynamoDB versions of the object match.
-            **This parameter is deprecated and will be removed in 3.0**
         :param sync:
             update objects after deleting.  "old" loads attributes before the delete;
             None does not mutate the object locally.  Default is None.
@@ -216,7 +178,7 @@ class Engine:
                 "TableName": self._compute_table_name(obj.__class__),
                 "Key": dump_key(self, obj),
                 "ReturnValues": validate_sync("delete", sync),
-                **render(self, obj=obj, atomic=deprecate_atomic(atomic), condition=condition)
+                **render(self, obj=obj, condition=condition)
             })
             if attrs is not None:
                 unpack_from_dynamodb(attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
@@ -307,13 +269,11 @@ class Engine:
             projection=projection, consistent=consistent, forward=forward)
         return iter(q.prepare())
 
-    def save(self, *objs, condition=None, atomic=deprecated_false, sync=None):
+    def save(self, *objs, condition=None, sync=None):
         """Save one or more objects.
 
         :param objs: objects to save.
         :param condition: only perform each save if this condition holds.
-        :param bool atomic: only perform each save if the local and DynamoDB versions of the object match.
-            **This parameter is deprecated and will be removed in 3.0**
         :param sync:
             update objects after saving.  "new" loads attributes after the save;
             "old" loads attributes before the save; None does not mutate the object locally.  Default is None.
@@ -326,7 +286,7 @@ class Engine:
                 "TableName": self._compute_table_name(obj.__class__),
                 "Key": dump_key(self, obj),
                 "ReturnValues": validate_sync("save", sync),
-                **render(self, obj=obj, atomic=deprecate_atomic(atomic), condition=condition, update=True)
+                **render(self, obj=obj, condition=condition, update=True)
             })
             if attrs is not None:
                 unpack_from_dynamodb(attrs=attrs, expected=obj.Meta.columns, engine=self, obj=obj)
@@ -361,6 +321,7 @@ class Engine:
         return iter(s.prepare())
 
     def stream(self, model, position):
+        # noinspection PyUnresolvedReferences
         """Create a :class:`~bloop.stream.Stream` that provides approximate chronological ordering.
 
         .. code-block:: pycon
@@ -402,6 +363,7 @@ class Engine:
         return stream
 
     def transaction(self, mode="w"):
+        # noinspection PyUnresolvedReferences
         """
         Create a new :class:`~bloop.transactions.ReadTransaction` or :class:`~bloop.transactions.WriteTransaction`.
 

@@ -126,6 +126,8 @@ Saving an item or items is very simple:
     >>> user.last_activity = now
     >>> engine.save(user, tweet)
 
+.. _UpdateItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
+
 -----------------
  Save Conditions
 -----------------
@@ -146,51 +148,6 @@ specified on columns using the standard ``<, >=, ==, ...`` operators, as well as
     Traceback (most recent call last):
       ...
     ConstraintViolation: The condition was not met.
-
--------------
- Atomic Save
--------------
-
-.. warning::
-
-    The ``atomic=`` keyword is deprecated in 2.4 and will be removed in 3.0.
-    For an equivalent pattern see :ref:`patterns-snapshot` and `Issue #138`_.
-
-    .. _Issue #138: https://github.com/numberoverzero/bloop/issues/138
-
-A common use for conditions is performing atomic updates.  Often you only want to apply some changes if the local
-state matches the state in DynamoDB; if it has changed, you may need to reload the object before applying
-local changes.  Save provides a shorthand for this, ``atomic=True``.  By default saves are not atomic.
-
-
-.. note::
-
-    The ``atomic`` keyword is applied **per-object** and not **for all objects being saved at once**.
-    For full-blown transactions see the User Guide's :ref:`user-transactions`.
-
-If you create a new User and perform an atomic save, it will fail if there was any previous state for that hash/range
-key (since the expected state before the save was non-existent).  If you fetch an object from a query which doesn't
-project all columns, only the columns that are projected will be part of the atomic condition (not loading a column
-doesn't say whether we should expect it to have a value or not).
-
-.. seealso::
-
-    Atomic conditions can be tricky, and there are subtle edge cases.  See the :ref:`Atomic Conditions
-    <user-conditions-atomic>` section of the User Guide for detailed examples of generated atomic conditions.
-
-If you provide a ``condition`` and ``atomic`` is True, the atomic condition will be ANDed with the condition to
-form a single ConditionExpression.
-
-.. code-block:: pycon
-
-    >>> is_verified = User.verified.is_(True)
-    >>> no_profile = User.profile.is_(None)
-    >>> engine.save(
-    ...     user,
-    ...     condition=(is_verified & no_profile),
-    ...     atomic=True)
-
-.. _UpdateItem: http://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_UpdateItem.html
 
 ---------------
  Return Values
@@ -317,15 +274,13 @@ It can also only be used on top-level attributes.
 
 :func:`Delete <bloop.engine.Engine.delete>` has the same signature as :func:`~bloop.engine.Engine.save`.  Both
 operations are mutations on an object that may or may not exist, and simply map to two different APIs (Delete calls
-`DeleteItem`_).  You can delete multiple objects at once; specify a ``condition``; use the ``atomic=True``
-shorthand to only delete objects unchanged since you last loaded them from DynamoDB; and use ``sync="old"`` to update
+`DeleteItem`_).  You can delete multiple objects at once; specify a ``condition``; and use ``sync="old"`` to update
 local objects with their last values before deletion.
 
 .. code-block:: pycon
 
     >>> from datetime import datetime, timedelta, timezone
     >>> engine.delete(user, tweet)
-    >>> engine.delete(tps_report, atomic=True)
     >>> now = datetime.now(timezone.utc)
     >>> cutoff = now - timedelta(years=2)
     >>> engine.delete(
@@ -349,8 +304,8 @@ local objects with their last values before deletion.
 ======
 
 Unlike most existing DynamoDB object mappers, Bloop does not create new instances when loading objects.
-This improves performance and makes atomic tracking much easier, and allows you to use thick or thin models by
-minimizing how many times the constructor is invoked for effectively the same object (same hash/range keys).
+This improves performance and allows you to use thick or thin models by minimizing how many times the constructor
+is invoked for effectively the same object (same hash/range keys).
 
 Like :func:`~bloop.engine.Engine.save` and :func:`~bloop.engine.Engine.delete` above,
 :func:`Engine.load <bloop.engine.Engine.load>` takes a variable number of objects to load from DynamoDB:
@@ -737,7 +692,7 @@ You can also use the transaction as a context manager:
 
     >>> with engine.transaction() as tx:
     ...     tx.save(user, condition=User.id.is_(None))
-    ...     tx.delete(tweet, atomic=True)
+    ...     tx.delete(tweet)
     ...     tx.check(meta, Metadata.verified.is_(True))
     ...
     >>> # tx is committed or raises TransactionCanceled

@@ -60,7 +60,7 @@ def rx(engine):
     (TxType.Update, True),
 ])
 def test_is_update(type, expected):
-    item = TxItem(type=type, obj=None, condition=None, atomic=False)
+    item = TxItem(type=type, obj=None, condition=None)
     assert item.is_update is expected
 
 
@@ -71,7 +71,7 @@ def test_is_update(type, expected):
     (TxType.Update, True),
 ])
 def test_should_render_obj(type, expected):
-    item = TxItem(type=type, obj=None, condition=None, atomic=False)
+    item = TxItem(type=type, obj=None, condition=None)
     assert item.should_render_obj is expected
 
 
@@ -112,7 +112,7 @@ def test_read_item(engine):
     tx.load(user)
     p = tx.prepare()
 
-    expected_items = [TxItem.new("get", user, None, False)]
+    expected_items = [TxItem.new("get", user, None)]
     assert tx._items == expected_items
     assert p.items == expected_items
     assert p.first_commit_at is None
@@ -127,7 +127,7 @@ def test_check_complex_item(engine):
     tx.check(user, condition=condition)
     p = tx.prepare()
 
-    expected_items = [TxItem.new("check", user, condition, False)]
+    expected_items = [TxItem.new("check", user, condition)]
     assert tx._items == expected_items
     assert p.items == expected_items
     assert p.first_commit_at is None
@@ -148,10 +148,10 @@ def test_save_complex_item(engine):
     tx = WriteTransaction(engine)
 
     condition = User.id.begins_with("foo")
-    tx.save(user, condition=condition, atomic=True)
+    tx.save(user, condition=condition)
     p = tx.prepare()
 
-    expected_items = [TxItem.new("save", user, condition, True)]
+    expected_items = [TxItem.new("save", user, condition)]
     assert tx._items == expected_items
     assert p.items == expected_items
     assert p.first_commit_at is None
@@ -172,10 +172,10 @@ def test_delete_complex_item(engine):
     tx = WriteTransaction(engine)
 
     condition = User.id.begins_with("foo")
-    tx.delete(user, condition=condition, atomic=True)
+    tx.delete(user, condition=condition)
     p = tx.prepare()
 
-    expected_items = [TxItem.new("delete", user, condition, True)]
+    expected_items = [TxItem.new("delete", user, condition)]
     assert tx._items == expected_items
     assert p.items == expected_items
     assert p.first_commit_at is None

@@ -1,6 +1,7 @@
 import pytest
 
 from bloop.actions import (
+    NONE_SENTINEL,
     Action,
     ActionType,
     add,
@@ -102,3 +103,19 @@ def test_new_action(action_type):
 def test_repr(action_type):
     action = action_type.new_action("testval")
     assert repr(action) == f"<Action[{action_type.wire_key}='testval']>"
+
+
+@pytest.mark.parametrize("func", [ActionType.Remove.new_action, remove, wrap])
+def test_sentinel(func):
+    """Common methods of creating Remove"""
+    assert func(None) is NONE_SENTINEL
+
+
+# noinspection PyTypeChecker
+@pytest.mark.parametrize("action_type", list(ActionType))
+@pytest.mark.parametrize("value", [None, object(), 1, ActionType.Add, Action])
+def test_eq(action_type, value):
+    a1 = Action(action_type, value)
+    a2 = Action(action_type, value)
+    assert a1 == a2
+    assert a2 == a1

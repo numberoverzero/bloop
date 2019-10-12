@@ -72,7 +72,7 @@ def test_load_dump_best_effort(engine):
 
     typedef = MyType()
     assert "not_a_float" == typedef._load({"NOT_FOO": "not_a_float"}, context={"engine": engine})
-    assert {"FOO": "not_a_float"} == typedef._dump("not_a_float", context={"engine": engine})
+    assert actions.set({"FOO": "not_a_float"}) == typedef._dump("not_a_float", context={"engine": engine})
 
 
 @pytest.mark.parametrize("typedef", [UUID, DateTime, Timestamp, Number, Integer, Boolean])
@@ -85,7 +85,7 @@ def test_none_scalar_types(typedef):
     assert type._load({typedef.backing_type: None}, context=context) is None
     assert type.dynamo_load(None, context=context) is None
 
-    assert type._dump(None, context=context) is None
+    assert type._dump(None, context=context) == actions.wrap(None)
     assert type.dynamo_dump(None, context=context) is None
 
 
@@ -126,7 +126,7 @@ def test_dump_none_vector_types(engine, typedef, nones):
     context = {"engine": engine}
 
     for values in nones:
-        assert typedef._dump(values, context=context) is None
+        assert typedef._dump(values, context=context) == actions.wrap(None)
         assert typedef.dynamo_dump(values, context=context) is None
         assert typedef.dynamo_dump(None, context=context) is None
 
@@ -436,7 +436,7 @@ def test_dynamic_dynamo_operations_raise():
 ])
 def test_dynamic_load_dump_symmetric(wire, local):
     dt = DynamicType()
-    assert dt._dump(local, context=None) == wire
+    assert dt._dump(local, context=None) == actions.wrap(wire)
     assert dt._load(wire, context=None) == local
 
 
@@ -449,7 +449,7 @@ def test_dynamic_load_none():
 def test_dynamic_dump_none():
     """DynamicType doesn't delegate when dumping None, since there isn't type information"""
     dt = DynamicType()
-    assert dt._dump(None) is None
+    assert dt._dump(None) == actions.wrap(None)
 
 
 def test_dynamic_extract_backing_type():

@@ -8,6 +8,99 @@ versions dating back to :ref:`v0.9.0<changelog-v0.9.0>` from December 2015.  The
 examples and tips for migrating from the previous major version (excluding the 1.0.0 guide, which only covers
 migration from 0.9.0 and newer).
 
+====================
+ Migrating to 3.0.0
+====================
+
+The 3.0.0 release includes two api changes from 2.4.0 that you may need to update your code to handle.
+
+* The ``atomic=`` kwarg to ``Engine.save`` and ``Engine.delete`` was deprecated in 2.4.0 and is removed in 3.0.0.
+* The return type of ``Type._dump`` must now be a ``bloop.action.Action`` instance, even when the value is ``None``.
+  This does not impact custom types that only implement ``dynamo_load`` and ``dynamo_dump``.
+
+--------------------
+ ``atomic`` keyword
+--------------------
+
+The atomic keyword to Engine.save and Engine.delete has been removed in favor of a user pattern.  This offers a
+reasonable performance improvement for users that never used the atomic keyword, and addresses ambiguity related to
+per-row atomic vs transactional atomic operations.  For context on the deprecation, see `Issue #138`_.  For the
+equivalent user pattern, see :ref:`patterns-snapshot`.  To migrate your existing code, you can use the following:
+
+.. code-block:: python
+
+    # pre-3.0 code to migrate:
+    engine.load(some_object)
+    some_object.some_attr = "new value"
+    engine.save(some_object, atomic=True)
+
+    # post-3.0 code:
+
+    # https://bloop.readthedocs.io/en/latest/user/patterns.html#snapshot-condition
+    from your_patterns import snapshot
+
+    engine.load(some_object)
+    condition = snapshot(some_object)
+    some_object.some_attr = "new value"
+    engine.save(some_object, condition=condition)
+
+.. _Issue #138: https://github.com/numberoverzero/bloop/issues/138
+
+------------
+ Type._dump
+------------
+
+Bloop now allows users to specify how a value should be applied in an UpdateExpression by wrapping a value in a
+``bloop.actions.Action`` object.  This is done transparently for raw values, which are interpreted
+as either ``bloop.actions.set`` or ``bloop.actions.remove``.  With 2.4 and to support `Issue #136`_ you can also
+specify an ``add`` or ``delete`` action:
+
+.. code-block:: python
+
+    my_user.aliases = bloop.actions.add("new_alias")
+    my_website.views = bloop.actions.add(1)
+
+To maintain flexibility the bloop ``Type`` class has the final say as to which action a value should use.  This allows
+eg. the ``List`` type to take a literal ``[]`` and change the action from ``actions.set`` to ``actions.remove(None)``
+to indicate that the value should be cleared.  This also means your custom type could see an ``actions.delete`` and
+modify the value to instead be expressible in an ``actions.set``.
+
+If your custom types today only override ``dynamo_dump`` or ``dynamo_load`` then you don't need to do anything for this
+migration.  However if you currently override ``_dump`` then you should update your function to (1) handle input that
+may be an action or not, and (2) always return an action instance.  In general, you should not modify an input
+action and instead should return a new instance (possibly with the same action_type).
+
+Here's the migration of the base ``Type._dump``:
+
+.. code-block:: python
+
+    # pre-3.0 code to migrate:
+    def _dump(self, value, **kwargs):
+        value = self.dynamo_dump(value, **kwargs)
+        if value is None:
+            return None
+        return {self.backing_type: value}
+
+
+    # post-3.0 code:
+    from bloop import actions
+
+    def _dump(self, value, **kwargs):
+        wrapped = actions.wrap(value)  # [1]
+        value = self.dynamo_dump(wrapped.value, **kwargs)
+        if value is None:
+            return actions.wrap(None)  # [2]
+        else:
+            value = {self.backing_type: value}
+            return wrapped.type.new_action(value)  # [3]
+
+    # [1] always wrap the input value to ensure you're working with an Action instance
+    # [2] returns actions.remove(None) which will remove the value like None previously did
+    # [3] new_action uses the **same action type** as the input.
+    #         If you want to always return a SET action instead use: return actions.set(value)
+
+
+.. _Issue #136: https://github.com/numberoverzero/bloop/issues/136
 
 ====================
  Migrating to 2.0.0

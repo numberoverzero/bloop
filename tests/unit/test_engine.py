@@ -6,7 +6,6 @@ from unittest.mock import Mock
 import pytest
 from tests.helpers.models import ComplexModel, User, VectorModel
 
-from bloop.conditions import global_tracking
 from bloop.engine import Engine
 from bloop.exceptions import (
     InvalidModel,
@@ -14,11 +13,9 @@ from bloop.exceptions import (
     InvalidTemplate,
     MissingKey,
     MissingObjects,
-    UnknownType,
 )
 from bloop.models import BaseModel, Column, GlobalSecondaryIndex
 from bloop.session import SessionWrapper
-from bloop.signals import object_saved
 from bloop.transactions import ReadTransaction, WriteTransaction
 from bloop.types import DateTime, Integer, String, Timestamp
 from bloop.util import ordered
@@ -289,56 +286,6 @@ def test_load_missing_attrs(engine, session):
     assert obj.name == ""
 
 
-def test_load_dump_unbound(engine):
-    class Model(BaseModel):
-        id = Column(Integer, hash_key=True)
-    obj = Model(id=5)
-    value = {"id": {"N": "5"}}
-
-    loaded = engine._load(Model, value)
-    assert loaded.id == 5
-
-    dumped = engine._dump(Model, obj)
-    assert dumped == {"id": {"N": "5"}}
-
-
-def test_load_dump_subclass(engine):
-    """Both immediate and inherited Columns should be dumped"""
-
-    class Admin(User):
-        admin_id = Column(Integer, hash_key=True)
-        other = Column(Integer)
-    engine.bind(User)
-
-    admin = Admin(admin_id=3)
-    # Set an attribute for a column on the parent class
-    admin.email = "admin@domain.com"
-
-    dumped_admin = {"admin_id": {"N": "3"}, "email": {"S": "admin@domain.com"}}
-    assert engine._dump(Admin, admin) == dumped_admin
-
-    # Inject a value that for a column on the parent class
-    dumped_admin["email"] = {"S": "support@foo.com"}
-    same_admin = engine._load(Admin, dumped_admin)
-    assert same_admin.email == "support@foo.com"
-
-
-def test_load_dump_unknown(engine):
-    class NotModeled:
-        pass
-    obj = NotModeled()
-    value = {
-        "age": {"N": 5},
-        "name": {"S": "foo"},
-        "id": {"S": "user_id"}
-    }
-
-    with pytest.raises(UnknownType):
-        engine._load(NotModeled, value)
-    with pytest.raises(UnknownType):
-        engine._dump(NotModeled, obj)
-
-
 def test_load_missing_key(engine):
     """Trying to load objects with missing hash and range keys raises"""
     user = User(age=2)
@@ -402,49 +349,6 @@ def test_save_single_with_condition(engine, session):
                 "ConditionExpression": "(attribute_not_exists(#n0))",
                 "Key": {"id": {"S": user.id}}}
     engine.save(user, condition=condition)
-    session.save_item.assert_called_once_with(expected)
-
-
-def test_save_atomic_new(engine, session):
-    """atomic save on new object should expect no columns to exist"""
-    user = User(id="user_id")
-    expected = {
-        "ExpressionAttributeNames": {
-            "#n0": "age", "#n6": "j", "#n2": "email",
-            "#n8": "name", "#n4": "id"},
-        "Key": {"id": {"S": user.id}},
-        "TableName": "User",
-        "ReturnValues": "NONE",
-        "ConditionExpression": (
-            "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n2)) "
-            "AND (attribute_not_exists(#n4)) AND (attribute_not_exists(#n6))"
-            " AND (attribute_not_exists(#n8)))")}
-    engine.save(user, atomic=True)
-    session.save_item.assert_called_once_with(expected)
-
-
-def test_save_atomic_condition(engine, session):
-    user = User(id="user_id")
-    # Tell the tracking system the user's id was saved to DynamoDB
-    object_saved.send(engine, engine=engine, obj=user)
-    # Mutate a field; part of the update but not an expected condition
-    user.name = "new_foo"
-    # Condition on the mutated field with a different value
-    condition = User.name == "expect_foo"
-
-    expected = {
-        "ConditionExpression": "((#n0 = :v1) AND (#n2 = :v3))",
-        "ExpressionAttributeNames": {"#n0": "name", "#n2": "id"},
-        "ExpressionAttributeValues": {
-            ":v1": {"S": "expect_foo"},
-            ":v3": {"S": user.id},
-            ":v4": {"S": "new_foo"}},
-        "Key": {"id": {"S": user.id}},
-        "TableName": "User",
-        "ReturnValues": "NONE",
-        "UpdateExpression": "SET #n0=:v4"
-    }
-    engine.save(user, condition=condition, atomic=True)
     session.save_item.assert_called_once_with(expected)
 
 
@@ -519,14 +423,6 @@ def test_save_sync(engine, session, sync):
     engine.save(user, sync=sync)
     assert user.age == 3
 
-    assert global_tracking.get_snapshot(user) == (
-        User.age.is_({"N": "3"}) &
-        User.email.is_(None) &
-        User.id.is_({"S": "user_id"}) &
-        User.joined.is_(None) &
-        User.name.is_(None)
-    )
-
 
 def test_delete_multiple_condition(engine, session, caplog):
     users = [User(id=str(i)) for i in range(3)]
@@ -549,70 +445,14 @@ def test_delete_multiple_condition(engine, session, caplog):
     assert caplog.record_tuples[-1] == ("bloop.engine", logging.INFO, "successfully deleted 3 objects")
 
 
-def test_delete_atomic(engine, session):
-    user = User(id="user_id")
-
-    # Tell the tracking system the user's id was saved to DynamoDB
-    object_saved.send(engine, engine=engine, obj=user)
-
-    expected = {
-        "ConditionExpression": "(#n0 = :v1)",
-        "ExpressionAttributeValues": {":v1": {"S": user.id}},
-        "TableName": "User",
-        "ReturnValues": "NONE",
-        "Key": {"id": {"S": user.id}},
-        "ExpressionAttributeNames": {"#n0": "id"}}
-    engine.delete(user, atomic=True)
-    session.delete_item.assert_called_once_with(expected)
-
-
-def test_delete_atomic_new(engine, session):
-    """atomic delete on new object should expect no columns to exist"""
-    user = User(id="user_id")
-    expected = {
-        "TableName": "User",
-        "ReturnValues": "NONE",
-        "ExpressionAttributeNames": {
-            "#n4": "id", "#n0": "age", "#n8": "name",
-            "#n6": "j", "#n2": "email"},
-        "Key": {"id": {"S": user.id}},
-        "ConditionExpression": (
-            "((attribute_not_exists(#n0)) AND (attribute_not_exists(#n2)) "
-            "AND (attribute_not_exists(#n4)) AND (attribute_not_exists(#n6))"
-            " AND (attribute_not_exists(#n8)))")}
-    engine.delete(user, atomic=True)
-    session.delete_item.assert_called_once_with(expected)
-
-
 def test_delete_new(engine, session):
-    """When an object is first created, a non-atomic delete shouldn't expect anything."""
+    """When an object is first created, a delete shouldn't expect anything."""
     user = User(id="user_id")
     expected = {
         "TableName": "User",
         "ReturnValues": "NONE",
         "Key": {"id": {"S": user.id}}}
     engine.delete(user)
-    session.delete_item.assert_called_once_with(expected)
-
-
-def test_delete_atomic_condition(engine, session):
-    user = User(id="user_id", email="foo@bar.com")
-
-    # Tell the tracking system the user's id and email were saved to DynamoDB
-    object_saved.send(engine, engine=engine, obj=user)
-
-    expected = {
-        "ConditionExpression": "((#n0 = :v1) AND (#n2 = :v3) AND (#n4 = :v5))",
-        "ExpressionAttributeValues": {
-            ":v1": {"S": "foo"},
-            ":v3": {"S": "foo@bar.com"},
-            ":v5": {"S": user.id}},
-        "ExpressionAttributeNames": {"#n0": "name", "#n2": "email", "#n4": "id"},
-        "Key": {"id": {"S": user.id}},
-        "TableName": "User",
-        "ReturnValues": "NONE",
-    }
-    engine.delete(user, condition=User.name.is_("foo"), atomic=True)
     session.delete_item.assert_called_once_with(expected)
 
 
@@ -637,13 +477,6 @@ def test_delete_sync(engine, session):
     user = User(id="user_id", age=4)
     engine.delete(user, sync="old")
     assert user.age == 3
-    assert global_tracking.get_snapshot(user) == (
-        User.age.is_(None) &
-        User.email.is_(None) &
-        User.id.is_(None) &
-        User.joined.is_(None) &
-        User.name.is_(None)
-    )
 
 
 def test_query(engine):

@@ -4,8 +4,8 @@ Internal
 ^^^^^^^^
 
 In addition to documenting internal classes, this section describes complex internal systems (such as Streams,
-atomic tracking via weakrefs) and specific parameters and error handling that Bloop employs when talking to DynamoDB
-(such as SessionWrapper's error inspection, and partial table validation).
+tracking modified columns via weakrefs) and specific parameters and error handling that Bloop employs when
+talking to DynamoDB (such as SessionWrapper's error inspection, and partial table validation).
 
 ================
  SessionWrapper

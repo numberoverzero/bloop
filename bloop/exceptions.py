@@ -51,10 +51,6 @@ class TableMismatch(BloopException):
     """The expected and actual tables for this Model do not match."""
 
 
-class UnknownType(BloopException, ValueError):
-    """This does not support the Type interface."""
-
-
 class InvalidSearch(BloopException, ValueError):
     """The search was malformed"""
 

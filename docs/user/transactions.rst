@@ -80,16 +80,6 @@ You can specify a ``condition`` with each save or delete call:
     with engine.transaction() as tx:
         tx.delete(auth_token, condition=Token.last_used <= now())
 
-Or use the ``atomic=`` kwarg to require that object's local state to match DynamoDb's at the time the transaction is
-committed.  For more information about the atomic keyword, see the :ref:`Engine.save <user-engine-save>` or
-:ref:`Atomic Conditions <user-conditions-atomic>` sections of the user guide.
-
-.. code-block:: python
-
-    with engine.transaction() as tx:
-        tx.save(new_user, new_tweet, atomic=True)
-
-
 ------------------------
  Transaction Conditions
 ------------------------
@@ -117,7 +107,7 @@ instead use a condition on the object being modified:
 
     with engine.transaction() as tx:
         tx.save(new_tweet)
-        tx.save(user_meta, condition=Metadata.tweets <= 500, atomic=True)
+        tx.save(user_meta, condition=Metadata.tweets <= 500)
 
 -------------
  Idempotency

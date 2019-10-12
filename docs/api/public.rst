@@ -708,8 +708,6 @@ or trying to use an unknown projection type.
 
 .. autoclass:: bloop.exceptions.MissingKey
 
-.. autoclass:: bloop.exceptions.UnknownType
-
 .. _public-extensions:
 
 ============

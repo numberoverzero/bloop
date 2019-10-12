@@ -1,10 +1,12 @@
 import collections.abc
 
+from .actions import ActionType
 from .exceptions import MissingKey
 
 
 __all__ = [
     "Sentinel",
+    "default_context",
     "dump_key", "extract_key", "get_table_name",
     "index_for", "missing", "ordered",
     "value_of", "walk_subclasses",
@@ -121,6 +123,7 @@ def dump_key(engine, obj):
     returns {dynamo_name: {type: value} for dynamo_name in hash/range keys}
     """
     key = {}
+    context = default_context(engine)
     for key_column in obj.Meta.keys:
         key_value = getattr(obj, key_column.name, missing)
         if key_value is missing:
@@ -129,8 +132,11 @@ def dump_key(engine, obj):
                 key_column.name
             ))
         # noinspection PyProtectedMember
-        key_value = engine._dump(key_column.typedef, key_value)
-        key[key_column.dynamo_name] = key_value
+        key_action = key_column.typedef._dump(key_value, context=context)
+        if key_action.type is not ActionType.Set:
+            raise ValueError(
+                f"key value {key_value} for column {key_column} must be a SET action but was {key_action}")
+        key[key_column.dynamo_name] = key_action.value
     return key
 
 
@@ -138,6 +144,14 @@ def get_table_name(engine, obj):
     """return the table name for an object as seen by a given engine"""
     # noinspection PyProtectedMember
     return engine._compute_table_name(obj.__class__)
+
+
+def default_context(engine, context=None) -> dict:
+    """Return a dict with an engine, using the existing values if provided"""
+    if context is None:
+        context = {}
+    context.setdefault("engine", engine)
+    return context
 
 
 class Sentinel:

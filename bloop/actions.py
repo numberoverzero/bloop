@@ -21,6 +21,8 @@ class ActionType(enum.Enum):
 
     def new_action(self, value) -> "Action":
         """Convenience function to instantiate an Action with this type"""
+        if self is ActionType.Remove and value is None:
+            return NONE_SENTINEL
         return Action(self, value)
 
 
@@ -58,11 +60,28 @@ class Action:
         return super().__new__(cls)
 
     def __init__(self, action_type: ActionType, value):
-        self.type = action_type
-        self.value = value
+        self.__type = action_type
+        self.__value = value
+
+    @property
+    def type(self):
+        return self.__type
+
+    @property
+    def value(self):
+        return self.__value
 
     def __repr__(self):
         return f"<Action[{self.type.wire_key}={self.value!r}]>"
+
+    def __eq__(self, other):
+        return (
+            isinstance(other, Action) and
+            (self.type is other.type) and
+            (self.value == other.value)
+        )
+
+    __hash__ = object.__hash__
 
 
 def unwrap(x: Union[Action, Any]) -> Any:
@@ -77,7 +96,7 @@ def wrap(x: Any) -> Action:
     if isinstance(x, Action):
         return x
     elif x is None:
-        return remove(None)
+        return NONE_SENTINEL
     return set(x)
 
 
@@ -131,6 +150,8 @@ def remove(value=None):
         >>> user.shell = None
         >>> user.shell = bloop.actions.remove(None)
     """
+    if value is None:
+        return NONE_SENTINEL
     return Action(ActionType.Remove, value)
 
 
@@ -150,3 +171,6 @@ def set(value):
         >>> user.shell = bloop.actions.set("/bin/sh")
     """
     return Action(ActionType.Set, value)
+
+
+NONE_SENTINEL = Action(ActionType.Remove, None)

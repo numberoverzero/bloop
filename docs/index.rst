@@ -17,7 +17,6 @@ __ https://gist.github.com/numberoverzero/9584cfc375de0e087c8e1ae35ab8559c
 * Easy transactions
 * Extensible type system, useful built-in types
 * Secure expression-based wire format
-* Simple atomic operations
 * Expressive conditions
 * Model composition
 * Diff-based saves
@@ -70,7 +69,7 @@ Use transactions:
 .. code-block:: python
 
     with engine.transaction() as tx:
-        tx.save(account, atomic=True)
+        tx.save(account)
         tx.delete(update_token, condition=Token.until <= now())
 
 =============

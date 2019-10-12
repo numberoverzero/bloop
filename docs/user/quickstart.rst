@@ -60,5 +60,13 @@ Kick it up a notch with conditional operations:
     >>> account.email = 'new@email.com'
     >>> engine.save(account, condition=Account.name == 'username')
 
-    # Only delete the account if it hasn't changed at all
-    >>> engine.delete(account, atomic=True)
+    # Only delete the account if the email hasn't changed since we last saved
+    >>> engine.delete(account, condition=Account.email == "new@email.com")
+
+
+Or load the last state of an object before it was deleted:
+
+.. code-block:: pycon
+
+    >>> engine.delete(account, sync="old")
+    >>> print(f"last email was {account.email}")

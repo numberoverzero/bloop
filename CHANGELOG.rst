@@ -16,6 +16,22 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 (no unreleased changes)
 
 --------------------
+ 2.4.1 - 2019-10-11
+--------------------
+
+Bug fix.  Thanks to @wilfre in `PR #141`_!
+
+.. _PR #141: https://github.com/numberoverzero/bloop/pull/141
+
+[Fixed]
+=======
+
+* ``bloop.stream.shard.py::unpack_shards`` no longer raises when a Shard in the DescribeStream has a ParentId
+  that is not also available in the DescribeStream response (the parent shard has been deleted).  Previously the
+  code would raise while trying to link the two shard objects in memory.  Now, the shard will have a ParentId of
+  ``None``.
+
+--------------------
  2.4.0 - 2019-06-13
 --------------------
 

@@ -12,7 +12,7 @@ migration from 0.9.0 and newer).
  Migrating to 3.0.0
 ====================
 
-The 3.0.0 release includes two api changes from 2.4.0 that you will may need to update your code to handle.
+The 3.0.0 release includes two api changes from 2.4.0 that you may need to update your code to handle.
 
 * The ``atomic=`` kwarg to ``Engine.save`` and ``Engine.delete`` was deprecated in 2.4.0 and is removed in 3.0.0.
 * The return type of ``Type._dump`` must now be a ``bloop.action.Action`` instance, even when the value is ``None``.

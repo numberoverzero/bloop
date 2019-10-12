@@ -13,6 +13,16 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  Unreleased
 ------------
 
+(no unreleased changes)
+
+--------------------
+ 3.0.0 - 2019-10-11
+--------------------
+
+Remove deprecated keyword ``atomic=`` from ``Engine.save`` and ``Engine.delete``, and ``Type._dump`` must return
+a ``bloop.actions.Action`` instance.  See the Migration Guide for context on these changes, and sample code to
+easily migrate your existing custom Types.
+
 [Added]
 =======
 
@@ -36,6 +46,7 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 [Removed]
 =========
 
+* The deprecated ``atomic=`` keyword has been removed from ``Engine.save`` and ``Engine.delete``.
 * The exception ``bloop.exceptions.UnknownType`` is no longer raised and has been removed.
 * *(internal)* ``BaseModel._load`` and ``BaseModel._dump`` have been removed.  These were not documented or used
   anywhere in the code base, and ``unpack_from_dynamodb`` should be used where ``_load`` was anyway.
@@ -43,6 +54,22 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
   replaced with calls to ``typedef._load`` and ``typedef._dump`` instead.
 * *(internal)* The ``dumped`` attr for Conditions is no longer needed since there's no need to dump objects except
   at render time.
+
+--------------------
+ 2.4.1 - 2019-10-11
+--------------------
+
+Bug fix.  Thanks to @wilfre in `PR #141`_!
+
+.. _PR #141: https://github.com/numberoverzero/bloop/pull/141
+
+[Fixed]
+=======
+
+* ``bloop.stream.shard.py::unpack_shards`` no longer raises when a Shard in the DescribeStream has a ParentId
+  that is not also available in the DescribeStream response (the parent shard has been deleted).  Previously the
+  code would raise while trying to link the two shard objects in memory.  Now, the shard will have a ParentId of
+  ``None``.
 
 --------------------
  2.4.0 - 2019-06-13

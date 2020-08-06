@@ -411,7 +411,7 @@ def test_render_condition_only(kwarg_name, expression_key, engine, caplog):
     assert caplog.record_tuples == [
         ("bloop.conditions", logging.DEBUG,
          f"popping last usage of Reference(name=':v3', type='value', action={actions.wrap(None)})"),
-        ("bloop.conditions", logging.DEBUG, f"rendering \"==\" as attribute_not_exists"),
+        ("bloop.conditions", logging.DEBUG, "rendering \"==\" as attribute_not_exists"),
     ]
 
 

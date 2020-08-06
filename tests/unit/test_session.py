@@ -1246,7 +1246,7 @@ def test_compare_table_wrong_index_projection_type(index_type, model, logger):
     index_description["Projection"]["ProjectionType"] = "UnknownProjectionType"
     assert not compare_tables(model, description)
     logger.assert_logged(f"Projection mismatch for index '{index.dynamo_name}'")
-    logger.assert_logged(f"unexpected index ProjectionType 'UnknownProjectionType'", level=logging.INFO)
+    logger.assert_logged("unexpected index ProjectionType 'UnknownProjectionType'", level=logging.INFO)
 
 
 @pytest.mark.parametrize("index_type", ["gsis", "lsis"])

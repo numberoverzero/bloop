@@ -2,8 +2,6 @@
     :target: http://bloop.readthedocs.org/
 .. image:: https://img.shields.io/travis/numberoverzero/bloop/master.svg?style=flat-square
     :target: https://travis-ci.org/numberoverzero/bloop
-.. image:: https://img.shields.io/codecov/c/github/numberoverzero/bloop/master.svg?style=flat-square
-    :target: https://codecov.io/gh/numberoverzero/bloop/branch/master
 .. image:: https://img.shields.io/gitter/room/numberoverzero/bloop.svg?style=flat-square
     :target: https://gitter.im/numberoverzero/bloop
 .. image:: https://img.shields.io/pypi/v/bloop.svg?style=flat-square

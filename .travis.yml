@@ -11,7 +11,7 @@ env:
   - TOXENV=unit
   - TOXENV=integ
   - TOXENV=docs
-install: pip install tox codecov
+install: pip install tox
 script: tox -e $TOXENV -- -s
 
 notifications:

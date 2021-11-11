@@ -1525,6 +1525,46 @@ def test_bind_index_recalculates_index_keys_projection():
     }
 
 
+def test_bind_index_recalculated_index_include_projection():
+    """An existing index recalculates its "include" projection when bound"""
+    model = new_abstract_model()
+    original_data = model.data
+
+    # create a table hash key so we can see it in the projection
+    table_hk = bind_column(model, "table_hk", Column(String, hash_key=True))
+
+    # bind a gsi hash key, then rebind a copy.  we'll use references to the original and see that
+    # the rebound key shows up (since refresh_index round trips Column -> name -> Column)
+    original_gsi_hk = bind_column(model, "gsi_hash_key", Column(String))
+    copied_gsi_hk = bind_column(model, "gsi_hash_key", original_gsi_hk, copy=True, force=True)
+
+    # specify some additional columns (beyond keys) to include in the projection.
+    # we will reference them by column object, then immediately rebind the same name.
+    # when the index is bound, it should project the new column instead of the original.
+    index = GlobalSecondaryIndex(projection=[original_data], hash_key=original_gsi_hk)
+
+    # overwrite model.data
+    new_data = bind_column(model, "data", Column(String), force=True)
+
+    bound_index = bind_index(model, "by_gsi_hash_key", index, copy=True)
+
+    # because we used a copy, the original index should be unchanged
+    assert index.projection == {
+        "mode": "keys",
+        "included": None,
+        "available": None,
+        "strict": True
+    }
+    # note the included columns are the copied key and new_data, even though the source index pointed to
+    # the original of each column.
+    assert bound_index.projection == {
+        "mode": "include",
+        "included": {table_hk, copied_gsi_hk, new_data},
+        "available": {table_hk, copied_gsi_hk, new_data},
+        "strict": True
+    }
+
+
 def test_bind_index_parent_class():
     """
     Binding to a parent class can optionally recurse through children, adding a

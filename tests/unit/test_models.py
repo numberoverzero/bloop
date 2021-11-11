@@ -1036,12 +1036,12 @@ def test_index_projection_validation():
 
     index = Index(projection=["foo", "bar"])
     assert index.projection["mode"] == "include"
-    assert index.projection["included"] == ["foo", "bar"]
+    assert index.projection["included"] == {"foo", "bar"}
     assert index.projection["available"] is None
 
     index = Index(projection=[User.age, User.email])
     assert index.projection["mode"] == "include"
-    assert index.projection["included"] == [User.age, User.email]
+    assert index.projection["included"] == {User.age, User.email}
     assert index.projection["available"] is None
 
 
@@ -1550,8 +1550,8 @@ def test_bind_index_recalculated_index_include_projection():
 
     # because we used a copy, the original index should be unchanged
     assert index.projection == {
-        "mode": "keys",
-        "included": None,
+        "mode": "include",
+        "included": {original_data},
         "available": None,
         "strict": True
     }

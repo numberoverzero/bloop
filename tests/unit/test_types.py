@@ -27,6 +27,11 @@ from bloop.types import (
 from ..helpers.models import DocumentType
 
 
+class ReprFriendlyObject:
+    def __repr__(self) -> str:
+        return "anonymous_object"
+
+
 def symmetric_test(typedef, *pairs):
     """ Test any number of load/dump pairs for a symmetric `Type` instance """
     for (loaded, dumped) in pairs:
@@ -282,7 +287,7 @@ def test_set_illegal_backing_type():
             Set(typedef)
 
 
-@pytest.mark.parametrize("value", [1, True, object(), bool, "str", False, 0, set(), ""], ids=repr)
+@pytest.mark.parametrize("value", [1, True, ReprFriendlyObject(), bool, "str", False, 0, set(), ""], ids=repr)
 def test_bool(value):
     """Boolean handles all values except None with bool(value)"""
     typedef = Boolean()

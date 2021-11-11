@@ -7,7 +7,7 @@ flake8
 pendulum~=2.0
 pydeps~=1.7
 pytest
-pytz~=2019.1
+pytz~=2021.3
 readme_renderer[md]
 requests~=2.22
 sphinx~=2.1

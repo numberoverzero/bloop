@@ -17,6 +17,8 @@ from bloop.util import (
     index,
     index_for,
     ordered,
+    quiet_pop,
+    quiet_remove,
     value_of,
     walk_subclasses,
 )
@@ -27,6 +29,22 @@ class HashAndRange(BaseModel):
         abstract = True
     foo = Column(Integer, hash_key=True)
     bar = Column(Integer, range_key=True)
+
+
+@pytest.mark.parametrize("d, key, expected", [
+    ({3: 4, 5: 6}, 3, True),
+    ({3: 4, 5: 6}, 6, False),
+])
+def test_quiet_pop(d, key, expected):
+    assert quiet_pop(d, key) == expected
+
+
+@pytest.mark.parametrize("s, element, expected", [
+    ({3, 4, 5}, 3, True),
+    ({3, 4, 5}, 6, False),
+])
+def test_quiet_remove(s, element, expected):
+    assert quiet_remove(s, element) == expected
 
 
 def test_index():

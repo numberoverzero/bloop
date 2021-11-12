@@ -16,7 +16,6 @@ from bloop.models import (
     bind_index,
     model_created,
     object_modified,
-    unbind,
     unpack_from_dynamodb,
 )
 from bloop.types import (
@@ -325,13 +324,13 @@ def test_abstract_subclass():
     assert not Abstract.Meta.keys
 
 
-def test_model_str(engine):
+def test_model_repr(engine):
     """Different strings for None and missing"""
     new_user = User()
-    assert str(new_user) == "User()"
+    assert repr(new_user) == "User()"
 
     empty_user = User(age=None, email="", id="", joined=None, name="")
-    assert str(empty_user) == "User(age=None, email='', id='', joined=None, name='')"
+    assert repr(empty_user) == "User(age=None, email='', id='', joined=None, name='')"
 
 
 def test_created_signal():
@@ -644,6 +643,36 @@ def test_mixins_range_key_conflict():
     assert str(excinfo.value) == expected
 
 
+def test_non_overlapping_hash_key_conflict():
+    """A derived class can define a hash_key that does not overlap with its parents hash_key"""
+
+    # The derived class's hash_key will remain, and the base class's hash key will not be available.
+    # Any indexes that pointed to the base hash key (because it was the table hash key, and not because
+    # of any other overlap eg. name/dynamo_name) will now point to the derived hash key.
+
+    class Parent(BaseModel):
+        parent_hash = Column(String, hash_key=True)
+        parent_range = Column(String, range_key=True)
+        parent_other = Column(String)
+        parent_extra = Column(String)
+
+        by_other = LocalSecondaryIndex(projection=[parent_extra], range_key=parent_other)
+
+    class Child(Parent):
+        child_hash = Column(String, hash_key=True)
+
+    # note that Child.parent_range is a copy of the parent, not the actual column
+    assert Child.Meta.keys == {Child.child_hash, Child.parent_range}
+    assert Parent.parent_range not in Child.Meta.keys
+
+    # Child.by_other points to the new child hash key
+    assert Child.by_other.hash_key is Child.child_hash
+
+    # Parent.by_other still points to the original columns
+    assert Parent.by_other.hash_key is Parent.parent_hash
+    assert Parent.by_other.hash_key is Parent.parent_hash
+
+
 def test_mixins_same_column_name():
     """If two mixins define columns with the same name, mro determines which the class uses"""
     class FooMixin(BaseModel):
@@ -807,14 +836,20 @@ def test_column_repr():
     column = Column(Integer, dynamo_name="f")
     column.model = User
     column._name = "foo"
-    assert repr(column) == "<Column[User.foo]>"
+    assert repr(column) == "<Column[User.foo:f]>"
 
     column.hash_key = True
-    assert repr(column) == "<Column[User.foo=hash]>"
+    assert repr(column) == "<Column[User.foo:f=hash]>"
 
     column.hash_key = False
     column.range_key = True
-    assert repr(column) == "<Column[User.foo=range]>"
+    assert repr(column) == "<Column[User.foo:f=range]>"
+
+
+def test_column_repr_unbound():
+    column = Column(Integer, dynamo_name="f", range_key=True)
+    column._name = "foo"
+    assert repr(column) == "<Column[UNBOUND.foo:f=range]>"
 
 
 def test_column_repr_path():
@@ -1122,21 +1157,21 @@ def test_index_repr(projection):
     index._name = "by_foo"
     if isinstance(projection, list):
         projection = "include"
-    assert repr(index) == "<Index[User.by_foo={}]>".format(projection)
+    assert repr(index) == "<Index[User.by_foo:f={}]>".format(projection)
 
 
 def test_lsi_repr():
     index = LocalSecondaryIndex(projection="all", range_key="key", dynamo_name="f")
     index.model = User
     index._name = "by_foo"
-    assert repr(index) == "<LSI[User.by_foo=all]>"
+    assert repr(index) == "<LSI[User.by_foo:f=all]>"
 
 
 def test_gsi_repr():
     index = GlobalSecondaryIndex(projection="all", hash_key="key", dynamo_name="f")
     index.model = User
     index._name = "by_foo"
-    assert repr(index) == "<GSI[User.by_foo=all]>"
+    assert repr(index) == "<GSI[User.by_foo:f=all]>"
 
 
 # END INDEX ================================================================================================= END INDEX
@@ -1154,7 +1189,7 @@ def new_abstract_model(indexes=False):
             my_index_hash = Column(Integer, hash_key=True)
             by_data = GlobalSecondaryIndex(
                 projection="all", hash_key="data", dynamo_name="dynamo-by-data")
-            email = Column(String, range_key=True)
+            email = Column(String, range_key=True, dynamo_name="dynamo-email")
             by_email = LocalSecondaryIndex(projection="all", range_key=data)
     return MyModel
 
@@ -1225,6 +1260,7 @@ def test_bind_column_force_keys():
     assert not model.Meta.range_key
 
     hash_key = Column(String, hash_key=True)
+    hash_key.marker = object()  # to differentiate
     bind_column(model, "data", hash_key, force=True)
     assert model.Meta.hash_key is hash_key
     assert not model.Meta.range_key
@@ -1262,13 +1298,15 @@ def test_bind_column_extra_hash_key():
     extra = Column(String, hash_key=True, dynamo_name="extra-hash")
     with pytest.raises(InvalidModel) as excinfo:
         bind_column(model, "extra", extra)
-    assert "has a different hash_key" in str(excinfo.value)
+    assert "as a hash_key" in str(excinfo.value)
+    assert "is already bound" in str(excinfo.value)
 
     # binding another range_key fails
     extra = Column(String, range_key=True, dynamo_name="extra-range")
     with pytest.raises(InvalidModel) as excinfo:
         bind_column(model, "extra", extra)
-    assert "has a different range_key" in str(excinfo.value)
+    assert "as a range_key" in str(excinfo.value)
+    assert "is already bound" in str(excinfo.value)
 
 
 def test_bind_column_recalculates_index_projection():
@@ -1290,14 +1328,31 @@ def test_bind_column_recalculates_index_projection():
 
 def test_bind_column_breaks_index_key():
     """An existing Index has a hash or range key which is removed when a new column is bound"""
-    model = new_abstract_model(indexes=True)
-    index_hash_key_dynamo_name = "dynamo-data"
-    new_column = Column(String, dynamo_name=index_hash_key_dynamo_name)
 
-    # Note that since this puts the model in an inconsistent state, even force=True
-    # won't prevent the exception
-    with pytest.raises(InvalidModel):
-        bind_column(model, "different_name", new_column, force=True)
+    # This test is designed to overwrite as many references as possible with one bind_column call.
+    #   for ease of reading, each dynamo_name is the column's name suffixed with "-dynamo"
+    #   and the index points to data but projects the additional column "extra".
+    # Note that the index's hash_key is provided as the object literal, but will break the same
+    # with a string because the GSI's .hash_key property lazy loads through model.Meta
+    class Model(BaseModel):
+        class Meta:
+            abstract = True
+
+        hk = Column(Integer, hash_key=True, dynamo_name="hk-dynamo")
+        data = Column(Integer, dynamo_name="data-dynamo")
+        extra = Column(Integer)
+
+        index = GlobalSecondaryIndex(projection=[extra], hash_key="data", dynamo_name="index-dynamo")
+
+    # dynamo_name will collide with Model.data, triggering a rebind of the GSI
+    new_column = Column(String, dynamo_name="data-dynamo")
+
+    # name will collide with Model.hk
+    bind_column(Model, "hk", new_column, force=True)
+
+    assert Model.hk is new_column
+    assert not hasattr(Model, "data")
+    assert Model.index.hash_key is new_column
 
 
 def test_bind_column_parent_class():
@@ -1395,6 +1450,47 @@ def test_bind_column_copy():
     assert other_bound.model is other_model
 
 
+def test_bind_column_twice():
+    """When copy=False, binding twice reminds you the column is already bound to the model"""
+    model = new_abstract_model()
+    already_bound = model.data
+
+    with pytest.raises(InvalidModel) as excinfo:
+        bind_column(model, already_bound.name, already_bound, copy=False)
+    assert "is already bound to " in str(excinfo.value)
+
+
+def test_bind_column_already_bound():
+    """When copy=False, binding a bound column reminds you the column is already bound to a different model"""
+    class AnotherModel(BaseModel):
+        class Meta:
+            abstract = True
+
+    already_bound = new_abstract_model().data
+    with pytest.raises(InvalidModel) as excinfo:
+        bind_column(AnotherModel, already_bound.name, already_bound, copy=False)
+    assert "is bound to a different model" in str(excinfo.value)
+
+
+def test_bind_column_collides_with_index():
+    """Fail when trying to bind a column with the same name or dynamo_name as an index"""
+    model = new_abstract_model(indexes=True)
+    index = model.by_email
+    already_bound = Column(String)
+
+    already_bound._name = index._name
+    with pytest.raises(InvalidModel) as excinfo:
+        bind_column(model, already_bound.name, already_bound)
+    assert "has the same name as an existing index" in str(excinfo.value)
+
+    # reset name so we collide on dynamo_name
+    already_bound._name = "already_bound"
+    already_bound._dynamo_name = index.dynamo_name
+    with pytest.raises(InvalidModel) as excinfo:
+        bind_column(model, already_bound.name, already_bound)
+    assert "has the same name as an existing index" in str(excinfo.value)
+
+
 def test_bind_column_no_copy():
     """Binding a column with copy=False mutates the original column"""
     model = new_abstract_model()
@@ -1402,6 +1498,19 @@ def test_bind_column_no_copy():
 
     bound_column = bind_column(model, "another-name", column, copy=False)
     assert column is bound_column
+
+
+def test_bind_column_over_range_key():
+    """Binding a column over an index's range key by dynamo_name"""
+    model = new_abstract_model(indexes=True)
+    index = model.by_email
+
+    new_column = Column(String)
+    new_column._dynamo_name = index.range_key._dynamo_name
+
+    bind_column(model, "any_column_name", new_column, force=True)
+
+    assert index.range_key is new_column
 
 
 def test_bind_index_name_conflict_fails():
@@ -1665,11 +1774,45 @@ def test_bind_index_copy():
     assert other_bound.model is other_model
 
 
-def test_unbind_bad_call():
-    """unbind must be called with either name= or dynamo_name="""
-    model = new_abstract_model()
-    with pytest.raises(RuntimeError):
-        unbind(model.Meta)
+def test_bind_index_twice():
+    """When copy=False, binding twice reminds you the index is already bound to the model"""
+    model = new_abstract_model(indexes=True)
+    already_bound = model.by_email
+
+    with pytest.raises(InvalidModel) as excinfo:
+        bind_index(model, already_bound.name, already_bound, copy=False)
+    assert "is already bound to " in str(excinfo.value)
+
+
+def test_bind_index_already_bound():
+    """When copy=False, binding a bound index reminds you the index is already bound to a different model"""
+    class AnotherModel(BaseModel):
+        class Meta:
+            abstract = True
+
+    already_bound = new_abstract_model(indexes=True).by_email
+    with pytest.raises(InvalidModel) as excinfo:
+        bind_index(AnotherModel, already_bound.name, already_bound, copy=False)
+    assert "is bound to a different model" in str(excinfo.value)
+
+
+def test_bind_index_collides_with_column():
+    """Fail when trying to bind a column with the same name or dynamo_name as an index"""
+    model = new_abstract_model(indexes=True)
+    column = model.data
+    already_bound = GlobalSecondaryIndex(projection="keys", hash_key=model.email)
+
+    already_bound._name = column.name
+    with pytest.raises(InvalidModel) as excinfo:
+        bind_index(model, already_bound.name, already_bound)
+    assert "has the same name as an existing column" in str(excinfo.value)
+
+    # reset name so we collide on dynamo_name
+    already_bound._name = "already_bound"
+    already_bound._dynamo_name = column.dynamo_name
+    with pytest.raises(InvalidModel) as excinfo:
+        bind_index(model, already_bound.name, already_bound)
+    assert "has the same name as an existing column" in str(excinfo.value)
 
 
 # END BINDING ============================================================================================= END BINDING

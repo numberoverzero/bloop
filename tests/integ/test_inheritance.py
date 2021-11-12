@@ -14,7 +14,6 @@ from bloop import (
     GlobalSecondaryIndex,
     Integer,
 )
-from bloop.exceptions import InvalidModel
 
 
 def test_inheritance_simple(engine):
@@ -204,6 +203,10 @@ def test_inheritance_two_models_same_dynamo_index_name(engine):
 
 
 def test_inheritance_two_models_same_dynamo_column_name(engine):
-    with pytest.raises(InvalidModel):
-        class NextGenUser(MixinUser):
-            version = Column(Integer, dynamo_name='email')
+    class NextGenUser(MixinUser):
+        version = Column(Integer, dynamo_name='email')
+    # assigning over the existing index's hash key updates the GSI
+    assert NextGenUser.by_email.hash_key is NextGenUser.version
+    # mixin index is untouched
+    assert MixinUser.by_email.hash_key is MixinUser.email
+    assert MixinUser.email is not NextGenUser.version

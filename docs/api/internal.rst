@@ -79,8 +79,6 @@ talking to DynamoDB (such as SessionWrapper's error inspection, and partial tabl
 
 .. automethod:: bloop.models.refresh_index
 
-.. automethod:: bloop.models.unbind
-
 
 =======
  Types

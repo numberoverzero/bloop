@@ -13,10 +13,59 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  Unreleased
 ------------
 
+Improved ergonomics when working with multiple inheritance and shared tables
+thanks to a more powerful ``bind_column``.  If a local Index or Column overlaps a
+derived one during class definition in one of (hash_key, range_key, name, or dynamo_name)
+then ``bind_column`` will find all inbound references for the overlapped columns and redirect
+them to the new column.  This has relaxed a few scenarios that were previously errors.
+
+Note that ``bind_column`` can still leave the model in an incomplete state (eg. binding
+a non-key column over a hash key) and pre- and post- validation of the model is left up
+to the caller.
+
 [Added]
 =======
 
 * ``IMeta.columns_by_dynamo_name``
+
+[Changed]
+=========
+
+* ``bloop.models.bind_column`` will now follow and update indirect references when
+  overwriting an existing column.  For example, the following will point the GSI at
+  the new column since it shares a dynamo_name with the original target:
+
+  .. code-block:: python
+
+    from bloop.models import bind_column
+
+    class MyModel(BaseModel):
+        id = Column(String, hash_key=True)
+        email = Column(String, dynamo_name="shared-name")
+
+        by_something = GlobalSecondaryIndex(projection="all", hash_key="email")
+
+    was_email = MyModel.email  # grab a reference for assertions
+
+    phone_number = Column(String, dynamo_name="shared-name")
+    bound = bind_column(MyModel, "phone_number", phone_number, force=True)
+
+    assert bound is phone_number
+    assert MyModel.by_something.hash_key is phone_number
+    assert was_email not in MyModel.Meta.columns
+    assert was_email not in MyModel.by_something.projection["included"]
+
+
+[Fixed]
+=========
+
+* ``bind_column`` no longer binds multiple hash keys or range keys.
+
+[Removed]
+=========
+
+* *(internal)* ``bloop.models.unbind`` has been removed and its logic rolled into ``bind_column``
+  and ``bind_index``.
 
 --------------------
  3.1.0 - 2021-11-11

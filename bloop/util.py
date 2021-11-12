@@ -1,5 +1,5 @@
 import collections.abc
-
+from typing import Any
 from .actions import ActionType
 from .exceptions import MissingKey
 
@@ -8,12 +8,29 @@ __all__ = [
     "Sentinel",
     "default_context",
     "dump_key", "extract_key", "get_table_name",
-    "index_for", "missing", "ordered",
-    "value_of", "walk_subclasses",
+    "index_for", "missing", "ordered", "quiet_remove",
+    "quiet_pop", "value_of", "walk_subclasses",
 ]
 
 # De-dupe dict for Sentinel
 _symbols = {}
+
+
+def quiet_remove(s: set, element: Any) -> bool:
+    """Remove an element from a set, returning True if it was removed"""
+    try:
+        s.remove(element)
+        return True
+    except KeyError:
+        return False
+
+
+def quiet_pop(d: dict, key: Any) -> bool:
+    try:
+        d.pop(key)
+        return True
+    except KeyError:
+        return False
 
 
 def index(objects, attr):

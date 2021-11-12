@@ -504,8 +504,8 @@ __ http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/SecondaryInde
 Every :class:`~bloop.models.GlobalSecondaryIndex` must declare a ``projection``, which describes the columns projected
 into the index.  Only projected columns are loaded from queries and scans on the index, and non-projected columns
 can't be used in filter expressions.  A projection can be ``"all"`` for all columns in the model; ``"keys"`` for the
-hash and range columns of the model and the index; or a list of :class:`~bloop.models.Column` objects or their model
-names.  If you specify a list of columns, key columns will always be included.
+hash and range columns of the model and the index; or a set of :class:`~bloop.models.Column` objects or their model
+names.  If you specify a set of columns, key columns will always be included.
 
 .. code-block:: python
 
@@ -514,7 +514,7 @@ names.  If you specify a list of columns, key columns will always be included.
         by_email = GlobalSecondaryIndex("all", hash_key="email")
         by_username = GlobalSecondaryIndex("keys", hash_key="username")
         by_create_date = GlobalSecondaryIndex(
-            ["email", "username"], hash_key="created_on")
+            {"email", "username"}, hash_key="created_on")
 
 A GlobalSecondaryIndex must have a ``hash_key``, and can optionally have a ``range_key``.  This can either be the
 name of a column, or the column object itself:

@@ -359,7 +359,7 @@ This section defines a new model to demonstrate the various filtering and condit
             projection="all", hash_key=level)
 
         by_balance = LocalSecondaryIndex(
-            projection=["created_on"], range_key="balance")
+            projection={"created_on"}, range_key="balance")
 
     engine = Engine()
     engine.bind(Account)
@@ -525,13 +525,13 @@ Here is the same LSI query as above, but now excluding accounts created in the l
 
 By default, queries return all columns projected into the index or model.  You can use the ``projection`` parameter
 to control which columns are returned for each object.  This must be "all" to include everything in the index or
-model's projection, or a list of columns or column model names to include.
+model's projection, or a set of columns or column model names to include.
 
 .. code-block:: pycon
 
     >>> q = engine.query(Account,
     ...     key=key_condition,
-    ...     projection=["email", "balance"])
+    ...     projection={"email", "balance"})
     >>> account = q.first()
     >>> account.email
     'user@domain.com'
@@ -635,7 +635,7 @@ Use ``filter`` and ``projection`` to exclude items and control which columns are
 
     >>> scan = engine.scan(Account,
     ...     filter=Account.email.contains("@"),
-    ...     projection=["level", "email"])
+    ...     projection={"level", "email"})
 
 And ``consistent`` to use strongly consistent reads:
 

@@ -191,7 +191,7 @@ provides all directs for managers at a certain level.
         manager_id = Column(UUID)
 
         by_level = GlobalSecondaryIndex(
-            projection=[email], hash_key=level)
+            projection={email}, hash_key=level)
 
 
     class Manager(BaseModel):
@@ -204,7 +204,7 @@ provides all directs for managers at a certain level.
         directs = Column(Set(UUID))
 
         by_level = GlobalSecondaryIndex(
-            projection=[directs], hash_key=level)
+            projection={directs}, hash_key=level)
 
 
 .. note::
@@ -226,7 +226,7 @@ provides all directs for managers at a certain level.
                 manager_id = Column(UUID)
                 directs = Column(Set(UUID))
                 by_level = GlobalSecondaryIndex(
-                    projection=[directs, email],
+                    projection={directs, email},
                     hash_key=level)
             engine.bind(_)
 

@@ -1036,12 +1036,12 @@ def test_index_projection_validation():
 
     index = Index(projection=["foo", "bar"])
     assert index.projection["mode"] == "include"
-    assert index.projection["included"] == ["foo", "bar"]
+    assert index.projection["included"] == {"foo", "bar"}
     assert index.projection["available"] is None
 
     index = Index(projection=[User.age, User.email])
     assert index.projection["mode"] == "include"
-    assert index.projection["included"] == [User.age, User.email]
+    assert index.projection["included"] == {User.age, User.email}
     assert index.projection["available"] is None
 
 
@@ -1461,8 +1461,8 @@ def test_bind_index_dynamo_name_conflict_force():
     assert model.other is other
 
 
-def test_bind_index_recalculates_index_projection():
-    """An existing index recalculates its projection when bound"""
+def test_bind_index_recalculates_index_all_projection():
+    """An existing index recalculates its "all" projection when bound"""
     model = new_abstract_model()
     old_data_column = model.data
 
@@ -1490,6 +1490,79 @@ def test_bind_index_recalculates_index_projection():
         "strict": True
     }
     assert bound_index.hash_key is not old_data_column
+
+
+def test_bind_index_recalculates_index_keys_projection():
+    """An existing index recalculates its "keys" projection when bound"""
+    model = new_abstract_model()
+
+    # create a table hash key so we can see both in the projection
+    table_hash_key = Column(String, hash_key=True)
+    bind_column(model, "table_hash_key", table_hash_key, copy=False, force=False)
+
+    # bind a gsi hash key, then rebind a copy.  we'll use references to the original and see that
+    # the rebound key shows up (since refresh_index round trips Column -> name -> Column)
+    original_gsi_hk = Column(String)
+    bind_column(model, "gsi_hash_key", original_gsi_hk, copy=False, force=False)
+    copied_gsi_hk = bind_column(model, "gsi_hash_key", original_gsi_hk, copy=True, force=True)
+
+    index = GlobalSecondaryIndex(projection="keys", hash_key=original_gsi_hk)
+    bound_index = bind_index(model, "by_gsi_hash_key", index, copy=True)
+
+    # because we used a copy, the original index should be unchanged
+    assert index.projection == {
+        "mode": "keys",
+        "included": None,
+        "available": None,
+        "strict": True
+    }
+    # note the copied_gsi_hk even though index pointed to hash_key=original_gsi_hk
+    assert bound_index.projection == {
+        "mode": "keys",
+        "included": {table_hash_key, copied_gsi_hk},
+        "available": {table_hash_key, copied_gsi_hk},
+        "strict": True
+    }
+
+
+def test_bind_index_recalculated_index_include_projection():
+    """An existing index recalculates its "include" projection when bound"""
+    model = new_abstract_model()
+    original_data = model.data
+
+    # create a table hash key so we can see it in the projection
+    table_hk = bind_column(model, "table_hk", Column(String, hash_key=True))
+
+    # bind a gsi hash key, then rebind a copy.  we'll use references to the original and see that
+    # the rebound key shows up (since refresh_index round trips Column -> name -> Column)
+    original_gsi_hk = bind_column(model, "gsi_hash_key", Column(String))
+    copied_gsi_hk = bind_column(model, "gsi_hash_key", original_gsi_hk, copy=True, force=True)
+
+    # specify some additional columns (beyond keys) to include in the projection.
+    # we will reference them by column object, then immediately rebind the same name.
+    # when the index is bound, it should project the new column instead of the original.
+    index = GlobalSecondaryIndex(projection=[original_data], hash_key=original_gsi_hk)
+
+    # overwrite model.data
+    new_data = bind_column(model, "data", Column(String), force=True)
+
+    bound_index = bind_index(model, "by_gsi_hash_key", index, copy=True)
+
+    # because we used a copy, the original index should be unchanged
+    assert index.projection == {
+        "mode": "include",
+        "included": {original_data},
+        "available": None,
+        "strict": True
+    }
+    # note the included columns are the copied key and new_data, even though the source index pointed to
+    # the original of each column.
+    assert bound_index.projection == {
+        "mode": "include",
+        "included": {table_hk, copied_gsi_hk, new_data},
+        "available": {table_hk, copied_gsi_hk, new_data},
+        "strict": True
+    }
 
 
 def test_bind_index_parent_class():

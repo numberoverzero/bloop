@@ -16,6 +16,34 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
 (no unreleased changes)
 
 --------------------
+ 3.1.0 - 2021-11-11
+--------------------
+
+Fixed an issue where copying an ``Index`` would lose projection information when the projection mode was
+``"include"``.  This fix should have no effect for most users.  You would only run into this issue if you
+were manually calling ``bind_index`` with ``copy=True`` on a projection mode ``"include"`` or you subclass
+a model that has an index with that projection mode.  This does not require a major version change since
+there is no reasonable workaround that would be broken by making this fix.  For example, a user might
+decide to monkeypatch ``Index.__copy__``, ``bind_index`` or ``refresh_index`` to preserve the projection
+information.  Those workarounds will not be broken by this change.  For an example of the issue, see
+`Issue #147`_.
+
+[Changed]
+=========
+
+* ``Index.projection`` is now a ``set`` instead of a ``list`.  Since ``Column`` implements ``__hash__``
+  this won't affect any existing calls that pass in lists.  To remain consistent, this change is reflected
+  in ``Engine.search``, ``Search.__init__``, ``Index.__init__``, and any docs or examples that refer to passing
+  lists/sets of Columns.
+
+[Fixed]
+=======
+
+* ``Index.__copy__`` preserves ``Index.projection["included"]`` when projection mode is ``"include"``.
+
+.. _Issue #147: https://github.com/numberoverzero/bloop/issues/147
+
+--------------------
  3.0.0 - 2019-10-11
 --------------------
 

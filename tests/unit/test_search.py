@@ -416,7 +416,7 @@ def test_search_projection_converts_strings():
     Simply checks that the user can pass strings and get columns"""
     model, index = model_for()
     projection = ["model_hash"]
-    expected = [model.model_hash]
+    expected = {model.model_hash}
     assert validate_search_projection(model, index, projection) == expected
 
 
@@ -438,7 +438,7 @@ def test_search_projection_includes_non_projected_column(model, index):
 
     if should_succeed:
         projected = validate_search_projection(model, index, projection=projection)
-        assert projected == [model.model_hash, model.not_projected]
+        assert projected == {model.model_hash, model.not_projected}
 
     else:
         with pytest.raises(InvalidSearch):

@@ -273,6 +273,19 @@ class Index:
             "available": None,
             "strict": self.projection["strict"]
         }
+
+        # special case for projection mode "include".
+        # note that for "all" and "keys" modes the included and available columns are model-specific, and so
+        #   must be recalculated during refresh_index.  Both "all" and "keys" are lazy values that describe the
+        #   index's relation to the model.
+        # however, "include" is tightly coupled to the index itself.  The value of "include" for an unbound index
+        #   can be thought of as "names that will be looked up on the model during a bind_index call" and so
+        #   it doesn't really matter if they're Column objects or strings.  But that information must travel with the
+        #   index, since it is not a property of the model.
+        # to handle this, __copy__ on "include" will pass along the value of projection["included"].
+        if self.projection["mode"] == "include":
+            obj.projection["included"] = set(self.projection["included"])
+
         return obj
 
     def __set_name__(self, owner, name):
@@ -601,7 +614,7 @@ def validate_projection(projection):
             raise InvalidModel(f"{projection!r} is not a valid Index projection.")
         validated_projection["mode"] = projection
     elif isinstance(projection, collections.abc.Iterable):
-        projection = list(projection)
+        projection = set(projection)
         # These checks aren't done together; that would allow a mix
         # of column instances and column names.  There aren't any cases
         # where a mix is required, over picking a style.  Much more likely,
@@ -1041,13 +1054,14 @@ def refresh_index(meta, index) -> None:
         proj["included"] = projection_keys
     elif mode == "all":
         proj["included"] = meta.columns
-    elif mode == "include":  # pragma: no branch
+    elif mode == "include":
         if all(isinstance(p, str) for p in proj["included"]):
             proj["included"] = set(meta.columns_by_name[n] for n in proj["included"])
         else:
-            proj["included"] = set(proj["included"])
+            proj["included"] = set(meta.columns_by_name[c.name] for c in proj["included"])
         proj["included"].update(projection_keys)
-
+    else:  # pragma: no cover
+        raise RuntimeError(f"unexpected projection mode {mode}, please file an issue")
     if proj["strict"]:
         proj["available"] = proj["included"]
     else:

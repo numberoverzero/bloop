@@ -51,4 +51,4 @@ intersphinx_mapping = {
 
 
 def setup(app):
-    app.add_stylesheet("bloop.css")
+    app.add_css_file("bloop.css")

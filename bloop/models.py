@@ -3,7 +3,8 @@ import collections.abc
 import inspect
 import logging
 from copy import copy as copyfn
-from typing import Callable, Dict, Optional, Set
+from typing import Callable, Dict, Optional, Set, List
+from typing import Type as PyType
 
 from . import util
 from .conditions import ComparisonMixin
@@ -11,6 +12,8 @@ from .exceptions import InvalidModel, InvalidStream
 from .signals import model_created, object_modified
 from .types import DateTime, Number, Type
 
+ModelCls = PyType["BaseModel"]
+MetaCls = PyType["IMeta"]
 
 __all__ = [
     "BaseModel", "Column",
@@ -66,6 +69,7 @@ class IMeta:
 
     columns: Set["Column"]
     columns_by_name: Dict[str, "Column"]
+    columns_by_dynamo_name: Dict[str, "Column"]
     indexes: Set["Index"]
     gsis: Set["GlobalSecondaryIndex"]
     lsis: Set["LocalSecondaryIndex"]
@@ -632,7 +636,7 @@ def validate_projection(projection):
     return validated_projection
 
 
-def validate_stream(meta):
+def validate_stream(meta: MetaCls):
     stream = meta.stream
     if stream is None:
         return
@@ -659,7 +663,7 @@ def validate_stream(meta):
     stream.setdefault("arn", None)
 
 
-def validate_encryption(meta):
+def validate_encryption(meta: MetaCls):
     encryption = meta.encryption
     if encryption is None:
         return
@@ -670,7 +674,7 @@ def validate_encryption(meta):
         raise InvalidModel("Encryption must specify whether it is enabled with the 'enabled' key.")
 
 
-def validate_backups(meta):
+def validate_backups(meta: MetaCls):
     backups = meta.backups
     if backups is None:
         return
@@ -681,7 +685,7 @@ def validate_backups(meta):
         raise InvalidModel("Backups must specify whether it is enabled with the 'enabled' key.")
 
 
-def validate_billing(meta):
+def validate_billing(meta: MetaCls):
     billing = meta.billing
     if billing is None:
         return
@@ -694,7 +698,7 @@ def validate_billing(meta):
         raise InvalidModel("Billing mode must be one of 'provisioned' or 'on_demand'")
 
 
-def validate_ttl(meta):
+def validate_ttl(meta: MetaCls):
     ttl = meta.ttl
     if ttl is None:
         return
@@ -756,7 +760,7 @@ def ensure_hash(cls) -> None:
     cls.__hash__ = hash_fn
 
 
-def initialize_meta(cls: type):
+def initialize_meta(cls: ModelCls):
     meta = getattr(cls, "Meta", missing)
     for base in cls.__mro__:
         if base is cls:
@@ -791,6 +795,7 @@ def initialize_meta(cls: type):
 
     setdefault(meta, "columns", set())
     setdefault(meta, "columns_by_name", dict())
+    setdefault(meta, "columns_by_dynamo_name", dict())
     setdefault(meta, "indexes", set())
     setdefault(meta, "gsis", set())
     setdefault(meta, "lsis", set())
@@ -808,7 +813,7 @@ def initialize_meta(cls: type):
     return meta
 
 
-def bind_column(model, name, column, force=False, recursive=False, copy=False) -> Column:
+def bind_column(model: ModelCls, name: str, column: Column, force=False, recursive=False, copy=False) -> Column:
     """Bind a column to the model with the given name.
 
     This method is primarily used during BaseModel.__init_subclass__, although it can be used to easily
@@ -866,7 +871,7 @@ def bind_column(model, name, column, force=False, recursive=False, copy=False) -
 
     # Guard against name, dynamo_name collisions; if force=True, unbind any matches
     same_dynamo_name = (
-        util.index(meta.columns, "dynamo_name").get(column.dynamo_name) or
+        meta.columns_by_dynamo_name.get(column.dynamo_name) or
         util.index(meta.indexes, "dynamo_name").get(column.dynamo_name)
     )
     same_name = (
@@ -905,6 +910,7 @@ def bind_column(model, name, column, force=False, recursive=False, copy=False) -
     column.model = meta.model
     meta.columns.add(column)
     meta.columns_by_name[name] = column
+    meta.columns_by_dynamo_name[column.dynamo_name] = column
     setattr(meta.model, name, column)
 
     if column.hash_key:
@@ -931,7 +937,7 @@ def bind_column(model, name, column, force=False, recursive=False, copy=False) -
     return column
 
 
-def bind_index(model, name, index, force=False, recursive=True, copy=False) -> Index:
+def bind_index(model: ModelCls, name: str, index: Index, force=False, recursive=True, copy=False) -> Index:
     """Bind an index to the model with the given name.
 
         This method is primarily used during BaseModel.__init_subclass__, although it can be used to easily
@@ -986,7 +992,7 @@ def bind_index(model, name, index, force=False, recursive=True, copy=False) -> I
 
     # Guard against name, dynamo_name collisions; if force=True, unbind any matches
     same_dynamo_name = (
-        util.index(meta.columns, "dynamo_name").get(index.dynamo_name) or
+        meta.columns_by_dynamo_name.get(index.dynamo_name) or 
         util.index(meta.indexes, "dynamo_name").get(index.dynamo_name)
     )
     same_name = (
@@ -1038,7 +1044,7 @@ def bind_index(model, name, index, force=False, recursive=True, copy=False) -> I
     return index
 
 
-def refresh_index(meta, index) -> None:
+def refresh_index(meta: MetaCls, index: Index) -> None:
     """Recalculate the projection, hash_key, and range_key for the given index.
 
     :param meta: model.Meta to find columns by name
@@ -1068,7 +1074,7 @@ def refresh_index(meta, index) -> None:
         proj["available"] = meta.columns
 
 
-def unbind(meta, name=None, dynamo_name=None) -> None:
+def unbind(meta: MetaCls, name: str=None, dynamo_name: str=None) -> None:
     """Unconditionally remove any columns or indexes bound to the given name or dynamo_name.
 
     .. code-block:: python
@@ -1098,7 +1104,7 @@ def unbind(meta, name=None, dynamo_name=None) -> None:
     :param dynamo_name: column or index name to unbind by.  Default is None.
     """
     if name is not None:
-        columns = {x for x in meta.columns if x.name == name}
+        columns: List[Column] = {x for x in meta.columns if x.name == name}
         indexes = {x for x in meta.indexes if x.name == name}
     elif dynamo_name is not None:
         columns = {x for x in meta.columns if x.dynamo_name == dynamo_name}
@@ -1119,9 +1125,11 @@ def unbind(meta, name=None, dynamo_name=None) -> None:
 
         # If these don't line up, there's likely a bug in bloop
         # or the user manually hacked up columns_by_name
-        expect_same = meta.columns_by_name[column.name]
-        assert expect_same is column
+        assert column is meta.columns_by_name[column.name]
+        assert column is meta.columns_by_dynamo_name[column.dynamo_name]
+
         meta.columns_by_name.pop(column.name)
+        meta.columns_by_dynamo_name.pop(column.dynamo_name)
 
         if column in meta.keys:
             meta.keys.remove(column)

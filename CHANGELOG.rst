@@ -13,7 +13,10 @@ __ https://gist.github.com/numberoverzero/c5d0fc6dea624533d004239a27e545ad
  Unreleased
 ------------
 
-(no unreleased changes)
+[Added]
+=======
+
+* ``IMeta.columns_by_dynamo_name``
 
 --------------------
  3.1.0 - 2021-11-11

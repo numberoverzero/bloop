@@ -73,28 +73,29 @@ def validate_key_condition(model, index, key):
 
 def validate_search_projection(model, index, projection):
     if not projection:
-        raise InvalidSearch("The projection must be 'count', 'all', or a list of Columns to include.")
+        raise InvalidSearch("The projection must be 'count', 'all', or a set of Columns to include.")
     if projection == "count":
         return None
 
     if projection == "all":
         return (index or model.Meta).projection["included"]
     elif isinstance(projection, str):
-        raise InvalidSearch("The projection must be 'count', 'all', or a list of Columns to include.")
+        raise InvalidSearch("The projection must be 'count', 'all', or a set of Columns to include.")
 
     # Keep original around for error messages
     original_projection = projection
+    projection = set(projection)
 
     # name -> Column
     if all(isinstance(p, str) for p in projection):
         by_name = model.Meta.columns_by_name
-        # This could be a list comprehension, but then the
-        # user gets a KeyError when they passed a list.  So,
-        # do each individually and throw a useful exception.
-        converted_projection = []
+        # This code could be simplified to a list comprehension
+        # but then the user would gets a KeyError if they passed a set.
+        # Instead do each individually and throw a useful exception.
+        converted_projection = set()
         for p in projection:
             try:
-                converted_projection.append(by_name[p])
+                converted_projection.add(by_name[p])
             except KeyError:
                 raise InvalidSearch("{!r} is not a column of {!r}.".format(p, model))
         projection = converted_projection
@@ -105,7 +106,7 @@ def validate_search_projection(model, index, projection):
             "{!r} is not valid: it must be only Columns or only their model names.".format(original_projection))
 
     # Can the full available columns support this projection?
-    if set(projection) <= (index or model.Meta).projection["available"]:
+    if projection <= (index or model.Meta).projection["available"]:
         return projection
 
     raise InvalidSearch(
@@ -169,7 +170,7 @@ class Search:
     :param key: *(Query only)* Key condition.  This must include an equality against the hash key,
         and optionally one of a restricted set of conditions on the range key.
     :param filter: Filter condition.  Only matching objects will be included in the results.
-    :param projection: "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.
+    :param projection: "all", "count", a set of column names, or a list of :class:`~bloop.models.Column`.
         When projection is "count", you must advance the iterator to retrieve the count.
     :param bool consistent: Use `strongly consistent reads`__ if True.  Not applicable to GSIs.  Default is False.
     :param bool forward: *(Query only)* Use ascending or descending order.  Default is True (ascending).

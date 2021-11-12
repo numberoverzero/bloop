@@ -249,7 +249,7 @@ class Engine:
             of a restricted set of conditions on the range key.
         :param filter: Filter condition.  Only matching objects will be included in the results.
         :param projection:
-            "all", "count", a list of column names, or a list of :class:`~bloop.models.Column`.  When projection is
+            "all", "count", a set of column names, or a set of :class:`~bloop.models.Column`.  When projection is
             "count", you must advance the iterator to retrieve the count.
         :param bool consistent: Use `strongly consistent reads`__ if True.  Default is False.
         :param bool forward:  Query in ascending or descending order.  Default is True (ascending).

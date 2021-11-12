@@ -12,7 +12,7 @@ for line in (HERE / "bloop" / "__init__.py").read_text().split("\n"):
 
 REQUIREMENTS = [
     "blinker==1.4",
-    "boto3~=1.9",
+    "boto3==1.20.4",
 ]
 
 if __name__ == "__main__":

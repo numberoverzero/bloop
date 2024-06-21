@@ -1,6 +1,4 @@
 import secrets
-
-import string
 import subprocess
 
 import boto3
@@ -14,7 +12,11 @@ from bloop.util import walk_subclasses
 
 DEFAULT_PORT = 8000
 DEFAULT_ENDPOINT = f"http://localhost:{DEFAULT_PORT}"
-DOCKER_START_COMMAND = ["docker", "run", "-d", "-p", f"{DEFAULT_PORT}:{DEFAULT_PORT}", "--name", "ddb-local", "amazon/dynamodb-local"]
+DOCKER_START_COMMAND = [
+    "docker", "run", "-d",
+    "-p", f"{DEFAULT_PORT}:{DEFAULT_PORT}",
+    "--name", "ddb-local", "amazon/dynamodb-local"
+]
 DOCKER_STOP_COMMAND = ["docker", "stop", "ddb-local"]
 DOCKER_RM_COMMAND = ["docker", "rm", "ddb-local"]
 

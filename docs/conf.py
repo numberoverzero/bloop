@@ -44,7 +44,7 @@ intersphinx_mapping = {
     'python': ('https://docs.python.org/3.6', None),
     'arrow': ('https://arrow.readthedocs.io/en/latest/', None),
     'PIL': ('https://pillow.readthedocs.io/en/latest', None),
-    'blinker': ('https://pythonhosted.org/blinker/', None),
+    'blinker': ('https://blinker.readthedocs.io/en/stable', None),
     'boto3': ('https://boto3.amazonaws.com/v1/documentation/api/latest', None),
     'delorean': ('https://delorean.readthedocs.io/en/latest/', None)
 }

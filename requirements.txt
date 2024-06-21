@@ -8,8 +8,9 @@ pendulum
 pytest
 pytz
 readme_renderer[md]
-sphinx==4.3.0
-sphinx-rtd-theme==1.0.0
+setuptools
+sphinx==7.3.7
+sphinx-rtd-theme==2.0.0
 tox
 twine
 wheel

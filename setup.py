@@ -11,8 +11,8 @@ for line in (HERE / "bloop" / "__init__.py").read_text().split("\n"):
         VERSION = eval(line.split("=")[-1])
 
 REQUIREMENTS = [
-    "blinker==1.4",
-    "boto3==1.20.4",
+    "blinker==1.8.2",
+    "boto3==1.34.131",
 ]
 
 if __name__ == "__main__":

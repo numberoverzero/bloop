@@ -992,7 +992,7 @@ def bind_index(model: ModelCls, name: str, index: Index, force=False, recursive=
 
     # Guard against name, dynamo_name collisions; if force=True, unbind any matches
     same_dynamo_name = (
-        meta.columns_by_dynamo_name.get(index.dynamo_name) or 
+        meta.columns_by_dynamo_name.get(index.dynamo_name) or
         util.index(meta.indexes, "dynamo_name").get(index.dynamo_name)
     )
     same_name = (
@@ -1074,7 +1074,7 @@ def refresh_index(meta: MetaCls, index: Index) -> None:
         proj["available"] = meta.columns
 
 
-def unbind(meta: MetaCls, name: str=None, dynamo_name: str=None) -> None:
+def unbind(meta: MetaCls, name: str = None, dynamo_name: str = None) -> None:
     """Unconditionally remove any columns or indexes bound to the given name or dynamo_name.
 
     .. code-block:: python

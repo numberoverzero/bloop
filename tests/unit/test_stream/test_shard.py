@@ -364,6 +364,7 @@ def test_get_records_exhausted(shard, session):
 
 def test_get_records_after_head(shard, session):
     """Once the shard has reached head, get_stream_records is called once per get_records."""
+    first_id = shard.iterator_id = "starting-iterator-id"
     shard.empty_responses = CALLS_TO_REACH_HEAD
 
     # Intentionally provide more than one page to ensure
@@ -375,7 +376,8 @@ def test_get_records_after_head(shard, session):
 
     assert len(returned_records) == 1
     assert returned_records[0]["meta"]["sequence_number"] == "0"
-    assert session.get_stream_records.called_once_with(shard.iterator_id)
+    session.get_stream_records.assert_called_once_with(first_id)
+    assert shard.iterator_id == "continue-from-response-0"
 
     assert shard.iterator_type == "at_sequence"
     assert shard.sequence_number == "0"

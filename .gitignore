@@ -62,8 +62,6 @@ target/
 .python-version
 .idea/
 .venv/
-.dynamodb-local
-.dynamodb-local.tmp
 
 # Personal testing files
 t.py

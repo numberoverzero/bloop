@@ -1,4 +1,5 @@
-import random
+import secrets
+
 import string
 import subprocess
 
@@ -11,7 +12,9 @@ from bloop.session import SessionWrapper
 from bloop.util import walk_subclasses
 
 
-DOCKER_START_COMMAND = ["docker", "run", "-d", "-p", "8000:8000", "--name", "ddb-local", "amazon/dynamodb-local"]
+DEFAULT_PORT = 8000
+DEFAULT_ENDPOINT = f"http://localhost:{DEFAULT_PORT}"
+DOCKER_START_COMMAND = ["docker", "run", "-d", "-p", f"{DEFAULT_PORT}:{DEFAULT_PORT}", "--name", "ddb-local", "amazon/dynamodb-local"]
 DOCKER_STOP_COMMAND = ["docker", "stop", "ddb-local"]
 DOCKER_RM_COMMAND = ["docker", "rm", "ddb-local"]
 
@@ -31,22 +34,20 @@ class PatchedDynamoDBClient:
 
 
 class DynamoDBLocal:
-    def __init__(self) -> None:
+    def __init__(self, endpoint: str) -> None:
+        self.access_key = secrets.token_hex(10)
+        self.secret_access_key = secrets.token_hex(20)
+        self.endpoint = endpoint
         self.running = False
 
     @property
     def session(self) -> boto3.Session:
         assert self.running
         return boto3.Session(
-            region_name="us-west-2",
-            aws_access_key_id="NO_ACCESS_KEY",
-            aws_secret_access_key="NO_SECRET_KEY",
+            region_name="local-not-a-region",
+            aws_access_key_id=self.access_key,
+            aws_secret_access_key=self.secret_access_key,
         )
-
-    @property
-    def endpoint(self) -> str:
-        assert self.running
-        return "http://localhost:8000"
 
     @property
     def clients(self) -> tuple:
@@ -56,7 +57,6 @@ class DynamoDBLocal:
             # TODO | have to patch dynamodb until DynamoDBLocal supports DescribeTimeToLive
             # TODO | otherwise, SessionWrapper.describe_table throws UnknownOperationException
             PatchedDynamoDBClient(session.client("dynamodb", endpoint_url=endpoint)),
-
             session.client("dynamodbstreams", endpoint_url=endpoint)
         )
 
@@ -73,28 +73,29 @@ class DynamoDBLocal:
 
 
 def pytest_addoption(parser):
-    default_nonce = "-local-" + "".join(random.choice(string.ascii_letters) for _ in range(16))
+    default_nonce = f"-local-{secrets.token_hex(8)}"
     parser.addoption(
         "--nonce", action="store", default=default_nonce,
         help="make table names unique for parallel runs")
     parser.addoption(
         "--skip-cleanup", action="store_true", default=False,
         help="don't clean up the docker instance after tests run")
-
-    default_localdir = ".dynamodb-local"
     parser.addoption(
-        "--dynamodb-local-dir", action="store", default=default_localdir,
-        help="directory that contains DynamoDBLocal jar"
-    )
+        "--dynamodblocal-endpoint", action="store", default=None,
+        help="endpoint for an existing dynamodblocal instance")
 
 
 @pytest.fixture(scope="session")
 def dynamodb_local(request):
     nonce = request.config.getoption("--nonce")
     skip_cleanup = request.config.getoption("--skip-cleanup")
+    existing_local = request.config.getoption("--dynamodblocal-endpoint")
 
-    dynamodb_local = DynamoDBLocal()
-    dynamodb_local.start()
+    dynamodb_local = DynamoDBLocal(endpoint=existing_local or DEFAULT_ENDPOINT)
+    if existing_local:
+        dynamodb_local.running = True
+    else:
+        dynamodb_local.start()
 
     yield dynamodb_local
 
@@ -115,8 +116,9 @@ def dynamodb_local(request):
             except Exception:
                 print("Failed to clean up table '{}'".format(table))
     finally:
-        print("Shutting down ddb-local")
-        dynamodb_local.stop()
+        if not existing_local:
+            print("Shutting down ddb-local")
+            dynamodb_local.stop()
 
 
 @pytest.fixture
